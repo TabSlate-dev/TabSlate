@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk 'NR>=11 && NR<=13' /Users/lieutenant/Documents/github/TabSlate/err.log)",
+      "Bash(awk 'NR==14' /Users/lieutenant/Documents/github/TabSlate/err.log)",
+      "Bash(awk 'NR>=8 && NR<=14' /Users/lieutenant/Documents/github/TabSlate/err.log)",
+      "Bash(grep -oP '\\(?<=console\\\\.error\\\\\\(`\\)\\([^`]+\\)')",
+      "Bash(grep -oE 'console\\\\.\\(error|warn\\)\\\\\\(`[^`]{0,200}')",
+      "Bash(awk 'NR==12' /Users/lieutenant/Documents/github/TabSlate/err.log)",
+      "Bash(awk 'NR==13' /Users/lieutenant/Documents/github/TabSlate/err.log)",
+      "Bash(python3 -c \":*)"
+    ]
+  }
+}

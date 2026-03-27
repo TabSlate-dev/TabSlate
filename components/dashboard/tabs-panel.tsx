@@ -7,6 +7,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
@@ -38,9 +39,90 @@ import {
   Check,
   Ungroup,
   Save,
+  Plus,
+  BrushCleaning,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { storageService } from "@/lib/storage";
+import { useWorkspaceStore } from "@/store/workspace-store";
+import { Switch } from "@/components/ui/switch";
+import { TabRow } from "./tab-row";
+
+// ---------------------------------------------------------------------------
+// Join Group Dialog
+// ---------------------------------------------------------------------------
+function JoinGroupDialog({
+  tabIds,
+  isOpen,
+  onClose,
+}: {
+  tabIds: number[];
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const { tabGroups, moveTabsToGroup, fullTitles } = useTabsStore();
+
+  if (!tabIds.length) return null;
+
+  const handleJoin = async (groupId: number) => {
+    await moveTabsToGroup(tabIds, groupId);
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Join Tab Group</DialogTitle>
+          <DialogDescription>
+            Select an existing group to move the selected tab(s) into.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2 py-4 max-h-[300px] overflow-y-auto pr-1">
+          {tabGroups.map((group) => {
+            const color = TAB_GROUP_COLORS[group.color];
+            return (
+              <button
+                key={group.id}
+                onClick={() => handleJoin(group.id)}
+                className="flex items-center gap-3 w-full p-2.5 rounded-lg border hover:bg-accent transition-colors text-left"
+              >
+                <div
+                  className="size-3 rounded-full shrink-0"
+                  style={{ backgroundColor: color }}
+                />
+                <span className="text-sm font-medium truncate">
+                  {(fullTitles && fullTitles[group.id]) || group.title || "Unnamed Group"}
+                </span>
+              </button>
+            );
+          })}
+          {tabGroups.length === 0 && (
+            <p className="text-sm text-center text-muted-foreground py-4">
+              No active groups found.
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Group color dot
+// ---------------------------------------------------------------------------
+function GroupDot({ color }: { color: TabGroupColor }) {
+  return (
+    <span
+      className="inline-block size-3 rounded-full shrink-0"
+      style={{ backgroundColor: TAB_GROUP_COLORS[color] }}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Single tab row (inside or outside a group)
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Color picker
@@ -75,119 +157,6 @@ function ColorPicker({
 }
 
 // ---------------------------------------------------------------------------
-// Group color dot
-// ---------------------------------------------------------------------------
-function GroupDot({ color }: { color: TabGroupColor }) {
-  return (
-    <span
-      className="inline-block size-3 rounded-full shrink-0"
-      style={{ backgroundColor: TAB_GROUP_COLORS[color] }}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Single tab row (inside or outside a group)
-// ---------------------------------------------------------------------------
-interface TabRowProps {
-  tab: BrowserTab;
-  selected?: boolean;
-  onSelect?: (checked: boolean) => void;
-  showCheckbox?: boolean;
-}
-
-function TabRow({ tab, selected, onSelect, showCheckbox }: TabRowProps) {
-  const { closeTab, focusTab } = useTabsStore();
-  const [saved, setSaved] = useState(false);
-
-  const handleSave = async () => {
-    await storageService.addBookmark({
-      title: tab.title,
-      url: tab.url,
-      favicon: tab.favIconUrl,
-      collectionId: "all",
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  return (
-    <div
-      className={cn(
-        "group flex items-center gap-2.5 px-3 py-2 rounded-md hover:bg-accent/50 transition-colors",
-        tab.active && "bg-blue-50/60 dark:bg-blue-950/20"
-      )}
-    >
-      {showCheckbox && (
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={(e) => onSelect?.(e.target.checked)}
-          className="size-3.5 rounded accent-primary shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        />
-      )}
-
-      {/* Favicon */}
-      <div className="size-6 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-        {tab.favIconUrl ? (
-          <img
-            src={tab.favIconUrl}
-            alt=""
-            className="size-4"
-            onError={(e) => ((e.target as HTMLImageElement).style.display = "none")}
-          />
-        ) : (
-          <Bookmark className="size-3 text-muted-foreground" />
-        )}
-      </div>
-
-      {/* Title */}
-      <button
-        className="flex-1 min-w-0 text-left"
-        onClick={() => focusTab(tab.id, tab.windowId)}
-        title={tab.url}
-      >
-        <p className={cn("text-sm truncate", tab.active && "font-medium")}>
-          {tab.title}
-        </p>
-      </button>
-
-      {/* Hover actions */}
-      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={handleSave}
-          title={saved ? "Saved!" : "Save bookmark"}
-          className={cn("size-6", saved && "text-green-600")}
-        >
-          {saved ? <Check className="size-3" /> : <Bookmark className="size-3" />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => window.open(tab.url, "_blank")}
-          title="Open in new tab"
-          className="size-6"
-        >
-          <ExternalLink className="size-3" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={() => closeTab(tab.id)}
-          title="Close tab"
-          className="size-6 hover:text-destructive"
-        >
-          <X className="size-3" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Tab group card
 // ---------------------------------------------------------------------------
 interface GroupCardProps {
@@ -195,14 +164,36 @@ interface GroupCardProps {
   tabs: BrowserTab[];
 }
 
-function GroupCard({ group, tabs }: GroupCardProps) {
-  const { updateGroup, dissolveGroup, saveGroupAsCollection } = useTabsStore();
+function GroupCard({ group, tabs, onJoinRequest }: {
+  group: BrowserTabGroup;
+  tabs: BrowserTab[];
+  onJoinRequest: (tabIds: number[]) => void;
+}) {
+  const { updateGroup, dissolveGroup, saveGroupAsCollection, toggleGroupCompact, fullTitles, ungroupSpecificTabs, closeSpecificTabs } = useTabsStore();
+  const { compactGroupTitles, setCompactGroupTitles } = useWorkspaceStore();
   const [expanded, setExpanded] = useState(true);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [editingName, setEditingName] = useState(false);
-  const [nameInput, setNameInput] = useState(group.title);
+  const [nameInput, setNameInput] = useState("");
+  const displayTitle = (fullTitles && fullTitles[group.id]) || group.title;
   const [isSaving, setIsSaving] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const nameRef = useRef<HTMLInputElement>(null);
+
+  // We don't need the local useeffect anymore as it's in the store
+
+  const toggleSelect = (tabId: number, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      checked ? next.add(tabId) : next.delete(tabId);
+      return next;
+    });
+  };
+
+  const handleUngroupSelected = async () => {
+    await ungroupSpecificTabs(Array.from(selected));
+    setSelected(new Set());
+  };
 
   const groupColor = TAB_GROUP_COLORS[group.color];
 
@@ -241,7 +232,7 @@ function GroupCard({ group, tabs }: GroupCardProps) {
         <GroupDot color={group.color} />
 
         {editingName ? (
-          <input
+          <Input
             ref={nameRef}
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
@@ -249,72 +240,123 @@ function GroupCard({ group, tabs }: GroupCardProps) {
             onKeyDown={(e) => {
               if (e.key === "Enter") handleNameCommit();
               if (e.key === "Escape") {
-                setNameInput(group.title);
+                setNameInput(displayTitle);
                 setEditingName(false);
               }
             }}
-            className="flex-1 text-sm font-medium bg-transparent border-b border-primary outline-none min-w-0"
+            className="h-7 text-sm py-0 w-32"
             autoFocus
           />
         ) : (
           <button
-            onClick={() => setEditingName(true)}
-            className="flex-1 text-sm font-medium text-left truncate hover:opacity-70 transition-opacity"
+            onClick={() => {
+              setEditingName(true);
+              setNameInput(displayTitle);
+            }}
+            className="text-sm font-semibold hover:text-primary transition-colors truncate max-w-[150px]"
             title="Click to rename"
           >
-            {group.title || "Unnamed group"}
+            {displayTitle || "Unnamed group"}
           </button>
         )}
 
-        <span className="text-xs text-muted-foreground shrink-0">
-          {tabs.length} tab{tabs.length !== 1 ? "s" : ""}
-        </span>
-
-        {/* Color picker */}
-        <div className="flex items-center gap-1 shrink-0">
-          {TAB_GROUP_COLOR_KEYS.map((c) => (
-            <button
-              key={c}
-              title={c}
-              onClick={() => updateGroup(group.id, { color: c })}
-              className="size-3.5 rounded-full hover:scale-110 transition-transform"
-              style={{
-                backgroundColor: TAB_GROUP_COLORS[c],
-                outline: c === group.color ? `2px solid ${TAB_GROUP_COLORS[c]}` : "none",
-                outlineOffset: "2px",
-              }}
-            />
-          ))}
-        </div>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs" className="size-6 shrink-0">
-              <MoreHorizontal className="size-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => setSaveDialogOpen(true)}>
-              <Save className="size-4 mr-2" />
-              Save as Collection
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive"
-              onClick={() => dissolveGroup(group.id)}
+        {selected.size > 0 && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={handleUngroupSelected}
+              className="size-6 text-destructive hover:bg-destructive/10 transition-colors shrink-0 ml-1"
+              title={`Ungroup ${selected.size} selected tab${selected.size !== 1 ? "s" : ""}`}
             >
-              <Ungroup className="size-4 mr-2" />
-              Ungroup Tabs
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+              <BrushCleaning className="size-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() => {
+                closeSpecificTabs(Array.from(selected));
+                setSelected(new Set());
+              }}
+              className="size-6 text-destructive hover:bg-destructive/10 transition-colors shrink-0 ml-1"
+              title={`Close ${selected.size} selected tab${selected.size !== 1 ? "s" : ""}`}
+            >
+              <X className="size-3.5" />
+            </Button>
+          </>
+        )}
+
+        <div className="flex items-center gap-1 shrink-0 ml-auto">
+          <span className="text-xs text-muted-foreground mr-2 shrink-0">
+            {tabs.length} tab{tabs.length !== 1 ? "s" : ""}
+          </span>
+          {/* Color picker */}
+          <div className="flex items-center gap-1 shrink-0 px-2">
+            {TAB_GROUP_COLOR_KEYS.map((c) => (
+              <button
+                key={c}
+                title={c}
+                onClick={() => updateGroup(group.id, { color: c })}
+                className="size-3.5 rounded-full hover:scale-110 transition-transform"
+                style={{
+                  backgroundColor: TAB_GROUP_COLORS[c],
+                  outline: c === group.color ? `2px solid ${TAB_GROUP_COLORS[c]}` : "none",
+                  outlineOffset: "2px",
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Compact Toggle */}
+          <div className="flex items-center gap-1.5 px-2 border-l border-r border-border/50">
+            <Switch
+              checked={group.title.length === 1}
+              onCheckedChange={() => toggleGroupCompact(group.id)}
+              className="scale-75"
+              title="Toggle Compact Mode for this Group"
+            />
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-tight">
+              Compact
+            </span>
+          </div>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-xs" className="size-6 shrink-0">
+                <MoreHorizontal className="size-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setSaveDialogOpen(true)}>
+                <Save className="size-4 mr-2" />
+                Save as Collection
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive"
+                onClick={() => dissolveGroup(group.id)}
+              >
+                <Ungroup className="size-4 mr-2" />
+                Ungroup Tabs
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Tabs */}
       {expanded && (
         <div className="px-2 pb-2 pt-1 bg-card/50 space-y-0.5">
           {tabs.map((tab) => (
-            <TabRow key={tab.id} tab={tab} />
+            <TabRow
+              key={tab.id}
+              tab={tab}
+              showCheckbox
+              selected={selected.has(tab.id)}
+              onSelect={(checked) => toggleSelect(tab.id, checked)}
+              onUngroup={() => ungroupSpecificTabs([tab.id])}
+              onJoinGroup={() => onJoinRequest([tab.id])}
+            />
           ))}
         </div>
       )}
@@ -335,11 +377,15 @@ function GroupCard({ group, tabs }: GroupCardProps) {
 // ---------------------------------------------------------------------------
 // Ungrouped tabs section with multi-select + group creation
 // ---------------------------------------------------------------------------
-function UngroupedSection({ tabs }: { tabs: BrowserTab[] }) {
+function UngroupedSection({ tabs, onJoinRequest }: {
+  tabs: BrowserTab[];
+  onJoinRequest: (tabIds: number[]) => void;
+}) {
   const { createGroup } = useTabsStore();
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [groupName, setGroupName] = useState("");
   const [groupColor, setGroupColor] = useState<TabGroupColor>("blue");
+  const [isCompact, setIsCompact] = useState(true); // Default to true
   const [isCreating, setIsCreating] = useState(false);
 
   const toggleSelect = (tabId: number, checked: boolean) => {
@@ -353,7 +399,7 @@ function UngroupedSection({ tabs }: { tabs: BrowserTab[] }) {
   const handleCreateGroup = async () => {
     if (!selected.size || isCreating) return;
     setIsCreating(true);
-    await createGroup([...selected], groupName.trim() || "New Group", groupColor);
+    await createGroup(Array.from(selected), groupName.trim(), groupColor, isCompact);
     setSelected(new Set());
     setGroupName("");
     setIsCreating(false);
@@ -363,9 +409,14 @@ function UngroupedSection({ tabs }: { tabs: BrowserTab[] }) {
 
   return (
     <div className="space-y-1">
-      <p className="text-[10px] font-semibold tracking-wider text-muted-foreground px-1 uppercase">
-        Ungrouped · {tabs.length}
-      </p>
+      <div className="flex items-center justify-between px-1">
+        <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+          Ungrouped
+        </p>
+        <span className="text-[10px] font-semibold text-muted-foreground">
+          {tabs.length}
+        </span>
+      </div>
 
       <div className="rounded-lg border bg-card divide-y divide-border/50">
         {tabs.map((tab) => (
@@ -375,6 +426,8 @@ function UngroupedSection({ tabs }: { tabs: BrowserTab[] }) {
             showCheckbox
             selected={selected.has(tab.id)}
             onSelect={(checked) => toggleSelect(tab.id, checked)}
+            onJoinGroup={() => onJoinRequest([tab.id])}
+            isUngrouped
           />
         ))}
       </div>
@@ -383,29 +436,42 @@ function UngroupedSection({ tabs }: { tabs: BrowserTab[] }) {
       {selected.size > 0 && (
         <div className="flex items-center gap-2 p-3 rounded-lg border bg-muted/50 mt-2">
           <Layers className="size-4 text-muted-foreground shrink-0" />
-          <span className="text-sm text-muted-foreground shrink-0">
-            Group {selected.size}
-          </span>
           <Input
             placeholder="Group name..."
             value={groupName}
             onChange={(e) => setGroupName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleCreateGroup()}
-            className="h-7 text-sm flex-1"
+            className="h-8 text-sm flex-1 md:max-w-xs"
           />
-          <ColorPicker value={groupColor} onChange={setGroupColor} />
-          <Button
-            size="sm"
-            className="h-7 shrink-0"
-            onClick={handleCreateGroup}
-            disabled={isCreating}
-          >
-            {isCreating ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              "Create"
-            )}
-          </Button>
+          <div className="flex items-center gap-4 ml-auto">
+            <span className="text-xs font-medium text-muted-foreground">
+              {selected.size} tab{selected.size !== 1 ? "s" : ""}
+            </span>
+            <div className="flex items-center gap-2 px-1">
+              <Switch
+                checked={isCompact}
+                onCheckedChange={setIsCompact}
+                className="scale-90"
+              />
+              <span className="text-[10px] font-medium text-muted-foreground whitespace-nowrap hidden sm:inline uppercase tracking-tight">
+                Compact
+              </span>
+            </div>
+            <ColorPicker value={groupColor} onChange={setGroupColor} />
+            <Button
+              size="sm"
+              onClick={handleCreateGroup}
+              disabled={isCreating}
+              className="shadow-sm shadow-primary/20"
+            >
+              {isCreating ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Plus className="size-4 mr-1.5" />
+              )}
+              Create
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -435,9 +501,12 @@ function SaveCollectionDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Save as Collection</DialogTitle>
+          <DialogDescription className="sr-only">
+            Save {tabCount} tabs as a new collection of bookmarks.
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
           <p className="text-sm text-muted-foreground">
@@ -452,12 +521,13 @@ function SaveCollectionDialog({
           />
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="outline" size="sm" onClick={onClose}>
             Cancel
           </Button>
           <Button
+            size="sm"
             onClick={() => onConfirm(name)}
-            disabled={!name.trim() || isSaving}
+            disabled={isSaving}
           >
             {isSaving ? (
               <Loader2 className="size-4 animate-spin mr-2" />
@@ -481,6 +551,13 @@ export function TabsPanel() {
   const [saveWindowOpen, setSaveWindowOpen] = useState(false);
   const [isSavingWindow, setIsSavingWindow] = useState(false);
   const [savedMsg, setSavedMsg] = useState(false);
+  const [selectedTabIds, setSelectedTabIds] = useState<number[]>([]);
+  const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
+
+  const handleJoinRequest = (tabIds: number[]) => {
+    setSelectedTabIds(tabIds);
+    setIsJoinDialogOpen(true);
+  };
 
   useEffect(() => {
     loadTabs();
@@ -490,7 +567,7 @@ export function TabsPanel() {
       area: string
     ) {
       if (area === "local" && "tabmaster-tabs-changed" in changes) {
-        loadTabs();
+        loadTabs(true);
       }
     }
     chrome.storage.onChanged.addListener(onStorageChange);
@@ -544,7 +621,7 @@ export function TabsPanel() {
             <Button
               variant="outline"
               size="sm"
-              onClick={loadTabs}
+              onClick={() => loadTabs()}
               disabled={isLoading}
             >
               <RefreshCw className={cn("size-4", isLoading && "animate-spin")} />
@@ -575,25 +652,36 @@ export function TabsPanel() {
             </p>
           </div>
         ) : (
-          <div className="space-y-5">
+          <div className="space-y-4">
+            {/* Ungrouped tabs */}
+            {ungrouped.length > 0 && (
+              <UngroupedSection
+                tabs={ungrouped}
+                onJoinRequest={handleJoinRequest}
+              />
+            )}
+
             {/* Tab groups */}
             {tabGroups.length > 0 && (
               <div className="space-y-2">
-                <p className="text-[10px] font-semibold tracking-wider text-muted-foreground px-1 uppercase">
-                  Groups · {tabGroups.length}
-                </p>
+                <div className="flex items-center justify-between px-1">
+                  <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+                    Groups
+                  </p>
+                  <span className="text-[10px] font-semibold text-muted-foreground">
+                    {tabGroups.length}
+                  </span>
+                </div>
                 {tabGroups.map((group) => (
                   <GroupCard
                     key={group.id}
                     group={group}
                     tabs={grouped.get(group.id) ?? []}
+                    onJoinRequest={handleJoinRequest}
                   />
                 ))}
               </div>
             )}
-
-            {/* Ungrouped tabs */}
-            <UngroupedSection tabs={ungrouped} />
           </div>
         )}
       </div>
@@ -606,6 +694,12 @@ export function TabsPanel() {
         isSaving={isSavingWindow}
         onConfirm={handleSaveWindow}
         onClose={() => setSaveWindowOpen(false)}
+      />
+
+      <JoinGroupDialog
+        tabIds={selectedTabIds}
+        isOpen={isJoinDialogOpen}
+        onClose={() => setIsJoinDialogOpen(false)}
       />
     </div>
   );

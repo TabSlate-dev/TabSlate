@@ -16,30 +16,38 @@ import {
   type TabGroupColor,
 } from "@/lib/chrome/tab-groups";
 import { useBookmarksStore } from "@/store/bookmarks-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import { generateId } from "@/lib/id";
 
 interface TabsState {
   openTabs: BrowserTab[];
   tabGroups: BrowserTabGroup[];
+  fullTitles: Record<number, string>;
   isLoading: boolean;
 
   // Load
-  loadTabs: () => Promise<void>;
+  loadTabs: (silent?: boolean) => Promise<void>;
 
   // Tab actions
   closeTab: (tabId: number) => Promise<void>;
   focusTab: (tabId: number, windowId: number) => Promise<void>;
+  ungroupSpecificTabs: (tabIds: number[]) => Promise<void>;
+  closeSpecificTabs: (tabIds: number[]) => Promise<void>;
+  moveTabsToGroup: (tabIds: number[], groupId: number) => Promise<void>;
 
   // Group actions
-  createGroup: (tabIds: number[], title: string, color: TabGroupColor) => Promise<void>;
+  createGroup: (tabIds: number[], title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
   updateGroup: (groupId: number, patch: { title?: string; color?: TabGroupColor; collapsed?: boolean }) => Promise<void>;
   dissolveGroup: (groupId: number) => Promise<void>;
 
   // Session actions
   saveWindowAsCollection: (name: string) => Promise<void>;
   saveGroupAsCollection: (groupId: number, name: string) => Promise<void>;
-  openCollectionAsGroup: (collectionId: string, title: string, color: TabGroupColor) => Promise<void>;
+  openCollectionAsGroup: (collectionId: string, title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
   openCollection: (collectionId: string) => Promise<void>;
+  
+  // Group actions
+  toggleGroupCompact: (groupId: number) => Promise<void>;
 }
 
 async function persistCollection(id: string, name: string, count: number) {
@@ -54,7 +62,7 @@ async function persistCollection(id: string, name: string, count: number) {
       {
         "tabmaster-collections": JSON.stringify([
           ...existing,
-          { id, name, icon: "bookmark", color: "blue", count },
+          { id, name, count, timestamp: Date.now() },
         ]),
       },
       r
@@ -62,21 +70,33 @@ async function persistCollection(id: string, name: string, count: number) {
   );
 }
 
+const getAutoGroupName = () => {
+  const now = new Date();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const min = String(now.getMinutes()).padStart(2, '0');
+  return `${mm}-${dd} ${hh}:${min}`;
+};
+
 export const useTabsStore = create<TabsState>((set, get) => ({
   openTabs: [],
   tabGroups: [],
+  fullTitles: {},
   isLoading: false,
 
   // -------------------------------------------------------------------------
   // Load
   // -------------------------------------------------------------------------
-  loadTabs: async () => {
-    set({ isLoading: true });
-    const [tabs, groups] = await Promise.all([
+  loadTabs: async (silent = false) => {
+    if (!silent) set({ isLoading: true });
+    const [tabs, groups, storage] = await Promise.all([
       getCurrentWindowTabs(),
       getCurrentWindowGroups(),
+      chrome.storage.local.get("tabmaster-full-titles"),
     ]);
-    set({ openTabs: tabs, tabGroups: groups, isLoading: false });
+    const fullTitles = (storage["tabmaster-full-titles"] || {}) as Record<number, string>;
+    set({ openTabs: tabs, tabGroups: groups, fullTitles, isLoading: false });
   },
 
   // -------------------------------------------------------------------------
@@ -91,24 +111,79 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   focusTab: async (tabId, windowId) => {
     await focusTab(tabId, windowId);
+    // Silent reload to update "active" state without unmounting components
+    await get().loadTabs(true);
+  },
+  
+  ungroupSpecificTabs: async (tabIds) => {
+    const { ungroupTabs } = await import("@/lib/chrome/tab-groups");
+    await ungroupTabs(tabIds);
+    await get().loadTabs(true);
+  },
+
+  closeSpecificTabs: async (tabIds) => {
+    const { closeTab } = await import("@/lib/chrome/tabs");
+    await Promise.all(tabIds.map((id) => closeTab(id)));
+    await get().loadTabs(true);
+  },
+
+  moveTabsToGroup: async (tabIds, groupId) => {
+    if (!tabIds.length) return;
+    await chrome.tabs.group({ tabIds: tabIds as [number, ...number[]], groupId });
+    await get().loadTabs(true);
   },
 
   // -------------------------------------------------------------------------
   // Group actions
   // -------------------------------------------------------------------------
-  createGroup: async (tabIds, title, color) => {
-    const groupId = await groupTabs(tabIds, title, color);
+  createGroup: async (tabIds, title, color, compact) => {
+    const { compactGroupTitles } = useWorkspaceStore.getState();
+    const isCompact = compact !== undefined ? compact : compactGroupTitles;
+    
+    let fullTitle = title.trim();
+    let chromeTitle = "";
+    
+    if (!fullTitle) {
+      fullTitle = getAutoGroupName();
+      chromeTitle = ""; // Empty as requested by user for Chrome display
+    } else {
+      chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
+    }
+
+    const groupId = await groupTabs(tabIds, chromeTitle, color);
+    
+    // Store full title for syncing later
+    const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
+    await chrome.storage.local.set({ "tabmaster-full-titles": currentTitles });
+
     // Reload so groupId fields on tabs are updated
     const [tabs, groups] = await Promise.all([
       getCurrentWindowTabs(),
       getCurrentWindowGroups(),
     ]);
-    set({ openTabs: tabs, tabGroups: groups });
+    set({ openTabs: tabs, tabGroups: groups, fullTitles: currentTitles });
     return;
   },
 
   updateGroup: async (groupId, patch) => {
-    const updated = await updateGroup(groupId, patch);
+    const { tabGroups, fullTitles } = get();
+    const group = tabGroups.find((g) => g.id === groupId);
+    let finalPatch = { ...patch };
+    
+    if (patch.title) {
+      // Store full title internally
+      const nextFullTitles = { ...fullTitles, [groupId]: patch.title };
+      await chrome.storage.local.set({ "tabmaster-full-titles": nextFullTitles });
+      
+      // If the group is currently compact (length 1), keep it compact in Chrome
+      if (group && group.title.length === 1 && patch.title.length > 1) {
+        finalPatch.title = patch.title[0] || "";
+      }
+      
+      set({ fullTitles: nextFullTitles });
+    }
+
+    const updated = await updateGroup(groupId, finalPatch);
     set((state) => ({
       tabGroups: state.tabGroups.map((g) =>
         g.id === groupId ? updated : g
@@ -178,19 +253,37 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     await persistCollection(collectionId, name, newBookmarks.length);
   },
 
-  openCollectionAsGroup: async (collectionId, title, color) => {
+  openCollectionAsGroup: async (collectionId, title, color, compact) => {
     const { bookmarks } = useBookmarksStore.getState();
     const urls = bookmarks
       .filter((b) => b.collectionId === collectionId)
       .map((b) => b.url);
     if (!urls.length) return;
-    await openAsTabGroup(urls, title, color);
+
+    const { compactGroupTitles } = useWorkspaceStore.getState();
+    const isCompact = compact !== undefined ? compact : compactGroupTitles;
+    
+    let fullTitle = title.trim();
+    let chromeTitle = "";
+    
+    if (!fullTitle) {
+      fullTitle = getAutoGroupName();
+      chromeTitle = "";
+    } else {
+      chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
+    }
+
+    const groupId = await openAsTabGroup(urls, chromeTitle, color);
+    
+    const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
+    await chrome.storage.local.set({ "tabmaster-full-titles": currentTitles });
+
     // Reload after tabs open
     const [tabs, groups] = await Promise.all([
       getCurrentWindowTabs(),
       getCurrentWindowGroups(),
     ]);
-    set({ openTabs: tabs, tabGroups: groups });
+    set({ openTabs: tabs, tabGroups: groups, fullTitles: currentTitles });
   },
 
   openCollection: async (collectionId) => {
@@ -199,5 +292,40 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       .filter((b) => b.collectionId === collectionId)
       .map((b) => b.url);
     await openUrls(urls);
+  },
+
+  toggleGroupCompact: async (groupId: number) => {
+    const { tabGroups } = get();
+    const group = tabGroups.find((g) => g.id === groupId);
+    if (!group) return;
+
+    const storage = await chrome.storage.local.get("tabmaster-full-titles");
+    const fullTitles = (storage["tabmaster-full-titles"] || {}) as Record<number, string>;
+    
+    const fullTitle = fullTitles[groupId];
+    
+    // If we don't have a full title, but the current title is long, then the current title IS the full title
+    if (!fullTitle && group.title.length > 1) {
+      fullTitles[groupId] = group.title;
+    }
+
+    const currentFullTitle = fullTitles[groupId] || group.title;
+    const isCurrentlyCompact = group.title.length === 1 && currentFullTitle.length > 1;
+    
+    // Toggle: if compact -> expand, if expanded -> compact
+    const nextTitle = isCurrentlyCompact ? currentFullTitle : (currentFullTitle[0] || "");
+
+    await updateGroup(groupId, { title: nextTitle });
+    
+    // Persist any new full titles
+    if (!fullTitles[groupId]) fullTitles[groupId] = currentFullTitle;
+    await chrome.storage.local.set({ "tabmaster-full-titles": fullTitles });
+
+    // Reload state
+    const [tabs, groups] = await Promise.all([
+      getCurrentWindowTabs(),
+      getCurrentWindowGroups(),
+    ]);
+    set({ openTabs: tabs, tabGroups: groups });
   },
 }));

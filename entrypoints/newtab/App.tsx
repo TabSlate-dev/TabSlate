@@ -8,7 +8,6 @@ import { FavoritesContent } from "@/components/dashboard/favorites-content";
 import { ArchiveContent } from "@/components/dashboard/archive-content";
 import { TrashContent } from "@/components/dashboard/trash-content";
 import { TabsPanel } from "@/components/dashboard/tabs-panel";
-import { GroupsPanel } from "@/components/dashboard/groups-panel";
 import { TabsRail } from "@/components/dashboard/tabs-rail";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { useBookmarksStore } from "@/store/bookmarks-store";
@@ -118,14 +117,6 @@ export default function App() {
               element={
                 <Layout title="Open Tabs">
                   <TabsPanel />
-                </Layout>
-              }
-            />
-            <Route
-              path="/groups"
-              element={
-                <Layout title="Groups">
-                  <GroupsPanel />
                 </Layout>
               }
             />

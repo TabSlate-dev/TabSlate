@@ -61,11 +61,13 @@ interface WorkspaceState {
   collections: Collection[];
   tags: Tag[];
   activeWorkspaceId: string;
+  compactGroupTitles: boolean;
 
   _hydrated: boolean;
   setHydrated: () => void;
 
   setActiveWorkspaceId: (id: string) => void;
+  setCompactGroupTitles: (val: boolean) => void;
 
   // Workspace CRUD
   createWorkspace: (name: string, color: string) => Workspace;
@@ -96,11 +98,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       collections: [],
       tags: [],
       activeWorkspaceId: "",
+      compactGroupTitles: true,
 
       _hydrated: false,
       setHydrated: () => set({ _hydrated: true }),
 
       setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
+      setCompactGroupTitles: (val) => set({ compactGroupTitles: val }),
 
       // ── Workspaces ────────────────────────────────────────────────────────
       createWorkspace: (name, color) => {
@@ -216,6 +220,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           collections: state.collections,
           tags: state.tags,
           activeWorkspaceId: state.activeWorkspaceId,
+          compactGroupTitles: state.compactGroupTitles,
         } as WorkspaceState),
       // Seed a default workspace on first run
       onRehydrateStorage: () => (state) => {
@@ -272,6 +277,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
           collections: data.collections ?? [],
           tags: data.tags ?? [],
           activeWorkspaceId: data.activeWorkspaceId ?? "",
+          compactGroupTitles: data.compactGroupTitles ?? true,
         });
       }
     }

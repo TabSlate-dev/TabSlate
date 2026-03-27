@@ -16,6 +16,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -83,6 +84,9 @@ function WorkspaceDialog({
           <DialogTitle>
             {initial ? "Edit Workspace" : "New Workspace"}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {initial ? "Update your workspace name and color." : "Create a new workspace to organize your collections and tags."}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
           <div className="space-y-1.5">

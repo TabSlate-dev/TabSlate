@@ -12,4 +12,10 @@ export default defineConfig({
       newtab: "newtab.html",
     },
   },
+  vite: () => ({
+    build: {
+      sourcemap: true,
+    },
+  }),
 });
+
