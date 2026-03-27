@@ -119,14 +119,15 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           position: 0,
           isDefault: true,
         };
-        set((s) => ({
-          workspaces: [...s.workspaces, ws],
-          collections: [...s.collections, defaultCol],
-        }));
-        // Auto-select if first workspace
-        if (state.workspaces.length === 0) {
-          set({ activeWorkspaceId: ws.id });
-        }
+        const updatedWorkspaces = [...state.workspaces, ws];
+        const updatedCollections = [...state.collections, defaultCol];
+        const nextActiveId = state.workspaces.length === 0 ? ws.id : state.activeWorkspaceId;
+
+        set({
+          workspaces: updatedWorkspaces,
+          collections: updatedCollections,
+          activeWorkspaceId: nextActiveId,
+        });
         return ws;
       },
 
@@ -219,7 +220,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       // Seed a default workspace on first run
       onRehydrateStorage: () => (state) => {
         if (state) {
-          state.setHydrated();
           if (state.workspaces.length === 0) {
             state.createWorkspace("My Workspace", "blue");
           } else {
@@ -241,6 +241,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
               }));
             }
           }
+          state.setHydrated();
         }
       },
     }
@@ -258,12 +259,21 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const parsed = typeof newValue === "string" ? JSON.parse(newValue) : newValue;
     const data = parsed?.state;
     if (data) {
-      useWorkspaceStore.setState({
-        workspaces: data.workspaces ?? [],
-        collections: data.collections ?? [],
-        tags: data.tags ?? [],
-        activeWorkspaceId: data.activeWorkspaceId ?? "",
-      });
+      const current = useWorkspaceStore.getState();
+      const needsUpdate =
+        JSON.stringify(data.workspaces) !== JSON.stringify(current.workspaces) ||
+        JSON.stringify(data.collections) !== JSON.stringify(current.collections) ||
+        JSON.stringify(data.tags) !== JSON.stringify(current.tags) ||
+        data.activeWorkspaceId !== current.activeWorkspaceId;
+
+      if (needsUpdate) {
+        useWorkspaceStore.setState({
+          workspaces: data.workspaces ?? [],
+          collections: data.collections ?? [],
+          tags: data.tags ?? [],
+          activeWorkspaceId: data.activeWorkspaceId ?? "",
+        });
+      }
     }
   } catch {
     // ignore malformed data

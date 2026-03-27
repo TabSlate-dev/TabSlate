@@ -285,11 +285,19 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const parsed = typeof newValue === "string" ? JSON.parse(newValue) : newValue;
     const data = parsed?.state;
     if (data) {
-      useBookmarksStore.setState({
-        bookmarks: data.bookmarks ?? [],
-        archivedBookmarks: data.archivedBookmarks ?? [],
-        trashedBookmarks: data.trashedBookmarks ?? [],
-      });
+      const current = useBookmarksStore.getState();
+      const needsUpdate =
+        JSON.stringify(data.bookmarks) !== JSON.stringify(current.bookmarks) ||
+        JSON.stringify(data.archivedBookmarks) !== JSON.stringify(current.archivedBookmarks) ||
+        JSON.stringify(data.trashedBookmarks) !== JSON.stringify(current.trashedBookmarks);
+
+      if (needsUpdate) {
+        useBookmarksStore.setState({
+          bookmarks: data.bookmarks ?? [],
+          archivedBookmarks: data.archivedBookmarks ?? [],
+          trashedBookmarks: data.trashedBookmarks ?? [],
+        });
+      }
     }
   } catch {
     // ignore malformed data
