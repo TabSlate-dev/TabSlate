@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useTabsStore } from "@/store/tabs-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,12 +42,18 @@ import {
   Save,
   Plus,
   BrushCleaning,
+  GripVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { storageService } from "@/lib/storage";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { Switch } from "@/components/ui/switch";
 import { TabRow } from "./tab-row";
+import {
+  useTabsDndContext,
+  type TabDragData,
+  type TabGroupDragData,
+} from "./tabs-dnd-provider";
 
 // ---------------------------------------------------------------------------
 // Join Group Dialog
@@ -157,6 +164,42 @@ function ColorPicker({
 }
 
 // ---------------------------------------------------------------------------
+// Draggable tab wrapper
+// ---------------------------------------------------------------------------
+function DraggableTab({
+  tab,
+  children,
+}: {
+  tab: BrowserTab;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `tab-${tab.id}`,
+    data: {
+      type: "tab",
+      tabId: tab.id,
+      fromGroupId: tab.groupId,
+      title: tab.title,
+      url: tab.url,
+      favIconUrl: tab.favIconUrl,
+    } as TabDragData,
+  });
+  return (
+    <div ref={setNodeRef} className={cn("flex items-stretch", isDragging && "opacity-40")}>
+      <span
+        {...attributes}
+        {...listeners}
+        className="w-5 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none shrink-0 text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
+        title="Drag to move tab"
+      >
+        <GripVertical className="size-3" />
+      </span>
+      <div className="flex-1 min-w-0">{children}</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab group card
 // ---------------------------------------------------------------------------
 interface GroupCardProps {
@@ -179,6 +222,31 @@ function GroupCard({ group, tabs, onJoinRequest }: {
   const [isSaving, setIsSaving] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const nameRef = useRef<HTMLInputElement>(null);
+
+  // Drag handle for dragging the whole group
+  const {
+    attributes: dragAttrs,
+    listeners: dragListeners,
+    setNodeRef: setDragRef,
+    isDragging: isGroupDragging,
+  } = useDraggable({
+    id: `tab-group-${group.id}`,
+    data: {
+      type: "tab-group",
+      groupId: group.id,
+      groupName: displayTitle,
+      groupColor: group.color,
+      tabs,
+    } as TabGroupDragData,
+  });
+
+  // Drop zone for receiving dragged tabs into this group
+  const { setNodeRef: setDropRef, isOver: isTabOver } = useDroppable({
+    id: `group-drop-${group.id}`,
+  });
+
+  const { activeData } = useTabsDndContext();
+  const showDropIndicator = isTabOver && activeData?.type === "tab";
 
   // We don't need the local useeffect anymore as it's in the store
 
@@ -213,11 +281,27 @@ function GroupCard({ group, tabs, onJoinRequest }: {
 
   return (
     <div
-      className="rounded-lg border overflow-hidden"
+      ref={setDropRef}
+      className={cn(
+        "rounded-lg border overflow-hidden transition-colors",
+        isGroupDragging && "opacity-50",
+        showDropIndicator && "border-primary/50 bg-primary/5"
+      )}
       style={{ borderLeftColor: groupColor, borderLeftWidth: 3 }}
     >
       {/* Group header */}
       <div className="flex items-center gap-2 px-3 py-2.5 bg-card">
+        {/* Drag handle for the group */}
+        <span
+          ref={setDragRef}
+          {...dragAttrs}
+          {...dragListeners}
+          className="shrink-0 cursor-grab active:cursor-grabbing touch-none text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
+          title="Drag to save as group"
+        >
+          <GripVertical className="size-4" />
+        </span>
+
         <button
           onClick={() => setExpanded((v) => !v)}
           className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
@@ -347,16 +431,20 @@ function GroupCard({ group, tabs, onJoinRequest }: {
       {/* Tabs */}
       {expanded && (
         <div className="px-2 pb-2 pt-1 bg-card/50 space-y-0.5">
+          {showDropIndicator && (
+            <div className="h-0.5 rounded-full bg-primary/60 mx-1 mb-1" />
+          )}
           {tabs.map((tab) => (
-            <TabRow
-              key={tab.id}
-              tab={tab}
-              showCheckbox
-              selected={selected.has(tab.id)}
-              onSelect={(checked) => toggleSelect(tab.id, checked)}
-              onUngroup={() => ungroupSpecificTabs([tab.id])}
-              onJoinGroup={() => onJoinRequest([tab.id])}
-            />
+            <DraggableTab key={tab.id} tab={tab}>
+              <TabRow
+                tab={tab}
+                showCheckbox
+                selected={selected.has(tab.id)}
+                onSelect={(checked) => toggleSelect(tab.id, checked)}
+                onUngroup={() => ungroupSpecificTabs([tab.id])}
+                onJoinGroup={() => onJoinRequest([tab.id])}
+              />
+            </DraggableTab>
           ))}
         </div>
       )}
@@ -420,15 +508,16 @@ function UngroupedSection({ tabs, onJoinRequest }: {
 
       <div className="rounded-lg border bg-card divide-y divide-border/50">
         {tabs.map((tab) => (
-          <TabRow
-            key={tab.id}
-            tab={tab}
-            showCheckbox
-            selected={selected.has(tab.id)}
-            onSelect={(checked) => toggleSelect(tab.id, checked)}
-            onJoinGroup={() => onJoinRequest([tab.id])}
-            isUngrouped
-          />
+          <DraggableTab key={tab.id} tab={tab}>
+            <TabRow
+              tab={tab}
+              showCheckbox
+              selected={selected.has(tab.id)}
+              onSelect={(checked) => toggleSelect(tab.id, checked)}
+              onJoinGroup={() => onJoinRequest([tab.id])}
+              isUngrouped
+            />
+          </DraggableTab>
         ))}
       </div>
 

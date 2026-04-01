@@ -1,5 +1,6 @@
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
+import { TabsDndProvider } from "@/components/dashboard/tabs-dnd-provider";
 import { WorkspaceRail } from "@/components/dashboard/workspace-rail";
 import { BookmarksSidebar } from "@/components/dashboard/sidebar";
 import { BookmarksHeader } from "@/components/dashboard/header";
@@ -79,7 +80,8 @@ export default function App() {
     <ThemeProvider>
       <StoreGate>
         <HashRouter>
-          <Routes>
+          <TabsDndProvider>
+            <Routes>
             <Route
               path="/"
               element={
@@ -120,7 +122,8 @@ export default function App() {
                 </Layout>
               }
             />
-          </Routes>
+            </Routes>
+          </TabsDndProvider>
         </HashRouter>
       </StoreGate>
     </ThemeProvider>

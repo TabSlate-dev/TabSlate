@@ -1,4 +1,6 @@
 import * as React from "react";
+import { useDroppable } from "@dnd-kit/core";
+import { useTabsDndContext } from "@/components/dashboard/tabs-dnd-provider";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -84,7 +86,69 @@ const navItems = [
   { icon: Heart, label: "Favorites", href: "/favorites" },
   { icon: Archive, label: "Archive", href: "/archive" },
   { icon: Trash2, label: "Trash", href: "/trash" },
-];
+] as const;
+
+// ---------------------------------------------------------------------------
+// DroppableZone — generic drop target wrapper (collections & groups section).
+// Owns its DnD subscriptions so BookmarksSidebar never re-renders during drag.
+// ---------------------------------------------------------------------------
+
+function DroppableZone({ id, children }: { id: string; children: React.ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  const { activeData } = useTabsDndContext();
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "rounded-md",
+        isOver && activeData?.type === "tab-group" && "ring-1 ring-primary/40 bg-primary/5"
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SectionHeader — collapsible section label with optional right-side actions.
+// ---------------------------------------------------------------------------
+
+interface SectionHeaderProps {
+  label: string;
+  open: boolean;
+  onToggle: () => void;
+  actions?: React.ReactNode;
+}
+
+function SectionHeader({ label, open, onToggle, actions }: SectionHeaderProps) {
+  return (
+    <SidebarGroupLabel className="flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wider text-muted-foreground">
+      <button onClick={onToggle} className="flex items-center gap-1.5 cursor-pointer">
+        <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} />
+        {label}
+      </button>
+      {actions}
+    </SidebarGroupLabel>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AddItemButton — dashed "add" button at the bottom of a sidebar section.
+// ---------------------------------------------------------------------------
+
+function AddItemButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <SidebarMenuItem className="mt-2 px-1">
+      <button
+        onClick={onClick}
+        className="w-full h-8 flex items-center justify-center gap-2 rounded-md border border-dashed border-muted-foreground/30 hover:border-muted-foreground/60 hover:bg-muted/50 text-muted-foreground transition-all group"
+      >
+        <Plus className="size-3.5 group-hover:scale-110 transition-transform" />
+        <span className="text-xs font-medium">{label}</span>
+      </button>
+    </SidebarMenuItem>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // CollectionDialog
@@ -97,12 +161,7 @@ interface CollectionDialogProps {
   onSubmit: (name: string, icon: string) => void;
 }
 
-function CollectionDialog({
-  open,
-  onOpenChange,
-  initial,
-  onSubmit,
-}: CollectionDialogProps) {
+function CollectionDialog({ open, onOpenChange, initial, onSubmit }: CollectionDialogProps) {
   const [name, setName] = React.useState(initial?.name ?? "");
   const [icon, setIcon] = React.useState(initial?.icon ?? "folder");
 
@@ -123,11 +182,11 @@ function CollectionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xs">
         <DialogHeader>
-          <DialogTitle>
-            {initial ? "Edit Collection" : "New Collection"}
-          </DialogTitle>
+          <DialogTitle>{initial ? "Edit Collection" : "New Collection"}</DialogTitle>
           <DialogDescription className="sr-only">
-            {initial ? "Edit the name and icon of this collection." : "Create a new collection to organize your bookmarks."}
+            {initial
+              ? "Edit the name and icon of this collection."
+              : "Create a new collection to organize your bookmarks."}
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
@@ -164,12 +223,7 @@ function CollectionDialog({
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={!name.trim()}>
@@ -241,9 +295,7 @@ function TagDialog({ open, onOpenChange, onSubmit }: TagDialogProps) {
                     className={cn(
                       "size-7 rounded-full transition-all",
                       bgColor.replace("/10", ""),
-                      color === c
-                        ? "ring-2 ring-primary ring-offset-2"
-                        : "opacity-50 hover:opacity-100"
+                      color === c ? "ring-2 ring-primary ring-offset-2" : "opacity-50 hover:opacity-100"
                     )}
                   />
                 );
@@ -251,12 +303,7 @@ function TagDialog({ open, onOpenChange, onSubmit }: TagDialogProps) {
             </div>
           </div>
           <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" size="sm" disabled={!name.trim()}>
@@ -286,7 +333,6 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
   const [isCompact, setIsCompact] = React.useState(true);
 
   const { openTabs, loadTabs } = useTabsStore();
-  const { compactGroupTitles, setCompactGroupTitles } = useWorkspaceStore();
 
   React.useEffect(() => {
     if (open) {
@@ -314,6 +360,8 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
     onSubmit(name.trim(), color, selectedTabs, isCompact);
   };
 
+  const allSelected = selectedTabIds.size === openTabs.length;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-4xl max-h-[85vh] flex flex-col p-0 overflow-hidden gap-0 border-none shadow-2xl">
@@ -332,7 +380,6 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
               </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-muted/20 p-4 rounded-2xl border border-border/50">
-                {/* Name */}
                 <div className="space-y-2">
                   <label className="text-xs font-medium text-muted-foreground ml-1">
                     Group Name
@@ -346,7 +393,6 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
                   />
                 </div>
 
-                {/* Color */}
                 <div className="space-y-4">
                   <label className="text-xs font-medium text-muted-foreground ml-1">
                     Theme Color
@@ -370,17 +416,12 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
                 </div>
               </div>
 
-              {/* Compact Title Toggle (Right Aligned Bottom Row) */}
               <div className="flex justify-end pt-2">
                 <div className="flex items-center gap-2 bg-muted/40 px-3 py-1.5 rounded-full border border-border/50">
                   <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
                     Compact Name
                   </span>
-                  <Switch
-                    checked={isCompact}
-                    onCheckedChange={setIsCompact}
-                    className="scale-90"
-                  />
+                  <Switch checked={isCompact} onCheckedChange={setIsCompact} className="scale-90" />
                 </div>
               </div>
             </div>
@@ -396,13 +437,12 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
                 {openTabs.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (selectedTabIds.size === openTabs.length) setSelectedTabIds(new Set());
-                      else setSelectedTabIds(new Set(openTabs.map(t => t.id)));
-                    }}
+                    onClick={() =>
+                      setSelectedTabIds(allSelected ? new Set() : new Set(openTabs.map((t) => t.id)))
+                    }
                     className="text-xs font-semibold text-primary hover:text-primary/80 transition-all hover:underline"
                   >
-                    {selectedTabIds.size === openTabs.length ? "Deselect All" : "Select All"}
+                    {allSelected ? "Deselect All" : "Select All"}
                   </button>
                 )}
               </div>
@@ -419,12 +459,7 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
                       tab={tab}
                       showCheckbox
                       selected={selectedTabIds.has(tab.id)}
-                      onSelect={(checked) => setSelectedTabIds(prev => {
-                        const next = new Set(prev);
-                        if (checked) next.add(tab.id);
-                        else next.delete(tab.id);
-                        return next;
-                      })}
+                      onSelect={(checked) => toggleTab(tab.id, checked)}
                       hideActions
                       variant="card"
                     />
@@ -436,12 +471,7 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
 
           <DialogFooter className="p-4 border-t bg-muted/30 shrink-0 backdrop-blur-sm">
             <div className="flex items-center gap-3 w-full sm:justify-end">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => onOpenChange(false)}
-              >
+              <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
               <Button
@@ -464,9 +494,7 @@ function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) {
 // BookmarksSidebar
 // ---------------------------------------------------------------------------
 
-export function BookmarksSidebar({
-  ...props
-}: React.ComponentProps<typeof Sidebar>) {
+export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { pathname } = useLocation();
   const [collectionsOpen, setCollectionsOpen] = React.useState(true);
   const [groupsOpen, setGroupsOpen] = React.useState(true);
@@ -475,33 +503,18 @@ export function BookmarksSidebar({
   const [newTagOpen, setNewTagOpen] = React.useState(false);
   const [newGroupOpen, setNewGroupOpen] = React.useState(false);
 
-  const {
-    selectedCollection,
-    setSelectedCollection,
-    selectedTags,
-    toggleTag,
-    clearTags,
-    bookmarks,
-  } = useBookmarksStore();
+  const { selectedCollection, setSelectedCollection, selectedTags, toggleTag, clearTags, bookmarks } =
+    useBookmarksStore();
   const { groups, deleteGroup } = useGroupsStore();
-  const {
-    collections,
-    tags,
-    activeWorkspaceId,
-    createCollection,
-    deleteCollection,
-    createTag,
-    deleteTag,
-  } = useWorkspaceStore();
+  const { collections, tags, activeWorkspaceId, createCollection, deleteCollection, createTag, deleteTag } =
+    useWorkspaceStore();
 
   const isHomePage = pathname === "/";
 
-  // Collections for the active workspace
   const workspaceCollections = collections
     .filter((c) => c.workspaceId === activeWorkspaceId)
     .sort((a, b) => a.position - b.position);
 
-  // Compute bookmark count per collection
   function countFor(collectionId: string): number {
     if (collectionId === "all") {
       const wsIds = new Set(workspaceCollections.map((c) => c.id));
@@ -516,127 +529,100 @@ export function BookmarksSidebar({
         <SidebarHeader className="px-4 pt-4 pb-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input
-              placeholder="Search..."
-              className="pl-9 h-9 bg-background text-sm"
-            />
+            <Input placeholder="Search..." className="pl-9 h-9 bg-background text-sm" />
           </div>
         </SidebarHeader>
 
         <SidebarContent className="px-3 pt-3">
           {/* Collections */}
           <SidebarGroup className="p-0">
-            <SidebarGroupLabel className="flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wider text-muted-foreground">
-              <button
-                onClick={() => setCollectionsOpen(!collectionsOpen)}
-                className="flex items-center gap-1.5 cursor-pointer"
-              >
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 transition-transform",
-                    !collectionsOpen && "-rotate-90"
-                  )}
-                />
-                COLLECTIONS
-              </button>
-              <button
-                onClick={() => setNewCollectionOpen(true)}
-                className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Plus className="size-3.5" />
-              </button>
-            </SidebarGroupLabel>
+            <SectionHeader
+              label="COLLECTIONS"
+              open={collectionsOpen}
+              onToggle={() => setCollectionsOpen((v) => !v)}
+              actions={
+                <button
+                  onClick={() => setNewCollectionOpen(true)}
+                  className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Plus className="size-3.5" />
+                </button>
+              }
+            />
 
             {collectionsOpen && (
               <SidebarGroupContent>
                 <SidebarMenu className="mt-1">
                   {/* "All" virtual collection */}
-                  {(() => {
-                    const isActive = isHomePage && selectedCollection === "all";
-                    return (
-                      <SidebarMenuItem key="all">
-                        <SidebarMenuButton
-                          asChild
-                          isActive={isActive}
-                          className="h-9"
+                  <DroppableZone id="sidebar-collection-all">
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={isHomePage && selectedCollection === "all"}
+                        className="h-9"
+                      >
+                        <Link
+                          to="/"
+                          onClick={() => {
+                            setSelectedCollection("all");
+                            clearTags();
+                          }}
                         >
-                          <Link
-                            to="/"
-                            onClick={() => {
-                              setSelectedCollection("all");
-                              clearTags();
-                            }}
-                          >
-                            <Bookmark className="size-4" />
-                            <span className="flex-1 text-sm">All Bookmarks</span>
-                            <span className="text-muted-foreground text-xs">
-                              {countFor("all")}
-                            </span>
-                            {isActive && (
-                              <ChevronRight className="size-3.5 text-muted-foreground opacity-60" />
-                            )}
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })()}
+                          <Bookmark className="size-4" />
+                          <span className="flex-1 text-sm">All Bookmarks</span>
+                          <span className="text-muted-foreground text-xs">{countFor("all")}</span>
+                          {isHomePage && selectedCollection === "all" && (
+                            <ChevronRight className="size-3.5 text-muted-foreground opacity-60" />
+                          )}
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </DroppableZone>
 
                   {workspaceCollections.map((col) => {
-                    const isActive =
-                      isHomePage && selectedCollection === col.id;
+                    const isActive = isHomePage && selectedCollection === col.id;
                     return (
-                      <SidebarMenuItem key={col.id}>
-                        <SidebarMenuButton
-                          asChild
-                          isActive={isActive}
-                          className="h-9 group/col"
-                        >
-                          <Link
-                            to="/"
-                            onClick={() => {
-                              setSelectedCollection(col.id);
-                              clearTags();
-                            }}
-                          >
-                            <CollectionIcon icon={col.icon} />
-                            <span className="flex-1 text-sm">{col.name}</span>
-                            <span className="text-muted-foreground text-xs">
-                              {countFor(col.id)}
-                            </span>
-                            {!col.isDefault && (
-                              <button
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  deleteCollection(col.id);
-                                }}
-                                className="opacity-0 group-hover/col:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                              >
-                                <Trash className="size-3" />
-                              </button>
-                            )}
-                            {isActive && col.isDefault && (
-                              <ChevronRight className="size-3.5 text-muted-foreground opacity-60" />
-                            )}
-                            {isActive && !col.isDefault && (
-                              <ChevronRight className="size-3.5 text-muted-foreground opacity-60 group-hover/col:hidden" />
-                            )}
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
+                      <DroppableZone key={col.id} id={`sidebar-collection-${col.id}`}>
+                        <SidebarMenuItem>
+                          <SidebarMenuButton asChild isActive={isActive} className="h-9 group/col">
+                            <Link
+                              to="/"
+                              onClick={() => {
+                                setSelectedCollection(col.id);
+                                clearTags();
+                              }}
+                            >
+                              <CollectionIcon icon={col.icon} />
+                              <span className="flex-1 text-sm">{col.name}</span>
+                              <span className="text-muted-foreground text-xs">{countFor(col.id)}</span>
+                              {!col.isDefault && (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    deleteCollection(col.id);
+                                  }}
+                                  className="opacity-0 group-hover/col:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                                >
+                                  <Trash className="size-3" />
+                                </button>
+                              )}
+                              {isActive && (
+                                <ChevronRight
+                                  className={cn(
+                                    "size-3.5 text-muted-foreground opacity-60",
+                                    !col.isDefault && "group-hover/col:hidden"
+                                  )}
+                                />
+                              )}
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      </DroppableZone>
                     );
                   })}
 
-                  {/* Add Collection Button */}
-                  <SidebarMenuItem className="mt-2 px-1">
-                    <button
-                      onClick={() => setNewCollectionOpen(true)}
-                      className="w-full h-8 flex items-center justify-center gap-2 rounded-md border border-dashed border-muted-foreground/30 hover:border-muted-foreground/60 hover:bg-muted/50 text-muted-foreground transition-all group"
-                    >
-                      <Plus className="size-3.5 group-hover:scale-110 transition-transform" />
-                      <span className="text-xs font-medium">Add Collection</span>
-                    </button>
-                  </SidebarMenuItem>
+                  <AddItemButton label="Add Collection" onClick={() => setNewCollectionOpen(true)} />
                 </SidebarMenu>
               </SidebarGroupContent>
             )}
@@ -644,117 +630,84 @@ export function BookmarksSidebar({
 
           {/* Groups */}
           <SidebarGroup className="p-0">
-            <SidebarGroupLabel className="flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wider text-muted-foreground">
-              <button
-                onClick={() => setGroupsOpen(!groupsOpen)}
-                className="flex items-center gap-1.5 cursor-pointer"
-              >
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 transition-transform",
-                    !groupsOpen && "-rotate-90"
-                  )}
-                />
-                GROUPS
-              </button>
-            </SidebarGroupLabel>
+            <SectionHeader
+              label="GROUPS"
+              open={groupsOpen}
+              onToggle={() => setGroupsOpen((v) => !v)}
+            />
+
             {groupsOpen && (
               <SidebarGroupContent>
-                <SidebarMenu className="mt-1">
-                  {groups.length === 0 && (
-                    <p className="text-xs text-muted-foreground px-1 py-1">
-                      No saved groups
-                    </p>
-                  )}
-                  {groups.map((group) => (
-                    <SidebarMenuItem key={group.id}>
-                      <SidebarMenuButton
-                        asChild
-                        className="h-9 group/groupitem"
-                      >
-                        <div className="flex items-center gap-2 px-2 w-full">
-                          <span
-                            className="size-2.5 rounded-full shrink-0"
-                            style={{
-                              backgroundColor: TAB_GROUP_COLORS[group.color],
-                            }}
-                          />
-                          <span className="flex-1 truncate text-sm">
-                            {group.name}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              deleteGroup(group.id);
-                            }}
-                            className="opacity-0 group-hover/groupitem:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                          >
-                            <Trash className="size-3" />
-                          </button>
-                        </div>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                <DroppableZone id="sidebar-groups">
+                  <SidebarMenu className="mt-1">
+                    {groups.length === 0 && (
+                      <p className="text-xs text-muted-foreground px-1 py-1">No saved groups</p>
+                    )}
+                    {groups.map((group) => (
+                      <SidebarMenuItem key={group.id}>
+                        <SidebarMenuButton asChild className="h-9 group/groupitem">
+                          <div className="flex items-center gap-2 px-2 w-full">
+                            <span
+                              className="size-2.5 rounded-full shrink-0"
+                              style={{ backgroundColor: TAB_GROUP_COLORS[group.color] }}
+                            />
+                            <span className="flex-1 truncate text-sm">{group.name}</span>
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                deleteGroup(group.id);
+                              }}
+                              className="opacity-0 group-hover/groupitem:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                            >
+                              <Trash className="size-3" />
+                            </button>
+                          </div>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
 
-                  {/* Add Group Button */}
-                  <SidebarMenuItem className="mt-2 px-1">
-                    <button
-                      onClick={() => setNewGroupOpen(true)}
-                      className="w-full h-8 flex items-center justify-center gap-2 rounded-md border border-dashed border-muted-foreground/30 hover:border-muted-foreground/60 hover:bg-muted/50 text-muted-foreground transition-all group"
-                    >
-                      <Plus className="size-3.5 group-hover:scale-110 transition-transform" />
-                      <span className="text-xs font-medium">Add Group</span>
-                    </button>
-                  </SidebarMenuItem>
-                </SidebarMenu>
+                    <AddItemButton label="Add Group" onClick={() => setNewGroupOpen(true)} />
+                  </SidebarMenu>
+                </DroppableZone>
               </SidebarGroupContent>
             )}
           </SidebarGroup>
 
-
           {/* Tags */}
           <SidebarGroup className="p-0">
-            <SidebarGroupLabel className="flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wider text-muted-foreground">
-              <button
-                onClick={() => setTagsOpen(!tagsOpen)}
-                className="flex items-center gap-1.5 cursor-pointer"
-              >
-                <ChevronDown
-                  className={cn(
-                    "size-3.5 transition-transform",
-                    !tagsOpen && "-rotate-90"
+            <SectionHeader
+              label="TAGS"
+              open={tagsOpen}
+              onToggle={() => setTagsOpen((v) => !v)}
+              actions={
+                <div className="ml-auto flex items-center gap-1">
+                  {selectedTags.length > 0 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        clearTags();
+                      }}
+                      className="text-[10px] text-muted-foreground hover:text-foreground"
+                    >
+                      Clear
+                    </button>
                   )}
-                />
-                TAGS
-              </button>
-              <div className="ml-auto flex items-center gap-1">
-                {selectedTags.length > 0 && (
                   <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      clearTags();
-                    }}
-                    className="text-[10px] text-muted-foreground hover:text-foreground"
+                    onClick={() => setNewTagOpen(true)}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    Clear
+                    <Plus className="size-3.5" />
                   </button>
-                )}
-                <button
-                  onClick={() => setNewTagOpen(true)}
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <Plus className="size-3.5" />
-                </button>
-              </div>
-            </SidebarGroupLabel>
+                </div>
+              }
+            />
+
             {tagsOpen && (
               <SidebarGroupContent>
                 <div className="flex flex-wrap gap-1.5 mt-2 px-1">
                   {tags.length === 0 && (
-                    <p className="text-xs text-muted-foreground w-full py-1">
-                      No tags yet
-                    </p>
+                    <p className="text-xs text-muted-foreground w-full py-1">No tags yet</p>
                   )}
                   {tags.map((tag) => (
                     <button
@@ -762,9 +715,7 @@ export function BookmarksSidebar({
                       onClick={() => toggleTag(tag.id)}
                       className={cn(
                         "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium transition-colors group/tag",
-                        selectedTags.includes(tag.id)
-                          ? "bg-primary text-primary-foreground"
-                          : tag.color
+                        selectedTags.includes(tag.id) ? "bg-primary text-primary-foreground" : tag.color
                       )}
                     >
                       <Tag className="size-3" />
@@ -792,11 +743,7 @@ export function BookmarksSidebar({
               <SidebarMenu>
                 {navItems.map((item) => (
                   <SidebarMenuItem key={item.label}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={pathname === item.href}
-                      className="h-9"
-                    >
+                    <SidebarMenuButton asChild isActive={pathname === item.href} className="h-9">
                       <Link to={item.href}>
                         <item.icon className="size-4" />
                         <span className="text-sm">{item.label}</span>

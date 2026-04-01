@@ -1,6 +1,7 @@
 import * as React from "react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
+import { normalizeUrl, findDuplicateBookmark } from "@/lib/bookmark-utils";
 
 export interface DropNotification {
   text: string;
@@ -24,10 +25,6 @@ interface UseTabDragDropResult {
 
 const DRAG_TYPE = "application/tabmaster-tab";
 
-/** Remove trailing slash and lowercase for URL comparison */
-function normalizeUrl(url: string): string {
-  return url.toLowerCase().replace(/\/$/, "");
-}
 
 export function useTabDragDrop(): UseTabDragDropResult {
   const { addBookmark, bookmarks, selectedCollection, setSelectedCollection } =
@@ -98,8 +95,7 @@ export function useTabDragDrop(): UseTabDragDropResult {
 
       // ── Duplicate detection ──────────────────────────────────────────────
       if (Array.isArray(bookmarks)) {
-        const normalized = normalizeUrl(url);
-        const existing = bookmarks.find((b) => b?.url && normalizeUrl(b.url) === normalized);
+        const existing = findDuplicateBookmark(bookmarks, url);
 
         if (existing) {
           console.log("TabSlate: Duplicate tab detected", { url, existingId: existing.id });
