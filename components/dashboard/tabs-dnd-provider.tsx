@@ -18,6 +18,8 @@ import type { BrowserTab } from "@/lib/chrome/tabs";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { FaviconImage } from "@/components/ui/favicon-image";
+import { AlertCircle } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export type TabDragData = {
   type: "tab";
@@ -50,12 +52,18 @@ export function useTabsDndContext() {
 
 export function TabsDndProvider({ children }: { children: React.ReactNode }) {
   const [activeData, setActiveData] = useState<DragData | null>(null);
+  const [notification, setNotification] = useState<{ text: string; type: "duplicate" } | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
     })
   );
+
+  const showNotification = (text: string, durationMs = 3000) => {
+    setNotification({ text, type: "duplicate" });
+    setTimeout(() => setNotification(null), durationMs);
+  };
 
   const handleDragStart = (event: DragStartEvent) => {
     setActiveData((event.active.data.current as DragData) ?? null);
@@ -78,12 +86,81 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
 
     const dropId = over.id as string;
 
+    const handleDropToCollection = (
+      collectionDropId: string,
+      tabsToDrop: { id: number; title: string; url: string; favIconUrl: string }[]
+    ) => {
+      const collectionId = collectionDropId.replace("sidebar-collection-", "");
+      let targetCollectionId = collectionId;
+      if (collectionId === "all") {
+        const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
+        const defaultCol = collections.find(
+          (c) => c.workspaceId === activeWorkspaceId && c.isDefault
+        );
+        targetCollectionId = defaultCol?.id || "";
+      }
+
+      if (targetCollectionId) {
+        const now = new Date().toISOString();
+        const { bookmarks: existing } = useBookmarksStore.getState();
+
+        const duplicates: number[] = [];
+        const existingCollectionIds = new Set<string>();
+        const uniqueTabs: typeof tabsToDrop = [];
+
+        for (const tab of tabsToDrop) {
+          const existingBookmark = findDuplicateBookmark(existing, tab.url);
+          if (existingBookmark) {
+            duplicates.push(tab.id);
+            if (existingBookmark.collectionId) {
+              existingCollectionIds.add(existingBookmark.collectionId);
+            }
+          } else {
+            uniqueTabs.push(tab);
+          }
+        }
+
+        if (duplicates.length > 0) {
+          useTabsStore.getState().setHighlightedTabs(duplicates);
+          useWorkspaceStore.getState().setHighlightedCollectionIds(Array.from(existingCollectionIds));
+          showNotification(`Duplicate tab${duplicates.length > 1 ? "s" : ""} detected`);
+        }
+
+        const newBookmarks = uniqueTabs.map((tab) => ({
+          id: generateId(),
+          title: tab.title,
+          url: tab.url,
+          favicon: tab.favIconUrl || "",
+          description: "",
+          collectionId: targetCollectionId,
+          tags: [] as string[],
+          createdAt: now,
+          isFavorite: false,
+        }));
+
+        if (newBookmarks.length > 0) {
+          useBookmarksStore.setState((state) => ({
+            bookmarks: [...newBookmarks, ...state.bookmarks],
+          }));
+        }
+      }
+    };
+
     if (dragData.type === "tab") {
       if (dropId.startsWith("group-drop-")) {
         const groupId = parseInt(dropId.replace("group-drop-", ""), 10);
         if (!isNaN(groupId)) {
           useTabsStore.getState().moveTabsToGroup([dragData.tabId], groupId);
         }
+      } else if (dropId.startsWith("sidebar-collection-")) {
+        handleDropToCollection(dropId, [
+          {
+            id: dragData.tabId,
+            title: dragData.title,
+            url: dragData.url,
+            favIconUrl: dragData.favIconUrl,
+          },
+        ]);
       }
     }
 
@@ -102,39 +179,15 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
           });
         });
       } else if (dropId.startsWith("sidebar-collection-")) {
-        const collectionId = dropId.replace("sidebar-collection-", "");
-        let targetCollectionId = collectionId;
-        if (collectionId === "all") {
-          const { collections, activeWorkspaceId } =
-            useWorkspaceStore.getState();
-          const defaultCol = collections.find(
-            (c) => c.workspaceId === activeWorkspaceId && c.isDefault
-          );
-          targetCollectionId = defaultCol?.id || "";
-        }
-        if (targetCollectionId) {
-          const now = new Date().toISOString();
-          // Filter duplicates before building the batch — reuses shared normalizeUrl logic.
-          const { bookmarks: existing } = useBookmarksStore.getState();
-          const newBookmarks = dragData.tabs
-            .filter((tab) => !findDuplicateBookmark(existing, tab.url))
-            .map((tab) => ({
-              id: generateId(),
-              title: tab.title,
-              url: tab.url,
-              favicon: tab.favIconUrl || "",
-              description: "",
-              collectionId: targetCollectionId,
-              tags: [] as string[],
-              createdAt: now,
-              isFavorite: false,
-            }));
-          if (newBookmarks.length > 0) {
-            useBookmarksStore.setState((state) => ({
-              bookmarks: [...newBookmarks, ...state.bookmarks],
-            }));
-          }
-        }
+        handleDropToCollection(
+          dropId,
+          dragData.tabs.map((t) => ({
+            id: t.id,
+            title: t.title,
+            url: t.url,
+            favIconUrl: t.favIconUrl || "",
+          }))
+        );
       }
     }
   };
@@ -149,6 +202,16 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
+        {notification && (
+          <div
+            className={cn(
+              "fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap bg-amber-500 text-white"
+            )}
+          >
+            <AlertCircle className="size-4 shrink-0" />
+            {notification.text}
+          </div>
+        )}
         {children}
         <DragOverlay dropAnimation={null}>
           {activeData && <DragPreview data={activeData} />}

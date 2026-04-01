@@ -24,6 +24,10 @@ interface TabsState {
   tabGroups: BrowserTabGroup[];
   fullTitles: Record<number, string>;
   isLoading: boolean;
+  highlightedTabIds: number[];
+
+  // Set highlighted tabs
+  setHighlightedTabs: (tabIds: number[], durationMs?: number) => void;
 
   // Load
   loadTabs: (silent?: boolean) => Promise<void>;
@@ -84,6 +88,23 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   tabGroups: [],
   fullTitles: {},
   isLoading: false,
+  highlightedTabIds: [],
+
+  // -------------------------------------------------------------------------
+  // Highlight
+  // -------------------------------------------------------------------------
+  setHighlightedTabs: (tabIds, durationMs = 3000) => {
+    set({ highlightedTabIds: tabIds });
+    if (tabIds.length > 0) {
+      setTimeout(() => {
+        const { highlightedTabIds: current } = get();
+        // Clear if the IDs are still the same (avoiding racing condition if clicked twice)
+        if (current === tabIds) {
+          set({ highlightedTabIds: [] });
+        }
+      }, durationMs);
+    }
+  },
 
   // -------------------------------------------------------------------------
   // Load

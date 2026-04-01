@@ -39,8 +39,9 @@ export function TabRow({
   onJoinGroup,
   isUngrouped,
 }: TabRowProps) {
-  const { closeTab, focusTab } = useTabsStore();
+  const { closeTab, focusTab, highlightedTabIds } = useTabsStore();
   const [saved, setSaved] = useState(false);
+  const isHighlighted = highlightedTabIds.includes(tab.id);
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -92,7 +93,8 @@ export function TabRow({
         className={cn(
           "relative group flex items-start gap-2.5 p-2.5 rounded-xl border bg-card transition-all cursor-pointer hover:shadow-sm hover:border-primary/20",
           tab.active && "border-primary/30 bg-primary/5 shadow-sm",
-          selected && "bg-primary/5 ring-1 ring-primary/40 border-primary/40 shadow-sm"
+          selected && "bg-primary/5 ring-1 ring-primary/40 border-primary/40 shadow-sm",
+          isHighlighted && "ring-2 ring-amber-500 bg-amber-500/10 border-transparent shadow-md"
         )}
         onClick={handleCardClick}
       >
@@ -190,7 +192,8 @@ export function TabRow({
         "group relative flex items-center gap-2.5 px-3 py-2 transition-all cursor-pointer",
         !isUngrouped && "rounded-md hover:bg-accent/50",
         selected && !isUngrouped && "bg-accent/40",
-        tab.active && !selected && !isUngrouped && "bg-blue-50/60 dark:bg-blue-950/20"
+        tab.active && !selected && !isUngrouped && "bg-blue-50/60 dark:bg-blue-950/20",
+        isHighlighted && "ring-2 ring-amber-500 bg-amber-500/10 rounded-md shadow-sm z-10"
       )}
       onClick={handleCardClick}
     >

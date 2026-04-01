@@ -66,6 +66,9 @@ interface WorkspaceState {
   _hydrated: boolean;
   setHydrated: () => void;
 
+  highlightedCollectionIds: string[];
+  setHighlightedCollectionIds: (ids: string[], durationMs?: number) => void;
+
   setActiveWorkspaceId: (id: string) => void;
   setCompactGroupTitles: (val: boolean) => void;
 
@@ -102,6 +105,18 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       _hydrated: false,
       setHydrated: () => set({ _hydrated: true }),
+
+      highlightedCollectionIds: [],
+      setHighlightedCollectionIds: (ids, durationMs = 3000) => {
+        set({ highlightedCollectionIds: ids });
+        if (ids.length > 0) {
+          setTimeout(() => {
+            if (get().highlightedCollectionIds === ids) {
+              set({ highlightedCollectionIds: [] });
+            }
+          }, durationMs);
+        }
+      },
 
       setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
       setCompactGroupTitles: (val) => set({ compactGroupTitles: val }),

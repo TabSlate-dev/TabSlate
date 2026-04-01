@@ -101,7 +101,7 @@ function DroppableZone({ id, children }: { id: string; children: React.ReactNode
       ref={setNodeRef}
       className={cn(
         "rounded-md",
-        isOver && activeData?.type === "tab-group" && "ring-1 ring-primary/40 bg-primary/5"
+        isOver && (activeData?.type === "tab-group" || activeData?.type === "tab") && "ring-1 ring-primary/40 bg-primary/5"
       )}
     >
       {children}
@@ -506,7 +506,7 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
   const { selectedCollection, setSelectedCollection, selectedTags, toggleTag, clearTags, bookmarks } =
     useBookmarksStore();
   const { groups, deleteGroup } = useGroupsStore();
-  const { collections, tags, activeWorkspaceId, createCollection, deleteCollection, createTag, deleteTag } =
+  const { collections, tags, activeWorkspaceId, createCollection, deleteCollection, createTag, deleteTag, highlightedCollectionIds } =
     useWorkspaceStore();
 
   const isHomePage = pathname === "/";
@@ -581,10 +581,15 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
 
                   {workspaceCollections.map((col) => {
                     const isActive = isHomePage && selectedCollection === col.id;
+                    const isHighlighted = highlightedCollectionIds.includes(col.id);
                     return (
                       <DroppableZone key={col.id} id={`sidebar-collection-${col.id}`}>
                         <SidebarMenuItem>
-                          <SidebarMenuButton asChild isActive={isActive} className="h-9 group/col">
+                          <SidebarMenuButton 
+                            asChild 
+                            isActive={isActive} 
+                            className={cn("h-9 group/col transition-all", isHighlighted && "ring-2 ring-inset ring-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-500")}
+                          >
                             <Link
                               to="/"
                               onClick={() => {
