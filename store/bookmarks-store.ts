@@ -72,6 +72,7 @@ interface BookmarksState {
   setFilterType: (filter: FilterType) => void;
 
   addBookmark: (input: Omit<Bookmark, "id" | "createdAt" | "isFavorite">) => Bookmark;
+  addBookmarks: (bookmarks: Bookmark[]) => void;
   updateBookmark: (id: string, patch: Partial<Omit<Bookmark, "id" | "createdAt">>) => void;
   toggleFavorite: (bookmarkId: string) => void;
   archiveBookmark: (bookmarkId: string) => void;
@@ -132,6 +133,10 @@ export const useBookmarksStore = create<BookmarksState>()(
         };
         set((s) => ({ bookmarks: [bookmark, ...s.bookmarks] }));
         return bookmark;
+      },
+
+      addBookmarks: (newBookmarks) => {
+        set((s) => ({ bookmarks: [...newBookmarks, ...s.bookmarks] }));
       },
 
       updateBookmark: (id, patch) =>

@@ -91,6 +91,9 @@ interface WorkspaceState {
   getWorkspaceCollections: (workspaceId?: string) => Collection[];
 }
 
+// Module-level timer to avoid referential equality issues with array comparison
+let _collectionHighlightTimer: ReturnType<typeof setTimeout> | null = null;
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -108,12 +111,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       highlightedCollectionIds: [],
       setHighlightedCollectionIds: (ids, durationMs = 3000) => {
+        if (_collectionHighlightTimer) clearTimeout(_collectionHighlightTimer);
         set({ highlightedCollectionIds: ids });
         if (ids.length > 0) {
-          setTimeout(() => {
-            if (get().highlightedCollectionIds === ids) {
-              set({ highlightedCollectionIds: [] });
-            }
+          _collectionHighlightTimer = setTimeout(() => {
+            set({ highlightedCollectionIds: [] });
+            _collectionHighlightTimer = null;
           }, durationMs);
         }
       },

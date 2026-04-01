@@ -13,9 +13,9 @@ import { useGroupsStore } from "@/store/groups-store";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { generateId } from "@/lib/id";
+import { TAB_GROUP_COLOR_KEYS, type TabGroupColor } from "@/lib/chrome/tab-groups";
 import { findDuplicateBookmark } from "@/lib/bookmark-utils";
 import type { BrowserTab } from "@/lib/chrome/tabs";
-import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { AlertCircle } from "lucide-react";
@@ -56,7 +56,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 8 },
+      activationConstraint: { delay: 250, tolerance: 5 },
     })
   );
 
@@ -167,9 +167,11 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     if (dragData.type === "tab-group") {
       if (dropId === "sidebar-groups") {
         const { createGroup, addTabToGroup } = useGroupsStore.getState();
+        const randomColor = TAB_GROUP_COLOR_KEYS[Math.floor(Math.random() * TAB_GROUP_COLOR_KEYS.length)];
         const savedGroupId = createGroup(
           dragData.groupName || "Unnamed",
-          dragData.groupColor
+          randomColor,
+          true
         );
         dragData.tabs.forEach((tab) => {
           addTabToGroup(savedGroupId, {
@@ -222,13 +224,14 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
 }
 
 function DragPreview({ data }: { data: DragData }) {
-  if (data.type === "tab") {
+  if (data.type === "tab" || (data as any).type === "browser-tab") {
+    const tabData = (data as any).tab || data;
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shadow-xl opacity-95 pointer-events-none max-w-[240px]">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shadow-xl opacity-95 pointer-events-none min-w-[200px]">
         <div className="size-6 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-          <FaviconImage src={data.favIconUrl} className="size-4" />
+          <FaviconImage src={tabData.favIconUrl || tabData.favicon} className="size-4" />
         </div>
-        <span className="text-sm truncate">{data.title}</span>
+        <span className="text-sm truncate">{tabData.title}</span>
       </div>
     );
   }

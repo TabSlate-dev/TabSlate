@@ -13,3 +13,15 @@ export function findDuplicateBookmark(
   const normalized = normalizeUrl(url);
   return bookmarks.find((b) => b?.url && normalizeUrl(b.url) === normalized);
 }
+
+/** 
+ * Returns a Set of normalized URLs for all existing bookmarks. 
+ * Optimized for batch deduplication.
+ */
+export function getNormalizedUrlSet(bookmarks: Bookmark[]): Set<string> {
+  return new Set(
+    bookmarks
+      .filter((b) => !!b.url)
+      .map((b) => normalizeUrl(b.url))
+  );
+}

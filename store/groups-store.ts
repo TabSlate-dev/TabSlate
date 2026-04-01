@@ -18,6 +18,7 @@ export interface SavedGroup {
   id: string;
   name: string;
   color: TabGroupColor;
+  isCompact: boolean;
   createdAt: string;
 }
 
@@ -27,8 +28,8 @@ interface GroupsState {
   _hydrated: boolean;
 
   // Group CRUD
-  createGroup: (name: string, color: TabGroupColor) => string;
-  updateGroup: (id: string, patch: Partial<Pick<SavedGroup, "name" | "color">>) => void;
+  createGroup: (name: string, color: TabGroupColor, isCompact: boolean) => string;
+  updateGroup: (id: string, patch: Partial<Pick<SavedGroup, "name" | "color" | "isCompact">>) => void;
   deleteGroup: (id: string) => void;
 
   // Tab management
@@ -47,12 +48,12 @@ export const useGroupsStore = create<GroupsState>()(
       groupTabs: [],
       _hydrated: false,
 
-      createGroup: (name, color) => {
+      createGroup: (name, color, isCompact) => {
         const id = generateId();
         set((state) => ({
           groups: [
             ...state.groups,
-            { id, name, color, createdAt: new Date().toISOString() },
+            { id, name, color, isCompact, createdAt: new Date().toISOString() },
           ],
         }));
         return id;
@@ -118,7 +119,7 @@ export const useGroupsStore = create<GroupsState>()(
           .sort((a, b) => a.position - b.position)
           .map((t) => t.url);
         if (!urls.length) return;
-        await openAsTabGroup(urls, group.name, group.color);
+        await openAsTabGroup(urls, group.name, group.color, group.isCompact);
       },
     }),
     {

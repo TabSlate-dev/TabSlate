@@ -96,7 +96,8 @@ export function ungroupTabs(tabIds: number[]): Promise<void> {
 export async function openAsTabGroup(
   urls: string[],
   title: string,
-  color: TabGroupColor
+  color: TabGroupColor,
+  isCompact?: boolean
 ): Promise<number> {
   if (urls.length === 0) throw new Error("No URLs to open");
 
@@ -108,5 +109,6 @@ export async function openAsTabGroup(
     if (tab.id) tabIds.push(tab.id);
   }
 
-  return groupTabs(tabIds, title, color);
+  const chromeTitle = isCompact ? (title[0] || "") : title;
+  return groupTabs(tabIds, chromeTitle, color);
 }

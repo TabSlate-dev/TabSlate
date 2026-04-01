@@ -1,5 +1,4 @@
-
-
+import { useMemo } from "react";
 import { Bookmark, Star, Tag, FolderOpen } from "lucide-react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
@@ -28,26 +27,26 @@ const stats = [
 ];
 
 export function StatsCards() {
-  const { bookmarks } = useBookmarksStore();
-  const { collections, tags, activeWorkspaceId } = useWorkspaceStore();
+  // Fine-grained selectors — only re-render when the specific fields change
+  const bookmarks = useBookmarksStore(s => s.bookmarks);
+  const collections = useWorkspaceStore(s => s.collections);
+  const tags = useWorkspaceStore(s => s.tags);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
-  const wsCollectionCount = collections.filter(
-    (c) => c.workspaceId === activeWorkspaceId
-  ).length;
-
-  const wsCollectionIds = new Set(
-    collections
-      .filter((c) => c.workspaceId === activeWorkspaceId)
-      .map((c) => c.id)
-  );
-  const wsBookmarks = bookmarks.filter((b) => wsCollectionIds.has(b.collectionId));
-
-  const values = [
-    wsBookmarks.length,
-    wsBookmarks.filter((b) => b.isFavorite).length,
-    wsCollectionCount,
-    tags.length,
-  ];
+  const values = useMemo(() => {
+    const wsCollectionIds = new Set(
+      collections
+        .filter((c) => c.workspaceId === activeWorkspaceId)
+        .map((c) => c.id)
+    );
+    const wsBookmarks = bookmarks.filter((b) => wsCollectionIds.has(b.collectionId));
+    return [
+      wsBookmarks.length,
+      wsBookmarks.filter((b) => b.isFavorite).length,
+      wsCollectionIds.size,
+      tags.length,
+    ];
+  }, [bookmarks, collections, tags, activeWorkspaceId]);
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -70,4 +69,3 @@ export function StatsCards() {
     </div>
   );
 }
-

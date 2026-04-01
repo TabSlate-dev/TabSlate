@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { useTabsStore } from "@/store/tabs-store";
 import { Button } from "@/components/ui/button";
 import {
@@ -6,9 +6,9 @@ import {
   ExternalLink,
   X,
   Check,
-  Globe,
   BrushCleaning,
   FolderPlus,
+  Ungroup,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { storageService } from "@/lib/storage";
@@ -28,7 +28,7 @@ interface TabRowProps {
   isUngrouped?: boolean;
 }
 
-export function TabRow({
+export const TabRow = React.memo(function TabRow({
   tab,
   selected,
   onSelect,
@@ -39,11 +39,14 @@ export function TabRow({
   onJoinGroup,
   isUngrouped,
 }: TabRowProps) {
-  const { closeTab, focusTab, highlightedTabIds } = useTabsStore();
-  const [saved, setSaved] = useState(false);
-  const isHighlighted = highlightedTabIds.includes(tab.id);
+  // Fine-grained selectors — only re-render when this tab's highlight changes
+  const isHighlighted = useTabsStore(s => s.highlightedTabIds.includes(tab.id));
+  const closeTab = useTabsStore(s => s.closeTab);
+  const focusTab = useTabsStore(s => s.focusTab);
 
-  const handleSave = (e: React.MouseEvent) => {
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     storageService.addBookmark({
       title: tab.title,
@@ -53,38 +56,36 @@ export function TabRow({
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  };
+  }, [tab.title, tab.url, tab.favIconUrl]);
 
-  const handleFocus = (e: React.MouseEvent | React.FormEvent) => {
+  const handleFocus = useCallback((e: React.MouseEvent | React.FormEvent) => {
     e.stopPropagation();
     focusTab(tab.id, tab.windowId);
-  };
+  }, [focusTab, tab.id, tab.windowId]);
 
-  const handleOpen = (e: React.MouseEvent) => {
+  const handleOpen = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     window.open(tab.url, "_blank");
-  };
+  }, [tab.url]);
 
-  const handleClose = (e: React.MouseEvent) => {
+  const handleClose = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     closeTab(tab.id);
-  };
+  }, [closeTab, tab.id]);
 
-  const handleCardClick = (e: React.MouseEvent) => {
-    // For card variant (dialogs), whole area toggles selection
+  const handleCardClick = useCallback((e: React.MouseEvent) => {
     if (variant === "card" && showCheckbox) {
       onSelect?.(!selected);
     } else {
-      // For list variant (main panel), only handle focus
       handleFocus(e);
     }
-  };
+  }, [variant, showCheckbox, onSelect, selected, handleFocus]);
 
   if (variant === "card") {
     let hostname = "";
     try {
       hostname = new URL(tab.url).hostname;
-    } catch (e) {
+    } catch {
       hostname = tab.url;
     }
 
@@ -139,7 +140,7 @@ export function TabRow({
                 title="Ungroup tab"
                 className="size-6 rounded-md text-destructive hover:bg-destructive/10"
               >
-                <BrushCleaning className="size-3" />
+                <Ungroup className="size-3 text-destructive" />
               </Button>
             ) : (
               <Button
@@ -177,7 +178,7 @@ export function TabRow({
               title="Close tab"
               className="size-6 rounded-md hover:text-destructive"
             >
-              <X className="size-3" />
+              <X className="size-3 text-destructive" />
             </Button>
           </div>
         )}
@@ -189,7 +190,7 @@ export function TabRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center gap-2.5 px-3 py-2 transition-all cursor-pointer",
+        "group isolate relative flex items-center gap-2.5 px-3 py-2 transition-all cursor-pointer",
         !isUngrouped && "rounded-md hover:bg-accent/50",
         selected && !isUngrouped && "bg-accent/40",
         tab.active && !selected && !isUngrouped && "bg-blue-50/60 dark:bg-blue-950/20",
@@ -200,7 +201,7 @@ export function TabRow({
       {isUngrouped && (
         <div
           className={cn(
-            "absolute inset-x-0.5 inset-y-0.5 rounded-md pointer-events-none transition-colors",
+            "absolute inset-x-0.5 inset-y-0.5 rounded-md pointer-events-none transition-colors -z-10",
             selected ? "bg-accent/50" : "group-hover:bg-accent/40"
           )}
         />
@@ -292,4 +293,4 @@ export function TabRow({
       )}
     </div>
   );
-}
+});

@@ -18,6 +18,8 @@ import {
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { generateId } from "@/lib/id";
+import { normalizeUrl, getNormalizedUrlSet } from "@/lib/bookmark-utils";
+import type { Bookmark } from "@/lib/types";
 
 interface TabsState {
   openTabs: BrowserTab[];
@@ -43,10 +45,11 @@ interface TabsState {
   createGroup: (tabIds: number[], title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
   updateGroup: (groupId: number, patch: { title?: string; color?: TabGroupColor; collapsed?: boolean }) => Promise<void>;
   dissolveGroup: (groupId: number) => Promise<void>;
+  closeGroup: (groupId: number) => Promise<void>;
 
   // Session actions
-  saveWindowAsCollection: (name: string) => Promise<void>;
-  saveGroupAsCollection: (groupId: number, name: string) => Promise<void>;
+  saveWindowAsCollection: (name: string, deduplicate: boolean) => Promise<{ saved: number; skipped: number }>;
+  saveGroupAsCollection: (groupId: number, name: string, deduplicate: boolean) => Promise<{ saved: number; skipped: number }>;
   openCollectionAsGroup: (collectionId: string, title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
   openCollection: (collectionId: string) => Promise<void>;
   
@@ -54,25 +57,7 @@ interface TabsState {
   toggleGroupCompact: (groupId: number) => Promise<void>;
 }
 
-async function persistCollection(id: string, name: string, count: number) {
-  const raw = await new Promise<string | null>((r) =>
-    chrome.storage.local.get("tabmaster-collections", (res: any) =>
-      r(res["tabmaster-collections"] ?? null)
-    )
-  );
-  const existing = raw ? JSON.parse(raw) : [];
-  await new Promise<void>((r) =>
-    chrome.storage.local.set(
-      {
-        "tabmaster-collections": JSON.stringify([
-          ...existing,
-          { id, name, count, timestamp: Date.now() },
-        ]),
-      },
-      r
-    )
-  );
-}
+
 
 const getAutoGroupName = () => {
   const now = new Date();
@@ -82,6 +67,9 @@ const getAutoGroupName = () => {
   const min = String(now.getMinutes()).padStart(2, '0');
   return `${mm}-${dd} ${hh}:${min}`;
 };
+
+// Module-level timer to avoid referential equality issues with array comparison
+let _tabHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useTabsStore = create<TabsState>((set, get) => ({
   openTabs: [],
@@ -94,14 +82,12 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   // Highlight
   // -------------------------------------------------------------------------
   setHighlightedTabs: (tabIds, durationMs = 3000) => {
+    if (_tabHighlightTimer) clearTimeout(_tabHighlightTimer);
     set({ highlightedTabIds: tabIds });
     if (tabIds.length > 0) {
-      setTimeout(() => {
-        const { highlightedTabIds: current } = get();
-        // Clear if the IDs are still the same (avoiding racing condition if clicked twice)
-        if (current === tabIds) {
-          set({ highlightedTabIds: [] });
-        }
+      _tabHighlightTimer = setTimeout(() => {
+        set({ highlightedTabIds: [] });
+        _tabHighlightTimer = null;
       }, durationMs);
     }
   },
@@ -224,54 +210,150 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     set({ openTabs: tabs, tabGroups: groups });
   },
 
+  closeGroup: async (groupId) => {
+    const { openTabs } = get();
+    const tabIds = openTabs.filter((t) => t.groupId === groupId).map((t) => t.id);
+    if (tabIds.length) {
+      const { closeTab } = await import("@/lib/chrome/tabs");
+      await Promise.all(tabIds.map((id) => closeTab(id)));
+    }
+    await get().loadTabs(true);
+  },
+
   // -------------------------------------------------------------------------
   // Session actions
   // -------------------------------------------------------------------------
-  saveWindowAsCollection: async (name) => {
+  saveWindowAsCollection: async (name, deduplicate) => {
     const { openTabs } = get();
-    if (!openTabs.length) return;
+    if (!openTabs.length) return { saved: 0, skipped: 0 };
 
-    const collectionId = generateId();
+    const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
+    const { bookmarks, addBookmarks } = useBookmarksStore.getState();
+    
+    // 2. Prepare bookmarks (WITHOUT collectionId first)
     const now = new Date().toISOString();
-    const newBookmarks = openTabs.map((tab) => ({
-      id: generateId(),
-      title: tab.title,
-      url: tab.url,
-      favicon: tab.favIconUrl,
-      description: "",
-      collectionId,
-      tags: [] as string[],
-      createdAt: now,
-      isFavorite: false,
-    }));
+    const newBookmarksData: Omit<Bookmark, "collectionId">[] = [];
+    const seenUrlsInBatch = new Set<string>();
+    let skippedCount = 0;
 
-    const { bookmarks } = useBookmarksStore.getState();
-    useBookmarksStore.setState({ bookmarks: [...newBookmarks, ...bookmarks] });
-    await persistCollection(collectionId, name, newBookmarks.length);
+    // Pre-calculate normalized URLs for existing bookmarks if deduplicating
+    const existingUrls = deduplicate 
+      ? getNormalizedUrlSet(bookmarks)
+      : new Set<string>();
+    
+    for (const tab of openTabs) {
+      if (!tab.url) {
+        skippedCount++;
+        continue;
+      }
+
+      const normalizedUrl = normalizeUrl(tab.url);
+
+      // A. Skip if seen in this batch (intra-batch deduplication)
+      if (seenUrlsInBatch.has(normalizedUrl)) {
+        skippedCount++;
+        continue;
+      }
+
+      // B. Skip if deduplication is ON and exists in ANY collection
+      if (deduplicate && existingUrls.has(normalizedUrl)) {
+        skippedCount++;
+        continue;
+      }
+      
+      // Mark as seen and add to results
+      seenUrlsInBatch.add(normalizedUrl);
+      newBookmarksData.push({
+        id: generateId(),
+        title: tab.title,
+        url: tab.url,
+        favicon: tab.favIconUrl,
+        description: "",
+        tags: [],
+        createdAt: now,
+        isFavorite: false,
+      });
+    }
+
+    // 3. Only create collection and add bookmarks if there's something to save
+    if (newBookmarksData.length > 0) {
+      const collection = createCollection(activeWorkspaceId, name, "folder");
+      const finalBookmarks: Bookmark[] = newBookmarksData.map(b => ({
+        ...b,
+        collectionId: collection.id
+      }));
+      addBookmarks(finalBookmarks);
+      return { saved: finalBookmarks.length, skipped: skippedCount };
+    }
+
+    return { saved: 0, skipped: skippedCount };
   },
 
-  saveGroupAsCollection: async (groupId, name) => {
+  saveGroupAsCollection: async (groupId, name, deduplicate) => {
     const { openTabs } = get();
     const groupTabs = openTabs.filter((t) => t.groupId === groupId);
-    if (!groupTabs.length) return;
+    if (!groupTabs.length) return { saved: 0, skipped: 0 };
 
-    const collectionId = generateId();
+    const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
+    const { bookmarks, addBookmarks } = useBookmarksStore.getState();
+    
+    // 2. Prepare bookmarks (WITHOUT collectionId first)
     const now = new Date().toISOString();
-    const newBookmarks = groupTabs.map((tab) => ({
-      id: generateId(),
-      title: tab.title,
-      url: tab.url,
-      favicon: tab.favIconUrl,
-      description: "",
-      collectionId,
-      tags: [] as string[],
-      createdAt: now,
-      isFavorite: false,
-    }));
+    const newBookmarksData: Omit<Bookmark, "collectionId">[] = [];
+    const seenUrlsInBatch = new Set<string>();
+    let skippedCount = 0;
 
-    const { bookmarks } = useBookmarksStore.getState();
-    useBookmarksStore.setState({ bookmarks: [...newBookmarks, ...bookmarks] });
-    await persistCollection(collectionId, name, newBookmarks.length);
+    // Pre-calculate normalized URLs for existing bookmarks if deduplicating
+    const existingUrls = deduplicate 
+      ? getNormalizedUrlSet(bookmarks)
+      : new Set<string>();
+    
+    for (const tab of groupTabs) {
+      if (!tab.url) {
+        skippedCount++;
+        continue;
+      }
+
+      const normalizedUrl = normalizeUrl(tab.url);
+
+      // A. Skip if seen in this batch (intra-batch deduplication)
+      if (seenUrlsInBatch.has(normalizedUrl)) {
+        skippedCount++;
+        continue;
+      }
+
+      // B. Skip if deduplication is ON and exists in ANY collection
+      if (deduplicate && existingUrls.has(normalizedUrl)) {
+        skippedCount++;
+        continue;
+      }
+      
+      // Mark as seen and add to results
+      seenUrlsInBatch.add(normalizedUrl);
+      newBookmarksData.push({
+        id: generateId(),
+        title: tab.title,
+        url: tab.url,
+        favicon: tab.favIconUrl,
+        description: "",
+        tags: [],
+        createdAt: now,
+        isFavorite: false,
+      });
+    }
+
+    // 3. Only create collection and add bookmarks if there's something to save
+    if (newBookmarksData.length > 0) {
+      const collection = createCollection(activeWorkspaceId, name, "folder");
+      const finalBookmarks: Bookmark[] = newBookmarksData.map(b => ({
+        ...b,
+        collectionId: collection.id
+      }));
+      addBookmarks(finalBookmarks);
+      return { saved: finalBookmarks.length, skipped: skippedCount };
+    }
+
+    return { saved: 0, skipped: skippedCount };
   },
 
   openCollectionAsGroup: async (collectionId, title, color, compact) => {
