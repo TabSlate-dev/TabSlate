@@ -84,7 +84,7 @@ export function TabsRail() {
   React.useEffect(() => {
     refresh();
     const handler = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if ("tabmaster-tabs-changed" in changes) refresh();
+      if ("tabslate-tabs-changed" in changes) refresh();
     };
     chrome.storage.onChanged.addListener(handler);
     return () => chrome.storage.onChanged.removeListener(handler);
@@ -157,7 +157,7 @@ export function TabsRail() {
               onDragStart={(e) => {
                 e.dataTransfer.effectAllowed = "copy";
                 e.dataTransfer.setData(
-                  "application/tabmaster-tab",
+                  "application/tabslate-tab",
                   JSON.stringify({
                     title: tab.title,
                     url: tab.url,

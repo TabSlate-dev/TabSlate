@@ -100,9 +100,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const [tabs, groups, storage] = await Promise.all([
       getCurrentWindowTabs(),
       getCurrentWindowGroups(),
-      chrome.storage.local.get("tabmaster-full-titles"),
+      chrome.storage.local.get("tabslate-full-titles"),
     ]);
-    const fullTitles = (storage["tabmaster-full-titles"] || {}) as Record<number, string>;
+    const fullTitles = (storage["tabslate-full-titles"] || {}) as Record<number, string>;
     set({ openTabs: tabs, tabGroups: groups, fullTitles, isLoading: false });
   },
 
@@ -161,7 +161,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     
     // Store full title for syncing later
     const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
-    await chrome.storage.local.set({ "tabmaster-full-titles": currentTitles });
+    await chrome.storage.local.set({ "tabslate-full-titles": currentTitles });
 
     // Reload so groupId fields on tabs are updated
     const [tabs, groups] = await Promise.all([
@@ -180,7 +180,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     if (patch.title) {
       // Store full title internally
       const nextFullTitles = { ...fullTitles, [groupId]: patch.title };
-      await chrome.storage.local.set({ "tabmaster-full-titles": nextFullTitles });
+      await chrome.storage.local.set({ "tabslate-full-titles": nextFullTitles });
       
       // If the group is currently compact (length 1), keep it compact in Chrome
       if (group && group.title.length === 1 && patch.title.length > 1) {
@@ -379,7 +379,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const groupId = await openAsTabGroup(urls, chromeTitle, color);
     
     const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
-    await chrome.storage.local.set({ "tabmaster-full-titles": currentTitles });
+    await chrome.storage.local.set({ "tabslate-full-titles": currentTitles });
 
     // Reload after tabs open
     const [tabs, groups] = await Promise.all([
@@ -402,8 +402,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const group = tabGroups.find((g) => g.id === groupId);
     if (!group) return;
 
-    const storage = await chrome.storage.local.get("tabmaster-full-titles");
-    const fullTitles = (storage["tabmaster-full-titles"] || {}) as Record<number, string>;
+    const storage = await chrome.storage.local.get("tabslate-full-titles");
+    const fullTitles = (storage["tabslate-full-titles"] || {}) as Record<number, string>;
     
     const fullTitle = fullTitles[groupId];
     
@@ -422,7 +422,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     
     // Persist any new full titles
     if (!fullTitles[groupId]) fullTitles[groupId] = currentFullTitle;
-    await chrome.storage.local.set({ "tabmaster-full-titles": fullTitles });
+    await chrome.storage.local.set({ "tabslate-full-titles": fullTitles });
 
     // Reload state
     const [tabs, groups] = await Promise.all([

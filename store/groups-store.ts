@@ -123,7 +123,7 @@ export const useGroupsStore = create<GroupsState>()(
       },
     }),
     {
-      name: "tabmaster-groups",
+      name: "tabslate-groups",
       storage: createJSONStorage(() => chromeStorageAdapter),
       partialize: (state) =>
         ({

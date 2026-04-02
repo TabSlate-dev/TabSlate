@@ -3,8 +3,8 @@
  * in the same format as the Zustand persist middleware used by the newtab.
  *
  * Key layout in chrome.storage.local:
- *   "tabmaster-bookmarks"  → Zustand JSON { state: { bookmarks, archivedBookmarks, trashedBookmarks } }
- *   "tabmaster-workspace"  → Zustand JSON { state: { workspaces, collections, tags, activeWorkspaceId } }
+ *   "tabslate-bookmarks"  → Zustand JSON { state: { bookmarks, archivedBookmarks, trashedBookmarks } }
+ *   "tabslate-workspace"  → Zustand JSON { state: { workspaces, collections, tags, activeWorkspaceId } }
  */
 
 import type { Bookmark, Collection } from "@/lib/types";
@@ -59,7 +59,7 @@ interface WorkspaceStorageState {
 }
 
 export async function getWorkspaceState(): Promise<WorkspaceStorageState> {
-  const raw = await getRaw("tabmaster-workspace");
+  const raw = await getRaw("tabslate-workspace");
   return parseState<WorkspaceStorageState>(raw, {
     workspaces: [],
     collections: [],
@@ -79,7 +79,7 @@ interface BookmarkStorageState {
 }
 
 async function getBookmarkState(): Promise<BookmarkStorageState> {
-  const raw = await getRaw("tabmaster-bookmarks");
+  const raw = await getRaw("tabslate-bookmarks");
   return parseState<BookmarkStorageState>(raw, {
     bookmarks: [],
     archivedBookmarks: [],
@@ -90,7 +90,7 @@ async function getBookmarkState(): Promise<BookmarkStorageState> {
 async function setBookmarkState(state: BookmarkStorageState): Promise<void> {
   // Wrap in Zustand persist format so the newtab onChanged listener picks it up
   const payload = JSON.stringify({ state, version: 0 });
-  await setRaw("tabmaster-bookmarks", payload);
+  await setRaw("tabslate-bookmarks", payload);
 }
 
 // ---------------------------------------------------------------------------

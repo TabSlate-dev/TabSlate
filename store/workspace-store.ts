@@ -230,7 +230,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       },
     }),
     {
-      name: "tabmaster-workspace",
+      name: "tabslate-workspace",
       storage: createJSONStorage(() => chromeStorageAdapter),
       partialize: (state) =>
         ({
@@ -275,8 +275,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 // Keep popup in sync with workspace changes
 // ---------------------------------------------------------------------------
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes["tabmaster-workspace"]) return;
-  const newValue = changes["tabmaster-workspace"].newValue;
+  if (area !== "local" || !changes["tabslate-workspace"]) return;
+  const newValue = changes["tabslate-workspace"].newValue;
   if (!newValue) return;
   try {
     const parsed = typeof newValue === "string" ? JSON.parse(newValue) : newValue;

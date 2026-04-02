@@ -262,7 +262,7 @@ export const useBookmarksStore = create<BookmarksState>()(
       },
     }),
     {
-      name: "tabmaster-bookmarks",
+      name: "tabslate-bookmarks",
       storage: createJSONStorage(() => chromeStorageAdapter),
       partialize: (state) =>
         ({
@@ -283,8 +283,8 @@ export const useBookmarksStore = create<BookmarksState>()(
 // Listen for external changes (e.g. popup saved a bookmark)
 // ---------------------------------------------------------------------------
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes["tabmaster-bookmarks"]) return;
-  const newValue = changes["tabmaster-bookmarks"].newValue;
+  if (area !== "local" || !changes["tabslate-bookmarks"]) return;
+  const newValue = changes["tabslate-bookmarks"].newValue;
   if (!newValue) return;
   try {
     const parsed = typeof newValue === "string" ? JSON.parse(newValue) : newValue;

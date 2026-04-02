@@ -23,7 +23,7 @@ interface UseTabDragDropResult {
   };
 }
 
-const DRAG_TYPE = "application/tabmaster-tab";
+const DRAG_TYPE = "application/tabslate-tab";
 
 
 export function useTabDragDrop(): UseTabDragDropResult {

@@ -4,14 +4,14 @@ export default defineBackground(() => {
   // -------------------------------------------------------------------------
   chrome.runtime.onInstalled.addListener(() => {
     chrome.contextMenus.create({
-      id: "save-to-tabmaster",
-      title: "Save to TabMaster",
+      id: "save-to-tabslate",
+      title: "Save to TabSlate",
       contexts: ["page", "selection", "link"],
     });
   });
 
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId !== "save-to-tabmaster" || !tab?.id) return;
+    if (info.menuItemId !== "save-to-tabslate" || !tab?.id) return;
 
     // Try to get richer info from the content script
     let pageInfo: { title: string; url: string; selectedText: string; favicon: string } | null = null;
@@ -35,8 +35,8 @@ export default defineBackground(() => {
 
     // Append to persisted store key directly (store isn't loaded in background)
     const raw = await new Promise<string | null>((resolve) =>
-      chrome.storage.local.get("tabmaster-bookmarks", (res: any) =>
-        resolve(res["tabmaster-bookmarks"] ?? null)
+      chrome.storage.local.get("tabslate-bookmarks", (res: any) =>
+        resolve(res["tabslate-bookmarks"] ?? null)
       )
     );
 
@@ -48,7 +48,7 @@ export default defineBackground(() => {
     const updated = [bookmark, ...(state.bookmarks ?? [])];
     const newRaw = JSON.stringify({ state: { ...state, bookmarks: updated } });
     await new Promise<void>((r) =>
-      chrome.storage.local.set({ "tabmaster-bookmarks": newRaw }, r)
+      chrome.storage.local.set({ "tabslate-bookmarks": newRaw }, r)
     );
   });
 
@@ -58,7 +58,7 @@ export default defineBackground(() => {
   // (Service Workers can't maintain open ports in MV3)
   // -------------------------------------------------------------------------
   function broadcastTabChange() {
-    chrome.storage.local.set({ "tabmaster-tabs-changed": Date.now() });
+    chrome.storage.local.set({ "tabslate-tabs-changed": Date.now() });
   }
 
   chrome.tabs.onCreated.addListener(broadcastTabChange);

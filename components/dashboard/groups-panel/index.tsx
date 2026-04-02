@@ -33,7 +33,7 @@ export function GroupsPanel() {
   React.useEffect(() => {
     loadTabs();
     const handler = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if ("tabmaster-tabs-changed" in changes) loadTabs();
+      if ("tabslate-tabs-changed" in changes) loadTabs();
     };
     chrome.storage.onChanged.addListener(handler);
     return () => chrome.storage.onChanged.removeListener(handler);

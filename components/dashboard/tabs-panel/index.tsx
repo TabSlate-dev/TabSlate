@@ -34,7 +34,7 @@ export function TabsPanel() {
       changes: { [key: string]: chrome.storage.StorageChange },
       area: string
     ) {
-      if (area === "local" && "tabmaster-tabs-changed" in changes) {
+      if (area === "local" && "tabslate-tabs-changed" in changes) {
         loadTabs(true);
       }
     }
