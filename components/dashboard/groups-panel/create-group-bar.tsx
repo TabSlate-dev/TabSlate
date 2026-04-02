@@ -13,7 +13,7 @@ export function CreateGroupBar() {
   const [open, setOpen] = React.useState(false);
 
   const handleCreate = React.useCallback(() => {
-    if (!name.trim()) return;
+    if (!name.trim()) { return; }
     createGroup(name.trim(), color, true);
     setName("");
     setColor("blue");
@@ -42,8 +42,8 @@ export function CreateGroupBar() {
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter") handleCreate();
-          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Enter") { handleCreate(); }
+          if (e.key === "Escape") { setOpen(false); }
         }}
         className="h-8 text-sm"
       />

@@ -78,8 +78,8 @@ export function updateGroup(
 ): Promise<BrowserTabGroup> {
   return new Promise((resolve, reject) =>
     chrome.tabGroups.update(groupId, patch, (g) => {
-      if (g) resolve(toGroup(g));
-      else reject(new Error("Failed to update group"));
+      if (g) { resolve(toGroup(g)); }
+      else { reject(new Error("Failed to update group")); }
     })
   );
 }
@@ -99,14 +99,14 @@ export async function openAsTabGroup(
   color: TabGroupColor,
   isCompact?: boolean
 ): Promise<number> {
-  if (urls.length === 0) throw new Error("No URLs to open");
+  if (urls.length === 0) { throw new Error("No URLs to open"); }
 
   const tabIds: number[] = [];
   for (const url of urls) {
     const tab = await new Promise<chrome.tabs.Tab>((resolve) =>
       chrome.tabs.create({ url, active: false }, resolve)
     );
-    if (tab.id) tabIds.push(tab.id);
+    if (tab.id) { tabIds.push(tab.id); }
   }
 
   const chromeTitle = isCompact ? (title[0] || "") : title;

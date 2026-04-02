@@ -82,7 +82,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   // Highlight
   // -------------------------------------------------------------------------
   setHighlightedTabs: (tabIds, durationMs = 3000) => {
-    if (_tabHighlightTimer) clearTimeout(_tabHighlightTimer);
+    if (_tabHighlightTimer) { clearTimeout(_tabHighlightTimer); }
     set({ highlightedTabIds: tabIds });
     if (tabIds.length > 0) {
       _tabHighlightTimer = setTimeout(() => {
@@ -96,7 +96,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   // Load
   // -------------------------------------------------------------------------
   loadTabs: async (silent = false) => {
-    if (!silent) set({ isLoading: true });
+    if (!silent) { set({ isLoading: true }); }
     const [tabs, groups, storage] = await Promise.all([
       getCurrentWindowTabs(),
       getCurrentWindowGroups(),
@@ -135,7 +135,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   moveTabsToGroup: async (tabIds, groupId) => {
-    if (!tabIds.length) return;
+    if (!tabIds.length) { return; }
     await chrome.tabs.group({ tabIds: tabIds as [number, ...number[]], groupId });
     await get().loadTabs(true);
   },
@@ -201,7 +201,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   dissolveGroup: async (groupId) => {
     const { openTabs } = get();
     const tabIds = openTabs.filter((t) => t.groupId === groupId).map((t) => t.id);
-    if (tabIds.length) await ungroupTabs(tabIds);
+    if (tabIds.length) { await ungroupTabs(tabIds); }
     // Reload
     const [tabs, groups] = await Promise.all([
       getCurrentWindowTabs(),
@@ -225,7 +225,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   // -------------------------------------------------------------------------
   saveWindowAsCollection: async (name, deduplicate) => {
     const { openTabs } = get();
-    if (!openTabs.length) return { saved: 0, skipped: 0 };
+    if (!openTabs.length) { return { saved: 0, skipped: 0 }; }
 
     const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
     const { bookmarks, addBookmarks } = useBookmarksStore.getState();
@@ -292,7 +292,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   saveGroupAsCollection: async (groupId, name, deduplicate) => {
     const { openTabs } = get();
     const groupTabs = openTabs.filter((t) => t.groupId === groupId);
-    if (!groupTabs.length) return { saved: 0, skipped: 0 };
+    if (!groupTabs.length) { return { saved: 0, skipped: 0 }; }
 
     const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
     const { bookmarks, addBookmarks } = useBookmarksStore.getState();
@@ -361,7 +361,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const urls = bookmarks
       .filter((b) => b.collectionId === collectionId)
       .map((b) => b.url);
-    if (!urls.length) return;
+    if (!urls.length) { return; }
 
     const { compactGroupTitles } = useWorkspaceStore.getState();
     const isCompact = compact !== undefined ? compact : compactGroupTitles;
@@ -400,7 +400,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   toggleGroupCompact: async (groupId: number) => {
     const { tabGroups } = get();
     const group = tabGroups.find((g) => g.id === groupId);
-    if (!group) return;
+    if (!group) { return; }
 
     const storage = await chrome.storage.local.get("tabslate-full-titles");
     const fullTitles = (storage["tabslate-full-titles"] || {}) as Record<number, string>;
@@ -421,7 +421,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     await updateGroup(groupId, { title: nextTitle });
     
     // Persist any new full titles
-    if (!fullTitles[groupId]) fullTitles[groupId] = currentFullTitle;
+    if (!fullTitles[groupId]) { fullTitles[groupId] = currentFullTitle; }
     await chrome.storage.local.set({ "tabslate-full-titles": fullTitles });
 
     // Reload state

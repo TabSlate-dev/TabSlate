@@ -11,7 +11,7 @@ export default defineBackground(() => {
   });
 
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-    if (info.menuItemId !== "save-to-tabslate" || !tab?.id) return;
+    if (info.menuItemId !== "save-to-tabslate" || !tab?.id) { return; }
 
     // Try to get richer info from the content script
     let pageInfo: { title: string; url: string; selectedText: string; favicon: string } | null = null;
@@ -35,8 +35,8 @@ export default defineBackground(() => {
 
     // Append to persisted store key directly (store isn't loaded in background)
     const raw = await new Promise<string | null>((resolve) =>
-      chrome.storage.local.get("tabslate-bookmarks", (res: any) =>
-        resolve(res["tabslate-bookmarks"] ?? null)
+      chrome.storage.local.get("tabslate-bookmarks", (res) =>
+        resolve((res["tabslate-bookmarks"] as string) ?? null)
       )
     );
 

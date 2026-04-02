@@ -43,8 +43,8 @@ export function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) 
   const toggleTab = React.useCallback((id: number, checked: boolean) => {
     setSelectedTabIds((prev) => {
       const next = new Set(prev);
-      if (checked) next.add(id);
-      else next.delete(id);
+      if (checked) { next.add(id); }
+      else { next.delete(id); }
       return next;
     });
   }, []);
@@ -57,7 +57,7 @@ export function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) 
         <form
           className="flex flex-col h-full max-h-[85vh]"
           action={(formData) => {
-            if (selectedTabIds.size === 0) return;
+            if (selectedTabIds.size === 0) { return; }
             const name = formData.get("name") as string;
             const selectedTabs = openTabs.filter((t) => selectedTabIds.has(t.id));
             onSubmit(name?.trim() || "", color, selectedTabs, isCompact);

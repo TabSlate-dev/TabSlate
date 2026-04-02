@@ -58,7 +58,7 @@ export function getAllTabs(): Promise<BrowserTab[]> {
 
 /** Open a list of URLs as new tabs in a new window */
 export async function openUrlsInNewWindow(urls: string[]): Promise<void> {
-  if (urls.length === 0) return;
+  if (urls.length === 0) { return; }
   const [first, ...rest] = urls;
   const win = await new Promise<chrome.windows.Window>((resolve) =>
     chrome.windows.create({ url: first }, (w) => resolve(w!))

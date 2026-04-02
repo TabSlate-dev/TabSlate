@@ -11,7 +11,7 @@ interface TagListProps {
 }
 
 export function TagList({ tags, max = 3, className, wrap = false }: TagListProps) {
-  if (tags.length === 0) return null;
+  if (tags.length === 0) { return null; }
 
   const visible = tags.slice(0, max);
   const overflow = tags.length - max;

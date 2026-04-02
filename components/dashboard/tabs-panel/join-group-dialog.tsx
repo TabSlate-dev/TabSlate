@@ -26,7 +26,7 @@ export function JoinGroupDialog({ tabIds, isOpen, onClose }: JoinGroupDialogProp
     onClose();
   }, [moveTabsToGroup, tabIds, onClose]);
 
-  if (!tabIds.length) return null;
+  if (!tabIds.length) { return null; }
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>

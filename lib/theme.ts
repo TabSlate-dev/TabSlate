@@ -46,7 +46,7 @@ export function useThemeState() {
   }, [theme]);
 
   useEffect(() => {
-    if (theme !== "system") return;
+    if (theme !== "system") { return; }
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const handler = () => applyTheme("system");
     mq.addEventListener("change", handler);

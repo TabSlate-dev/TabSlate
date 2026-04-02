@@ -43,7 +43,7 @@ export function UngroupedSection({ tabs, onJoinRequest }: UngroupedSectionProps)
   }, []);
 
   const handleCreateGroup = useCallback(async () => {
-    if (!selected.size || isCreating) return;
+    if (!selected.size || isCreating) { return; }
     setIsCreating(true);
     await createGroup(Array.from(selected), groupName.trim(), groupColor, isCompact);
     setSelected(new Set());
@@ -51,7 +51,7 @@ export function UngroupedSection({ tabs, onJoinRequest }: UngroupedSectionProps)
     setIsCreating(false);
   }, [selected, isCreating, createGroup, groupName, groupColor, isCompact]);
 
-  if (tabs.length === 0) return null;
+  if (tabs.length === 0) { return null; }
 
   return (
     <div className="space-y-1">

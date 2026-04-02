@@ -38,7 +38,7 @@ async function setRaw(key: string, value: string): Promise<void> {
 }
 
 function parseState<T>(raw: string | null, fallback: T): T {
-  if (!raw) return fallback;
+  if (!raw) { return fallback; }
   try {
     const parsed = JSON.parse(raw);
     return (parsed?.state as T) ?? fallback;

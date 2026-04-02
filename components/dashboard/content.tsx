@@ -27,7 +27,7 @@ export function BookmarksContent() {
 
   // Scroll highlighted bookmark into view after collection switch + re-render
   React.useEffect(() => {
-    if (!highlightedBookmarkId) return;
+    if (!highlightedBookmarkId) { return; }
     const timer = setTimeout(() => {
       document
         .querySelector(`[data-bookmark-id="${highlightedBookmarkId}"]`)

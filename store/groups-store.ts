@@ -79,7 +79,7 @@ export const useGroupsStore = create<GroupsState>()(
         const existing = groupTabs.find(
           (t) => t.groupId === groupId && t.url === tab.url
         );
-        if (existing) return; // deduplicate
+        if (existing) { return; } // deduplicate
         const position = groupTabs.filter((t) => t.groupId === groupId).length;
         set((state) => ({
           groupTabs: [
@@ -98,7 +98,7 @@ export const useGroupsStore = create<GroupsState>()(
       moveTab: (tabId, toGroupId) => {
         set((state) => {
           const tab = state.groupTabs.find((t) => t.id === tabId);
-          if (!tab) return {};
+          if (!tab) { return {}; }
           const position = state.groupTabs.filter(
             (t) => t.groupId === toGroupId
           ).length;
@@ -113,12 +113,12 @@ export const useGroupsStore = create<GroupsState>()(
       openGroup: async (groupId) => {
         const { groups, groupTabs } = get();
         const group = groups.find((g) => g.id === groupId);
-        if (!group) return;
+        if (!group) { return; }
         const urls = groupTabs
           .filter((t) => t.groupId === groupId)
           .sort((a, b) => a.position - b.position)
           .map((t) => t.url);
-        if (!urls.length) return;
+        if (!urls.length) { return; }
         await openAsTabGroup(urls, group.name, group.color, group.isCompact);
       },
     }),
@@ -131,7 +131,7 @@ export const useGroupsStore = create<GroupsState>()(
           groupTabs: state.groupTabs,
         } as GroupsState),
       onRehydrateStorage: () => (state) => {
-        if (state) state._hydrated = true;
+        if (state) { state._hydrated = true; }
       },
     }
   )

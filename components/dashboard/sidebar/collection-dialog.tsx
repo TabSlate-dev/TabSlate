@@ -71,7 +71,7 @@ export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: Coll
           className="space-y-4 pt-1"
           action={(formData) => {
             const name = formData.get("name") as string;
-            if (!name?.trim()) return;
+            if (!name?.trim()) { return; }
             onSubmit(name.trim(), icon);
             onOpenChange(false);
           }}

@@ -62,20 +62,20 @@ export function useTabDragDrop(): UseTabDragDropResult {
   }
 
   function handleDragEnter(e: React.DragEvent) {
-    if (!isTabDrag(e)) return;
+    if (!isTabDrag(e)) { return; }
     dragCounter.current++;
     setIsDragOver(true);
   }
 
   function handleDragOver(e: React.DragEvent) {
-    if (!isTabDrag(e)) return;
+    if (!isTabDrag(e)) { return; }
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
   }
 
   function handleDragLeave() {
     dragCounter.current--;
-    if (dragCounter.current === 0) setIsDragOver(false);
+    if (dragCounter.current === 0) { setIsDragOver(false); }
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -84,7 +84,7 @@ export function useTabDragDrop(): UseTabDragDropResult {
     setIsDragOver(false);
 
     const raw = e.dataTransfer.getData(DRAG_TYPE);
-    if (!raw) return;
+    if (!raw) { return; }
 
     try {
       const { title, url, favIconUrl } = JSON.parse(raw) as {

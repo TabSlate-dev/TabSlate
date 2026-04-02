@@ -38,7 +38,7 @@ import type { Workspace } from "@/lib/types";
 
 function getInitials(name: string): string {
   const words = name.trim().split(/\s+/);
-  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  if (words.length >= 2) { return (words[0][0] + words[1][0]).toUpperCase(); }
   return name.slice(0, 2).toUpperCase();
 }
 
@@ -73,7 +73,7 @@ function WorkspaceDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim()) { return; }
     onSubmit(name.trim(), color);
   };
 
@@ -211,7 +211,7 @@ export function WorkspaceRail() {
                     <DropdownMenuItem
                       className="text-destructive focus:text-destructive"
                       onClick={() => {
-                        if (workspaces.length <= 1) return;
+                        if (workspaces.length <= 1) { return; }
                         deleteWorkspace(ws.id);
                       }}
                     >
@@ -263,7 +263,7 @@ export function WorkspaceRail() {
         <WorkspaceDialog
           open={!!editWorkspace}
           onOpenChange={(open) => {
-            if (!open) setEditWorkspace(null);
+            if (!open) { setEditWorkspace(null); }
           }}
           initial={editWorkspace}
           onSubmit={(name, color) => {

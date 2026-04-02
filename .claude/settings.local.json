@@ -10,7 +10,8 @@
       "Bash(awk 'NR==13' /Users/lieutenant/Documents/github/TabSlate/err.log)",
       "Bash(python3 -c \":*)",
       "Bash(npx tsc:*)",
-      "Bash(bun run build)"
+      "Bash(bun run build)",
+      "Bash(bun run compile)"
     ]
   }
 }

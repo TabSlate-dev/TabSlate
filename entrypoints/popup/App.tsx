@@ -57,7 +57,7 @@ function PopupContent() {
         (c) => c.workspaceId === state.activeWorkspaceId
       );
       setSaveableCollections(cols);
-      if (cols.length > 0) setSelectedCollectionId(cols[0].id);
+      if (cols.length > 0) { setSelectedCollectionId(cols[0].id); }
     });
   }, []);
 
@@ -66,7 +66,7 @@ function PopupContent() {
   );
 
   const handleSave = async () => {
-    if (!tab?.url || saveState === "saving" || saveState === "saved") return;
+    if (!tab?.url || saveState === "saving" || saveState === "saved") { return; }
 
     setSaveState("saving");
     try {

@@ -174,7 +174,7 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
             onChange={(e) => setNameInput(e.target.value)}
             onBlur={handleNameCommit}
             onKeyDown={(e) => {
-              if (e.key === "Enter") handleNameCommit();
+              if (e.key === "Enter") { handleNameCommit(); }
               if (e.key === "Escape") {
                 setNameInput(displayTitle);
                 setEditingName(false);

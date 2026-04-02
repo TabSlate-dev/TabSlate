@@ -33,7 +33,7 @@ export function GroupsPanel() {
   React.useEffect(() => {
     loadTabs();
     const handler = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if ("tabslate-tabs-changed" in changes) loadTabs();
+      if ("tabslate-tabs-changed" in changes) { loadTabs(); }
     };
     chrome.storage.onChanged.addListener(handler);
     return () => chrome.storage.onChanged.removeListener(handler);
@@ -41,18 +41,18 @@ export function GroupsPanel() {
 
   const handleDragStart = React.useCallback((event: DragStartEvent) => {
     const data = event.active.data.current;
-    if (data?.type === "browser-tab") setActiveTab(data.tab);
+    if (data?.type === "browser-tab") { setActiveTab(data.tab); }
   }, []);
 
   const handleDragEnd = React.useCallback((event: DragEndEvent) => {
     setActiveTab(null);
     const { active, over } = event;
-    if (!over) return;
+    if (!over) { return; }
 
     const activeData = active.data.current;
     const overData = over.data.current;
 
-    if (!overData || overData.type !== "saved-group") return;
+    if (!overData || overData.type !== "saved-group") { return; }
     const targetGroupId: string = overData.groupId;
 
     if (activeData?.type === "browser-tab") {

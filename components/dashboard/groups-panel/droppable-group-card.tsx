@@ -64,8 +64,8 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
               className="h-7 text-sm"
               autoFocus
               onKeyDown={(e) => {
-                if (e.key === "Enter") saveEdit();
-                if (e.key === "Escape") cancelEdit();
+                if (e.key === "Enter") { saveEdit(); }
+                if (e.key === "Escape") { cancelEdit(); }
               }}
             />
             <ColorPicker value={colorVal} onChange={setColorVal} size="sm" />

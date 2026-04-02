@@ -48,7 +48,7 @@ export function TabsPanel() {
     const ungrouped: typeof openTabs = [];
     for (const tab of openTabs) {
       if (tab.groupId !== -1) {
-        if (!grouped.has(tab.groupId)) grouped.set(tab.groupId, []);
+        if (!grouped.has(tab.groupId)) { grouped.set(tab.groupId, []); }
         grouped.get(tab.groupId)!.push(tab);
       } else {
         ungrouped.push(tab);

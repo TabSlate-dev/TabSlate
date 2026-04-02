@@ -75,7 +75,7 @@ export function TabsRail() {
     setWindows(wins);
     // auto-select focused window if not already selected
     setSelectedWindowId((prev) => {
-      if (prev && wins.some((w) => w.id === prev)) return prev;
+      if (prev && wins.some((w) => w.id === prev)) { return prev; }
       return wins.find((w) => w.focused)?.id ?? wins[0]?.id ?? null;
     });
     setLoading(false);
@@ -84,7 +84,7 @@ export function TabsRail() {
   React.useEffect(() => {
     refresh();
     const handler = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if ("tabslate-tabs-changed" in changes) refresh();
+      if ("tabslate-tabs-changed" in changes) { refresh(); }
     };
     chrome.storage.onChanged.addListener(handler);
     return () => chrome.storage.onChanged.removeListener(handler);

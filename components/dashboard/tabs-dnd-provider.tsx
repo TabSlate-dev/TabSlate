@@ -74,7 +74,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     const { active, over } = event;
 
     const dragData = active.data.current as DragData | undefined;
-    if (!dragData) return;
+    if (!dragData) { return; }
 
     // Tab dropped on empty space → ungroup if it was in a group
     if (!over) {
@@ -224,14 +224,13 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
 }
 
 function DragPreview({ data }: { data: DragData }) {
-  if (data.type === "tab" || (data as any).type === "browser-tab") {
-    const tabData = (data as any).tab || data;
+  if (data.type === "tab") {
     return (
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shadow-xl opacity-95 pointer-events-none min-w-[200px]">
         <div className="size-6 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-          <FaviconImage src={tabData.favIconUrl || tabData.favicon} className="size-4" />
+          <FaviconImage src={data.favIconUrl} className="size-4" />
         </div>
-        <span className="text-sm truncate">{tabData.title}</span>
+        <span className="text-sm truncate">{data.title}</span>
       </div>
     );
   }
