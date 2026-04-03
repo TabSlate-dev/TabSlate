@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -76,18 +77,19 @@ export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: Coll
             onOpenChange(false);
           }}
         >
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Name</label>
+          <Field>
+            <FieldLabel htmlFor="collection-name">Name</FieldLabel>
             <Input
+              id="collection-name"
               name="name"
               defaultValue={initial?.name ?? ""}
               placeholder="My Collection"
               autoFocus
               required
             />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Icon</label>
+          </Field>
+          <Field>
+            <FieldLabel>Icon</FieldLabel>
             <div className="flex flex-wrap gap-1.5">
               {COLLECTION_ICONS.map((ic) => {
                 const Icon = ICON_MAP[ic] ?? Folder;
@@ -108,7 +110,7 @@ export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: Coll
                 );
               })}
             </div>
-          </div>
+          </Field>
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               Cancel

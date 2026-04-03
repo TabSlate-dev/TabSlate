@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Layers, MoreHorizontal, Pencil, Plus, Settings, Trash2 } from "lucide-react";
 import {
@@ -89,17 +90,18 @@ function WorkspaceDialog({
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-1">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Name</label>
+          <Field>
+            <FieldLabel htmlFor="workspace-name">Name</FieldLabel>
             <Input
+              id="workspace-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="My Workspace"
               autoFocus
             />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Color</label>
+          </Field>
+          <Field>
+            <FieldLabel>Color</FieldLabel>
             <div className="flex gap-2 flex-wrap">
               {WORKSPACE_COLORS.map((c) => (
                 <button
@@ -116,7 +118,7 @@ function WorkspaceDialog({
                 />
               ))}
             </div>
-          </div>
+          </Field>
           <DialogFooter>
             <Button
               type="button"

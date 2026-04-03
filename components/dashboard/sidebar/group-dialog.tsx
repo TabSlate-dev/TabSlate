@@ -2,11 +2,14 @@ import * as React from "react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { FolderPlus } from "lucide-react";
@@ -69,54 +72,45 @@ export function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) 
               <FolderPlus className="size-5 text-primary" />
               New Saved Group
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Create a new saved tab group with a name, color, and selected tabs.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 overflow-y-auto p-4 space-y-6">
             <div className="space-y-4">
-              <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                Group Details
-              </label>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-muted/20 p-4 rounded-2xl border border-border/50">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground ml-1">
-                    Group Name
-                  </label>
-                  <Input
-                    name="name"
-                    defaultValue=""
-                    placeholder="e.g. Work, Social..."
-                    className="h-9 focus-visible:ring-primary shadow-sm"
-                    autoFocus
-                  />
-                </div>
-
-                <div className="space-y-4">
-                  <label className="text-xs font-medium text-muted-foreground ml-1">
-                    Theme Color
-                  </label>
-                  <ColorPicker value={color} onChange={setColor} />
+              <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1.5 w-[70%]">
+                <FieldLabel htmlFor="group-name" className="col-span-2">Group Name</FieldLabel>
+                <Input
+                  id="group-name"
+                  name="name"
+                  defaultValue=""
+                  placeholder="e.g. Work, Social..."
+                  autoFocus
+                />
+                <div className="flex items-center gap-1.5">
+                  <Switch id="compact-name" checked={isCompact} onCheckedChange={setIsCompact} />
+                  <div className="relative text-xs text-muted-foreground select-none whitespace-nowrap">
+                    <span className="invisible" aria-hidden>Show compact name</span>
+                    <span className="absolute top-0 left-0">{isCompact ? "Show compact name" : "Show full name"}</span>
+                  </div>
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2">
-                <div className="flex items-center gap-2 bg-muted/40 px-3 py-1.5 rounded-full border border-border/50">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-                    Compact Name
-                  </span>
-                  <Switch checked={isCompact} onCheckedChange={setIsCompact} className="scale-90" />
-                </div>
-              </div>
+              <Field>
+                <FieldLabel>Theme Color</FieldLabel>
+                <ColorPicker value={color} onChange={setColor} />
+              </Field>
             </div>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between border-b pb-2">
-                <label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-3">
+                <Label className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-3">
                   Select Tabs to Save
                   <span className="text-xs font-medium text-primary bg-primary/10 px-2 py-0.5 rounded-full">
                     {selectedTabIds.size} / {openTabs.length}
                   </span>
-                </label>
+                </Label>
                 {openTabs.length > 0 && (
                   <button
                     type="button"
@@ -161,7 +155,7 @@ export function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) 
                 type="submit"
                 size="sm"
                 disabled={selectedTabIds.size === 0}
-                className="shadow-sm shadow-primary/10 transition-all hover:translate-y-[-1px] active:translate-y-[0px]"
+                className="shadow-sm shadow-primary/10 transition-all hover:-translate-y-px active:translate-y-0"
               >
                 Save Group
               </Button>

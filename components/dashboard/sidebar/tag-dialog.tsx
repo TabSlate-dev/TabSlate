@@ -8,6 +8,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Field, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TAG_COLORS } from "@/store/workspace-store";
@@ -45,18 +46,19 @@ export function TagDialog({ open, onOpenChange, onSubmit }: TagDialogProps) {
             onOpenChange(false);
           }}
         >
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Name</label>
+          <Field>
+            <FieldLabel htmlFor="tag-name">Name</FieldLabel>
             <Input
+              id="tag-name"
               name="name"
               defaultValue=""
               placeholder="Tag name"
               autoFocus
               required
             />
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Color</label>
+          </Field>
+          <Field>
+            <FieldLabel>Color</FieldLabel>
             <div className="flex flex-wrap gap-1.5">
               {TAG_COLORS.map((c) => {
                 const bgColor = c.split(" ")[0];
@@ -74,7 +76,7 @@ export function TagDialog({ open, onOpenChange, onSubmit }: TagDialogProps) {
                 );
               })}
             </div>
-          </div>
+          </Field>
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               Cancel

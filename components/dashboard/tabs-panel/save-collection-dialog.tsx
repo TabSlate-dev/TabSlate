@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 
 interface SaveCollectionDialogProps {
@@ -59,20 +60,17 @@ export function SaveCollectionDialog({
             onKeyDown={(e) => e.key === "Enter" && onConfirm(name, deduplicate)}
             autoFocus
           />
-          <div className="flex items-center justify-between gap-2 px-1 pt-1">
-            <div className="space-y-0.5">
-              <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                Deduplicate
-              </label>
-              <p className="text-xs text-muted-foreground">
-                Skip tabs already saved elsewhere
-              </p>
-            </div>
+          <Field orientation="horizontal" className="px-1 pt-1">
+            <FieldContent>
+              <FieldLabel htmlFor="deduplicate">Deduplicate</FieldLabel>
+              <FieldDescription>Skip tabs already saved elsewhere</FieldDescription>
+            </FieldContent>
             <Switch
+              id="deduplicate"
               checked={deduplicate}
               onCheckedChange={setDeduplicate}
             />
-          </div>
+          </Field>
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose}>
