@@ -29,7 +29,7 @@ const DRAG_TYPE = "application/tabslate-tab";
 export function useTabDragDrop(): UseTabDragDropResult {
   const { addBookmark, bookmarks, selectedCollection, setSelectedCollection } =
     useBookmarksStore();
-  const { collections, activeWorkspaceId } = useWorkspaceStore();
+  const { collections, activeWorkspaceId, setHighlightedCollectionIds } = useWorkspaceStore();
 
   const dragCounter = React.useRef(0);
   const [isDragOver, setIsDragOver] = React.useState(false);
@@ -111,13 +111,16 @@ export function useTabDragDrop(): UseTabDragDropResult {
             // Navigate to the duplicate and highlight it
             setSelectedCollection(existing.collectionId || "all");
             setHighlightedBookmarkId(existing.id);
+            if (existing.collectionId) {
+              setHighlightedCollectionIds([existing.collectionId], 3000);
+            }
             const colName =
               collections.find((c) => c.id === existing.collectionId)?.name ?? "Default";
             showNotification(
               { type: "duplicate", text: `Already saved in "${colName}"` },
-              3500
+              3000
             );
-            setTimeout(() => setHighlightedBookmarkId(null), 3500);
+            setTimeout(() => setHighlightedBookmarkId(null), 3000);
           } else {
             showNotification(
               { type: "duplicate", text: "Already saved in another workspace" },

@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils";
 import { storageService } from "@/lib/storage";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import type { BrowserTab } from "@/lib/chrome/tabs";
-
+import { BaseTabRow } from "@/components/dashboard/shared/base-tab-row";
 
 interface TabRowProps {
   tab: BrowserTab;
@@ -39,7 +39,7 @@ export const TabRow = React.memo(function TabRow({
   onJoinGroup,
   isUngrouped,
 }: TabRowProps) {
-  // Fine-grained selectors — only re-render when this tab's highlight changes
+  // Fine-grained selectors
   const isHighlighted = useTabsStore(s => s.highlightedTabIds.includes(tab.id));
   const closeTab = useTabsStore(s => s.closeTab);
   const focusTab = useTabsStore(s => s.focusTab);
@@ -80,6 +80,60 @@ export const TabRow = React.memo(function TabRow({
       handleFocus(e);
     }
   }, [variant, showCheckbox, onSelect, selected, handleFocus]);
+
+  // Actions for the row
+  const actionsContent = !hideActions && (
+    <>
+      {tab.groupId !== -1 ? (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={(e) => { e.stopPropagation(); onUngroup?.(); }}
+          title="Ungroup tab"
+          className="size-6 text-destructive hover:bg-destructive/10"
+        >
+          <BrushCleaning className="size-3" />
+        </Button>
+      ) : (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={(e) => { e.stopPropagation(); onJoinGroup?.(); }}
+          title="Join group"
+          className="size-6"
+        >
+          <FolderPlus className="size-3" />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={handleSave}
+        title={saved ? "Saved!" : "Save bookmark"}
+        className={cn("size-6", saved && "text-green-600")}
+      >
+        {saved ? <Check className="size-3" /> : <Bookmark className="size-3" />}
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={handleOpen}
+        title="Open in new tab"
+        className="size-6"
+      >
+        <ExternalLink className="size-3" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={handleClose}
+        title="Close tab"
+        className="size-6 hover:text-destructive"
+      >
+        <X className="size-3" />
+      </Button>
+    </>
+  );
 
   if (variant === "card") {
     let hostname = "";
@@ -186,111 +240,20 @@ export const TabRow = React.memo(function TabRow({
     );
   }
 
-  // Default "list" variant
+  // Use shared BaseTabRow for the standard "list" variant
   return (
-    <div
-      className={cn(
-        "group isolate relative flex items-center gap-2.5 px-3 py-2 transition-all cursor-pointer",
-        !isUngrouped && "rounded-md hover:bg-accent/50",
-        selected && !isUngrouped && "bg-accent/40",
-        tab.active && !selected && !isUngrouped && "bg-blue-50/60 dark:bg-blue-950/20",
-        isHighlighted && "ring-2 ring-amber-500 bg-amber-500/10 rounded-md shadow-sm z-10"
-      )}
+    <BaseTabRow
+      title={tab.title}
+      url={tab.url}
+      favicon={tab.favIconUrl}
+      active={tab.active}
+      selected={selected}
+      isHighlighted={isHighlighted}
+      showCheckbox={showCheckbox}
+      onSelect={onSelect}
       onClick={handleCardClick}
-    >
-      {isUngrouped && (
-        <div
-          className={cn(
-            "absolute inset-x-0.5 inset-y-0.5 rounded-md pointer-events-none transition-colors -z-10",
-            selected ? "bg-accent/50" : "group-hover:bg-accent/40"
-          )}
-        />
-      )}
-      {showCheckbox && (
-        <div
-          className={cn(
-            "shrink-0 mr-1 flex size-4 items-center justify-center rounded-sm border border-primary transition-all",
-            selected ? "bg-primary text-primary-foreground" : "bg-transparent text-transparent"
-          )}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect?.(!selected);
-          }}
-        >
-          <Check className={cn("size-3", selected ? "opacity-100" : "opacity-0")} strokeWidth={3} />
-        </div>
-      )}
-
-      {/* Favicon */}
-      <div className="size-6 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-        <FaviconImage src={tab.favIconUrl} className="size-4" />
-      </div>
-
-      {/* Title */}
-      <button
-        type="button"
-        className="flex-1 min-w-0 text-left"
-        onClick={handleFocus}
-        title={tab.url}
-      >
-        <p className={cn("text-sm truncate", tab.active && "font-medium")}>
-          {tab.title}
-        </p>
-      </button>
-
-      {/* Hover actions */}
-      {!hideActions && (
-        <div className="flex items-center gap-0.5 opacity-100 shrink-0">
-          {tab.groupId !== -1 ? (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={(e) => { e.stopPropagation(); onUngroup?.(); }}
-              title="Ungroup tab"
-              className="size-6 text-destructive hover:bg-destructive/10"
-            >
-              <BrushCleaning className="size-3" />
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={(e) => { e.stopPropagation(); onJoinGroup?.(); }}
-              title="Join group"
-              className="size-6"
-            >
-              <FolderPlus className="size-3" />
-            </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={handleSave}
-            title={saved ? "Saved!" : "Save bookmark"}
-            className={cn("size-6", saved && "text-green-600")}
-          >
-            {saved ? <Check className="size-3" /> : <Bookmark className="size-3" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={handleOpen}
-            title="Open in new tab"
-            className="size-6"
-          >
-            <ExternalLink className="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            onClick={handleClose}
-            title="Close tab"
-            className="size-6 hover:text-destructive"
-          >
-            <X className="size-3" />
-          </Button>
-        </div>
-      )}
-    </div>
+      isUngrouped={isUngrouped}
+      actions={actionsContent}
+    />
   );
 });

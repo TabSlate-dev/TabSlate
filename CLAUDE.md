@@ -91,11 +91,47 @@ const setSelectedCollection = useBookmarksStore(s => s.setSelectedCollection);
 
 在组件 render 中对 store 数据做 filter/sort/map 的操作必须用 `useMemo`，依赖数组列明实际用到的 store 字段。
 
+**禁止在 selector 内做派生计算**——selector 每次返回新引用会导致无限重渲染：
+
+```ts
+// ❌ 错误 — filter/sort 每次返回新数组，触发无限重渲染
+const tabs = useGroupsStore(s => s.groupTabs.filter(t => t.groupId === id));
+
+// ✅ 正确 — selector 取原始数据，useMemo 做派生
+const allTabs = useGroupsStore(s => s.groupTabs);
+const tabs = React.useMemo(
+  () => allTabs.filter(t => t.groupId === id).sort((a, b) => a.position - b.position),
+  [allTabs, id]
+);
+```
+
 ### 共享组件
 
 - **FaviconImage** (`components/ui/favicon-image.tsx`) — 所有 favicon 显示都用此组件，禁止裸 `<img onError>`
 - **ColorPicker** (`components/ui/color-picker.tsx`) — Tab group 颜色选择器，支持 `size="sm" | "md"`
+- **Alert** (`components/ui/alert.tsx`) — 标准 shadcn Alert，用于内联提示和浮动通知（duplicate tab 检测等）
 - **shadcn/ui** (`components/ui/`) — Button、Input、Dialog 等基础组件
+
+### Dialog 样式规范
+
+Dialog 必须使用标准 shadcn 结构，禁止在 `DialogContent` 上添加破坏一致性的覆盖：
+
+```tsx
+// ❌ 错误 — 破坏视觉统一性
+<DialogContent className="border-none shadow-2xl p-0 backdrop-blur-md">
+
+// ✅ 正确 — 保留边框和默认阴影，p-0 仅在需要自定义内部布局时使用
+<DialogContent className="sm:max-w-lg">
+```
+
+浮动通知（如重复检测提示）使用 `<Alert>` 配合 fixed 定位，而非自定义颜色 pill：
+
+```tsx
+<Alert className="fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap">
+  <AlertCircle />
+  <AlertDescription>{message}</AlertDescription>
+</Alert>
+```
 
 ### Chrome Storage Key 布局
 

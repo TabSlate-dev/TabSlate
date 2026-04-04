@@ -63,7 +63,7 @@ export function TabsPanel() {
     setIsSavingWindow(false);
     setSaveWindowOpen(false);
     setSaveResult(result);
-    setTimeout(() => setSaveResult(null), 3500);
+    setTimeout(() => setSaveResult(null), 3000);
   }, [saveWindowAsCollection]);
 
   return (

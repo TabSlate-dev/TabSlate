@@ -19,7 +19,7 @@ import type { BrowserTab } from "@/lib/chrome/tabs";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { AlertCircle } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export type TabDragData = {
   type: "tab";
@@ -38,7 +38,15 @@ export type TabGroupDragData = {
   tabs: BrowserTab[];
 };
 
-export type DragData = TabDragData | TabGroupDragData;
+export type BookmarkDragData = {
+  type: "bookmark";
+  bookmarkId: string;
+  title: string;
+  url: string;
+  favicon: string;
+};
+
+export type DragData = TabDragData | TabGroupDragData | BookmarkDragData;
 
 interface TabsDndContextValue {
   activeData: DragData | null;
@@ -164,6 +172,23 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    if (dragData.type === "bookmark") {
+      if (dropId.startsWith("sidebar-collection-")) {
+        const rawId = dropId.replace("sidebar-collection-", "");
+        const targetCollectionId = rawId === "all" ? "" : rawId;
+
+        const bookmark = useBookmarksStore.getState().bookmarks.find(b => b.id === dragData.bookmarkId);
+        if (bookmark && bookmark.collectionId === targetCollectionId) {
+          showNotification("Already in this collection");
+          return;
+        }
+
+        useBookmarksStore.getState().updateBookmark(dragData.bookmarkId, {
+          collectionId: targetCollectionId,
+        });
+      }
+    }
+
     if (dragData.type === "tab-group") {
       if (dropId === "sidebar-groups") {
         const { createGroup, addTabToGroup } = useGroupsStore.getState();
@@ -205,14 +230,10 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         onDragCancel={handleDragCancel}
       >
         {notification && (
-          <div
-            className={cn(
-              "fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap bg-amber-500 text-white"
-            )}
-          >
-            <AlertCircle className="size-4 shrink-0" />
-            {notification.text}
-          </div>
+          <Alert className="fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap border-amber-500/50 text-amber-600 bg-amber-50/90 dark:bg-amber-950/20">
+            <AlertCircle />
+            <AlertDescription className="text-amber-600 dark:text-amber-500">{notification.text}</AlertDescription>
+          </Alert>
         )}
         {children}
         <DragOverlay dropAnimation={null}>
@@ -224,9 +245,19 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
 }
 
 function DragPreview({ data }: { data: DragData }) {
+  if (data.type === "bookmark") {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shadow-xl opacity-95 pointer-events-none min-w-50">
+        <div className="size-6 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+          <FaviconImage src={data.favicon} className="size-4" />
+        </div>
+        <span className="text-sm truncate">{data.title}</span>
+      </div>
+    );
+  }
   if (data.type === "tab") {
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shadow-xl opacity-95 pointer-events-none min-w-[200px]">
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shadow-xl opacity-95 pointer-events-none min-w-50">
         <div className="size-6 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
           <FaviconImage src={data.favIconUrl} className="size-4" />
         </div>

@@ -123,13 +123,11 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
   
   ungroupSpecificTabs: async (tabIds) => {
-    const { ungroupTabs } = await import("@/lib/chrome/tab-groups");
     await ungroupTabs(tabIds);
     await get().loadTabs(true);
   },
 
   closeSpecificTabs: async (tabIds) => {
-    const { closeTab } = await import("@/lib/chrome/tabs");
     await Promise.all(tabIds.map((id) => closeTab(id)));
     await get().loadTabs(true);
   },
@@ -214,7 +212,6 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const { openTabs } = get();
     const tabIds = openTabs.filter((t) => t.groupId === groupId).map((t) => t.id);
     if (tabIds.length) {
-      const { closeTab } = await import("@/lib/chrome/tabs");
       await Promise.all(tabIds.map((id) => closeTab(id)));
     }
     await get().loadTabs(true);

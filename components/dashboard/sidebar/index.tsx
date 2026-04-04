@@ -83,12 +83,26 @@ const navItems = [
 function DroppableZone({ id, children }: { id: string; children: React.ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({ id });
   const { activeData } = useTabsDndContext();
+
+  const isAccepting = React.useMemo(() => {
+    if (!activeData) { return false; }
+    // Collection zones accept tabs, groups (to save all tabs), and bookmarks (to move/copy)
+    if (id.startsWith("sidebar-collection-")) {
+      return ["tab", "tab-group", "bookmark"].includes(activeData.type);
+    }
+    // Groups zone currently only accepts tab-groups to save them
+    if (id === "sidebar-groups") {
+      return activeData.type === "tab-group";
+    }
+    return false;
+  }, [id, activeData]);
+
   return (
     <div
       ref={setNodeRef}
       className={cn(
-        "rounded-md",
-        isOver && (activeData?.type === "tab-group" || activeData?.type === "tab") && "ring-1 ring-primary/40 bg-primary/5"
+        "rounded-md transition-all duration-200",
+        isOver && isAccepting && "ring-1 ring-primary/40 bg-primary/5"
       )}
     >
       {children}
@@ -318,8 +332,12 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
                     )}
                     {groups.map((group) => (
                       <SidebarMenuItem key={group.id}>
-                        <SidebarMenuButton asChild className="h-9 group/groupitem">
-                          <div className="flex items-center gap-2 px-2 w-full">
+                        <SidebarMenuButton
+                          asChild
+                          isActive={pathname === `/groups/${group.id}`}
+                          className="h-9 group/groupitem"
+                        >
+                          <Link to={`/groups/${group.id}`}>
                             <span
                               className="size-2.5 rounded-full shrink-0"
                               style={{ backgroundColor: TAB_GROUP_COLORS[group.color] }}
@@ -335,7 +353,7 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
                             >
                               <Trash className="size-3" />
                             </button>
-                          </div>
+                          </Link>
                         </SidebarMenuButton>
                       </SidebarMenuItem>
                     ))}

@@ -32,6 +32,7 @@ TabSlate/
 │
 ├── components/
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
+│   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
 │   │   └── favicon-image.tsx   # 带 fallback 的 favicon 图片
 │   └── dashboard/
@@ -52,6 +53,8 @@ TabSlate/
 │       │   ├── droppable-group-card.tsx
 │       │   ├── draggable-tab-row.tsx
 │       │   └── create-group-bar.tsx
+│       ├── group-detail/       # /groups/:groupId 路由：单个保存组详情
+│       │   └── index.tsx       # GroupDetail（标签列表、内联编辑、拖拽支持）
 │       ├── tabs-dnd-provider.tsx # 全局 DnD context（tab → collection/saved-group）
 │       ├── tab-row.tsx         # 单行 tab 组件（React.memo）
 │       ├── stats-cards.tsx     # 书签统计卡片
@@ -82,8 +85,9 @@ TabSlate/
 │       └── tab-groups.ts   # Chrome tabGroups API 封装 + 颜色常量
 │
 ├── hooks/
-│   ├── use-tab-drag-drop.ts  # 原生 HTML drag-and-drop（tab → 书签内容区）
-│   └── use-mobile.ts         # 响应式断点检测
+│   ├── use-tab-drag-drop.ts   # 原生 HTML drag-and-drop（tab → 书签内容区）
+│   ├── use-group-drag-drop.ts # 原生 HTML drag-and-drop（tab → 保存组详情页）
+│   └── use-mobile.ts          # 响应式断点检测
 │
 └── wxt.config.ts            # 扩展 manifest、权限配置
 ```
@@ -133,6 +137,7 @@ newtab (Zustand)  ──写入──▶  chrome.storage.local
 | `/archive` | `ArchiveContent` | 已归档书签 |
 | `/trash` | `TrashContent` | 回收站 |
 | `/tabs` | `TabsPanel` | 当前标签页管理 |
+| `/groups/:groupId` | `GroupDetail` | 保存组详情（标签列表、内联编辑、删除、从 TabsRail 拖入） |
 
 ## 布局结构
 
@@ -168,8 +173,13 @@ newtab (Zustand)  ──写入──▶  chrome.storage.local
 
 ### 3. HTML5 原生拖拽（use-tab-drag-drop）
 - 范围：`TabsRail` → `BookmarksContent`
-- 用途：从右侧标签页轨道拖 tab 到书签内容区
-- 技术：原生 `draggable` + `dragover` 事件
+- 用途：从右侧标签页轨道拖 tab 到书签内容区，含重复检测与高亮
+- 技术：原生 `draggable` + `dragover` 事件，MIME type `application/tabslate-tab`
+
+### 4. HTML5 原生拖拽（use-group-drag-drop）
+- 范围：`TabsRail` → `GroupDetail`
+- 用途：从右侧标签页轨道拖 tab 到保存组详情页
+- 技术：与 system 3 相同 MIME type，drop 后调用 `addTabToGroup()`（自动去重）
 
 ## Chrome 扩展事件流
 

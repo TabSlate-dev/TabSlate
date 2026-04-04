@@ -87,8 +87,8 @@ export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false
       <div
         data-bookmark-id={bookmark.id}
         className={cn(
-          "group flex items-center gap-4 p-4 rounded-lg border bg-card/40 hover:bg-accent/30 backdrop-blur-lg hover:scale-[1.03] hover:shadow-xl transition-all duration-300 z-0 hover:z-10",
-          menuOpen && "bg-accent/30 backdrop-blur-lg scale-[1.03] shadow-xl z-10",
+          "group flex items-center gap-4 p-4 rounded-lg border bg-card/40 hover:bg-accent/50 backdrop-blur-lg hover:shadow-md hover:border-primary/20 transition-all duration-200 z-0 hover:z-10",
+          menuOpen && "bg-accent/50 backdrop-blur-lg shadow-md border-primary/20 z-10",
           isHighlighted && "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle"
         )}
       >
@@ -136,8 +136,8 @@ export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false
     <div
       data-bookmark-id={bookmark.id}
       className={cn(
-        "group relative flex flex-col rounded-xl border bg-card/40 hover:bg-accent/30 backdrop-blur-lg hover:scale-105 hover:shadow-2xl transition-all duration-300 cursor-pointer z-0 hover:z-10",
-        menuOpen && "bg-accent/30 backdrop-blur-lg scale-105 shadow-2xl z-10",
+        "group relative flex flex-col rounded-xl border bg-card/40 hover:bg-accent/50 backdrop-blur-lg hover:shadow-lg hover:border-primary/20 transition-all duration-200 cursor-pointer z-0 hover:z-10",
+        menuOpen && "bg-accent/50 backdrop-blur-lg shadow-lg border-primary/20 z-10",
         isHighlighted && "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle"
       )}
       onClick={handleSmartOpen}

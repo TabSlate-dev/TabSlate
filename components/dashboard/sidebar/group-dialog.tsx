@@ -56,7 +56,7 @@ export function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl max-h-[85vh] flex flex-col p-0 overflow-hidden gap-0 border-none shadow-2xl">
+      <DialogContent className="sm:max-w-4xl max-h-[85vh] flex flex-col p-0 overflow-hidden gap-0">
         <form
           className="flex flex-col h-full max-h-[85vh]"
           action={(formData) => {
@@ -67,7 +67,7 @@ export function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) 
             onOpenChange(false);
           }}
         >
-          <DialogHeader className="p-4 border-b shrink-0 bg-background/50 backdrop-blur-md">
+          <DialogHeader className="p-4 border-b shrink-0 bg-background">
             <DialogTitle className="flex items-center gap-2 text-xl font-bold">
               <FolderPlus className="size-5 text-primary" />
               New Saved Group
@@ -146,7 +146,7 @@ export function GroupDialog({ open, onOpenChange, onSubmit }: GroupDialogProps) 
             </div>
           </div>
 
-          <DialogFooter className="p-4 border-t bg-muted/30 shrink-0 backdrop-blur-sm">
+          <DialogFooter className="p-4 border-t bg-muted/50 shrink-0">
             <div className="flex items-center gap-3 w-full sm:justify-end">
               <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                 Cancel

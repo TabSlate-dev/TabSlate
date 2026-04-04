@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDraggable } from "@dnd-kit/core";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useTabDragDrop } from "@/hooks/use-tab-drag-drop";
@@ -6,8 +7,42 @@ import { BookmarkCard } from "./bookmark-card";
 import { StatsCards } from "./stats-cards";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { X, BookmarkPlus, Bookmark, AlertCircle } from "lucide-react";
+import type { BookmarkDragData } from "./tabs-dnd-provider";
+import type { Bookmark as BookmarkType } from "@/lib/types";
+
+interface DraggableBookmarkCardProps {
+  bookmark: BookmarkType;
+  variant?: "grid" | "list";
+  isHighlighted?: boolean;
+}
+
+function DraggableBookmarkCard({ bookmark, variant, isHighlighted }: DraggableBookmarkCardProps) {
+  const dragData: BookmarkDragData = {
+    type: "bookmark",
+    bookmarkId: bookmark.id,
+    title: bookmark.title,
+    url: bookmark.url,
+    favicon: bookmark.favicon,
+  };
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
+    id: `bookmark-${bookmark.id}`,
+    data: dragData,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      className={cn(isDragging && "opacity-50 pointer-events-none")}
+    >
+      <BookmarkCard bookmark={bookmark} variant={variant} isHighlighted={isHighlighted} />
+    </div>
+  );
+}
 
 export function BookmarksContent() {
   const {
@@ -60,23 +95,21 @@ export function BookmarksContent() {
         </div>
       )}
 
-      {/* Notification toast */}
+      {/* Notification Toast */}
       {notification && (
-        <div
+        <Alert
           className={cn(
-            "absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap",
-            notification.type === "success"
-              ? "bg-primary text-primary-foreground"
-              : "bg-amber-500 text-white"
+            "fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap",
+            notification.type === "duplicate" && "border-amber-500/50 text-amber-600 bg-amber-50/90 dark:bg-amber-950/20"
           )}
         >
           {notification.type === "success" ? (
-            <BookmarkPlus className="size-4 shrink-0" />
+            <BookmarkPlus className="size-4" />
           ) : (
-            <AlertCircle className="size-4 shrink-0" />
+            <AlertCircle className="size-4" />
           )}
-          {notification.text}
-        </div>
+          <AlertDescription>{notification.text}</AlertDescription>
+        </Alert>
       )}
 
       <div className="p-4 md:p-6 space-y-6">
@@ -131,7 +164,7 @@ export function BookmarksContent() {
           {viewMode === "grid" ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredBookmarks.map((bookmark) => (
-                <BookmarkCard
+                <DraggableBookmarkCard
                   key={bookmark.id}
                   bookmark={bookmark}
                   isHighlighted={bookmark.id === highlightedBookmarkId}
@@ -141,7 +174,7 @@ export function BookmarksContent() {
           ) : (
             <div className="flex flex-col gap-2">
               {filteredBookmarks.map((bookmark) => (
-                <BookmarkCard
+                <DraggableBookmarkCard
                   key={bookmark.id}
                   bookmark={bookmark}
                   variant="list"

@@ -11,7 +11,21 @@
       "Bash(python3 -c \":*)",
       "Bash(npx tsc:*)",
       "Bash(bun run build)",
-      "Bash(bun run compile)"
+      "Bash(bun run compile)",
+      "WebFetch(domain:www.launchuicomponents.com)",
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh api:*)",
+      "WebFetch(domain:reui.io)",
+      "WebFetch(domain:coss.com)",
+      "Bash(gh search:*)",
+      "WebFetch(domain:ui.shadcn.com)",
+      "WebFetch(domain:tweakcn.com)",
+      "WebFetch(domain:www.shadcn-form.com)",
+      "Bash(bunx shadcn@latest diff dialog)",
+      "Bash(bunx shadcn@latest diff)"
     ]
   }
 }
