@@ -20,6 +20,7 @@ import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { BookmarkCard } from "@/components/dashboard/bookmark-card";
 
 export type TabDragData = {
   type: "tab";
@@ -44,6 +45,7 @@ export type BookmarkDragData = {
   title: string;
   url: string;
   favicon: string;
+  variant: "grid" | "list";
 };
 
 export type DragData = TabDragData | TabGroupDragData | BookmarkDragData;
@@ -246,12 +248,21 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
 
 function DragPreview({ data }: { data: DragData }) {
   if (data.type === "bookmark") {
+    const fakeBookmark = {
+      id: data.bookmarkId,
+      title: data.title,
+      url: data.url,
+      favicon: data.favicon,
+      description: "",
+      collectionId: "",
+      tags: [] as string[],
+      createdAt: "",
+      isFavorite: false,
+    };
     return (
-      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-card shadow-xl opacity-95 pointer-events-none min-w-50">
-        <div className="size-6 rounded bg-muted flex items-center justify-center shrink-0 overflow-hidden">
-          <FaviconImage src={data.favicon} className="size-4" />
-        </div>
-        <span className="text-sm truncate">{data.title}</span>
+      <div className="pointer-events-none shadow-2xl rotate-1 opacity-60 overflow-hidden rounded-xl relative">
+        <BookmarkCard bookmark={fakeBookmark} variant={data.variant} />
+        <div className="absolute inset-0 bg-black/10 rounded-xl" />
       </div>
     );
   }

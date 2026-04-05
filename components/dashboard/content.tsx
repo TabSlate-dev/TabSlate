@@ -19,13 +19,14 @@ interface DraggableBookmarkCardProps {
   isHighlighted?: boolean;
 }
 
-function DraggableBookmarkCard({ bookmark, variant, isHighlighted }: DraggableBookmarkCardProps) {
+function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted }: DraggableBookmarkCardProps) {
   const dragData: BookmarkDragData = {
     type: "bookmark",
     bookmarkId: bookmark.id,
     title: bookmark.title,
     url: bookmark.url,
     favicon: bookmark.favicon,
+    variant,
   };
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
     id: `bookmark-${bookmark.id}`,
@@ -37,9 +38,14 @@ function DraggableBookmarkCard({ bookmark, variant, isHighlighted }: DraggableBo
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      className={cn(isDragging && "opacity-50 pointer-events-none")}
+      className="relative"
     >
-      <BookmarkCard bookmark={bookmark} variant={variant} isHighlighted={isHighlighted} />
+      <div className={cn(isDragging && "opacity-0 pointer-events-none")}>
+        <BookmarkCard bookmark={bookmark} variant={variant} isHighlighted={isHighlighted} />
+      </div>
+      {isDragging && (
+        <div className="absolute inset-0 rounded-xl border-2 border-dashed border-muted-foreground/25 bg-muted/10" />
+      )}
     </div>
   );
 }
