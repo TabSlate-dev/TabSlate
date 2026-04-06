@@ -23,7 +23,10 @@ export function DraggableTabRow({ tab }: { tab: BrowserTab }) {
         isDragging && "opacity-40"
       )}
     >
-      <div className="w-5 flex items-center justify-center shrink-0 text-muted-foreground/30 group-hover/draggable:text-muted-foreground/60 transition-colors">
+      <div 
+        data-drag-handle
+        className="w-5 flex items-center justify-center shrink-0 text-muted-foreground/30 group-hover/draggable:text-muted-foreground/60 transition-colors"
+      >
         <GripVertical className="size-3.5" />
       </div>
       <FaviconImage src={tab.favIconUrl} className="size-4 shrink-0 rounded-sm" />

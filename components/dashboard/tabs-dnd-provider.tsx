@@ -3,11 +3,11 @@ import {
   DndContext,
   DragEndEvent,
   DragStartEvent,
-  PointerSensor,
   useSensor,
   useSensors,
   DragOverlay,
 } from "@dnd-kit/core";
+import { SmartPointerSensor } from "@/lib/drag-sensors";
 import { useTabsStore } from "@/store/tabs-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useBookmarksStore } from "@/store/bookmarks-store";
@@ -65,9 +65,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
   const [notification, setNotification] = useState<{ text: string; type: "duplicate" } | null>(null);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { delay: 250, tolerance: 5 },
-    })
+    useSensor(SmartPointerSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
   );
 
   const showNotification = (text: string, durationMs = 3000) => {

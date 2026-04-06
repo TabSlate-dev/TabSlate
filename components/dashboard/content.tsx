@@ -34,14 +34,14 @@ function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted }: Dr
   });
 
   return (
-    <div
-      ref={setNodeRef}
-      {...listeners}
-      {...attributes}
-      className="relative"
-    >
+    <div ref={setNodeRef} {...listeners} {...attributes} className="relative">
       <div className={cn(isDragging && "opacity-0 pointer-events-none")}>
-        <BookmarkCard bookmark={bookmark} variant={variant} isHighlighted={isHighlighted} />
+        <BookmarkCard
+          bookmark={bookmark}
+          variant={variant}
+          isHighlighted={isHighlighted}
+          dragHandleProps={{ "data-drag-handle": true }}
+        />
       </div>
       {isDragging && (
         <div className="absolute inset-0 rounded-xl border-2 border-dashed border-muted-foreground/25 bg-muted/10" />

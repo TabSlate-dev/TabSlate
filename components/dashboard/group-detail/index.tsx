@@ -169,7 +169,7 @@ export function GroupDetail() {
         headerActions={headerActions}
         isOver={isDragOver}
         {...dropZoneProps}
-        className="max-w-4xl mx-auto"
+        className="max-w-[95%] mx-auto"
       >
         {isDragOver && (
           <div className="flex items-center justify-center p-4 bg-primary/5 rounded-md border border-dashed border-primary/30 mb-2">

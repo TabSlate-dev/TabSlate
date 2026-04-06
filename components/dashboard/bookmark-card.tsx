@@ -19,6 +19,7 @@ import {
   Trash2,
   Tag,
   Archive,
+  GripVertical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
@@ -30,9 +31,10 @@ interface BookmarkCardProps {
   bookmark: Bookmark;
   variant?: "grid" | "list";
   isHighlighted?: boolean;
+  dragHandleProps?: React.HTMLAttributes<HTMLDivElement> & { "data-drag-handle"?: boolean };
 }
 
-export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false }: BookmarkCardProps) {
+export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false, dragHandleProps }: BookmarkCardProps) {
   const { toggleFavorite, archiveBookmark, trashBookmark } = useBookmarksStore();
   const { tags } = useWorkspaceStore();
   const bookmarkTags = tags.filter((tag) => bookmark.tags.includes(tag.id));
@@ -92,6 +94,16 @@ export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false
           isHighlighted && "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle"
         )}
       >
+        {dragHandleProps && (
+          <div
+            {...dragHandleProps}
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground -ml-2"
+          >
+            <GripVertical className="size-4" />
+          </div>
+        )}
+
         <div className="size-10 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
           <FaviconImage
             src={bookmark.favicon}
@@ -144,6 +156,16 @@ export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false
     >
       {/* Header: favicon + title + slide-in actions */}
       <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+        {/* Drag handle */}
+        {dragHandleProps && (
+          <div
+            {...dragHandleProps}
+            onClick={(e) => e.stopPropagation()}
+            className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground -ml-1"
+          >
+            <GripVertical className="size-3.5" />
+          </div>
+        )}
         {/* Favicon */}
         <div className="size-7 rounded-md bg-muted shrink-0 flex items-center justify-center overflow-hidden">
           <FaviconImage

@@ -64,6 +64,7 @@ export function GroupCardBase({
           <span
             ref={dragRef}
             {...dragHandleProps}
+            data-drag-handle
             className="shrink-0 cursor-grab active:cursor-grabbing touch-none text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
             title="Drag to save as group"
           >
