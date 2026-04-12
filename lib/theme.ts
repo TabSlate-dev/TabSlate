@@ -26,6 +26,7 @@ function applyTheme(theme: Theme) {
   const root = document.documentElement;
   const resolved = theme === "system" ? getSystemTheme() : theme;
   root.classList.toggle("dark", resolved === "dark");
+  root.style.setProperty("color-scheme", resolved);
 }
 
 const STORAGE_KEY = "theme";
@@ -52,6 +53,16 @@ export function useThemeState() {
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
+
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        setThemeState(e.newValue as Theme);
+      }
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
 
   const setTheme = (next: Theme) => {
     localStorage.setItem(STORAGE_KEY, next);

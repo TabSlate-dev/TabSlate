@@ -1,11 +1,26 @@
 import * as React from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Check, ExternalLink, Layers, Pencil, Play, Trash2, X, MoreHorizontal } from "lucide-react";
+import { 
+  Check, 
+  ExternalLink, 
+  Layers, 
+  Pencil, 
+  Play, 
+  Trash2, 
+  X, 
+  MoreHorizontal, 
+  Save, 
+  Bookmark,
+  BrushCleaning
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useGroupsStore, type GroupTab, type SavedGroup } from "@/store/groups-store";
+import { useBookmarksStore } from "@/store/bookmarks-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import { TAB_GROUP_COLORS, type TabGroupColor } from "@/lib/chrome/tab-groups";
 import { useGroupDragDrop } from "@/hooks/use-group-drag-drop";
 import { GroupCardBase } from "@/components/dashboard/shared/group-card-base";
@@ -17,6 +32,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-collection-dialog";
+import { generateId } from "@/lib/id";
 
 export function GroupDetail() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -28,6 +45,7 @@ export function GroupDetail() {
   const openGroup = useGroupsStore(s => s.openGroup);
   const allGroupTabs = useGroupsStore(s => s.groupTabs);
   const removeTabFromGroup = useGroupsStore(s => s.removeTabFromGroup);
+  const addBookmarks = useBookmarksStore(s => s.addBookmarks);
 
   const groupTabs = React.useMemo(
     () =>
@@ -41,6 +59,10 @@ export function GroupDetail() {
   const [editing, setEditing] = React.useState(false);
   const [nameVal, setNameVal] = React.useState("");
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
+  const [isSaving, setIsSaving] = React.useState(false);
+  const [saveResult, setSaveResult] = React.useState<{ saved: number; skipped: number } | null>(null);
+  const [savedTabIds, setSavedTabIds] = React.useState<Set<string>>(new Set());
 
   // Init local state when group loads
   React.useEffect(() => {
@@ -87,6 +109,52 @@ export function GroupDetail() {
     navigate("/tabs");
   };
 
+  const handleSaveGroup = React.useCallback(async (name: string) => {
+    setIsSaving(true);
+    const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
+    const collection = createCollection(activeWorkspaceId, name, "folder");
+    
+    const newBookmarks = groupTabs.map(t => ({
+      id: generateId(),
+      title: t.title,
+      url: t.url,
+      favicon: t.favicon,
+      collectionId: collection.id,
+      description: "",
+      tags: [],
+      createdAt: new Date().toISOString(),
+      isFavorite: false,
+    }));
+
+    addBookmarks(newBookmarks);
+    setIsSaving(false);
+    setSaveDialogOpen(false);
+    setSaveResult({ saved: newBookmarks.length, skipped: 0 });
+    setTimeout(() => setSaveResult(null), 3000);
+  }, [groupTabs, addBookmarks]);
+
+  const handleSaveTab = React.useCallback((tab: GroupTab) => {
+    addBookmarks([{
+      id: generateId(),
+      title: tab.title,
+      url: tab.url,
+      favicon: tab.favicon,
+      collectionId: "all",
+      description: "",
+      tags: [],
+      createdAt: new Date().toISOString(),
+      isFavorite: false,
+    }]);
+    setSavedTabIds(prev => new Set(prev).add(tab.id));
+    setTimeout(() => {
+      setSavedTabIds(prev => {
+        const next = new Set(prev);
+        next.delete(tab.id);
+        return next;
+      });
+    }, 2000);
+  }, [addBookmarks]);
+
   // Header components
   const titleSlot = editing ? (
     <Input
@@ -114,16 +182,33 @@ export function GroupDetail() {
 
   const headerActions = (
     <div className="flex items-center gap-1">
+      {saveResult && (
+        <span className="text-[10px] bg-green-500/10 text-green-600 px-1.5 py-0.5 rounded-full animate-in fade-in zoom-in duration-300">
+          Saved {saveResult.saved}
+        </span>
+      )}
+
       {selected.size > 0 && (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onClick={handleRemoveSelected}
-          className="size-6 text-destructive hover:bg-destructive/10"
-          title={`Remove ${selected.size} selected tabs`}
-        >
-          <X className="size-3.5" />
-        </Button>
+        <>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleRemoveSelected}
+            className="size-6 text-destructive hover:bg-destructive/10 transition-colors"
+            title={`Remove ${selected.size} selected tabs`}
+          >
+            <BrushCleaning className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={handleRemoveSelected}
+            className="size-6 text-destructive hover:bg-destructive/10 transition-colors"
+            title={`Close ${selected.size} selected tabs`}
+          >
+            <X className="size-3.5" />
+          </Button>
+        </>
       )}
 
       <ColorPicker
@@ -132,6 +217,28 @@ export function GroupDetail() {
         size="sm"
       />
 
+      <div className="flex items-center gap-1.5 px-2 border-l border-r border-border/50">
+        <Switch
+          checked={group.isCompact}
+          onCheckedChange={(checked) => updateGroup(group.id, { isCompact: checked })}
+          className="scale-75"
+          title="Toggle Compact"
+        />
+        <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-tight">
+          Compact
+        </span>
+      </div>
+
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        onClick={() => openGroup(group.id)}
+        className="size-6 hover:text-green-500"
+        title="Open group in Chrome"
+      >
+        <Play className="size-3.5" />
+      </Button>
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="ghost" size="icon-xs" className="size-6">
@@ -139,9 +246,13 @@ export function GroupDetail() {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => openGroup(group.id)}>
-            <Play className="size-4 mr-2" />
-            Open Group in Chrome
+          <DropdownMenuItem onClick={() => setEditing(true)}>
+            <Pencil className="size-4 mr-2" />
+            Rename Group
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setSaveDialogOpen(true)}>
+            <Save className="size-4 mr-2" />
+            Save as Collection
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -202,10 +313,34 @@ export function GroupDetail() {
                   size="icon-xs"
                   onClick={(e) => {
                     e.stopPropagation();
+                    removeTabFromGroup(tab.id);
+                  }}
+                  title="Remove from group"
+                  className="size-6 text-destructive hover:bg-destructive/10"
+                >
+                  <BrushCleaning className="size-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleSaveTab(tab);
+                  }}
+                  title={savedTabIds.has(tab.id) ? "Saved!" : "Save bookmark"}
+                  className={cn("size-6 text-muted-foreground", savedTabIds.has(tab.id) && "text-green-600 hover:text-green-600")}
+                >
+                  {savedTabIds.has(tab.id) ? <Check className="size-3" /> : <Bookmark className="size-3" />}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     window.open(tab.url, "_blank");
                   }}
-                  title="Open"
-                  className="size-6"
+                  title="Open in new tab"
+                  className="size-6 text-muted-foreground hover:text-foreground"
                 >
                   <ExternalLink className="size-3" />
                 </Button>
@@ -216,8 +351,8 @@ export function GroupDetail() {
                     e.stopPropagation();
                     removeTabFromGroup(tab.id);
                   }}
-                  title="Remove from group"
-                  className="size-6 hover:text-destructive"
+                  title="Delete from list"
+                  className="size-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                 >
                   <X className="size-3" />
                 </Button>
@@ -225,6 +360,15 @@ export function GroupDetail() {
             }
           />
         ))}
+
+        <SaveCollectionDialog
+          open={saveDialogOpen}
+          defaultName={group.name}
+          tabCount={groupTabs.length}
+          isSaving={isSaving}
+          onConfirm={handleSaveGroup}
+          onClose={() => setSaveDialogOpen(false)}
+        />
       </GroupCardBase>
     </div>
   );

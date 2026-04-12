@@ -83,7 +83,7 @@ export const TabRow = React.memo(function TabRow({
 
   // Actions for the row
   const actionsContent = !hideActions && (
-    <>
+    <div className="flex items-center gap-0.5">
       {tab.groupId !== -1 ? (
         <Button
           variant="ghost"
@@ -100,7 +100,7 @@ export const TabRow = React.memo(function TabRow({
           size="icon-xs"
           onClick={(e) => { e.stopPropagation(); onJoinGroup?.(); }}
           title="Join group"
-          className="size-6"
+          className="size-6 text-muted-foreground hover:text-primary"
         >
           <FolderPlus className="size-3" />
         </Button>
@@ -110,7 +110,7 @@ export const TabRow = React.memo(function TabRow({
         size="icon-xs"
         onClick={handleSave}
         title={saved ? "Saved!" : "Save bookmark"}
-        className={cn("size-6", saved && "text-green-600")}
+        className={cn("size-6 text-muted-foreground", saved && "text-green-600 hover:text-green-600")}
       >
         {saved ? <Check className="size-3" /> : <Bookmark className="size-3" />}
       </Button>
@@ -119,7 +119,7 @@ export const TabRow = React.memo(function TabRow({
         size="icon-xs"
         onClick={handleOpen}
         title="Open in new tab"
-        className="size-6"
+        className="size-6 text-muted-foreground hover:text-foreground"
       >
         <ExternalLink className="size-3" />
       </Button>
@@ -128,11 +128,11 @@ export const TabRow = React.memo(function TabRow({
         size="icon-xs"
         onClick={handleClose}
         title="Close tab"
-        className="size-6 hover:text-destructive"
+        className="size-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
       >
         <X className="size-3" />
       </Button>
-    </>
+    </div>
   );
 
   if (variant === "card") {

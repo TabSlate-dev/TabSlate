@@ -192,10 +192,9 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     if (dragData.type === "tab-group") {
       if (dropId === "sidebar-groups") {
         const { createGroup, addTabToGroup } = useGroupsStore.getState();
-        const randomColor = TAB_GROUP_COLOR_KEYS[Math.floor(Math.random() * TAB_GROUP_COLOR_KEYS.length)];
         const savedGroupId = createGroup(
           dragData.groupName || "Unnamed",
-          randomColor,
+          dragData.groupColor,
           true
         );
         dragData.tabs.forEach((tab) => {
