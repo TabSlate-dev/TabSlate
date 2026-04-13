@@ -24,13 +24,16 @@ TabSlate/
 ├── entrypoints/
 │   ├── newtab/          # 主应用入口
 │   │   ├── main.tsx     # ReactDOM.createRoot
-│   │   └── App.tsx      # 路由、布局、StoreGate
+│   │   └── App.tsx      # 路由、布局、StoreGate（等待所有 store 水化）、AuthGate（未登录 → AuthPage）
 │   ├── popup/           # 快速保存 popup
 │   │   └── App.tsx      # 独立 React 树，不使用 Zustand
 │   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单
 │   └── content.ts       # 注入页面：提供 GET_PAGE_INFO 给 background
 │
 ├── components/
+│   ├── auth/
+│   │   └── auth-page.tsx       # 全屏认证页，居中渲染 LoginForm
+│   ├── login-form.tsx          # shadcn login-02 block 改写：login/register 双模式，接入 useAuthStore
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
@@ -68,12 +71,14 @@ TabSlate/
 │       └── trash-content.tsx
 │
 ├── store/
+│   ├── auth-store.ts       # 认证状态（user、accessToken、refreshToken、serverUrl）— 持久化
 │   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态
 │   ├── workspace-store.ts  # 工作区/集合/标签配置
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
 ├── lib/
+│   ├── api.ts              # TabSlate-server HTTP 客户端（register/login/logout/refresh/me）
 │   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义
 │   ├── utils.ts            # cn() 等工具函数
 │   ├── storage.ts          # popup 用的轻量 chrome.storage 读写工具
@@ -99,6 +104,7 @@ TabSlate/
 所有 store 使用 Zustand，持久化通过 `chromeStorageAdapter` 写入 `chrome.storage.local`。
 
 ```
+useAuthStore       ──persist──▶  "tabslate-auth"
 useBookmarksStore  ──persist──▶  "tabslate-bookmarks"
 useWorkspaceStore  ──persist──▶  "tabslate-workspace"
 useGroupsStore     ──persist──▶  "tabslate-groups"
@@ -109,6 +115,7 @@ useTabsStore       (不持久化，运行时从 Chrome API 加载)
 
 | Store | 持久化 | 职责 |
 |---|---|---|
+| `useAuthStore` | ✅ | 登录用户信息、access/refresh token、server URL |
 | `useBookmarksStore` | ✅ | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态 |
 | `useWorkspaceStore` | ✅ | 工作区、集合（Collections）、标签（Tags）、高亮状态 |
 | `useGroupsStore` | ✅ | 用户手动保存的标签组及其包含的 tab URL |

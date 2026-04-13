@@ -1,5 +1,19 @@
 # CLAUDE.md
 
+## 仓库关系
+
+TabSlate 由三个仓库组成：
+
+| 仓库 | 可见性 | 职责 |
+|---|---|---|
+| **`TabSlate`**（本仓库） | 公开，AGPL | Chrome 扩展前端，TypeScript + React + WXT |
+| **`TabSlate-server`** | 公开，AGPL | Go 后端 OSS 版，可自托管，计费基于本地 License JWT |
+| **`TabSlate-cloud`** | 私有 | Go 后端 Cloud 版，以 `TabSlate-server` 为 Go module 依赖，注入 Lago 计费 |
+
+前端直接通过 Chrome extension API 与后端 REST API 通信；Cloud 版与 OSS 版暴露完全相同的 API 路由，前端无感知差异。
+
+---
+
 ## 项目概述
 
 TabSlate 是一个 Chrome 扩展，用新标签页替换浏览器默认新标签页，提供标签页管理、书签整理、分组等功能。
@@ -140,6 +154,7 @@ Dialog 必须使用标准 shadcn 结构，禁止在 `DialogContent` 上添加破
 | `tabslate-bookmarks` | Zustand JSON `{state: {...}}` | 书签、归档、回收站 |
 | `tabslate-workspace` | Zustand JSON `{state: {...}}` | 工作区、集合、标签 |
 | `tabslate-groups` | Zustand JSON `{state: {...}}` | 保存的标签组 |
+| `tabslate-auth` | Zustand JSON `{state: {...}}` | 用户认证（user、accessToken、refreshToken、serverUrl） |
 | `tabslate-full-titles` | `Record<number, string>` | Chrome tab group 完整标题 |
 | `tabslate-tabs-changed` | `number` (timestamp) | background → newtab 变更信号 |
 
@@ -184,5 +199,7 @@ Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSu
 
 - **不要在 newtab 页以外使用 store**：popup 和 background 直接读写 `chrome.storage.local`，不加载 Zustand
 - **Tab 变更广播**：background.ts 监听所有 tab/group 事件，写 `tabslate-tabs-changed` 信号；newtab 的 `TabsPanel` 和 `GroupsPanel` 监听此信号触发 `loadTabs()`
-- **Store hydration**：`App.tsx` 中的 `StoreGate` 组件等待 `bookmarksHydrated && workspaceHydrated` 后才渲染，避免闪烁
+- **Store hydration**：`App.tsx` 中的 `StoreGate` 组件等待 `bookmarksHydrated && workspaceHydrated && authHydrated` 后才渲染，避免闪烁
+- **AuthGate**：`StoreGate` 内部的 `AuthGate` 组件检查 `useAuthStore.accessToken`；为 null 时渲染 `AuthPage`（登录/注册），否则渲染 dashboard。登录后状态变更会自动触发 `AuthGate` 重渲染切换到 dashboard。
+- **API 客户端**：`lib/api.ts` 是纯函数 HTTP 客户端，不持有状态；server URL 由 `useAuthStore.serverUrl` 管理（默认读取 `VITE_API_URL` 环境变量）。自托管用户可在登录页"Advanced"中修改。
 - **Compact group title**：Chrome tab group 标题若为紧凑模式，Chrome 端存单字母；完整标题存于 `tabslate-full-titles`，`fullTitles[groupId]` 取用
