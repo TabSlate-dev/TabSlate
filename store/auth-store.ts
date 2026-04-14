@@ -15,8 +15,18 @@ interface AuthState {
   setHydrated: () => void;
 
   setServerUrl: (url: string) => void;
-  login: (email: string, password: string) => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<void>;
+  login: (
+    email: string,
+    password: string,
+    captchaToken?: string,
+  ) => Promise<void>;
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    captchaToken?: string,
+  ) => Promise<void>;
+  resendVerification: (email: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -33,9 +43,9 @@ export const useAuthStore = create<AuthState>()(
 
       setServerUrl: (url) => set({ serverUrl: url }),
 
-      login: async (email, password) => {
+      login: async (email, password, captchaToken) => {
         const { serverUrl } = get();
-        const resp = await api.login(serverUrl, email, password);
+        const resp = await api.login(serverUrl, email, password, captchaToken);
         set({
           user: resp.user,
           accessToken: resp.access_token,
@@ -43,14 +53,25 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      register: async (name, email, password) => {
+      register: async (name, email, password, captchaToken) => {
         const { serverUrl } = get();
-        const resp = await api.register(serverUrl, name, email, password);
+        const resp = await api.register(
+          serverUrl,
+          name,
+          email,
+          password,
+          captchaToken,
+        );
         set({
           user: resp.user,
           accessToken: resp.access_token,
           refreshToken: resp.refresh_token,
         });
+      },
+
+      resendVerification: async (email) => {
+        const { serverUrl } = get();
+        await api.resendVerification(serverUrl, email);
       },
 
       logout: async () => {

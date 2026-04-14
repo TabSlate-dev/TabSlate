@@ -189,6 +189,14 @@ Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSu
 
 `@/` → 项目根目录（由 WXT 配置，等同于 TypeScript `paths` 中的 `@/*`）
 
+## 环境变量
+
+| 变量 | 说明 |
+|---|---|
+| `VITE_API_URL` | 后端 API 地址，默认 `http://localhost:8080` |
+| `VITE_PROSOPO_SITE_KEY` | Prosopo 站点公钥；空 = 禁用验证码 |
+| `VITE_PROSOPO_SERVER_URL` | 自部署 Prosopo 服务器 URL；空 = 使用官方 CDN（`https://js.prosopo.io`） |
+
 ## Code Quality
 
 - Type check: `bun run compile`
@@ -202,4 +210,7 @@ Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSu
 - **Store hydration**：`App.tsx` 中的 `StoreGate` 组件等待 `bookmarksHydrated && workspaceHydrated && authHydrated` 后才渲染，避免闪烁
 - **AuthGate**：`StoreGate` 内部的 `AuthGate` 组件检查 `useAuthStore.accessToken`；为 null 时渲染 `AuthPage`（登录/注册），否则渲染 dashboard。登录后状态变更会自动触发 `AuthGate` 重渲染切换到 dashboard。
 - **API 客户端**：`lib/api.ts` 是纯函数 HTTP 客户端，不持有状态；server URL 由 `useAuthStore.serverUrl` 管理（默认读取 `VITE_API_URL` 环境变量）。自托管用户可在登录页"Advanced"中修改。
+- **Prosopo 验证码**：`components/procaptcha.tsx` 是自定义 Procaptcha React 组件，基于 `@prosopo/procaptcha-wrapper` 的 `createRenderer`，支持 `serverUrl` prop 指向自部署 Prosopo 服务器。`VITE_PROSOPO_SITE_KEY` 为空时前端不渲染验证码组件。注册页默认展示，登录页在服务端检测到多次失败后条件展示（通过 `GET /auth/login-captcha-status` 查询）。
+- **邮箱验证 UI**：注册成功后若 `user.is_verified === false`，`LoginForm` 自动切换到"Check your email"界面，提供重发验证邮件按钮（调用 `POST /auth/resend-verification`）。
+- **密码强度**：前端 `minLength={10}` + 提示文案"At least 10 characters, including a letter and a number"，与后端 `validatePasswordStrength` 规则对齐。
 - **Compact group title**：Chrome tab group 标题若为紧凑模式，Chrome 端存单字母；完整标题存于 `tabslate-full-titles`，`fullTitles[groupId]` 取用

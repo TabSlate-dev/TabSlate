@@ -9,9 +9,22 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
-import { ApiError } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import { Procaptcha } from "@/components/procaptcha";
 
 type Mode = "login" | "register";
+
+/** Prosopo site key — leave empty to disable captcha in dev. */
+const PROSOPO_SITE_KEY =
+  (import.meta.env.VITE_PROSOPO_SITE_KEY as string | undefined) ?? "";
+
+/**
+ * Self-hosted Prosopo server URL.
+ * When set, the captcha JS bundle is loaded from this server instead of the
+ * official Prosopo CDN. Leave empty to use the default (https://js.prosopo.io).
+ */
+const PROSOPO_SERVER_URL =
+  (import.meta.env.VITE_PROSOPO_SERVER_URL as string | undefined) ?? "";
 
 export function LoginForm({
   className,
@@ -22,16 +35,104 @@ export function LoginForm({
   const [loading, setLoading] = React.useState(false);
   const [showAdvanced, setShowAdvanced] = React.useState(false);
 
+  // Captcha state
+  const [captchaToken, setCaptchaToken] = React.useState<string>("");
+  const [loginCaptchaRequired, setLoginCaptchaRequired] = React.useState(false);
+
+  // Email verification state
+  const [pendingVerification, setPendingVerification] = React.useState(false);
+  const [verificationEmail, setVerificationEmail] = React.useState("");
+  const [resendLoading, setResendLoading] = React.useState(false);
+  const [resendMessage, setResendMessage] = React.useState("");
+
   const login = useAuthStore((s) => s.login);
   const register = useAuthStore((s) => s.register);
+  const resendVerification = useAuthStore((s) => s.resendVerification);
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const setServerUrl = useAuthStore((s) => s.setServerUrl);
 
   function switchMode(next: Mode) {
     setMode(next);
     setError("");
+    setCaptchaToken("");
+    setLoginCaptchaRequired(false);
+    setPendingVerification(false);
+    setResendMessage("");
   }
 
+  /** Check whether the login endpoint requires captcha for this email. */
+  async function checkLoginCaptcha(email: string) {
+    if (!PROSOPO_SITE_KEY || !email) return;
+    try {
+      const resp = await api.loginCaptchaStatus(serverUrl, email);
+      setLoginCaptchaRequired(resp.captcha_required);
+    } catch {
+      // Non-critical — proceed without captcha.
+    }
+  }
+
+  // Show captcha on register always (if sitekey configured), on login only when required.
+  const showCaptcha =
+    PROSOPO_SITE_KEY &&
+    (mode === "register" || (mode === "login" && loginCaptchaRequired));
+
+  // ── Pending email verification screen ──────────────────────────────────────
+  if (pendingVerification) {
+    return (
+      <div className={cn("flex flex-col gap-6", className)} {...props}>
+        <FieldGroup>
+          <div className="flex flex-col items-center gap-2 text-center">
+            <h1 className="text-2xl font-bold">Check your email</h1>
+            <p className="text-sm text-balance text-muted-foreground">
+              We sent a verification link to{" "}
+              <strong>{verificationEmail}</strong>. Please check your inbox and
+              click the link to verify your account.
+            </p>
+          </div>
+
+          {resendMessage && (
+            <p className="text-sm text-center text-muted-foreground">
+              {resendMessage}
+            </p>
+          )}
+
+          <Button
+            variant="outline"
+            disabled={resendLoading}
+            onClick={async () => {
+              setResendLoading(true);
+              setResendMessage("");
+              try {
+                await resendVerification(verificationEmail);
+                setResendMessage("Verification email sent. Please check your inbox.");
+              } catch {
+                setResendMessage("Failed to resend. Please try again.");
+              } finally {
+                setResendLoading(false);
+              }
+            }}
+          >
+            {resendLoading ? "Sending…" : "Resend verification email"}
+          </Button>
+
+          <FieldDescription className="text-center">
+            <button
+              type="button"
+              className="underline underline-offset-4 hover:text-primary"
+              onClick={() => {
+                setPendingVerification(false);
+                switchMode("login");
+              }}
+            >
+              Back to login
+            </button>
+          </FieldDescription>
+        </FieldGroup>
+      </div>
+    );
+  }
+
+  // ── Login / Register form ──────────────────────────────────────────────────
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <FieldGroup>
@@ -56,18 +157,35 @@ export function LoginForm({
                 await login(
                   formData.get("email") as string,
                   formData.get("password") as string,
+                  captchaToken || undefined,
                 );
               } else {
                 await register(
                   formData.get("name") as string,
                   formData.get("email") as string,
                   formData.get("password") as string,
+                  captchaToken || undefined,
                 );
+
+                // If the user was created but not yet verified, show verification UI.
+                const user = useAuthStore.getState().user;
+                if (user && !user.is_verified) {
+                  setVerificationEmail(user.email);
+                  setPendingVerification(true);
+                }
               }
             } catch (e) {
-              setError(
-                e instanceof ApiError ? e.message : "Something went wrong",
-              );
+              if (e instanceof ApiError) {
+                setError(e.message);
+                // Server signals captcha is now required for this login.
+                if (e.captchaRequired) {
+                  setLoginCaptchaRequired(true);
+                }
+              } else {
+                setError("Something went wrong");
+              }
+              // Reset captcha token so user must re-verify.
+              setCaptchaToken("");
             } finally {
               setLoading(false);
             }
@@ -96,6 +214,11 @@ export function LoginForm({
               required
               autoFocus={mode === "login"}
               autoComplete="email"
+              onBlur={(e) => {
+                if (mode === "login") {
+                  checkLoginCaptcha(e.target.value);
+                }
+              }}
             />
           </Field>
           <Field>
@@ -104,14 +227,30 @@ export function LoginForm({
               id="password"
               name="password"
               type="password"
-              placeholder="••••••••"
+              placeholder="••••••••••"
               required
-              minLength={8}
+              minLength={10}
               autoComplete={
                 mode === "login" ? "current-password" : "new-password"
               }
             />
+            {mode === "register" && (
+              <FieldDescription>
+                At least 10 characters, including a letter and a number.
+              </FieldDescription>
+            )}
           </Field>
+
+          {/* Prosopo Captcha */}
+          {showCaptcha && (
+            <div className="flex justify-center">
+              <Procaptcha
+                siteKey={PROSOPO_SITE_KEY}
+                callback={(token: string) => setCaptchaToken(token)}
+                serverUrl={PROSOPO_SERVER_URL || undefined}
+              />
+            </div>
+          )}
 
           {error && (
             <p role="alert" className="text-sm text-destructive">

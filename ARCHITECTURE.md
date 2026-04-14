@@ -33,7 +33,8 @@ TabSlate/
 ├── components/
 │   ├── auth/
 │   │   └── auth-page.tsx       # 全屏认证页，居中渲染 LoginForm
-│   ├── login-form.tsx          # shadcn login-02 block 改写：login/register 双模式，接入 useAuthStore
+│   ├── login-form.tsx          # login/register 双模式 + Prosopo 验证码 + 邮箱验证 UI + 密码强度提示
+│   ├── procaptcha.tsx          # Prosopo React 组件（支持自部署 serverUrl，基于 createRenderer）
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
@@ -77,8 +78,11 @@ TabSlate/
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
+├── types/
+│   └── prosopo.d.ts        # @prosopo/react-procaptcha-wrapper 及 createRenderer 类型声明
+│
 ├── lib/
-│   ├── api.ts              # TabSlate-server HTTP 客户端（register/login/logout/refresh/me）
+│   ├── api.ts              # TabSlate-server HTTP 客户端（register/login/logout/refresh/me/loginCaptchaStatus/resendVerification）
 │   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义
 │   ├── utils.ts            # cn() 等工具函数
 │   ├── storage.ts          # popup 用的轻量 chrome.storage 读写工具
@@ -115,7 +119,7 @@ useTabsStore       (不持久化，运行时从 Chrome API 加载)
 
 | Store | 持久化 | 职责 |
 |---|---|---|
-| `useAuthStore` | ✅ | 登录用户信息、access/refresh token、server URL |
+| `useAuthStore` | ✅ | 登录用户信息（含 `is_verified`）、access/refresh token、server URL、验证邮件重发 |
 | `useBookmarksStore` | ✅ | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态 |
 | `useWorkspaceStore` | ✅ | 工作区、集合（Collections）、标签（Tags）、高亮状态 |
 | `useGroupsStore` | ✅ | 用户手动保存的标签组及其包含的 tab URL |

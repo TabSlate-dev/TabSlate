@@ -4,6 +4,7 @@ export interface ApiUser {
   id: string;
   name: string;
   email: string;
+  is_verified: boolean;
   created_at: number;
   updated_at: number;
 }
@@ -23,14 +24,23 @@ export interface MeResponse {
   };
 }
 
+export interface LoginCaptchaStatusResponse {
+  captcha_required: boolean;
+}
+
 // ApiError carries the HTTP status code so callers can branch on 401, 409, etc.
 export class ApiError extends Error {
+  /** Whether the server is requesting a captcha (login failure threshold). */
+  captchaRequired?: boolean;
+
   constructor(
     message: string,
     public readonly status: number,
+    captchaRequired?: boolean,
   ) {
     super(message);
     this.name = "ApiError";
+    this.captchaRequired = captchaRequired;
   }
 }
 
@@ -56,15 +66,19 @@ async function request<T>(
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
+    let captchaRequired: boolean | undefined;
     try {
       const body = await res.json();
       if (typeof body?.error === "string") {
         message = body.error;
       }
+      if (body?.captcha_required === true) {
+        captchaRequired = true;
+      }
     } catch {
       // ignore JSON parse failure — keep the generic message
     }
-    throw new ApiError(message, res.status);
+    throw new ApiError(message, res.status, captchaRequired);
   }
 
   // 204 No Content or genuinely empty body
@@ -81,10 +95,11 @@ export const api = {
     name: string,
     email: string,
     password: string,
+    captchaToken?: string,
   ): Promise<AuthResponse> {
     return request<AuthResponse>(baseUrl, "/auth/register", {
       method: "POST",
-      body: JSON.stringify({ name, email, password }),
+      body: JSON.stringify({ name, email, password, captcha_token: captchaToken }),
     });
   },
 
@@ -92,10 +107,11 @@ export const api = {
     baseUrl: string,
     email: string,
     password: string,
+    captchaToken?: string,
   ): Promise<AuthResponse> {
     return request<AuthResponse>(baseUrl, "/auth/login", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, captcha_token: captchaToken }),
     });
   },
 
@@ -122,6 +138,24 @@ export const api = {
     return request<MeResponse>(baseUrl, "/auth/me", {
       method: "GET",
       headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  },
+
+  loginCaptchaStatus(
+    baseUrl: string,
+    email: string,
+  ): Promise<LoginCaptchaStatusResponse> {
+    return request<LoginCaptchaStatusResponse>(
+      baseUrl,
+      `/auth/login-captcha-status?email=${encodeURIComponent(email)}`,
+      { method: "GET" },
+    );
+  },
+
+  resendVerification(baseUrl: string, email: string): Promise<void> {
+    return request<void>(baseUrl, "/auth/resend-verification", {
+      method: "POST",
+      body: JSON.stringify({ email }),
     });
   },
 };
