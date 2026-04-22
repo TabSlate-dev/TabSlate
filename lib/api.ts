@@ -152,10 +152,42 @@ export const api = {
     );
   },
 
-  resendVerification(baseUrl: string, email: string): Promise<void> {
+  resendVerification(baseUrl: string, email: string, captchaToken?: string): Promise<void> {
     return request<void>(baseUrl, "/auth/resend-verification", {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, captcha_token: captchaToken }),
+    });
+  },
+
+  otpCaptchaStatus(baseUrl: string): Promise<LoginCaptchaStatusResponse> {
+    return request<LoginCaptchaStatusResponse>(baseUrl, "/auth/otp-captcha-status", {
+      method: "GET",
+    });
+  },
+
+  verifyEmailOTP(baseUrl: string, email: string, code: string): Promise<void> {
+    return request<void>(baseUrl, "/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ email, code }),
+    });
+  },
+
+  forgotPassword(baseUrl: string, email: string, captchaToken?: string): Promise<void> {
+    return request<void>(baseUrl, "/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email, captcha_token: captchaToken }),
+    });
+  },
+
+  resetPassword(
+    baseUrl: string,
+    email: string,
+    code: string,
+    newPassword: string,
+  ): Promise<void> {
+    return request<void>(baseUrl, "/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ email, code, new_password: newPassword }),
     });
   },
 };

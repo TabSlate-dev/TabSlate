@@ -124,6 +124,7 @@ const tabs = React.useMemo(
 - **FaviconImage** (`components/ui/favicon-image.tsx`) — 所有 favicon 显示都用此组件，禁止裸 `<img onError>`
 - **ColorPicker** (`components/ui/color-picker.tsx`) — Tab group 颜色选择器，支持 `size="sm" | "md"`
 - **Alert** (`components/ui/alert.tsx`) — 标准 shadcn Alert，用于内联提示和浮动通知（duplicate tab 检测等）
+- **InputOTP** (`components/ui/input-otp.tsx`) — 6 格 OTP 输入框（基于 `input-otp` 包），用于邮箱验证和密码重置
 - **shadcn/ui** (`components/ui/`) — Button、Input、Dialog 等基础组件
 
 ### Dialog 样式规范
@@ -168,8 +169,17 @@ let _tabHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 
 ### React 19 Form Actions
 
-Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSubmit`）：
+Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对于有复杂错误处理、状态保留需求的表单（如 LoginForm），必须使用 `onSubmit` + `e.preventDefault()`**，因为 React 19 的 `form action` 在 action 函数正常返回后会自动清空所有非受控 input，导致用户输入丢失：
+
 ```tsx
+// ✅ 复杂表单 — 用 onSubmit 保留输入
+<form onSubmit={async (e) => {
+  e.preventDefault();
+  const formData = new FormData(e.currentTarget);
+  // 处理提交
+}}>
+
+// ✅ 简单 Dialog 表单 — form action 可用
 <form action={(formData) => {
   const name = formData.get("name") as string;
   // 处理提交
@@ -194,8 +204,8 @@ Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSu
 | 变量 | 说明 |
 |---|---|
 | `VITE_API_URL` | 后端 API 地址，默认 `http://localhost:8080` |
-| `VITE_PROSOPO_SITE_KEY` | Prosopo 站点公钥；空 = 禁用验证码 |
-| `VITE_PROSOPO_SERVER_URL` | 自部署 Prosopo 服务器 URL；空 = 使用官方 CDN（`https://js.prosopo.io`） |
+| `VITE_PROSOPO_SITE_KEY` | Prosopo 站点公钥（Site Key）；空 = 禁用验证码 |
+| `VITE_PROSOPO_CAPTCHA_TYPE` | Prosopo 验证码类型，需与 Prosopo 控制台配置一致：`frictionless` \| `pow` \| `image`；空 = Prosopo 默认 |
 
 ## Code Quality
 
@@ -208,9 +218,10 @@ Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSu
 - **不要在 newtab 页以外使用 store**：popup 和 background 直接读写 `chrome.storage.local`，不加载 Zustand
 - **Tab 变更广播**：background.ts 监听所有 tab/group 事件，写 `tabslate-tabs-changed` 信号；newtab 的 `TabsPanel` 和 `GroupsPanel` 监听此信号触发 `loadTabs()`
 - **Store hydration**：`App.tsx` 中的 `StoreGate` 组件等待 `bookmarksHydrated && workspaceHydrated && authHydrated` 后才渲染，避免闪烁
-- **AuthGate**：`StoreGate` 内部的 `AuthGate` 组件检查 `useAuthStore.accessToken`；为 null 时渲染 `AuthPage`（登录/注册），否则渲染 dashboard。登录后状态变更会自动触发 `AuthGate` 重渲染切换到 dashboard。
+- **AuthGate**（`entrypoints/newtab/App.tsx`）：三层守卫：① `accessToken` 为 null → 渲染 `AuthPage`（登录/注册/找回密码）；② `accessToken` 存在但 `user.is_verified === false` → 渲染 `VerifyEmailScreen`（OTP 输入）；③ 两者均通过 → 渲染 dashboard。验证成功后 store 调用 `GET /auth/me` 更新 `is_verified`，`AuthGate` 自动重渲染。
 - **API 客户端**：`lib/api.ts` 是纯函数 HTTP 客户端，不持有状态；server URL 由 `useAuthStore.serverUrl` 管理（默认读取 `VITE_API_URL` 环境变量）。自托管用户可在登录页"Advanced"中修改。
-- **Prosopo 验证码**：`components/procaptcha.tsx` 是自定义 Procaptcha React 组件，基于 `@prosopo/procaptcha-wrapper` 的 `createRenderer`，支持 `serverUrl` prop 指向自部署 Prosopo 服务器。`VITE_PROSOPO_SITE_KEY` 为空时前端不渲染验证码组件。注册页默认展示，登录页在服务端检测到多次失败后条件展示（通过 `GET /auth/login-captcha-status` 查询）。
-- **邮箱验证 UI**：注册成功后若 `user.is_verified === false`，`LoginForm` 自动切换到"Check your email"界面，提供重发验证邮件按钮（调用 `POST /auth/resend-verification`）。
+- **Prosopo 验证码**：`components/procaptcha.tsx` 是 iframe 包装组件（Chrome MV3 `script-src 'self'` CSP 限制，无法直接加载外部 JS）。扩展通过 `<iframe>` 嵌入后端的 `GET /captcha/widget` 页面，由服务端加载 Prosopo bundle，验证完成后通过 `postMessage` 传回 token。`VITE_PROSOPO_SITE_KEY` 为空时不渲染验证码。注册页默认展示；登录页在服务端检测到多次失败后条件展示（`GET /auth/login-captcha-status`）；OTP 重发页在 IP 超过阈值后展示（`GET /auth/otp-captcha-status`）。
+- **邮箱验证**：使用 6 位数字 OTP，不再发送链接。注册后若 `user.is_verified === false`，`AuthGate` 拦截并显示 `VerifyEmailScreen`，用户输入 OTP 后调用 `POST /auth/verify-email { email, code }`，成功后通过 `GET /auth/me` 确认验证状态。
+- **找回密码**：`LoginForm` 新增 `forgot-password` 和 `reset-password` 两个 mode，通过 `POST /auth/forgot-password` 发送 OTP，再通过 `POST /auth/reset-password` 重置密码。
 - **密码强度**：前端 `minLength={10}` + 提示文案"At least 10 characters, including a letter and a number"，与后端 `validatePasswordStrength` 规则对齐。
 - **Compact group title**：Chrome tab group 标题若为紧凑模式，Chrome 端存单字母；完整标题存于 `tabslate-full-titles`，`fullTitles[groupId]` 取用

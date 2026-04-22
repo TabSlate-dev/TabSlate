@@ -1,103 +1,65 @@
 /**
- * Procaptcha React wrapper with self-hosted server support.
+ * Procaptcha iframe wrapper for Chrome MV3 extensions.
  *
- * Inlines createRenderer / loadRenderFunction from @prosopo/procaptcha-wrapper
- * because that package only exports its root (renderProcaptcha) and the deep
- * path ./dist/render/renderer.js is not listed in its exports field.
+ * MV3 enforces script-src 'self' and cannot whitelist external script domains,
+ * so we cannot load the Prosopo CDN bundle directly. Instead, the extension
+ * embeds an <iframe> pointing to the server's /captcha/widget endpoint. That
+ * page (a normal web origin) loads the Prosopo bundle freely, then posts the
+ * solved token back via postMessage.
+ *
+ * When Prosopo updates their JS bundle, only the server needs redeploying —
+ * the extension requires no changes.
  */
-import { useRef, useEffect } from "react";
-
-type RenderOptions = {
-  siteKey: string;
-  callback?: (token: string) => void;
-  theme?: string;
-  language?: string;
-  captchaType?: string;
-};
-
-type RenderFunction = (element: HTMLElement, options: RenderOptions) => Promise<void>;
-
-async function loadRenderFunction(scriptUrl: string, scriptId: string): Promise<RenderFunction> {
-  await new Promise<void>((resolve, reject) => {
-    if (document.getElementById(scriptId)) {
-      resolve();
-      return;
-    }
-    const script = Object.assign(document.createElement("script"), {
-      src: scriptUrl,
-      id: scriptId,
-      type: "module",
-      async: true,
-      defer: true,
-      onload: resolve,
-      onerror: reject,
-    });
-    document.head.appendChild(script);
-  });
-  const w = window as unknown as { procaptcha?: { render?: RenderFunction } };
-  if (!w.procaptcha?.render) {
-    throw new Error("Render script does not contain the render function");
-  }
-  return w.procaptcha.render;
-}
-
-function createRenderer(settings: { scriptUrl: string; scriptId: string }) {
-  let renderFn: RenderFunction | undefined;
-  return async (element: HTMLElement, options: RenderOptions) => {
-    if (!renderFn) {
-      renderFn = await loadRenderFunction(settings.scriptUrl, settings.scriptId);
-    }
-    await renderFn(element, { ...options });
-  };
-}
-
-const DEFAULT_SCRIPT_URL = "https://js.prosopo.io/js/procaptcha.bundle.js";
+import { useEffect, useRef, useCallback, useState } from "react";
 
 interface ProcaptchaProps {
   siteKey: string;
-  /** Called with the procaptcha token when the user passes verification. */
-  callback?: (token: string) => void;
+  /** TabSlate server base URL — the same one used for API calls. */
+  serverUrl: string;
+  /** Called with the procaptcha token once the user passes verification. */
+  onToken: (token: string) => void;
   theme?: "light" | "dark";
-  language?: string;
-  captchaType?: string;
-  /**
-   * Base URL of a self-hosted Prosopo server.
-   * When set, the JS bundle is loaded from `${serverUrl}/js/procaptcha.bundle.js`.
-   * Leave empty to use the official Prosopo CDN.
-   */
-  serverUrl?: string;
+  /** Captcha type configured for this site key in the Prosopo dashboard.
+   *  Set via VITE_PROSOPO_CAPTCHA_TYPE. Omit to use Prosopo's default. */
+  captchaType?: "frictionless" | "pow" | "image";
 }
 
-export function Procaptcha({
-  siteKey,
-  callback,
-  theme,
-  language,
-  captchaType,
-  serverUrl,
-}: ProcaptchaProps) {
-  const ref = useRef<HTMLDivElement>(null);
+const MIN_HEIGHT = 78;
+
+export function Procaptcha({ siteKey, serverUrl, onToken, theme = "light", captchaType }: ProcaptchaProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(MIN_HEIGHT);
+
+  const base = serverUrl.replace(/\/$/, "");
+  const params = new URLSearchParams({ siteKey, theme });
+  if (captchaType) params.set("captchaType", captchaType);
+  const src = `${base}/captcha/widget?${params}`;
+  const widgetOrigin = new URL(src).origin;
+
+  const handleMessage = useCallback(
+    (e: MessageEvent) => {
+      if (e.origin !== widgetOrigin) return;
+      if (e.data?.type === "procaptcha-token" && typeof e.data.token === "string") {
+        onToken(e.data.token);
+      }
+      if (e.data?.type === "procaptcha-resize" && typeof e.data.height === "number") {
+        setHeight(Math.max(MIN_HEIGHT, e.data.height));
+      }
+    },
+    [widgetOrigin, onToken],
+  );
 
   useEffect(() => {
-    if (!ref.current) return;
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [handleMessage]);
 
-    const scriptUrl = serverUrl
-      ? `${serverUrl.replace(/\/$/, "")}/js/procaptcha.bundle.js`
-      : DEFAULT_SCRIPT_URL;
-
-    const render = createRenderer({
-      scriptUrl,
-      scriptId: "procaptcha-bundle",
-    });
-
-    render(ref.current, {
-      siteKey,
-      callback,
-      theme,
-      language,
-      captchaType,
-    } as Parameters<typeof render>[1]);
-  }, [siteKey, callback, theme, language, captchaType, serverUrl]);
-
-  return <div ref={ref} />;
+  return (
+    <iframe
+      ref={iframeRef}
+      src={src}
+      title="CAPTCHA verification"
+      style={{ border: "none", width: "100%", height }}
+    />
+  );
 }

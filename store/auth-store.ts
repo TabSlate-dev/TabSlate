@@ -26,7 +26,10 @@ interface AuthState {
     password: string,
     captchaToken?: string,
   ) => Promise<void>;
-  resendVerification: (email: string) => Promise<void>;
+  resendVerification: (email: string, captchaToken?: string) => Promise<void>;
+  verifyEmailOTP: (email: string, code: string) => Promise<void>;
+  forgotPassword: (email: string, captchaToken?: string) => Promise<void>;
+  resetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -69,9 +72,29 @@ export const useAuthStore = create<AuthState>()(
         });
       },
 
-      resendVerification: async (email) => {
+      resendVerification: async (email, captchaToken) => {
         const { serverUrl } = get();
-        await api.resendVerification(serverUrl, email);
+        await api.resendVerification(serverUrl, email, captchaToken);
+      },
+
+      verifyEmailOTP: async (email, code) => {
+        const { serverUrl, accessToken } = get();
+        await api.verifyEmailOTP(serverUrl, email, code);
+        // Re-fetch user from the server so is_verified reflects the backend state.
+        if (accessToken) {
+          const resp = await api.me(serverUrl, accessToken);
+          set({ user: resp.user });
+        }
+      },
+
+      forgotPassword: async (email, captchaToken) => {
+        const { serverUrl } = get();
+        await api.forgotPassword(serverUrl, email, captchaToken);
+      },
+
+      resetPassword: async (email, code, newPassword) => {
+        const { serverUrl } = get();
+        await api.resetPassword(serverUrl, email, code, newPassword);
       },
 
       logout: async () => {

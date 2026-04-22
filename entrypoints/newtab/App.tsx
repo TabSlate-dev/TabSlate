@@ -13,6 +13,7 @@ import { GroupDetail } from "@/components/dashboard/group-detail";
 import { TabsRail } from "@/components/dashboard/tabs-rail";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AuthPage } from "@/components/auth/auth-page";
+import { VerifyEmailScreen } from "@/components/auth/verify-email-screen";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
@@ -79,11 +80,18 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-/** Shows the auth page when no access token is present */
+/** Shows the auth page when no access token is present.
+ *  If a token exists but the email is unverified, shows the OTP verification
+ *  screen instead of the dashboard — prevents entering without verifying. */
 function AuthGate({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const user = useAuthStore((s) => s.user);
+
   if (!accessToken) {
     return <AuthPage />;
+  }
+  if (user && !user.is_verified) {
+    return <VerifyEmailScreen email={user.email} />;
   }
   return <>{children}</>;
 }

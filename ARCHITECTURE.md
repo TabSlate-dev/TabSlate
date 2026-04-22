@@ -32,13 +32,15 @@ TabSlate/
 │
 ├── components/
 │   ├── auth/
-│   │   └── auth-page.tsx       # 全屏认证页，居中渲染 LoginForm
-│   ├── login-form.tsx          # login/register 双模式 + Prosopo 验证码 + 邮箱验证 UI + 密码强度提示
-│   ├── procaptcha.tsx          # Prosopo React 组件（支持自部署 serverUrl，基于 createRenderer）
+│   │   ├── auth-page.tsx            # 全屏认证页，居中渲染 LoginForm
+│   │   └── verify-email-screen.tsx  # 全屏 OTP 邮箱验证页（AuthGate 拦截未验证用户时显示）
+│   ├── login-form.tsx          # login/register/forgot-password/reset-password 四模式 + Prosopo 验证码 + 密码强度提示
+│   ├── procaptcha.tsx          # Prosopo iframe 包装组件（绕过 MV3 CSP 限制；通过 postMessage 接收 token）
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
-│   │   └── favicon-image.tsx   # 带 fallback 的 favicon 图片
+│   │   ├── favicon-image.tsx   # 带 fallback 的 favicon 图片
+│   │   └── input-otp.tsx       # 6 格 OTP 输入框（基于 input-otp 包）
 │   └── dashboard/
 │       ├── sidebar/            # 左侧书签导航栏
 │       │   ├── index.tsx       # BookmarksSidebar（主组件）
@@ -79,10 +81,10 @@ TabSlate/
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
 ├── types/
-│   └── prosopo.d.ts        # @prosopo/react-procaptcha-wrapper 及 createRenderer 类型声明
+│   └── prosopo.d.ts        # window.procaptcha 全局类型声明（captcha widget 页面使用）
 │
 ├── lib/
-│   ├── api.ts              # TabSlate-server HTTP 客户端（register/login/logout/refresh/me/loginCaptchaStatus/resendVerification）
+│   ├── api.ts              # TabSlate-server HTTP 客户端（register/login/logout/refresh/me/loginCaptchaStatus/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/otpCaptchaStatus）
 │   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义
 │   ├── utils.ts            # cn() 等工具函数
 │   ├── storage.ts          # popup 用的轻量 chrome.storage 读写工具
@@ -119,7 +121,7 @@ useTabsStore       (不持久化，运行时从 Chrome API 加载)
 
 | Store | 持久化 | 职责 |
 |---|---|---|
-| `useAuthStore` | ✅ | 登录用户信息（含 `is_verified`）、access/refresh token、server URL、验证邮件重发 |
+| `useAuthStore` | ✅ | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
 | `useBookmarksStore` | ✅ | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态 |
 | `useWorkspaceStore` | ✅ | 工作区、集合（Collections）、标签（Tags）、高亮状态 |
 | `useGroupsStore` | ✅ | 用户手动保存的标签组及其包含的 tab URL |
