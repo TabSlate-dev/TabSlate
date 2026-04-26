@@ -32,15 +32,19 @@ export interface LoginCaptchaStatusResponse {
 export class ApiError extends Error {
   /** Whether the server is requesting a captcha (login failure threshold). */
   captchaRequired?: boolean;
+  /** Seconds to wait before retrying, populated from the server's retry_after field. */
+  retryAfter?: number;
 
   constructor(
     message: string,
     public readonly status: number,
     captchaRequired?: boolean,
+    retryAfter?: number,
   ) {
     super(message);
     this.name = "ApiError";
     this.captchaRequired = captchaRequired;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -67,6 +71,7 @@ async function request<T>(
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
     let captchaRequired: boolean | undefined;
+    let retryAfter: number | undefined;
     try {
       const body = await res.json();
       if (typeof body?.error === "string") {
@@ -75,10 +80,13 @@ async function request<T>(
       if (body?.captcha_required === true) {
         captchaRequired = true;
       }
+      if (typeof body?.retry_after === "number") {
+        retryAfter = body.retry_after;
+      }
     } catch {
       // ignore JSON parse failure — keep the generic message
     }
-    throw new ApiError(message, res.status, captchaRequired);
+    throw new ApiError(message, res.status, captchaRequired, retryAfter);
   }
 
   // 204 No Content or genuinely empty body

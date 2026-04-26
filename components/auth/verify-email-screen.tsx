@@ -49,6 +49,25 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
   const logout = useAuthStore((s) => s.logout);
   const serverUrl = useAuthStore((s) => s.serverUrl);
 
+  // On mount: trigger an OTP send so the user always has a fresh code when
+  // arriving here — whether they came from registration (OTP already sent,
+  // cooldown active) or from logging in with an unverified account (OTP may
+  // have expired). If the backend returns 429 the OTP was recently sent and
+  // we use its retry_after to start the countdown without emitting an error.
+  React.useEffect(() => {
+    (async () => {
+      try {
+        await resendVerification(email);
+        setRetryAfter(60);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 429) {
+          setRetryAfter(err.retryAfter ?? 60);
+        }
+        // Other errors silently ignored — user can still click Resend manually
+      }
+    })();
+  }, [email, resendVerification]);
+
   // Check per-IP captcha requirement on mount
   React.useEffect(() => {
     if (!PROSOPO_SITE_KEY) return;
@@ -96,6 +115,7 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
     try {
       await resendVerification(email, captchaToken || undefined);
       setResent(true);
+      setRetryAfter(60);
       setCaptchaToken("");
       setCaptchaKey((k) => k + 1);
       // Re-check captcha status after resend
@@ -110,10 +130,8 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
           setCaptchaToken("");
           setCaptchaKey((k) => k + 1);
         } else if (err.status === 429) {
-          const body = err.message;
-          // try to parse retry_after from message if server embeds it
-          setError(body);
-          setRetryAfter(60);
+          setError(err.message);
+          setRetryAfter(err.retryAfter ?? 60);
         } else {
           setError(err.message);
         }
