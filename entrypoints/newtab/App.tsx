@@ -12,8 +12,11 @@ import { TabsPanel } from "@/components/dashboard/tabs-panel";
 import { GroupDetail } from "@/components/dashboard/group-detail";
 import { TabsRail } from "@/components/dashboard/tabs-rail";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { AuthPage } from "@/components/auth/auth-page";
+import { VerifyEmailScreen } from "@/components/auth/verify-email-screen";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
+import { useAuthStore } from "@/store/auth-store";
 import { Loader2 } from "lucide-react";
 
 function Layout({
@@ -59,11 +62,12 @@ function Layout({
   );
 }
 
-/** Waits for both stores to rehydrate from chrome.storage before rendering */
+/** Waits for all stores to rehydrate from chrome.storage before rendering */
 function StoreGate({ children }: { children: React.ReactNode }) {
   const bookmarksHydrated = useBookmarksStore((s) => s._hydrated);
   const workspaceHydrated = useWorkspaceStore((s) => s._hydrated);
-  const hydrated = bookmarksHydrated && workspaceHydrated;
+  const authHydrated = useAuthStore((s) => s._hydrated);
+  const hydrated = bookmarksHydrated && workspaceHydrated && authHydrated;
 
   if (!hydrated) {
     return (
@@ -76,64 +80,82 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Shows the auth page when no access token is present.
+ *  If a token exists but the email is unverified, shows the OTP verification
+ *  screen instead of the dashboard — prevents entering without verifying. */
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const user = useAuthStore((s) => s.user);
+
+  if (!accessToken) {
+    return <AuthPage />;
+  }
+  if (user && !user.is_verified) {
+    return <VerifyEmailScreen email={user.email} />;
+  }
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <StoreGate>
-        <HashRouter>
-          <TabsDndProvider>
-            <Routes>
-            <Route
-              path="/"
-              element={
-                <Layout>
-                  <BookmarksContent />
-                </Layout>
-              }
-            />
-            <Route
-              path="/favorites"
-              element={
-                <Layout title="Favorites">
-                  <FavoritesContent />
-                </Layout>
-              }
-            />
-            <Route
-              path="/archive"
-              element={
-                <Layout title="Archive">
-                  <ArchiveContent />
-                </Layout>
-              }
-            />
-            <Route
-              path="/trash"
-              element={
-                <Layout title="Trash">
-                  <TrashContent />
-                </Layout>
-              }
-            />
-            <Route
-              path="/tabs"
-              element={
-                <Layout title="Open Tabs">
-                  <TabsPanel />
-                </Layout>
-              }
-            />
-            <Route
-              path="/groups/:groupId"
-              element={
-                <Layout title="Groups">
-                  <GroupDetail />
-                </Layout>
-              }
-            />
-            </Routes>
-          </TabsDndProvider>
-        </HashRouter>
+        <AuthGate>
+          <HashRouter>
+            <TabsDndProvider>
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    <Layout>
+                      <BookmarksContent />
+                    </Layout>
+                  }
+                />
+                <Route
+                  path="/favorites"
+                  element={
+                    <Layout title="Favorites">
+                      <FavoritesContent />
+                    </Layout>
+                  }
+                />
+                <Route
+                  path="/archive"
+                  element={
+                    <Layout title="Archive">
+                      <ArchiveContent />
+                    </Layout>
+                  }
+                />
+                <Route
+                  path="/trash"
+                  element={
+                    <Layout title="Trash">
+                      <TrashContent />
+                    </Layout>
+                  }
+                />
+                <Route
+                  path="/tabs"
+                  element={
+                    <Layout title="Open Tabs">
+                      <TabsPanel />
+                    </Layout>
+                  }
+                />
+                <Route
+                  path="/groups/:groupId"
+                  element={
+                    <Layout title="Groups">
+                      <GroupDetail />
+                    </Layout>
+                  }
+                />
+              </Routes>
+            </TabsDndProvider>
+          </HashRouter>
+        </AuthGate>
       </StoreGate>
     </ThemeProvider>
   );

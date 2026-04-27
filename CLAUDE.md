@@ -1,5 +1,19 @@
 # CLAUDE.md
 
+## 仓库关系
+
+TabSlate 由三个仓库组成：
+
+| 仓库 | 可见性 | 职责 |
+|---|---|---|
+| **`TabSlate`**（本仓库） | 公开，AGPL | Chrome 扩展前端，TypeScript + React + WXT |
+| **`TabSlate-server`** | 公开，AGPL | Go 后端 OSS 版，可自托管，计费基于本地 License JWT |
+| **`TabSlate-cloud`** | 私有 | Go 后端 Cloud 版，以 `TabSlate-server` 为 Go module 依赖，注入 Lago 计费 |
+
+前端直接通过 Chrome extension API 与后端 REST API 通信；Cloud 版与 OSS 版暴露完全相同的 API 路由，前端无感知差异。
+
+---
+
 ## 项目概述
 
 TabSlate 是一个 Chrome 扩展，用新标签页替换浏览器默认新标签页，提供标签页管理、书签整理、分组等功能。
@@ -110,6 +124,7 @@ const tabs = React.useMemo(
 - **FaviconImage** (`components/ui/favicon-image.tsx`) — 所有 favicon 显示都用此组件，禁止裸 `<img onError>`
 - **ColorPicker** (`components/ui/color-picker.tsx`) — Tab group 颜色选择器，支持 `size="sm" | "md"`
 - **Alert** (`components/ui/alert.tsx`) — 标准 shadcn Alert，用于内联提示和浮动通知（duplicate tab 检测等）
+- **InputOTP** (`components/ui/input-otp.tsx`) — 6 格 OTP 输入框（基于 `input-otp` 包），用于邮箱验证和密码重置
 - **shadcn/ui** (`components/ui/`) — Button、Input、Dialog 等基础组件
 
 ### Dialog 样式规范
@@ -140,6 +155,7 @@ Dialog 必须使用标准 shadcn 结构，禁止在 `DialogContent` 上添加破
 | `tabslate-bookmarks` | Zustand JSON `{state: {...}}` | 书签、归档、回收站 |
 | `tabslate-workspace` | Zustand JSON `{state: {...}}` | 工作区、集合、标签 |
 | `tabslate-groups` | Zustand JSON `{state: {...}}` | 保存的标签组 |
+| `tabslate-auth` | Zustand JSON `{state: {...}}` | 用户认证（user、accessToken、refreshToken、serverUrl） |
 | `tabslate-full-titles` | `Record<number, string>` | Chrome tab group 完整标题 |
 | `tabslate-tabs-changed` | `number` (timestamp) | background → newtab 变更信号 |
 
@@ -153,8 +169,17 @@ let _tabHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 
 ### React 19 Form Actions
 
-Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSubmit`）：
+Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对于有复杂错误处理、状态保留需求的表单（如 LoginForm），必须使用 `onSubmit` + `e.preventDefault()`**，因为 React 19 的 `form action` 在 action 函数正常返回后会自动清空所有非受控 input，导致用户输入丢失：
+
 ```tsx
+// ✅ 复杂表单 — 用 onSubmit 保留输入
+<form onSubmit={async (e) => {
+  e.preventDefault();
+  const formData = new FormData(e.currentTarget);
+  // 处理提交
+}}>
+
+// ✅ 简单 Dialog 表单 — form action 可用
 <form action={(formData) => {
   const name = formData.get("name") as string;
   // 处理提交
@@ -174,6 +199,14 @@ Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSu
 
 `@/` → 项目根目录（由 WXT 配置，等同于 TypeScript `paths` 中的 `@/*`）
 
+## 环境变量
+
+| 变量 | 说明 |
+|---|---|
+| `VITE_API_URL` | 后端 API 地址，默认 `http://localhost:8080` |
+| `VITE_PROSOPO_SITE_KEY` | Prosopo 站点公钥（Site Key）；空 = 禁用验证码 |
+| `VITE_PROSOPO_CAPTCHA_TYPE` | Prosopo 验证码类型，需与 Prosopo 控制台配置一致：`frictionless` \| `pow` \| `image`；空 = Prosopo 默认 |
+
 ## Code Quality
 
 - Type check: `bun run compile`
@@ -184,5 +217,11 @@ Dialog 中的表单提交使用 React 19 的 `form action` 模式（而非 `onSu
 
 - **不要在 newtab 页以外使用 store**：popup 和 background 直接读写 `chrome.storage.local`，不加载 Zustand
 - **Tab 变更广播**：background.ts 监听所有 tab/group 事件，写 `tabslate-tabs-changed` 信号；newtab 的 `TabsPanel` 和 `GroupsPanel` 监听此信号触发 `loadTabs()`
-- **Store hydration**：`App.tsx` 中的 `StoreGate` 组件等待 `bookmarksHydrated && workspaceHydrated` 后才渲染，避免闪烁
+- **Store hydration**：`App.tsx` 中的 `StoreGate` 组件等待 `bookmarksHydrated && workspaceHydrated && authHydrated` 后才渲染，避免闪烁
+- **AuthGate**（`entrypoints/newtab/App.tsx`）：三层守卫：① `accessToken` 为 null → 渲染 `AuthPage`（登录/注册/找回密码）；② `accessToken` 存在但 `user.is_verified === false` → 渲染 `VerifyEmailScreen`（OTP 输入）；③ 两者均通过 → 渲染 dashboard。验证成功后 store 调用 `GET /auth/me` 更新 `is_verified`，`AuthGate` 自动重渲染。
+- **API 客户端**：`lib/api.ts` 是纯函数 HTTP 客户端，不持有状态；server URL 由 `useAuthStore.serverUrl` 管理（默认读取 `VITE_API_URL` 环境变量）。自托管用户可在登录页"Advanced"中修改。
+- **Prosopo 验证码**：`components/procaptcha.tsx` 是 iframe 包装组件（Chrome MV3 `script-src 'self'` CSP 限制，无法直接加载外部 JS）。扩展通过 `<iframe>` 嵌入后端的 `GET /captcha/widget` 页面，由服务端加载 Prosopo bundle，验证完成后通过 `postMessage` 传回 token。`VITE_PROSOPO_SITE_KEY` 为空时不渲染验证码。注册页默认展示；登录页在服务端检测到多次失败后条件展示（`GET /auth/login-captcha-status`）；OTP 重发页在 IP 超过阈值后展示（`GET /auth/otp-captcha-status`）。
+- **邮箱验证**：使用 6 位数字 OTP，不再发送链接。注册后若 `user.is_verified === false`，`AuthGate` 拦截并显示 `VerifyEmailScreen`，用户输入 OTP 后调用 `POST /auth/verify-email { email, code }`，成功后通过 `GET /auth/me` 确认验证状态。
+- **找回密码**：`LoginForm` 新增 `forgot-password` 和 `reset-password` 两个 mode，通过 `POST /auth/forgot-password` 发送 OTP，再通过 `POST /auth/reset-password` 重置密码。
+- **密码强度**：前端 `minLength={10}` + 提示文案"At least 10 characters, including a letter and a number"，与后端 `validatePasswordStrength` 规则对齐。
 - **Compact group title**：Chrome tab group 标题若为紧凑模式，Chrome 端存单字母；完整标题存于 `tabslate-full-titles`，`fullTitles[groupId]` 取用
