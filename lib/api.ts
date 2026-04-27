@@ -173,6 +173,12 @@ export const api = {
     });
   },
 
+  registerCaptchaStatus(baseUrl: string): Promise<LoginCaptchaStatusResponse> {
+    return request<LoginCaptchaStatusResponse>(baseUrl, "/auth/register-captcha-status", {
+      method: "GET",
+    });
+  },
+
   verifyEmailOTP(baseUrl: string, email: string, code: string): Promise<void> {
     return request<void>(baseUrl, "/auth/verify-email", {
       method: "POST",

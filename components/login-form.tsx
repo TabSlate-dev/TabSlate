@@ -47,6 +47,7 @@ export function LoginForm({
   const [captchaToken, setCaptchaToken] = React.useState<string>("");
   const [captchaKey, setCaptchaKey] = React.useState(0);
   const [loginCaptchaRequired, setLoginCaptchaRequired] = React.useState(false);
+  const [registerCaptchaRequired, setRegisterCaptchaRequired] = React.useState(false);
 
   // Per-IP captcha state for forgot-password (OTP send)
   const [forgotCaptchaRequired, setForgotCaptchaRequired] = React.useState(false);
@@ -95,12 +96,18 @@ export function LoginForm({
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const setServerUrl = useAuthStore((s) => s.setServerUrl);
 
-  // Check per-IP captcha requirement whenever entering forgot-password mode
+  // Check per-IP captcha requirement whenever entering register or forgot-password mode
   React.useEffect(() => {
-    if (mode !== "forgot-password" || !PROSOPO_SITE_KEY) return;
-    api.otpCaptchaStatus(serverUrl).then((r) => {
-      setForgotCaptchaRequired(r.captcha_required);
-    }).catch(() => {});
+    if (!PROSOPO_SITE_KEY) return;
+    if (mode === "register") {
+      api.registerCaptchaStatus(serverUrl).then((r) => {
+        setRegisterCaptchaRequired(r.captcha_required);
+      }).catch(() => {});
+    } else if (mode === "forgot-password") {
+      api.otpCaptchaStatus(serverUrl).then((r) => {
+        setForgotCaptchaRequired(r.captcha_required);
+      }).catch(() => {});
+    }
   }, [mode, serverUrl]);
 
   /** Check whether the login endpoint requires captcha for this email. */
@@ -114,10 +121,10 @@ export function LoginForm({
     }
   }
 
-  // Show captcha on register always (if sitekey configured), on login only when required.
+  // Show captcha on register when threshold reached, on login after repeated failures.
   const showCaptcha =
     PROSOPO_SITE_KEY &&
-    (mode === "register" || (mode === "login" && loginCaptchaRequired));
+    ((mode === "register" && registerCaptchaRequired) || (mode === "login" && loginCaptchaRequired));
 
   // ── Forgot password — email input ──────────────────────────────────────────
   if (mode === "forgot-password") {
@@ -368,8 +375,13 @@ export function LoginForm({
             } catch (err) {
               if (err instanceof ApiError) {
                 setError(err.message);
-                if (err.captchaRequired) {
+                if (mode === "login" && err.captchaRequired) {
                   setLoginCaptchaRequired(true);
+                } else if (mode === "register" && PROSOPO_SITE_KEY) {
+                  // Re-check in case the threshold was crossed during this attempt.
+                  api.registerCaptchaStatus(serverUrl).then((r) => {
+                    setRegisterCaptchaRequired(r.captcha_required);
+                  }).catch(() => {});
                 }
               } else {
                 setError("Something went wrong");

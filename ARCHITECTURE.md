@@ -84,7 +84,7 @@ TabSlate/
 │   └── prosopo.d.ts        # window.procaptcha 全局类型声明（captcha widget 页面使用）
 │
 ├── lib/
-│   ├── api.ts              # TabSlate-server HTTP 客户端（register/login/logout/refresh/me/loginCaptchaStatus/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/otpCaptchaStatus）
+│   ├── api.ts              # TabSlate-server HTTP 客户端（register/login/logout/refresh/me/loginCaptchaStatus/registerCaptchaStatus/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/otpCaptchaStatus）；ApiError 携带 status/captchaRequired/retryAfter
 │   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义
 │   ├── utils.ts            # cn() 等工具函数
 │   ├── storage.ts          # popup 用的轻量 chrome.storage 读写工具
