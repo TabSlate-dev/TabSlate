@@ -13,6 +13,8 @@ import { X, BookmarkPlus, Bookmark, AlertCircle } from "lucide-react";
 import type { BookmarkDragData } from "./tabs-dnd-provider";
 import type { Bookmark as BookmarkType } from "@/lib/types";
 
+import { HeroSection } from "./hero-section";
+
 interface DraggableBookmarkCardProps {
   bookmark: BookmarkType;
   variant?: "grid" | "list";
@@ -119,6 +121,7 @@ export function BookmarksContent() {
       )}
 
       <div className="p-4 md:p-6 space-y-6">
+        {selectedCollection === "all" && !hasActiveFilters && <HeroSection />}
         <StatsCards />
 
         <div className="space-y-4">

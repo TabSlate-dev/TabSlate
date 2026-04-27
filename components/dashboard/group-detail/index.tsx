@@ -308,18 +308,7 @@ export function GroupDetail() {
             onSelect={(checked) => handleToggleSelect(tab.id, checked)}
             actions={
               <div className="flex items-center gap-0.5">
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    removeTabFromGroup(tab.id);
-                  }}
-                  title="Remove from group"
-                  className="size-6 text-destructive hover:bg-destructive/10"
-                >
-                  <BrushCleaning className="size-3" />
-                </Button>
+
                 <Button
                   variant="ghost"
                   size="icon-xs"

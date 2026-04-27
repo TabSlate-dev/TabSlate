@@ -136,3 +136,31 @@ export const useGroupsStore = create<GroupsState>()(
     }
   )
 );
+
+// ---------------------------------------------------------------------------
+// Keep UI in sync across different windows/tabs
+// ---------------------------------------------------------------------------
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes["tabslate-groups"]) { return; }
+  const newValue = changes["tabslate-groups"].newValue;
+  if (!newValue) { return; }
+  try {
+    const parsed = typeof newValue === "string" ? JSON.parse(newValue) : newValue;
+    const data = parsed?.state;
+    if (data) {
+      const current = useGroupsStore.getState();
+      const needsUpdate =
+        JSON.stringify(data.groups) !== JSON.stringify(current.groups) ||
+        JSON.stringify(data.groupTabs) !== JSON.stringify(current.groupTabs);
+
+      if (needsUpdate) {
+        useGroupsStore.setState({
+          groups: data.groups ?? [],
+          groupTabs: data.groupTabs ?? [],
+        });
+      }
+    }
+  } catch {
+    // ignore malformed data
+  }
+});

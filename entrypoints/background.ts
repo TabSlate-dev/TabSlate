@@ -27,7 +27,7 @@ export default defineBackground(() => {
       url: info.linkUrl ?? pageInfo?.url ?? tab.url ?? "",
       favicon: pageInfo?.favicon ?? tab.favIconUrl ?? "",
       description: pageInfo?.selectedText ?? "",
-      collectionId: "all",
+      collectionId: "",
       tags: [] as string[],
       createdAt: new Date().toISOString(),
       isFavorite: false,

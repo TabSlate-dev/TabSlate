@@ -8,6 +8,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { TagList } from "@/components/ui/tag-list";
+import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-dialog";
+import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
 import * as React from "react";
 import {
   Heart,
@@ -40,6 +42,8 @@ export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false
   const bookmarkTags = tags.filter((tag) => bookmark.tags.includes(tag.id));
   const [copied, setCopied] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [tagsOpen, setTagsOpen] = React.useState(false);
 
    const handleCopyUrl = () => {
      navigator.clipboard.writeText(bookmark.url);
@@ -60,11 +64,11 @@ export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false
         <ExternalLink className="size-4 mr-2" />
         Open in new tab
       </DropdownMenuItem>
-      <DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setEditOpen(true)}>
         <Pencil className="size-4 mr-2" />
         Edit
       </DropdownMenuItem>
-      <DropdownMenuItem>
+      <DropdownMenuItem onClick={() => setTagsOpen(true)}>
         <Tag className="size-4 mr-2" />
         Add Tags
       </DropdownMenuItem>
@@ -139,6 +143,9 @@ export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false
             {actionsMenu}
           </DropdownMenu>
         </div>
+
+        <EditBookmarkDialog bookmark={bookmark} open={editOpen} onOpenChange={setEditOpen} />
+        <BookmarkTagsDialog bookmark={bookmark} open={tagsOpen} onOpenChange={setTagsOpen} />
       </div>
     );
   }
@@ -238,6 +245,9 @@ export function BookmarkCard({ bookmark, variant = "grid", isHighlighted = false
           <TagList tags={bookmarkTags} max={3} />
         </div>
       )}
+
+      <EditBookmarkDialog bookmark={bookmark} open={editOpen} onOpenChange={setEditOpen} />
+      <BookmarkTagsDialog bookmark={bookmark} open={tagsOpen} onOpenChange={setTagsOpen} />
     </div>
   );
 }
