@@ -102,6 +102,7 @@ export class SyncQueue {
       snapshot.entities.tags.forEach(e => this.queue.tags.set((e as { id: string }).id, e));
 
       this.onError(err instanceof Error ? err : new Error(String(err)));
+      if (this.retryTimer) clearTimeout(this.retryTimer);
       this.retryTimer = setTimeout(() => {
         this.retryTimer = null;
         this.doPush();
