@@ -18,7 +18,7 @@ import { VerifyEmailScreen } from "@/components/auth/verify-email-screen";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
-import { SyncEngine, SyncStatus, initSyncEngine, destroySyncEngine, syncEngine } from "@/lib/sync-engine";
+import { SyncEngine, type SyncStatus, initSyncEngine, destroySyncEngine, syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
