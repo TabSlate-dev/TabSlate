@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TabsDndProvider } from "@/components/dashboard/tabs-dnd-provider";
@@ -18,15 +18,19 @@ import { VerifyEmailScreen } from "@/components/auth/verify-email-screen";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
-import { SyncEngine, SyncStatus, initSyncEngine, destroySyncEngine } from "@/lib/sync-engine";
+import { SyncEngine, SyncStatus, initSyncEngine, destroySyncEngine, syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
 function Layout({
   title,
+  syncStatus,
+  onForceSync,
   children,
 }: {
   title?: string;
+  syncStatus: SyncStatus;
+  onForceSync: () => void;
   children: React.ReactNode;
 }) {
   return (
@@ -44,7 +48,7 @@ function Layout({
         <SidebarProvider
           style={{ "--sidebar-offset": "3.25rem" } as React.CSSProperties}
         >
-          <BookmarksSidebar />
+          <BookmarksSidebar syncStatus={syncStatus} onForceSync={onForceSync} />
 
           {/* Content area: use h-svh directly so height is always definite */}
           <div className="flex flex-1 h-svh overflow-hidden lg:p-2 lg:gap-2 min-w-0">
@@ -100,8 +104,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 /** Instantiates and manages the SyncEngine lifecycle after auth hydration.
- *  Renders only when there is a valid accessToken + serverUrl. */
-function SyncProvider({ children }: { children: React.ReactNode }) {
+ *  Uses render props to expose syncStatus and onForceSync to children. */
+function SyncProvider({
+  children,
+}: {
+  children: (syncStatus: SyncStatus, onForceSync: () => void) => React.ReactNode;
+}) {
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const accessToken = useAuthStore((s) => s.accessToken);
   const localSeq = useWorkspaceStore((s) => s.localSeq);
@@ -143,10 +151,11 @@ function SyncProvider({ children }: { children: React.ReactNode }) {
     };
   }, [accessToken, serverUrl]);
 
-  // syncStatus is available here for future use (e.g. passing to SyncStatusIndicator)
-  void syncStatus;
+  const handleForceSync = useCallback(() => {
+    syncEngine?.forceSync().catch(() => {});
+  }, []);
 
-  return <>{children}</>;
+  return <>{children(syncStatus, handleForceSync)}</>;
 }
 
 export default function App() {
@@ -155,60 +164,62 @@ export default function App() {
       <StoreGate>
         <AuthGate>
           <SyncProvider>
-          <HashRouter>
-            <TabsDndProvider>
-              <Routes>
-                <Route
-                  path="/"
-                  element={
-                    <Layout>
-                      <BookmarksContent />
-                    </Layout>
-                  }
-                />
-                <Route
-                  path="/favorites"
-                  element={
-                    <Layout title="Favorites">
-                      <FavoritesContent />
-                    </Layout>
-                  }
-                />
-                <Route
-                  path="/archive"
-                  element={
-                    <Layout title="Archive">
-                      <ArchiveContent />
-                    </Layout>
-                  }
-                />
-                <Route
-                  path="/trash"
-                  element={
-                    <Layout title="Trash">
-                      <TrashContent />
-                    </Layout>
-                  }
-                />
-                <Route
-                  path="/tabs"
-                  element={
-                    <Layout title="Open Tabs">
-                      <TabsPanel />
-                    </Layout>
-                  }
-                />
-                <Route
-                  path="/groups/:groupId"
-                  element={
-                    <Layout title="Groups">
-                      <GroupDetail />
-                    </Layout>
-                  }
-                />
-              </Routes>
-            </TabsDndProvider>
-          </HashRouter>
+            {(syncStatus, onForceSync) => (
+              <HashRouter>
+                <TabsDndProvider>
+                  <Routes>
+                    <Route
+                      path="/"
+                      element={
+                        <Layout syncStatus={syncStatus} onForceSync={onForceSync}>
+                          <BookmarksContent />
+                        </Layout>
+                      }
+                    />
+                    <Route
+                      path="/favorites"
+                      element={
+                        <Layout title="Favorites" syncStatus={syncStatus} onForceSync={onForceSync}>
+                          <FavoritesContent />
+                        </Layout>
+                      }
+                    />
+                    <Route
+                      path="/archive"
+                      element={
+                        <Layout title="Archive" syncStatus={syncStatus} onForceSync={onForceSync}>
+                          <ArchiveContent />
+                        </Layout>
+                      }
+                    />
+                    <Route
+                      path="/trash"
+                      element={
+                        <Layout title="Trash" syncStatus={syncStatus} onForceSync={onForceSync}>
+                          <TrashContent />
+                        </Layout>
+                      }
+                    />
+                    <Route
+                      path="/tabs"
+                      element={
+                        <Layout title="Open Tabs" syncStatus={syncStatus} onForceSync={onForceSync}>
+                          <TabsPanel />
+                        </Layout>
+                      }
+                    />
+                    <Route
+                      path="/groups/:groupId"
+                      element={
+                        <Layout title="Groups" syncStatus={syncStatus} onForceSync={onForceSync}>
+                          <GroupDetail />
+                        </Layout>
+                      }
+                    />
+                  </Routes>
+                </TabsDndProvider>
+              </HashRouter>
+            )}
           </SyncProvider>
         </AuthGate>
       </StoreGate>

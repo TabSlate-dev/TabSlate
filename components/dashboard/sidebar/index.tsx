@@ -46,6 +46,8 @@ import type { Collection } from "@/lib/types";
 import { CollectionDialog } from "./collection-dialog";
 import { TagDialog } from "./tag-dialog";
 import { GroupDialog } from "./group-dialog";
+import { SyncStatusIndicator } from "./sync-status";
+import type { SyncStatus } from "@/lib/sync-engine";
 
 // ---------------------------------------------------------------------------
 // Icon map
@@ -152,7 +154,12 @@ function AddItemButton({ label, onClick }: { label: string; onClick: () => void 
 // ---------------------------------------------------------------------------
 // BookmarksSidebar
 // ---------------------------------------------------------------------------
-export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+interface BookmarksSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  syncStatus: SyncStatus;
+  onForceSync: () => void;
+}
+
+export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: BookmarksSidebarProps) {
   const { pathname } = useLocation();
   const [collectionsOpen, setCollectionsOpen] = React.useState(true);
   const [groupsOpen, setGroupsOpen] = React.useState(true);
@@ -447,7 +454,9 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="px-4 pb-4" />
+        <SidebarFooter className="px-4 pb-4">
+          <SyncStatusIndicator status={syncStatus} onForceSync={onForceSync} />
+        </SidebarFooter>
       </Sidebar>
 
       {/* Dialogs (rendered outside Sidebar to avoid z-index issues) */}
