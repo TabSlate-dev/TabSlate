@@ -10,6 +10,10 @@ interface AuthState {
   refreshToken: string | null;
   // Server URL — defaults to the build-time env var or empty (user must enter it).
   serverUrl: string;
+  // Unix ms timestamp of the last successful OTP send (register or resend).
+  // Used by VerifyEmailScreen to compute the remaining cooldown on mount
+  // without needing an extra API call.
+  otpSentAt: number | null;
 
   _hydrated: boolean;
   setHydrated: () => void;
@@ -40,6 +44,7 @@ export const useAuthStore = create<AuthState>()(
       accessToken: null,
       refreshToken: null,
       serverUrl: (import.meta.env.VITE_API_URL as string | undefined) ?? "",
+      otpSentAt: null,
 
       _hydrated: false,
       setHydrated: () => set({ _hydrated: true }),
@@ -69,12 +74,14 @@ export const useAuthStore = create<AuthState>()(
           user: resp.user,
           accessToken: resp.access_token,
           refreshToken: resp.refresh_token,
+          otpSentAt: Date.now(),
         });
       },
 
       resendVerification: async (email, captchaToken) => {
         const { serverUrl } = get();
         await api.resendVerification(serverUrl, email, captchaToken);
+        set({ otpSentAt: Date.now() });
       },
 
       verifyEmailOTP: async (email, code) => {
@@ -128,6 +135,7 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         serverUrl: state.serverUrl,
+        otpSentAt: state.otpSentAt,
       }),
     },
   ),

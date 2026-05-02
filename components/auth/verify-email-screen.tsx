@@ -48,25 +48,20 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
   const resendVerification = useAuthStore((s) => s.resendVerification);
   const logout = useAuthStore((s) => s.logout);
   const serverUrl = useAuthStore((s) => s.serverUrl);
+  const otpSentAt = useAuthStore((s) => s.otpSentAt);
 
-  // On mount: trigger an OTP send so the user always has a fresh code when
-  // arriving here — whether they came from registration (OTP already sent,
-  // cooldown active) or from logging in with an unverified account (OTP may
-  // have expired). If the backend returns 429 the OTP was recently sent and
-  // we use its retry_after to start the countdown without emitting an error.
+  // Compute remaining cooldown from the timestamp recorded when the OTP was
+  // last sent (set by register or resendVerification in the store). This avoids
+  // an extra API call on mount and the resulting 429 noise in backend logs.
   React.useEffect(() => {
-    (async () => {
-      try {
-        await resendVerification(email);
-        setRetryAfter(60);
-      } catch (err) {
-        if (err instanceof ApiError && err.status === 429) {
-          setRetryAfter(err.retryAfter ?? 60);
-        }
-        // Other errors silently ignored — user can still click Resend manually
-      }
-    })();
-  }, [email, resendVerification]);
+    if (!otpSentAt) return;
+    const elapsed = (Date.now() - otpSentAt) / 1000;
+    const remaining = Math.max(0, 60 - elapsed);
+    if (remaining > 0) {
+      setRetryAfter(Math.round(remaining));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Check per-IP captcha requirement on mount
   React.useEffect(() => {
