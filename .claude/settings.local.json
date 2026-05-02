@@ -25,7 +25,27 @@
       "WebFetch(domain:tweakcn.com)",
       "WebFetch(domain:www.shadcn-form.com)",
       "Bash(bunx shadcn@latest diff dialog)",
-      "Bash(bunx shadcn@latest diff)"
+      "Bash(bunx shadcn@latest diff)",
+      "Bash(rtk go:*)",
+      "Bash(grep -r \"createCollection\\\\|updateCollection\\\\|deleteCollection\" /Users/lieutenant/Documents/github/TabSlate --include=\"*.ts\" --include=\"*.tsx\" ! -path \"*/node_modules/*\" ! -path \"*/.output/*\")",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git checkout:*)",
+      "Bash(go build:*)",
+      "Bash(git commit:*)",
+      "Bash(go vet:*)",
+      "Bash(go fmt:*)",
+      "Bash(gofmt -l internal/handler/sync_seq.go internal/handler/sse_hub.go)",
+      "Bash(gofmt -d internal/handler/sync_seq.go internal/handler/sse_hub.go)",
+      "Bash(cat)",
+      "Bash(bash /tmp/check.sh)",
+      "Bash(rtk git:*)",
+      "Bash(rtk read:*)",
+      "Bash(rtk grep:*)",
+      "Bash(rtk ls:*)",
+      "Bash(rtk tsc *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(rtk find *)"
     ]
   }
 }
