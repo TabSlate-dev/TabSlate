@@ -24,7 +24,7 @@ TabSlate/
 ├── entrypoints/
 │   ├── newtab/          # 主应用入口
 │   │   ├── main.tsx     # ReactDOM.createRoot
-│   │   └── App.tsx      # 路由、布局、StoreGate（等待所有 store 水化）、AuthGate（未登录 → AuthPage）
+│   │   │   └── App.tsx      # 路由、布局、StoreGate → AuthGate → SyncProvider → HashRouter
 │   ├── popup/           # 快速保存 popup
 │   │   └── App.tsx      # 独立 React 树，不使用 Zustand
 │   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单
@@ -43,7 +43,8 @@ TabSlate/
 │   │   └── input-otp.tsx       # 6 格 OTP 输入框（基于 input-otp 包）
 │   └── dashboard/
 │       ├── sidebar/            # 左侧书签导航栏
-│       │   ├── index.tsx       # BookmarksSidebar（主组件）
+│       │   ├── index.tsx       # BookmarksSidebar（主组件，接收 syncStatus + onForceSync）
+│       │   ├── sync-status.tsx # SyncStatusIndicator 按钮（idle/syncing/error/offline 四色指示）
 │       │   ├── collection-dialog.tsx
 │       │   ├── tag-dialog.tsx
 │       │   └── group-dialog.tsx
@@ -75,8 +76,8 @@ TabSlate/
 │
 ├── store/
 │   ├── auth-store.ts       # 认证状态（user、accessToken、refreshToken、serverUrl）— 持久化
-│   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态
-│   ├── workspace-store.ts  # 工作区/集合/标签配置
+│   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态；含 mergeFromServer（同步合并）
+│   ├── workspace-store.ts  # 工作区/集合/标签配置；含 localSeq、mergeFromServer、setLocalSeq
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
@@ -84,8 +85,11 @@ TabSlate/
 │   └── prosopo.d.ts        # window.procaptcha 全局类型声明（captcha widget 页面使用）
 │
 ├── lib/
-│   ├── api.ts              # TabSlate-server HTTP 客户端（register/login/logout/refresh/me/loginCaptchaStatus/registerCaptchaStatus/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/otpCaptchaStatus）；ApiError 携带 status/captchaRequired/retryAfter
-│   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义
+│   ├── api.ts              # TabSlate-server HTTP 客户端（auth + sync: issueSSEToken/syncPush/syncPull）；ApiError 携带 status/captchaRequired/retryAfter
+│   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义（含 seq, deletedAt 同步字段）
+│   ├── sync-engine.ts      # SyncEngine：协调 SyncQueue + SSEClient + 定期拉取；模块单例 syncEngine
+│   ├── sync-queue.ts       # SyncQueue：按实体 ID 去重、2s 防抖、指数退避推送（2s→60s）
+│   ├── sse-client.ts       # SSEClient：leader election via chrome.storage + EventSource 自动重连（1s→30s）
 │   ├── utils.ts            # cn() 等工具函数
 │   ├── storage.ts          # popup 用的轻量 chrome.storage 读写工具
 │   ├── chrome-storage-adapter.ts  # Zustand persist 的 chrome.storage 适配器
@@ -115,6 +119,8 @@ useBookmarksStore  ──persist──▶  "tabslate-bookmarks"
 useWorkspaceStore  ──persist──▶  "tabslate-workspace"
 useGroupsStore     ──persist──▶  "tabslate-groups"
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
+localSeq           ──persist──▶  "tabslate-sync"          （独立于 workspace 数据，由 setLocalSeq 写入）
+SSE leader         ──共享──▶  "tabslate-sync-leader"      （30s TTL，多窗口 leader election）
 ```
 
 ### Store 职责
@@ -122,8 +128,8 @@ useTabsStore       (不持久化，运行时从 Chrome API 加载)
 | Store | 持久化 | 职责 |
 |---|---|---|
 | `useAuthStore` | ✅ | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
-| `useBookmarksStore` | ✅ | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态 |
-| `useWorkspaceStore` | ✅ | 工作区、集合（Collections）、标签（Tags）、高亮状态 |
+| `useBookmarksStore` | ✅ | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
+| `useWorkspaceStore` | ✅ | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并 |
 | `useGroupsStore` | ✅ | 用户手动保存的标签组及其包含的 tab URL |
 | `useTabsStore` | ❌ | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
@@ -213,14 +219,71 @@ TabsPanel             GroupsPanel
   └── loadTabs(true)     └── loadTabs()
 ```
 
+## 跨设备同步系统
+
+### 架构概览
+
+```
+Device A                               Server                         Device B
+────────                              ────────                        ────────
+SyncEngine
+  ├── SyncQueue ──POST /sync/push──▶  Push Handler                      ▲
+  │   (debounce 2s, LWW upsert)       (tx, incrementSeq,              SSE
+  │                                    Broadcast to Hub)              event
+  ├── SSEClient ◀──GET /sync/stream── SSE Hub ◀─── broadcasts ───────────┤
+  │   (leader election,               (in-memory pub/sub)             Pull
+  │    1 window per user)              per-user connID map            ─────▶
+  │                                                                   GET /sync/pull
+  └── periodic pull (5 min fallback)
+```
+
+### 同步流程
+
+**推送（本地变更 → 服务器）：**
+1. 任意 store action 调用 `syncEngine?.enqueue({ bookmarks: [...] })` 等
+2. `SyncQueue` 以实体 ID 为 key 去重合并，等待 2s 防抖窗口
+3. `POST /sync/push` 发送 snapshot；服务端在单事务内 LWW upsert 所有实体，`incrementSeq` 并广播新 seq 到 Hub
+4. 失败时将 snapshot 重新入队，指数退避重试（2s → 4s → … → 60s）
+
+**拉取（服务器变更 → 本地）：**
+1. SSE leader 收到 `{seq: N}` 事件 → `serverSeq > localSeq` 时触发 `GET /sync/pull?after_seq=localSeq`
+2. 或每 5 分钟定期拉取（SSE 离线时使用）
+3. 响应中的 workspaces/collections/tags 经 `mergeFromServer`（workspace-store）LWW 合并
+4. bookmarks 经 `mergeFromServer`（bookmarks-store）LWW 合并
+5. App.tsx 的 `onPullSuccess` 回调更新 `localSeq`
+
+**SSE 连接（实时通知）：**
+- `POST /auth/sse-token` 获取 30s 单次使用令牌（EventSource 无法携带 Authorization header）
+- `GET /sync/stream?token=<token>` 建立 SSE 连接
+- 多窗口 leader election：`chrome.storage.local["tabslate-sync-leader"]` TTL 30s，leader 每 25s 续约；非 leader 每 25s 竞选
+- `SyncEngine` 在 SSE 连续失败 3 次后切换到 `"offline"` 状态，纯依赖定期拉取
+
+### App.tsx 中的 SyncProvider
+
+```
+StoreGate → AuthGate → SyncProvider（render-prop）
+                         ├── new SyncEngine(getCredentials, getLocalSeq, onPullSuccess, ...)
+                         ├── syncStatus: "idle" | "syncing" | "error" | "offline"
+                         └── onForceSync → syncEngine.forceSync()
+```
+
+`SyncProvider` deps `[accessToken, serverUrl]`：token 刷新或 server URL 变更时销毁旧引擎再创建新引擎。  
+cleanup 函数调用 `engine.forceSync()` 后再 `destroySyncEngine()`，确保登出前推送最后一次变更。
+
+### 冲突解决（LWW）
+
+- 实体级别：`updated_at`（Unix ms）较大者胜出
+- `ON CONFLICT (id) DO UPDATE ... WHERE updated_at < EXCLUDED.updated_at`（服务端）
+- 客户端 `mergeFromServer` 同样按 `updatedAt` 比较，忽略旧值
+
 ## 核心数据模型
 
 ```ts
-// lib/types.ts
-Workspace { id, name, color, position }
-  └── Collection[] { id, workspaceId, name, icon, position, isDefault? }
-         └── Bookmark[] { id, title, url, favicon, description, collectionId, tags[], createdAt, isFavorite }
-Tag { id, name, color }   // color 为 Tailwind class 字符串
+// lib/types.ts（同步字段已包含）
+Workspace { id, name, color, position, seq, deletedAt? }
+  └── Collection[] { id, workspaceId, name, icon, position, isDefault?, seq, deletedAt? }
+         └── Bookmark[] { id, title, url, favicon, description, collectionId, tags[], createdAt, isFavorite, seq, deletedAt? }
+Tag { id, name, color, seq, deletedAt? }
 
 // store/groups-store.ts
 SavedGroup { id, name, color: TabGroupColor, isCompact, createdAt }
