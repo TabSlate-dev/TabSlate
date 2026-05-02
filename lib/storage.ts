@@ -110,6 +110,7 @@ export const storageService = {
       tags: input.tags ?? [],
       createdAt: new Date().toISOString(),
       isFavorite: false,
+      seq: 0,
     };
     await setBookmarkState({
       ...state,

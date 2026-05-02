@@ -124,6 +124,7 @@ export function GroupDetail() {
       tags: [],
       createdAt: new Date().toISOString(),
       isFavorite: false,
+      seq: 0,
     }));
 
     addBookmarks(newBookmarks);
@@ -144,6 +145,7 @@ export function GroupDetail() {
       tags: [],
       createdAt: new Date().toISOString(),
       isFavorite: false,
+      seq: 0,
     }]);
     setSavedTabIds(prev => new Set(prev).add(tab.id));
     setTimeout(() => {

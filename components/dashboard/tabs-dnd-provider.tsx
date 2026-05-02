@@ -144,6 +144,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
           tags: [] as string[],
           createdAt: now,
           isFavorite: false,
+          seq: 0,
         }));
 
         if (newBookmarks.length > 0) {
@@ -255,6 +256,7 @@ function DragPreview({ data }: { data: DragData }) {
       tags: [] as string[],
       createdAt: "",
       isFavorite: false,
+      seq: 0,
     };
     return (
       <div className="pointer-events-none shadow-2xl rotate-1 opacity-60 overflow-hidden rounded-xl relative">

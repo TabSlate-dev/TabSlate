@@ -3,6 +3,8 @@ export interface Workspace {
   name: string;
   color: string;
   position: number;
+  seq: number;        // 0 = never synced to server
+  deletedAt?: number; // unix ms; undefined = alive
 }
 
 export interface Collection {
@@ -12,12 +14,16 @@ export interface Collection {
   icon: string;
   position: number;
   isDefault?: boolean; // auto-created per workspace, cannot be deleted
+  seq: number;
+  deletedAt?: number;
 }
 
 export interface Tag {
   id: string;
   name: string;
   color: string; // tailwind classes e.g. "bg-blue-500/10 text-blue-500"
+  seq: number;
+  deletedAt?: number;
 }
 
 export interface Bookmark {
@@ -31,4 +37,6 @@ export interface Bookmark {
   createdAt: string;
   isFavorite: boolean;
   hasDarkIcon?: boolean;
+  seq: number;
+  deletedAt?: number;
 }

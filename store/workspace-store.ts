@@ -132,6 +132,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           name,
           color,
           position: state.workspaces.length,
+          seq: 0,
         };
         const defaultCol: Collection = {
           id: generateId(),
@@ -140,6 +141,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           icon: "inbox",
           position: 0,
           isDefault: true,
+          seq: 0,
         };
         const updatedWorkspaces = [...state.workspaces, ws];
         const updatedCollections = [...state.collections, defaultCol];
@@ -186,6 +188,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           name,
           icon,
           position: existingInWs.length,
+          seq: 0,
         };
         set((s) => ({ collections: [...s.collections, col] }));
         return col;
@@ -207,7 +210,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       // ── Tags ──────────────────────────────────────────────────────────────
       createTag: (name, color) => {
-        const tag: Tag = { id: generateId(), name, color };
+        const tag: Tag = { id: generateId(), name, color, seq: 0 };
         set((s) => ({ tags: [...s.tags, tag] }));
         return tag;
       },
@@ -258,6 +261,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
                 icon: "inbox",
                 position: 0,
                 isDefault: true as const,
+                seq: 0,
               }));
               useWorkspaceStore.setState((s) => ({
                 collections: [...s.collections, ...newCols],

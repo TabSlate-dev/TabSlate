@@ -118,6 +118,7 @@ async function _saveTabsToCollectionHelper(
       tags: [],
       createdAt: now,
       isFavorite: false,
+      seq: 0,
     });
   }
 

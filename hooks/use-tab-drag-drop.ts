@@ -135,7 +135,7 @@ export function useTabDragDrop(): UseTabDragDropResult {
 
       // ── Save new bookmark ────────────────────────────────────────────────
       const { id: collectionId, name: collectionName } = resolveTargetCollection();
-      addBookmark({ title, url, favicon: favIconUrl, collectionId, tags: [], description: "" });
+      addBookmark({ title, url, favicon: favIconUrl, collectionId, tags: [], description: "", seq: 0 });
       showNotification({ type: "success", text: `Saved to ${collectionName}` });
     } catch {
       // ignore malformed drag data
