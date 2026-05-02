@@ -137,7 +137,10 @@ export class SyncEngine {
   destroy() {
     this.queue.destroy();
     this.sseClient.destroy();
-    if (this.periodicTimer) clearInterval(this.periodicTimer);
+    if (this.periodicTimer) {
+      clearInterval(this.periodicTimer);
+      this.periodicTimer = null;
+    }
   }
 }
 
