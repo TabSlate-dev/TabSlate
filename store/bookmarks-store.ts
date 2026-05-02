@@ -15,7 +15,7 @@ type FilterType = "all" | "favorites" | "with-tags" | "without-tags";
 // ---------------------------------------------------------------------------
 // Sync helpers
 // ---------------------------------------------------------------------------
-function toServerBookmark(b: Bookmark): object {
+function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?: boolean } = {}): object {
   return {
     id: b.id,
     collection_id: b.collectionId || null,
@@ -24,8 +24,8 @@ function toServerBookmark(b: Bookmark): object {
     favicon_url: b.favicon,
     description: b.description,
     is_favorite: b.isFavorite,
-    is_archived: false,
-    is_trashed: false,
+    is_archived: opts.isArchived ?? false,
+    is_trashed: opts.isTrashed ?? false,
     position: 0,
     seq: b.seq,
     deleted_at: b.deletedAt ?? null,
@@ -184,16 +184,15 @@ export const useBookmarksStore = create<BookmarksState>()(
         if (updated) { syncEngine?.enqueue({ bookmarks: [toServerBookmark(updated)] }); }
       },
 
-      archiveBookmark: (bookmarkId) =>
-        set((state) => {
-          const bookmark = state.bookmarks.find((b) => b.id === bookmarkId);
-          if (!bookmark) return state;
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark({ ...bookmark, deletedAt: Date.now() })] });
-          return {
-            bookmarks: state.bookmarks.filter((b) => b.id !== bookmarkId),
-            archivedBookmarks: [...state.archivedBookmarks, bookmark],
-          };
-        }),
+      archiveBookmark: (bookmarkId) => {
+        const bookmark = get().bookmarks.find((b) => b.id === bookmarkId);
+        if (!bookmark) return;
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark, { isArchived: true })] });
+        set((state) => ({
+          bookmarks: state.bookmarks.filter((b) => b.id !== bookmarkId),
+          archivedBookmarks: [...state.archivedBookmarks, bookmark],
+        }));
+      },
 
       restoreFromArchive: (bookmarkId) =>
         set((state) => {
@@ -209,16 +208,15 @@ export const useBookmarksStore = create<BookmarksState>()(
           };
         }),
 
-      trashBookmark: (bookmarkId) =>
-        set((state) => {
-          const bookmark = state.bookmarks.find((b) => b.id === bookmarkId);
-          if (!bookmark) return state;
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark({ ...bookmark, deletedAt: Date.now() })] });
-          return {
-            bookmarks: state.bookmarks.filter((b) => b.id !== bookmarkId),
-            trashedBookmarks: [...state.trashedBookmarks, bookmark],
-          };
-        }),
+      trashBookmark: (bookmarkId) => {
+        const bookmark = get().bookmarks.find((b) => b.id === bookmarkId);
+        if (!bookmark) return;
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark, { isTrashed: true })] });
+        set((state) => ({
+          bookmarks: state.bookmarks.filter((b) => b.id !== bookmarkId),
+          trashedBookmarks: [...state.trashedBookmarks, bookmark],
+        }));
+      },
 
       restoreFromTrash: (bookmarkId) =>
         set((state) => {
@@ -236,7 +234,7 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       permanentlyDelete: (bookmarkId) => {
         const bookmark = get().trashedBookmarks.find(b => b.id === bookmarkId);
-        if (bookmark) { syncEngine?.enqueue({ bookmarks: [toServerBookmark({ ...bookmark, deletedAt: Date.now() })] }); }
+        if (bookmark) { syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark, { isTrashed: true })] }); }
         set((state) => ({
           trashedBookmarks: state.trashedBookmarks.filter(
             (b) => b.id !== bookmarkId

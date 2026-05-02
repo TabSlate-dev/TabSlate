@@ -237,7 +237,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
           return { workspaces, collections, tags };
         });
-        get().setLocalSeq(resp.server_seq);
       },
 
       // ── Workspaces ────────────────────────────────────────────────────────
