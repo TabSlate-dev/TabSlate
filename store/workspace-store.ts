@@ -3,6 +3,8 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import type { Workspace, Collection, Tag } from "@/lib/types";
 import { generateId } from "@/lib/id";
 import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
+import { syncEngine } from "@/lib/sync-engine";
+import type { SyncPullResponse } from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -54,6 +56,45 @@ export const TAG_COLORS = [
 
 
 // ---------------------------------------------------------------------------
+// Sync helpers
+// ---------------------------------------------------------------------------
+function toServerCollection(c: Collection): object {
+  return {
+    id: c.id,
+    workspace_id: c.workspaceId || null,
+    name: c.name,
+    icon: c.icon,
+    position: c.position,
+    seq: c.seq,
+    deleted_at: c.deletedAt ?? null,
+    updated_at: Date.now(),
+  };
+}
+
+function toServerWorkspace(w: Workspace): object {
+  return {
+    id: w.id,
+    name: w.name,
+    color: w.color,
+    position: w.position,
+    seq: w.seq,
+    deleted_at: w.deletedAt ?? null,
+    updated_at: Date.now(),
+  };
+}
+
+function toServerTag(t: Tag): object {
+  return {
+    id: t.id,
+    name: t.name,
+    color: t.color,
+    seq: t.seq,
+    deleted_at: t.deletedAt ?? null,
+    updated_at: Date.now(),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 interface WorkspaceState {
@@ -62,6 +103,7 @@ interface WorkspaceState {
   tags: Tag[];
   activeWorkspaceId: string;
   compactGroupTitles: boolean;
+  localSeq: number;
 
   _hydrated: boolean;
   setHydrated: () => void;
@@ -71,6 +113,11 @@ interface WorkspaceState {
 
   setActiveWorkspaceId: (id: string) => void;
   setCompactGroupTitles: (val: boolean) => void;
+
+  // Sync actions
+  setLocalSeq: (seq: number) => void;
+  loadLocalSeq: () => void;
+  mergeFromServer: (resp: SyncPullResponse) => void;
 
   // Workspace CRUD
   createWorkspace: (name: string, color: string) => Workspace;
@@ -105,6 +152,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       tags: [],
       activeWorkspaceId: "",
       compactGroupTitles: true,
+      localSeq: 0,
 
       _hydrated: false,
       setHydrated: () => set({ _hydrated: true }),
@@ -123,6 +171,74 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       setActiveWorkspaceId: (id) => set({ activeWorkspaceId: id }),
       setCompactGroupTitles: (val) => set({ compactGroupTitles: val }),
+
+      // ── Sync ──────────────────────────────────────────────────────────────
+      setLocalSeq: (seq) => {
+        set({ localSeq: seq });
+        chrome.storage.local.set({ "tabslate-sync": JSON.stringify({ localSeq: seq }) });
+      },
+
+      loadLocalSeq: () => {
+        chrome.storage.local.get("tabslate-sync", (result) => {
+          const raw = result["tabslate-sync"] as string | undefined;
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw) as { localSeq?: number };
+              set({ localSeq: parsed.localSeq ?? 0 });
+            } catch { /* ignore */ }
+          }
+        });
+      },
+
+      mergeFromServer: (resp) => {
+        set((state) => {
+          let workspaces = [...state.workspaces];
+          let collections = [...state.collections];
+          let tags = [...state.tags];
+
+          for (const sw of resp.entities.workspaces) {
+            if (sw.deleted_at) {
+              workspaces = workspaces.filter(w => w.id !== sw.id);
+            } else {
+              const idx = workspaces.findIndex(w => w.id === sw.id);
+              if (idx === -1) {
+                workspaces.push({ id: sw.id, name: sw.name, color: sw.color ?? "", position: sw.position, seq: sw.seq });
+              } else {
+                workspaces[idx] = { ...workspaces[idx], name: sw.name, color: sw.color ?? workspaces[idx].color, position: sw.position, seq: sw.seq };
+              }
+            }
+          }
+
+          for (const sc of resp.entities.collections) {
+            if (sc.deleted_at) {
+              collections = collections.filter(c => c.id !== sc.id);
+            } else {
+              const idx = collections.findIndex(c => c.id === sc.id);
+              if (idx === -1) {
+                collections.push({ id: sc.id, workspaceId: sc.workspace_id ?? "", name: sc.name, icon: sc.icon ?? "folder", position: sc.position, seq: sc.seq });
+              } else {
+                collections[idx] = { ...collections[idx], name: sc.name, icon: sc.icon ?? collections[idx].icon, position: sc.position, seq: sc.seq, workspaceId: sc.workspace_id ?? collections[idx].workspaceId };
+              }
+            }
+          }
+
+          for (const st of resp.entities.tags) {
+            if (st.deleted_at) {
+              tags = tags.filter(t => t.id !== st.id);
+            } else {
+              const idx = tags.findIndex(t => t.id === st.id);
+              if (idx === -1) {
+                tags.push({ id: st.id, name: st.name, color: st.color ?? "", seq: st.seq });
+              } else {
+                tags[idx] = { ...tags[idx], name: st.name, color: st.color ?? tags[idx].color, seq: st.seq };
+              }
+            }
+          }
+
+          return { workspaces, collections, tags };
+        });
+        get().setLocalSeq(resp.server_seq);
+      },
 
       // ── Workspaces ────────────────────────────────────────────────────────
       createWorkspace: (name, color) => {
@@ -152,17 +268,24 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           collections: updatedCollections,
           activeWorkspaceId: nextActiveId,
         });
+        syncEngine?.enqueue({ workspaces: [toServerWorkspace(ws)], collections: [toServerCollection(defaultCol)] });
         return ws;
       },
 
-      updateWorkspace: (id, patch) =>
+      updateWorkspace: (id, patch) => {
         set((s) => ({
           workspaces: s.workspaces.map((w) =>
             w.id === id ? { ...w, ...patch } : w
           ),
-        })),
+        }));
+        const updated = get().workspaces.find(w => w.id === id);
+        if (updated) { syncEngine?.enqueue({ workspaces: [toServerWorkspace(updated)] }); }
+      },
 
-      deleteWorkspace: (id) =>
+      deleteWorkspace: (id) => {
+        const ws = get().workspaces.find(w => w.id === id);
+        const collectionsToDelete = get().collections.filter(c => c.workspaceId === id);
+        if (ws) { syncEngine?.enqueue({ workspaces: [toServerWorkspace({ ...ws, deletedAt: Date.now() })], collections: collectionsToDelete.map(c => toServerCollection({ ...c, deletedAt: Date.now() })) }); }
         set((s) => {
           const remaining = s.workspaces.filter((w) => w.id !== id);
           const newActiveId =
@@ -174,7 +297,8 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             collections: s.collections.filter((c) => c.workspaceId !== id),
             activeWorkspaceId: newActiveId,
           };
-        }),
+        });
+      },
 
       // ── Collections ───────────────────────────────────────────────────────
       createCollection: (workspaceId, name, icon) => {
@@ -191,37 +315,51 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           seq: 0,
         };
         set((s) => ({ collections: [...s.collections, col] }));
+        syncEngine?.enqueue({ collections: [toServerCollection(col)] });
         return col;
       },
 
-      updateCollection: (id, patch) =>
+      updateCollection: (id, patch) => {
         set((s) => ({
           collections: s.collections.map((c) =>
             c.id === id ? { ...c, ...patch } : c
           ),
-        })),
+        }));
+        const updated = get().collections.find(c => c.id === id);
+        if (updated) { syncEngine?.enqueue({ collections: [toServerCollection(updated)] }); }
+      },
 
-      deleteCollection: (id) =>
+      deleteCollection: (id) => {
+        const col = get().collections.find(c => c.id === id && !c.isDefault);
+        if (col) { syncEngine?.enqueue({ collections: [toServerCollection({ ...col, deletedAt: Date.now() })] }); }
         set((s) => ({
           collections: s.collections.filter(
             (c) => c.id !== id || !!c.isDefault
           ),
-        })),
+        }));
+      },
 
       // ── Tags ──────────────────────────────────────────────────────────────
       createTag: (name, color) => {
         const tag: Tag = { id: generateId(), name, color, seq: 0 };
         set((s) => ({ tags: [...s.tags, tag] }));
+        syncEngine?.enqueue({ tags: [toServerTag(tag)] });
         return tag;
       },
 
-      updateTag: (id, patch) =>
+      updateTag: (id, patch) => {
         set((s) => ({
           tags: s.tags.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-        })),
+        }));
+        const updated = get().tags.find(t => t.id === id);
+        if (updated) { syncEngine?.enqueue({ tags: [toServerTag(updated)] }); }
+      },
 
-      deleteTag: (id) =>
-        set((s) => ({ tags: s.tags.filter((t) => t.id !== id) })),
+      deleteTag: (id) => {
+        const tag = get().tags.find(t => t.id === id);
+        if (tag) { syncEngine?.enqueue({ tags: [toServerTag({ ...tag, deletedAt: Date.now() })] }); }
+        set((s) => ({ tags: s.tags.filter((t) => t.id !== id) }));
+      },
 
       // ── Computed ──────────────────────────────────────────────────────────
       getWorkspaceCollections: (workspaceId) => {
@@ -269,6 +407,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             }
           }
           state.setHydrated();
+          state.loadLocalSeq();
         }
       },
     }
