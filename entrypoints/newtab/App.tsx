@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TabsDndProvider } from "@/components/dashboard/tabs-dnd-provider";
@@ -17,6 +18,8 @@ import { VerifyEmailScreen } from "@/components/auth/verify-email-screen";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
+import { SyncEngine, SyncStatus, initSyncEngine, destroySyncEngine } from "@/lib/sync-engine";
+import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
 function Layout({
@@ -96,11 +99,62 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Instantiates and manages the SyncEngine lifecycle after auth hydration.
+ *  Renders only when there is a valid accessToken + serverUrl. */
+function SyncProvider({ children }: { children: React.ReactNode }) {
+  const serverUrl = useAuthStore((s) => s.serverUrl);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const localSeq = useWorkspaceStore((s) => s.localSeq);
+  const mergeWorkspaces = useWorkspaceStore((s) => s.mergeFromServer);
+  const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
+  const setLocalSeq = useWorkspaceStore((s) => s.setLocalSeq);
+
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+
+  // Keep refs stable so the engine closure always reads the latest values
+  // without needing to be recreated on each localSeq change.
+  const localSeqRef = useRef(localSeq);
+  useEffect(() => { localSeqRef.current = localSeq; }, [localSeq]);
+
+  const mergeWorkspacesRef = useRef(mergeWorkspaces);
+  const mergeBookmarksRef = useRef(mergeBookmarks);
+  const setLocalSeqRef = useRef(setLocalSeq);
+
+  useEffect(() => {
+    if (!accessToken || !serverUrl) return;
+
+    const engine = new SyncEngine(
+      () => (accessToken && serverUrl ? { baseUrl: serverUrl, accessToken } : null),
+      () => localSeqRef.current,
+      (resp: SyncPullResponse) => {
+        mergeWorkspacesRef.current(resp);
+        mergeBookmarksRef.current(resp);
+        setLocalSeqRef.current(resp.server_seq);
+      },
+      (_pushResp) => { /* seq updates happen inside mergeFromServer */ },
+      setSyncStatus,
+    );
+
+    initSyncEngine(engine);
+    engine.start();
+
+    return () => {
+      engine.forceSync().catch(() => {}).finally(() => destroySyncEngine());
+    };
+  }, [accessToken, serverUrl]);
+
+  // syncStatus is available here for future use (e.g. passing to SyncStatusIndicator)
+  void syncStatus;
+
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <StoreGate>
         <AuthGate>
+          <SyncProvider>
           <HashRouter>
             <TabsDndProvider>
               <Routes>
@@ -155,6 +209,7 @@ export default function App() {
               </Routes>
             </TabsDndProvider>
           </HashRouter>
+          </SyncProvider>
         </AuthGate>
       </StoreGate>
     </ThemeProvider>
