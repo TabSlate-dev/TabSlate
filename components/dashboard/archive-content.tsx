@@ -1,3 +1,4 @@
+import * as React from "react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { Button } from "@/components/ui/button";
@@ -11,13 +12,78 @@ import {
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { TagList } from "@/components/ui/tag-list";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Archive, MoreHorizontal, RotateCcw, Trash2, ExternalLink } from "lucide-react";
-import type { Bookmark } from "@/lib/types";
+import {
+  Archive,
+  Bookmark,
+  BookOpen,
+  Code,
+  Folder,
+  Globe,
+  Heart,
+  Inbox,
+  MoreHorizontal,
+  Palette,
+  RotateCcw,
+  Sparkles,
+  Star,
+  Trash2,
+  Wrench,
+  ExternalLink,
+} from "lucide-react";
+import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 
-function ArchivedBookmarkCard({ bookmark }: { bookmark: Bookmark }) {
-  const { restoreFromArchive, trashBookmark } = useBookmarksStore();
-  const { tags } = useWorkspaceStore();
-  const bookmarkTags = tags.filter((tag) => bookmark.tags.includes(tag.id));
+// ---------------------------------------------------------------------------
+// Icon map (mirrors sidebar)
+// ---------------------------------------------------------------------------
+const ICON_MAP: Record<string, React.ElementType> = {
+  folder: Folder,
+  bookmark: Bookmark,
+  code: Code,
+  palette: Palette,
+  wrench: Wrench,
+  "book-open": BookOpen,
+  sparkles: Sparkles,
+  star: Star,
+  heart: Heart,
+  globe: Globe,
+  inbox: Inbox,
+};
+
+function CollectionIcon({ icon, className }: { icon: string; className?: string }) {
+  const Icon = ICON_MAP[icon] ?? Folder;
+  return <Icon className={className ?? "size-4"} />;
+}
+
+function ArchivedCollectionCard({ collection, bookmarkCount }: { collection: Collection; bookmarkCount: number }) {
+  const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
+
+  return (
+    <div className="flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+      <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+        <CollectionIcon icon={collection.icon} className="size-5 text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <h3 className="font-medium truncate">{collection.name}</h3>
+        <p className="text-sm text-muted-foreground">
+          {bookmarkCount} bookmark{bookmarkCount !== 1 ? "s" : ""}
+        </p>
+      </div>
+      <Button variant="outline" size="sm" onClick={() => restoreCollection(collection.id)}>
+        <RotateCcw className="size-4 mr-1" />
+        Restore
+      </Button>
+    </div>
+  );
+}
+
+function ArchivedBookmarkCard({ bookmark }: { bookmark: BookmarkType }) {
+  const restoreFromArchive = useBookmarksStore(s => s.restoreFromArchive);
+  const trashBookmark = useBookmarksStore(s => s.trashBookmark);
+  const tags = useWorkspaceStore(s => s.tags);
+  const bookmarkTags = React.useMemo(
+    () => tags.filter((tag) => bookmark.tags.includes(tag.id)),
+    [tags, bookmark.tags]
+  );
 
   return (
     <div className="group flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
@@ -73,8 +139,31 @@ function ArchivedBookmarkCard({ bookmark }: { bookmark: Bookmark }) {
 }
 
 export function ArchiveContent() {
-  const { getArchivedBookmarks } = useBookmarksStore();
-  const archivedBookmarks = getArchivedBookmarks();
+  const archivedBookmarks = useBookmarksStore(s => s.archivedBookmarks);
+  const getArchivedCollections = useWorkspaceStore(s => s.getArchivedCollections);
+
+  const archivedCollections = getArchivedCollections();
+  const archivedCollectionIds = React.useMemo(
+    () => new Set(archivedCollections.map(c => c.id)),
+    [archivedCollections]
+  );
+
+  const collectionBookmarkCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const b of archivedBookmarks) {
+      if (archivedCollectionIds.has(b.collectionId)) {
+        counts[b.collectionId] = (counts[b.collectionId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [archivedBookmarks, archivedCollectionIds]);
+
+  const individualArchivedBookmarks = React.useMemo(
+    () => archivedBookmarks.filter(b => !archivedCollectionIds.has(b.collectionId)),
+    [archivedBookmarks, archivedCollectionIds]
+  );
+
+  const totalCount = archivedCollections.length + individualArchivedBookmarks.length;
 
   return (
     <div className="flex-1 w-full overflow-auto">
@@ -84,25 +173,37 @@ export function ArchiveContent() {
             <Archive className="size-5" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold">Archived Bookmarks</h2>
+            <h2 className="text-lg font-semibold">Archived</h2>
             <p className="text-sm text-muted-foreground">
-              {archivedBookmarks.length} bookmark
-              {archivedBookmarks.length !== 1 ? "s" : ""} in archive
+              {archivedCollections.length > 0 && `${archivedCollections.length} collection${archivedCollections.length !== 1 ? "s" : ""}, `}
+              {individualArchivedBookmarks.length} bookmark{individualArchivedBookmarks.length !== 1 ? "s" : ""}
             </p>
           </div>
         </div>
 
+        {archivedCollections.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {archivedCollections.map(col => (
+              <ArchivedCollectionCard
+                key={col.id}
+                collection={col}
+                bookmarkCount={collectionBookmarkCounts[col.id] ?? 0}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
-          {archivedBookmarks.map((bookmark) => (
+          {individualArchivedBookmarks.map((bookmark) => (
             <ArchivedBookmarkCard key={bookmark.id} bookmark={bookmark} />
           ))}
         </div>
 
-        {archivedBookmarks.length === 0 && (
+        {totalCount === 0 && (
           <EmptyState
             icon={Archive}
             title="Archive is empty"
-            description="Archived bookmarks will appear here. Archive bookmarks you want to keep but don't need right now."
+            description="Archived bookmarks and collections will appear here."
           />
         )}
       </div>
