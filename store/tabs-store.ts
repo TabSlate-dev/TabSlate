@@ -78,16 +78,24 @@ async function _saveTabsToCollectionHelper(
 ) {
   if (!tabsToSave.length) { return { saved: 0, skipped: 0 }; }
 
-  const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
+  const { activeWorkspaceId, collections, createCollection } = useWorkspaceStore.getState();
   const { bookmarks, addBookmarks } = useBookmarksStore.getState();
-  
+
   const now = new Date().toISOString();
   const newBookmarksData: Omit<Bookmark, "collectionId">[] = [];
   const seenUrlsInBatch = new Set<string>();
   let skippedCount = 0;
 
-  const existingUrls = deduplicate 
-    ? getNormalizedUrlSet(bookmarks)
+  const existingUrls = deduplicate
+    ? (() => {
+        const wsColIds = new Set(
+          collections.filter((c) => c.workspaceId === activeWorkspaceId).map((c) => c.id)
+        );
+        const wsBookmarks = bookmarks.filter(
+          (b) => b.collectionId === "" || wsColIds.has(b.collectionId)
+        );
+        return getNormalizedUrlSet(wsBookmarks);
+      })()
     : new Set<string>();
   
   for (const tab of tabsToSave) {

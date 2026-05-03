@@ -23,6 +23,7 @@ export class SyncEngine {
   private sseClient: SSEClient;
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private status: SyncStatus = "idle";
+  private isPulling = false;
 
   constructor(
     private readonly getCredentials: GetCredentials,
@@ -91,20 +92,24 @@ export class SyncEngine {
       }
     } catch { /* ignore */ }
 
-    this.setStatus("idle");
+    this.setStatus(this.queue.isEmpty() ? "idle" : "error");
     return { pushed: 1, pulled };
   }
 
   private async pull() {
+    if (this.isPulling) return;
+    this.isPulling = true;
     const creds = this.getCredentials();
-    if (!creds) return;
+    if (!creds) { this.isPulling = false; return; }
     this.setStatus("syncing");
     try {
       const resp = await this.doPull();
       if (resp) this.onPullSuccess(resp);
-      this.setStatus("idle");
+      this.setStatus(this.queue.isEmpty() ? "idle" : "error");
     } catch {
       this.setStatus("error");
+    } finally {
+      this.isPulling = false;
     }
   }
 

@@ -1,3 +1,5 @@
+import { generateId } from "@/lib/id";
+
 export default defineBackground(() => {
   // -------------------------------------------------------------------------
   // Context menus — registered once on install / update
@@ -21,31 +23,45 @@ export default defineBackground(() => {
       // content script not injected (e.g. pdf, chrome:// page) — fall back to tab info
     }
 
-    const bookmark = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    const bookmarkData = {
       title: pageInfo?.title ?? tab.title ?? "Untitled",
       url: info.linkUrl ?? pageInfo?.url ?? tab.url ?? "",
       favicon: pageInfo?.favicon ?? tab.favIconUrl ?? "",
       description: pageInfo?.selectedText ?? "",
       collectionId: "",
       tags: [] as string[],
-      createdAt: new Date().toISOString(),
-      isFavorite: false,
+      seq: 0,
     };
 
-    // Append to persisted store key directly (store isn't loaded in background)
+    // Primary path: send to newtab so syncEngine picks it up immediately
+    const [newtabTab] = await chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") });
+    if (newtabTab?.id) {
+      try {
+        await chrome.tabs.sendMessage(newtabTab.id, { type: "ADD_BOOKMARK", data: bookmarkData });
+        return;
+      } catch { /* newtab not ready, fall through to storage */ }
+    }
+
+    // Fallback: write directly to storage (seq=0 sweep will sync on next newtab open)
+    const fullBookmark = {
+      id: generateId(),
+      createdAt: new Date().toISOString(),
+      isFavorite: false,
+      ...bookmarkData,
+    };
+
     const raw = await new Promise<string | null>((resolve) =>
       chrome.storage.local.get("tabslate-bookmarks", (res) =>
         resolve((res["tabslate-bookmarks"] as string) ?? null)
       )
     );
 
-    let state: { bookmarks?: typeof bookmark[] } = {};
+    let state: { bookmarks?: typeof fullBookmark[] } = {};
     if (raw) {
       try { state = JSON.parse(raw)?.state ?? {}; } catch { /* ignore */ }
     }
 
-    const updated = [bookmark, ...(state.bookmarks ?? [])];
+    const updated = [fullBookmark, ...(state.bookmarks ?? [])];
     const newRaw = JSON.stringify({ state: { ...state, bookmarks: updated } });
     await new Promise<void>((r) =>
       chrome.storage.local.set({ "tabslate-bookmarks": newRaw }, r)

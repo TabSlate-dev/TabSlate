@@ -116,10 +116,9 @@ TabSlate/
 ```
 useAuthStore       ──persist──▶  "tabslate-auth"
 useBookmarksStore  ──persist──▶  "tabslate-bookmarks"
-useWorkspaceStore  ──persist──▶  "tabslate-workspace"
+useWorkspaceStore  ──persist──▶  "tabslate-workspace"     （含 localSeq 同步游标）
 useGroupsStore     ──persist──▶  "tabslate-groups"
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
-localSeq           ──persist──▶  "tabslate-sync"          （独立于 workspace 数据，由 setLocalSeq 写入）
 SSE leader         ──共享──▶  "tabslate-sync-leader"      （30s TTL，多窗口 leader election）
 ```
 
@@ -129,7 +128,7 @@ SSE leader         ──共享──▶  "tabslate-sync-leader"      （30s TTL
 |---|---|---|
 | `useAuthStore` | ✅ | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
 | `useBookmarksStore` | ✅ | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
-| `useWorkspaceStore` | ✅ | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并 |
+| `useWorkspaceStore` | ✅ | 工作区、集合、标签、高亮状态；`localSeq` 同步游标（持久化在 `"tabslate-workspace"`）；`mergeFromServer` 执行 LWW 合并；`sweepUnsynced` 补推 `seq=0` 的实体 |
 | `useGroupsStore` | ✅ | 用户手动保存的标签组及其包含的 tab URL |
 | `useTabsStore` | ❌ | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
@@ -219,6 +218,16 @@ TabsPanel             GroupsPanel
   └── loadTabs(true)     └── loadTabs()
 ```
 
+```
+popup / background（右键菜单）
+    │  chrome.tabs.sendMessage(newtabTabId, { type: "ADD_BOOKMARK", data })
+    │  （newtab 不存在时回退到直接写 chrome.storage，seq=0）
+    ▼
+newtab App（chrome.runtime.onMessage）
+  └── useBookmarksStore.getState().addBookmark(data)
+        └── syncEngine?.enqueue(...)  ← 立即推送到服务器
+```
+
 ## 跨设备同步系统
 
 ### 架构概览
@@ -249,8 +258,8 @@ SyncEngine
 1. SSE leader 收到 `{seq: N}` 事件 → `serverSeq > localSeq` 时触发 `GET /sync/pull?after_seq=localSeq`
 2. 或每 5 分钟定期拉取（SSE 离线时使用）
 3. 响应中的 workspaces/collections/tags 经 `mergeFromServer`（workspace-store）LWW 合并
-4. bookmarks 经 `mergeFromServer`（bookmarks-store）LWW 合并
-5. App.tsx 的 `onPullSuccess` 回调更新 `localSeq`
+4. bookmarks 经 `mergeFromServer`（bookmarks-store）LWW 合并（含 `tag_ids`）
+5. App.tsx 的 `onPullSuccess` 回调更新 `localSeq`；若非首次推送，调用 `sweepUnsynced()` 将所有 `seq=0` 实体补推（处理 popup/background 在 newtab 关闭时直接写 storage 的情况）
 
 **SSE 连接（实时通知）：**
 - `POST /auth/sse-token` 获取 30s 单次使用令牌（EventSource 无法携带 Authorization header）

@@ -65,6 +65,7 @@ export interface ServerBookmark {
   is_favorite: boolean;
   is_archived: boolean;
   is_trashed: boolean;
+  tag_ids?: string[];
   position: number;
   seq: number;
   deleted_at?: number;

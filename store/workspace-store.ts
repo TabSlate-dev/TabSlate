@@ -5,6 +5,7 @@ import { generateId } from "@/lib/id";
 import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
+import { useBookmarksStore } from "@/store/bookmarks-store";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -116,8 +117,9 @@ interface WorkspaceState {
 
   // Sync actions
   setLocalSeq: (seq: number) => void;
-  loadLocalSeq: () => void;
   mergeFromServer: (resp: SyncPullResponse) => void;
+  enqueueAllToSync: () => void;
+  sweepUnsynced: () => void;
 
   // Workspace CRUD
   createWorkspace: (name: string, color: string) => Workspace;
@@ -173,24 +175,27 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       setCompactGroupTitles: (val) => set({ compactGroupTitles: val }),
 
       // ── Sync ──────────────────────────────────────────────────────────────
-      setLocalSeq: (seq) => {
-        set({ localSeq: seq });
-        chrome.storage.local.set({ "tabslate-sync": JSON.stringify({ localSeq: seq }) });
-      },
+      setLocalSeq: (seq) => set({ localSeq: seq }),
 
-      loadLocalSeq: () => {
-        chrome.storage.local.get("tabslate-sync", (result) => {
-          const raw = result["tabslate-sync"] as string | undefined;
-          if (raw) {
-            try {
-              const parsed = JSON.parse(raw) as { localSeq?: number };
-              set({ localSeq: parsed.localSeq ?? 0 });
-            } catch { /* ignore */ }
-          }
+      enqueueAllToSync: () => {
+        const { workspaces, collections, tags } = get();
+        syncEngine?.enqueue({
+          workspaces: workspaces.map(toServerWorkspace),
+          collections: collections.map(toServerCollection),
+          tags: tags.map(toServerTag),
         });
       },
 
       mergeFromServer: (resp) => {
+        const { workspaces: sw, collections: sc, tags: st } = resp.entities;
+        if (sw.length === 0 && sc.length === 0 && st.length === 0) {
+          const s = get();
+          if (!s.activeWorkspaceId && s.workspaces.length > 0) {
+            const first = [...s.workspaces].sort((a, b) => a.position - b.position)[0];
+            set({ activeWorkspaceId: first.id });
+          }
+          return;
+        }
         set((state) => {
           let workspaces = [...state.workspaces];
           let collections = [...state.collections];
@@ -222,6 +227,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             }
           }
 
+          // Restore isDefault: for each workspace that has no default collection,
+          // mark the lowest-position collection as default (mirrors createWorkspace logic).
+          const workspaceIds = new Set(workspaces.map(w => w.id));
+          workspaceIds.forEach(wsId => {
+            const wsCols = collections.filter(c => c.workspaceId === wsId);
+            const hasDefault = wsCols.some(c => c.isDefault);
+            if (!hasDefault && wsCols.length > 0) {
+              const firstCol = [...wsCols].sort((a, b) => a.position - b.position)[0];
+              const idx = collections.findIndex(c => c.id === firstCol.id);
+              if (idx !== -1) { collections[idx] = { ...collections[idx], isDefault: true }; }
+            }
+          });
+
           for (const st of resp.entities.tags) {
             if (st.deleted_at) {
               tags = tags.filter(t => t.id !== st.id);
@@ -235,7 +253,12 @@ export const useWorkspaceStore = create<WorkspaceState>()(
             }
           }
 
-          return { workspaces, collections, tags };
+          const sortedWs = [...workspaces].sort((a, b) => a.position - b.position);
+          const activeWorkspaceId =
+            workspaces.some(w => w.id === state.activeWorkspaceId)
+              ? state.activeWorkspaceId
+              : sortedWs[0]?.id ?? "";
+          return { workspaces, collections, tags, activeWorkspaceId };
         });
       },
 
@@ -330,11 +353,13 @@ export const useWorkspaceStore = create<WorkspaceState>()(
 
       deleteCollection: (id) => {
         const col = get().collections.find(c => c.id === id && !c.isDefault);
-        if (col) { syncEngine?.enqueue({ collections: [toServerCollection({ ...col, deletedAt: Date.now() })] }); }
+        if (!col) { return; }
+        const defaultCol = get().collections.find(c => c.workspaceId === col.workspaceId && !!c.isDefault);
+        const targetId = defaultCol?.id ?? "";
+        syncEngine?.enqueue({ collections: [toServerCollection({ ...col, deletedAt: Date.now() })] });
+        useBookmarksStore.getState().reassignCollection(id, targetId);
         set((s) => ({
-          collections: s.collections.filter(
-            (c) => c.id !== id || !!c.isDefault
-          ),
+          collections: s.collections.filter(c => c.id !== id || !!c.isDefault),
         }));
       },
 
@@ -360,6 +385,20 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         set((s) => ({ tags: s.tags.filter((t) => t.id !== id) }));
       },
 
+      sweepUnsynced: () => {
+        const { workspaces, collections, tags } = get();
+        const ws = workspaces.filter(w => w.seq === 0);
+        const cols = collections.filter(c => c.seq === 0);
+        const ts = tags.filter(t => t.seq === 0);
+        if (ws.length > 0 || cols.length > 0 || ts.length > 0) {
+          syncEngine?.enqueue({
+            workspaces: ws.map(toServerWorkspace),
+            collections: cols.map(toServerCollection),
+            tags: ts.map(toServerTag),
+          });
+        }
+      },
+
       // ── Computed ──────────────────────────────────────────────────────────
       getWorkspaceCollections: (workspaceId) => {
         const state = get();
@@ -379,35 +418,28 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           tags: state.tags,
           activeWorkspaceId: state.activeWorkspaceId,
           compactGroupTitles: state.compactGroupTitles,
+          localSeq: state.localSeq,
         } as WorkspaceState),
-      // Seed a default workspace on first run
       onRehydrateStorage: () => (state) => {
-        if (state) {
-          if (state.workspaces.length === 0) {
-            state.createWorkspace("My Workspace", "blue");
-          } else {
-            // Migration: ensure every workspace has a default collection
-            const missingDefaults = state.workspaces.filter(
-              (ws) => !state.collections.some((c) => c.workspaceId === ws.id && c.isDefault)
-            );
-            if (missingDefaults.length > 0) {
-              const newCols = missingDefaults.map((ws) => ({
-                id: generateId(),
-                workspaceId: ws.id,
-                name: "Default",
-                icon: "inbox",
-                position: 0,
-                isDefault: true as const,
-                seq: 0,
-              }));
-              useWorkspaceStore.setState((s) => ({
-                collections: [...s.collections, ...newCols],
-              }));
-            }
-          }
-          state.setHydrated();
-          state.loadLocalSeq();
+        if (!state) { return; }
+        // Migration: ensure every workspace has a default collection
+        const missingDefaults = state.workspaces.filter(
+          (ws) => !state.collections.some((c) => c.workspaceId === ws.id && c.isDefault)
+        );
+        if (missingDefaults.length > 0) {
+          const newCols = missingDefaults.map((ws) => ({
+            id: generateId(),
+            workspaceId: ws.id,
+            name: "Default",
+            icon: "inbox",
+            position: 0,
+            isDefault: true as const,
+            seq: 0,
+          }));
+          useWorkspaceStore.setState((s) => ({ collections: [...s.collections, ...newCols] }));
         }
+        state.setHydrated();
+        // Workspace seeding for new accounts happens in SyncProvider's onPullSuccess
       },
     }
   )

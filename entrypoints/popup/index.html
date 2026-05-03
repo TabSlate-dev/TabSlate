@@ -4,14 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TabSlate (标签石板)</title>
-    <script>
-      (function() {
-        const theme = localStorage.getItem('theme') || 'system';
-        const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        document.documentElement.classList.toggle('dark', isDark);
-        document.documentElement.style.setProperty('color-scheme', isDark ? 'dark' : 'light');
-      })();
-    </script>
+    <script src="/theme-init.js"></script>
     <meta name="manifest.type" content="browser_action" />
   </head>
   <body>

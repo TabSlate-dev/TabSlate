@@ -26,6 +26,7 @@ function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?:
     is_favorite: b.isFavorite,
     is_archived: opts.isArchived ?? false,
     is_trashed: opts.isTrashed ?? false,
+    tag_ids: b.tags,
     position: 0,
     seq: b.seq,
     deleted_at: b.deletedAt ?? null,
@@ -104,6 +105,9 @@ interface BookmarksState {
   restoreFromTrash: (bookmarkId: string) => void;
   permanentlyDelete: (bookmarkId: string) => void;
   mergeFromServer: (resp: SyncPullResponse) => void;
+  enqueueAllToSync: () => void;
+  sweepUnsynced: () => void;
+  reassignCollection: (fromId: string, toId: string) => void;
 
   // Computed
   getFilteredBookmarks: (workspaceCollectionIds: Set<string>) => Bookmark[];
@@ -162,6 +166,9 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       addBookmarks: (newBookmarks) => {
         set((s) => ({ bookmarks: [...newBookmarks, ...s.bookmarks] }));
+        if (newBookmarks.length > 0) {
+          syncEngine?.enqueue({ bookmarks: newBookmarks.map(b => toServerBookmark(b)) });
+        }
       },
 
       updateBookmark: (id, patch) => {
@@ -194,19 +201,15 @@ export const useBookmarksStore = create<BookmarksState>()(
         }));
       },
 
-      restoreFromArchive: (bookmarkId) =>
-        set((state) => {
-          const bookmark = state.archivedBookmarks.find(
-            (b) => b.id === bookmarkId
-          );
-          if (!bookmark) return state;
-          return {
-            archivedBookmarks: state.archivedBookmarks.filter(
-              (b) => b.id !== bookmarkId
-            ),
-            bookmarks: [...state.bookmarks, bookmark],
-          };
-        }),
+      restoreFromArchive: (bookmarkId) => {
+        const bookmark = get().archivedBookmarks.find(b => b.id === bookmarkId);
+        if (!bookmark) { return; }
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
+        set((state) => ({
+          archivedBookmarks: state.archivedBookmarks.filter(b => b.id !== bookmarkId),
+          bookmarks: [...state.bookmarks, bookmark],
+        }));
+      },
 
       trashBookmark: (bookmarkId) => {
         const bookmark = get().bookmarks.find((b) => b.id === bookmarkId);
@@ -218,60 +221,105 @@ export const useBookmarksStore = create<BookmarksState>()(
         }));
       },
 
-      restoreFromTrash: (bookmarkId) =>
-        set((state) => {
-          const bookmark = state.trashedBookmarks.find(
-            (b) => b.id === bookmarkId
-          );
-          if (!bookmark) return state;
-          return {
-            trashedBookmarks: state.trashedBookmarks.filter(
-              (b) => b.id !== bookmarkId
-            ),
-            bookmarks: [...state.bookmarks, bookmark],
-          };
-        }),
-
-      permanentlyDelete: (bookmarkId) => {
+      restoreFromTrash: (bookmarkId) => {
         const bookmark = get().trashedBookmarks.find(b => b.id === bookmarkId);
-        if (bookmark) { syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark, { isTrashed: true })] }); }
+        if (!bookmark) { return; }
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
         set((state) => ({
-          trashedBookmarks: state.trashedBookmarks.filter(
-            (b) => b.id !== bookmarkId
-          ),
+          trashedBookmarks: state.trashedBookmarks.filter(b => b.id !== bookmarkId),
+          bookmarks: [...state.bookmarks, bookmark],
         }));
       },
 
+      permanentlyDelete: (bookmarkId) => {
+        const bookmark = get().trashedBookmarks.find(b => b.id === bookmarkId);
+        if (bookmark) {
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark({ ...bookmark, deletedAt: Date.now() })] });
+        }
+        set((state) => ({
+          trashedBookmarks: state.trashedBookmarks.filter(b => b.id !== bookmarkId),
+        }));
+      },
+
+      enqueueAllToSync: () => {
+        const { bookmarks, archivedBookmarks, trashedBookmarks } = get();
+        syncEngine?.enqueue({
+          bookmarks: [
+            ...bookmarks.map(b => toServerBookmark(b)),
+            ...archivedBookmarks.map(b => toServerBookmark(b, { isArchived: true })),
+            ...trashedBookmarks.map(b => toServerBookmark(b, { isTrashed: true })),
+          ],
+        });
+      },
+
       mergeFromServer: (resp) => {
+        if (resp.entities.bookmarks.length === 0) return;
         set((state) => {
           let bookmarks = [...state.bookmarks];
+          let archivedBookmarks = [...state.archivedBookmarks];
+          let trashedBookmarks = [...state.trashedBookmarks];
 
           for (const sb of resp.entities.bookmarks) {
             if (sb.deleted_at) {
               bookmarks = bookmarks.filter(b => b.id !== sb.id);
+              archivedBookmarks = archivedBookmarks.filter(b => b.id !== sb.id);
+              trashedBookmarks = trashedBookmarks.filter(b => b.id !== sb.id);
             } else {
-              const idx = bookmarks.findIndex(b => b.id === sb.id);
-              if (idx === -1) {
-                bookmarks.push({
-                  id: sb.id, title: sb.title, url: sb.url,
-                  description: sb.description ?? "", favicon: sb.favicon_url ?? "",
-                  collectionId: sb.collection_id ?? "", tags: [],
-                  createdAt: String(sb.created_at), isFavorite: sb.is_favorite,
-                  seq: sb.seq,
-                });
+              const existing =
+                bookmarks.find(b => b.id === sb.id) ||
+                archivedBookmarks.find(b => b.id === sb.id) ||
+                trashedBookmarks.find(b => b.id === sb.id);
+
+              bookmarks = bookmarks.filter(b => b.id !== sb.id);
+              archivedBookmarks = archivedBookmarks.filter(b => b.id !== sb.id);
+              trashedBookmarks = trashedBookmarks.filter(b => b.id !== sb.id);
+
+              const merged: Bookmark = {
+                id: sb.id,
+                title: sb.title,
+                url: sb.url,
+                description: sb.description ?? existing?.description ?? "",
+                favicon: sb.favicon_url ?? existing?.favicon ?? "",
+                collectionId: sb.collection_id ?? existing?.collectionId ?? "",
+                tags: sb.tag_ids ?? existing?.tags ?? [],
+                createdAt: existing?.createdAt ?? String(sb.created_at),
+                isFavorite: sb.is_favorite,
+                seq: sb.seq,
+              };
+
+              if (sb.is_trashed) {
+                trashedBookmarks.push(merged);
+              } else if (sb.is_archived) {
+                archivedBookmarks.push(merged);
               } else {
-                bookmarks[idx] = {
-                  ...bookmarks[idx],
-                  title: sb.title, url: sb.url, isFavorite: sb.is_favorite,
-                  collectionId: sb.collection_id ?? bookmarks[idx].collectionId,
-                  seq: sb.seq,
-                };
+                bookmarks.push(merged);
               }
             }
           }
 
-          return { bookmarks };
+          return { bookmarks, archivedBookmarks, trashedBookmarks };
         });
+      },
+
+      sweepUnsynced: () => {
+        const { bookmarks, archivedBookmarks, trashedBookmarks } = get();
+        const unsynced = [
+          ...bookmarks.filter(b => b.seq === 0).map(b => toServerBookmark(b)),
+          ...archivedBookmarks.filter(b => b.seq === 0).map(b => toServerBookmark(b, { isArchived: true })),
+          ...trashedBookmarks.filter(b => b.seq === 0).map(b => toServerBookmark(b, { isTrashed: true })),
+        ];
+        if (unsynced.length > 0) { syncEngine?.enqueue({ bookmarks: unsynced }); }
+      },
+
+      reassignCollection: (fromId, toId) => {
+        const affected = get().bookmarks.filter(b => b.collectionId === fromId);
+        if (affected.length > 0) {
+          const updated = affected.map(b => ({ ...b, collectionId: toId }));
+          syncEngine?.enqueue({ bookmarks: updated.map(b => toServerBookmark(b)) });
+          set((s) => ({
+            bookmarks: s.bookmarks.map(b => b.collectionId === fromId ? { ...b, collectionId: toId } : b),
+          }));
+        }
       },
 
       // workspaceCollectionIds: Set of collection IDs in the active workspace

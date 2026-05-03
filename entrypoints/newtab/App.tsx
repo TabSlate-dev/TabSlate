@@ -15,10 +15,11 @@ import { TabsRail } from "@/components/dashboard/tabs-rail";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AuthPage } from "@/components/auth/auth-page";
 import { VerifyEmailScreen } from "@/components/auth/verify-email-screen";
+import type { Bookmark } from "@/lib/types";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
-import { SyncEngine, type SyncStatus, initSyncEngine, destroySyncEngine, syncEngine } from "@/lib/sync-engine";
+import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
@@ -135,9 +136,22 @@ function SyncProvider({
       () => (accessToken && serverUrl ? { baseUrl: serverUrl, accessToken } : null),
       () => localSeqRef.current,
       (resp: SyncPullResponse) => {
+        const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
         mergeWorkspacesRef.current(resp);
         mergeBookmarksRef.current(resp);
+        localSeqRef.current = resp.server_seq;
         setLocalSeqRef.current(resp.server_seq);
+        if (needsInitialPush) {
+          useWorkspaceStore.getState().enqueueAllToSync();
+          useBookmarksStore.getState().enqueueAllToSync();
+          // New account: server is empty and local store is also empty → seed default workspace.
+          if (useWorkspaceStore.getState().workspaces.length === 0) {
+            useWorkspaceStore.getState().createWorkspace("My Workspace", "blue");
+          }
+        } else {
+          useWorkspaceStore.getState().sweepUnsynced();
+          useBookmarksStore.getState().sweepUnsynced();
+        }
       },
       (_pushResp) => { /* seq updates happen inside mergeFromServer */ },
       setSyncStatus,
@@ -147,7 +161,7 @@ function SyncProvider({
     engine.start();
 
     return () => {
-      engine.forceSync().catch(() => {}).finally(() => destroySyncEngine());
+      engine.forceSync().catch(() => {}).finally(() => engine.destroy());
     };
   }, [accessToken, serverUrl]);
 
@@ -159,6 +173,16 @@ function SyncProvider({
 }
 
 export default function App() {
+  useEffect(() => {
+    const listener = (message: { type: string; data: Omit<Bookmark, "id" | "createdAt" | "isFavorite"> }) => {
+      if (message.type === "ADD_BOOKMARK") {
+        useBookmarksStore.getState().addBookmark(message.data);
+      }
+    };
+    chrome.runtime.onMessage.addListener(listener);
+    return () => chrome.runtime.onMessage.removeListener(listener);
+  }, []);
+
   return (
     <ThemeProvider>
       <StoreGate>

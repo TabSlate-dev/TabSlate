@@ -31,9 +31,14 @@ export class SSEClient {
   async start() {
     if (this.destroyed) return;
     const claimed = await this.tryClaimLeader();
+    if (this.destroyed) return;
     if (!claimed) {
       // Not the leader — poll to check if leadership slot opens up.
-      this.heartbeatTimer = setInterval(() => this.start(), HEARTBEAT_INTERVAL_MS);
+      // Guard: only create one poll interval; without this check each start() call
+      // stacks a new setInterval on top of old ones, causing exponential growth.
+      if (!this.heartbeatTimer) {
+        this.heartbeatTimer = setInterval(() => this.start(), HEARTBEAT_INTERVAL_MS);
+      }
       return;
     }
     this.isLeader = true;

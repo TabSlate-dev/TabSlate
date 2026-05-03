@@ -64,7 +64,7 @@ export class SyncQueue {
     }, delayMs);
   }
 
-  private isEmpty(): boolean {
+  isEmpty(): boolean {
     return (
       this.queue.workspaces.size === 0 &&
       this.queue.collections.size === 0 &&
