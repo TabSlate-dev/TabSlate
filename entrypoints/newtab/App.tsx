@@ -22,7 +22,7 @@ import { useGroupsStore } from "@/store/groups-store";
 import { useTabsStore } from "@/store/tabs-store";
 import { migrateFromChromeStorage } from "@/lib/idb";
 import type { ExtensionMessage } from "@/lib/messages";
-import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine } from "@/lib/sync-engine";
+import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
@@ -177,7 +177,7 @@ function SyncProvider({
     engine.start();
 
     return () => {
-      engine.forceSync().catch(() => {}).finally(() => engine.destroy());
+      engine.forceSync().catch(() => {}).finally(() => destroySyncEngine());
     };
   }, [accessToken, serverUrl]);
 
