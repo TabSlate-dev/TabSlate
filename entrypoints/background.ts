@@ -1,4 +1,6 @@
 import { generateId } from "@/lib/id";
+import { idbPut } from "@/lib/idb";
+import type { ExtensionMessage } from "@/lib/messages";
 
 export default defineBackground(() => {
   // -------------------------------------------------------------------------
@@ -42,30 +44,18 @@ export default defineBackground(() => {
       } catch { /* newtab not ready, fall through to storage */ }
     }
 
-    // Fallback: write directly to storage (seq=0 sweep will sync on next newtab open)
+    // Fallback: write directly to IDB (hydrate() will pick it up on next newtab open)
     const fullBookmark = {
       id: generateId(),
       createdAt: new Date().toISOString(),
       isFavorite: false,
       ...bookmarkData,
     };
-
-    const raw = await new Promise<string | null>((resolve) =>
-      chrome.storage.local.get("tabslate-bookmarks", (res) =>
-        resolve((res["tabslate-bookmarks"] as string) ?? null)
-      )
-    );
-
-    let state: { bookmarks?: typeof fullBookmark[] } = {};
-    if (raw) {
-      try { state = JSON.parse(raw)?.state ?? {}; } catch { /* ignore */ }
+    await idbPut("bookmarks", fullBookmark);
+    // If newtab is open but wasn't ready for ADD_BOOKMARK, notify it now
+    if (newtabTab?.id) {
+      chrome.tabs.sendMessage(newtabTab.id, { type: "BOOKMARKS_CHANGED" } as ExtensionMessage).catch(() => {});
     }
-
-    const updated = [fullBookmark, ...(state.bookmarks ?? [])];
-    const newRaw = JSON.stringify({ state: { ...state, bookmarks: updated } });
-    await new Promise<void>((r) =>
-      chrome.storage.local.set({ "tabslate-bookmarks": newRaw }, r)
-    );
   });
 
   // -------------------------------------------------------------------------
@@ -73,8 +63,13 @@ export default defineBackground(() => {
   // so the newtab page can react via onChanged listener
   // (Service Workers can't maintain open ports in MV3)
   // -------------------------------------------------------------------------
-  function broadcastTabChange() {
-    chrome.storage.local.set({ "tabslate-tabs-changed": Date.now() });
+  async function broadcastTabChange() {
+    const tabs = await chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") });
+    for (const tab of tabs) {
+      if (tab.id) {
+        chrome.tabs.sendMessage(tab.id, { type: "TABS_CHANGED" } as ExtensionMessage).catch(() => {});
+      }
+    }
   }
 
   chrome.tabs.onCreated.addListener(broadcastTabChange);
