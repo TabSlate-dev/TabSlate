@@ -32,11 +32,6 @@ export function GroupsPanel() {
 
   React.useEffect(() => {
     loadTabs();
-    const handler = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if ("tabslate-tabs-changed" in changes) { loadTabs(); }
-    };
-    chrome.storage.onChanged.addListener(handler);
-    return () => chrome.storage.onChanged.removeListener(handler);
   }, [loadTabs]);
 
   const handleDragStart = React.useCallback((event: DragStartEvent) => {

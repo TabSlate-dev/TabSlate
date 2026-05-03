@@ -29,17 +29,6 @@ export function TabsPanel() {
 
   useEffect(() => {
     loadTabs();
-
-    function onStorageChange(
-      changes: { [key: string]: chrome.storage.StorageChange },
-      area: string
-    ) {
-      if (area === "local" && "tabslate-tabs-changed" in changes) {
-        loadTabs(true);
-      }
-    }
-    chrome.storage.onChanged.addListener(onStorageChange);
-    return () => chrome.storage.onChanged.removeListener(onStorageChange);
   }, [loadTabs]);
 
   // Split tabs into grouped (by groupId) and ungrouped — memoized

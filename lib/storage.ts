@@ -1,14 +1,6 @@
-/**
- * Chrome storage helpers — used by the popup to read/write bookmark data
- * in the same format as the Zustand persist middleware used by the newtab.
- *
- * Key layout in chrome.storage.local:
- *   "tabslate-bookmarks"  → Zustand JSON { state: { bookmarks, archivedBookmarks, trashedBookmarks } }
- *   "tabslate-workspace"  → Zustand JSON { state: { workspaces, collections, tags, activeWorkspaceId } }
- */
-
 import type { Bookmark, Collection } from "@/lib/types";
 import { generateId } from "@/lib/id";
+import { idbGetAll, idbGet, idbPut } from "@/lib/idb";
 
 export type BookmarkInput = {
   title: string;
@@ -18,34 +10,6 @@ export type BookmarkInput = {
   collectionId: string;
   tags?: string[];
 };
-
-// ---------------------------------------------------------------------------
-// Low-level helpers
-// ---------------------------------------------------------------------------
-
-async function getRaw(key: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(key, (result) => {
-      resolve(key in result ? (result[key] as string) : null);
-    });
-  });
-}
-
-async function setRaw(key: string, value: string): Promise<void> {
-  return new Promise((resolve) => {
-    chrome.storage.local.set({ [key]: value }, resolve);
-  });
-}
-
-function parseState<T>(raw: string | null, fallback: T): T {
-  if (!raw) { return fallback; }
-  try {
-    const parsed = JSON.parse(raw);
-    return (parsed?.state as T) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Workspace data (read-only for popup)
@@ -59,38 +23,18 @@ interface WorkspaceStorageState {
 }
 
 export async function getWorkspaceState(): Promise<WorkspaceStorageState> {
-  const raw = await getRaw("tabslate-workspace");
-  return parseState<WorkspaceStorageState>(raw, {
-    workspaces: [],
-    collections: [],
-    tags: [],
-    activeWorkspaceId: "",
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Bookmark data
-// ---------------------------------------------------------------------------
-
-interface BookmarkStorageState {
-  bookmarks: Bookmark[];
-  archivedBookmarks: Bookmark[];
-  trashedBookmarks: Bookmark[];
-}
-
-async function getBookmarkState(): Promise<BookmarkStorageState> {
-  const raw = await getRaw("tabslate-bookmarks");
-  return parseState<BookmarkStorageState>(raw, {
-    bookmarks: [],
-    archivedBookmarks: [],
-    trashedBookmarks: [],
-  });
-}
-
-async function setBookmarkState(state: BookmarkStorageState): Promise<void> {
-  // Wrap in Zustand persist format so the newtab onChanged listener picks it up
-  const payload = JSON.stringify({ state, version: 0 });
-  await setRaw("tabslate-bookmarks", payload);
+  const [workspaces, collections, tags, activeWsKv] = await Promise.all([
+    idbGetAll<{ id: string; name: string; color: string; position: number }>("workspaces"),
+    idbGetAll<Collection>("collections"),
+    idbGetAll<{ id: string; name: string; color: string }>("tags"),
+    idbGet<{ key: string; value: string }>("kv", "activeWorkspaceId"),
+  ]);
+  return {
+    workspaces,
+    collections,
+    tags,
+    activeWorkspaceId: activeWsKv?.value ?? "",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -99,7 +43,6 @@ async function setBookmarkState(state: BookmarkStorageState): Promise<void> {
 
 export const storageService = {
   async addBookmark(input: BookmarkInput): Promise<Bookmark> {
-    const state = await getBookmarkState();
     const newBookmark: Bookmark = {
       id: generateId(),
       title: input.title,
@@ -112,10 +55,7 @@ export const storageService = {
       isFavorite: false,
       seq: 0,
     };
-    await setBookmarkState({
-      ...state,
-      bookmarks: [newBookmark, ...state.bookmarks],
-    });
+    await idbPut("bookmarks", newBookmark);
     return newBookmark;
   },
 };
