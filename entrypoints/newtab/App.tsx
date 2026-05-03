@@ -15,10 +15,13 @@ import { TabsRail } from "@/components/dashboard/tabs-rail";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AuthPage } from "@/components/auth/auth-page";
 import { VerifyEmailScreen } from "@/components/auth/verify-email-screen";
-import type { Bookmark } from "@/lib/types";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
+import { useGroupsStore } from "@/store/groups-store";
+import { useTabsStore } from "@/store/tabs-store";
+import { migrateFromChromeStorage } from "@/lib/idb";
+import type { ExtensionMessage } from "@/lib/messages";
 import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
@@ -70,21 +73,25 @@ function Layout({
   );
 }
 
-/** Waits for all stores to hydrate from IndexedDB/chrome.storage before rendering */
+/** Runs one-time storage migration then hydrates all stores from IndexedDB before rendering */
 function StoreGate({ children }: { children: React.ReactNode }) {
   const bookmarksHydrated = useBookmarksStore((s) => s._hydrated);
   const workspaceHydrated = useWorkspaceStore((s) => s._hydrated);
   const authHydrated = useAuthStore((s) => s._hydrated);
-  const hydrateBookmarks = useBookmarksStore((s) => s.hydrate);
-  const hydrateWorkspace = useWorkspaceStore((s) => s.hydrate);
-  const hydrated = bookmarksHydrated && workspaceHydrated && authHydrated;
+  const groupsHydrated = useGroupsStore((s) => s._hydrated);
 
   useEffect(() => {
-    hydrateBookmarks();
-    hydrateWorkspace();
-  // Stable function references — run once on mount
+    migrateFromChromeStorage().then(() =>
+      Promise.all([
+        useBookmarksStore.getState().hydrate(),
+        useWorkspaceStore.getState().hydrate(),
+        useGroupsStore.getState().hydrate(),
+      ]),
+    );
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const hydrated = bookmarksHydrated && workspaceHydrated && authHydrated && groupsHydrated;
 
   if (!hydrated) {
     return (
@@ -183,9 +190,18 @@ function SyncProvider({
 
 export default function App() {
   useEffect(() => {
-    const listener = (message: { type: string; data: Omit<Bookmark, "id" | "createdAt" | "isFavorite"> }) => {
+    const listener = (message: ExtensionMessage) => {
       if (message.type === "ADD_BOOKMARK") {
         useBookmarksStore.getState().addBookmark(message.data);
+      }
+      if (message.type === "BOOKMARKS_CHANGED") {
+        useBookmarksStore.getState().hydrate();
+      }
+      if (message.type === "WORKSPACE_CHANGED") {
+        useWorkspaceStore.getState().hydrate();
+      }
+      if (message.type === "TABS_CHANGED") {
+        useTabsStore.getState().loadTabs();
       }
     };
     chrome.runtime.onMessage.addListener(listener);
