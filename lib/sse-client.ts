@@ -8,8 +8,8 @@ const HEARTBEAT_INTERVAL_MS = 25_000;
 
 /**
  * Manages a single EventSource connection to /sync/stream.
- * Uses leader election via chrome.storage.local so only one browser
- * window holds the SSE connection — others rely on periodic pull.
+ * Uses leader election via IndexedDB (kv store, "sync-leader" key) so only one
+ * browser window holds the SSE connection — others rely on periodic pull.
  */
 export class SSEClient {
   private es: EventSource | null = null;
@@ -29,7 +29,12 @@ export class SSEClient {
 
   async start() {
     if (this.destroyed) return;
-    const claimed = await this.tryClaimLeader();
+    let claimed: boolean;
+    try {
+      claimed = await this.tryClaimLeader();
+    } catch {
+      claimed = false;
+    }
     if (this.destroyed) return;
     if (!claimed) {
       // Not the leader — poll to check if leadership slot opens up.
@@ -62,9 +67,11 @@ export class SSEClient {
               return;
             }
             store.put({ key: "sync-leader", value: { ts: now } });
-            resolve(true);
           };
+          req.onerror = () => reject(req.error);
+          tx.oncomplete = () => resolve(true);
           tx.onerror = () => reject(tx.error);
+          tx.onabort = () => resolve(false);
         }),
     );
   }
