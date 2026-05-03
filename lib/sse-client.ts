@@ -1,9 +1,8 @@
 import { api } from "@/lib/api";
+import { getDB, idbPut, idbDelete } from "@/lib/idb";
 
 type OnSeqReceived = (seq: number) => void;
 type OnStatusChange = (connected: boolean) => void;
-
-const LEADER_KEY = "tabslate-sync-leader";
 const LEADER_TTL_MS = 30_000;
 const HEARTBEAT_INTERVAL_MS = 25_000;
 
@@ -47,23 +46,33 @@ export class SSEClient {
   }
 
   private tryClaimLeader(): Promise<boolean> {
-    return new Promise(resolve => {
-      chrome.storage.local.get(LEADER_KEY, result => {
-        const entry = result[LEADER_KEY] as { ts: number } | undefined;
-        const now = Date.now();
-        if (entry && now - entry.ts < LEADER_TTL_MS) {
-          resolve(false);
-          return;
-        }
-        chrome.storage.local.set({ [LEADER_KEY]: { ts: now } }, () => resolve(true));
-      });
-    });
+    return getDB().then(
+      (db) =>
+        new Promise((resolve, reject) => {
+          const tx = db.transaction(["kv"], "readwrite");
+          const store = tx.objectStore("kv");
+          const req = store.get("sync-leader");
+          req.onsuccess = () => {
+            const entry = (
+              req.result as { key: string; value: { ts: number } } | undefined
+            )?.value;
+            const now = Date.now();
+            if (entry && now - entry.ts < LEADER_TTL_MS) {
+              resolve(false);
+              return;
+            }
+            store.put({ key: "sync-leader", value: { ts: now } });
+            resolve(true);
+          };
+          tx.onerror = () => reject(tx.error);
+        }),
+    );
   }
 
   private startHeartbeat() {
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); }
     this.heartbeatTimer = setInterval(() => {
-      chrome.storage.local.set({ [LEADER_KEY]: { ts: Date.now() } });
+      idbPut("kv", { key: "sync-leader", value: { ts: Date.now() } });
     }, HEARTBEAT_INTERVAL_MS);
   }
 
@@ -127,7 +136,7 @@ export class SSEClient {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.isLeader) {
-      chrome.storage.local.remove(LEADER_KEY);
+      idbDelete("kv", "sync-leader");
     }
   }
 }
