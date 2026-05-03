@@ -70,12 +70,21 @@ function Layout({
   );
 }
 
-/** Waits for all stores to rehydrate from chrome.storage before rendering */
+/** Waits for all stores to hydrate from IndexedDB/chrome.storage before rendering */
 function StoreGate({ children }: { children: React.ReactNode }) {
   const bookmarksHydrated = useBookmarksStore((s) => s._hydrated);
   const workspaceHydrated = useWorkspaceStore((s) => s._hydrated);
   const authHydrated = useAuthStore((s) => s._hydrated);
+  const hydrateBookmarks = useBookmarksStore((s) => s.hydrate);
+  const hydrateWorkspace = useWorkspaceStore((s) => s.hydrate);
   const hydrated = bookmarksHydrated && workspaceHydrated && authHydrated;
+
+  useEffect(() => {
+    hydrateBookmarks();
+    hydrateWorkspace();
+  // Stable function references — run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!hydrated) {
     return (
