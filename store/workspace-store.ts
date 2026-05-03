@@ -267,22 +267,46 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
       for (const sc of resp.entities.collections) {
         if (sc.deleted_at) {
+          // Server confirmed delete — remove from state
           collections = collections.filter(c => c.id !== sc.id);
         } else {
           const idx = collections.findIndex(c => c.id === sc.id);
           if (idx === -1) {
-            collections.push({ id: sc.id, workspaceId: sc.workspace_id ?? "", name: sc.name, icon: sc.icon ?? "folder", position: sc.position, seq: sc.seq });
+            collections.push({
+              id: sc.id,
+              workspaceId: sc.workspace_id ?? "",
+              name: sc.name,
+              icon: sc.icon ?? "folder",
+              position: sc.position,
+              seq: sc.seq,
+              archivedAt: sc.archived_at ?? undefined,
+            });
           } else {
-            collections[idx] = { ...collections[idx], name: sc.name, icon: sc.icon ?? collections[idx].icon, position: sc.position, seq: sc.seq, workspaceId: sc.workspace_id ?? collections[idx].workspaceId };
+            // Local pending soft-delete or archive (seq=0) wins over server alive state.
+            // The tombstone will be re-pushed by sweepUnsynced on next sync cycle.
+            const local = collections[idx];
+            if ((local.deletedAt || local.archivedAt) && local.seq === 0) {
+              continue;
+            }
+            collections[idx] = {
+              ...local,
+              name: sc.name,
+              icon: sc.icon ?? local.icon,
+              position: sc.position,
+              seq: sc.seq,
+              workspaceId: sc.workspace_id ?? local.workspaceId,
+              archivedAt: sc.archived_at ?? undefined,
+            };
           }
         }
       }
 
       // Restore isDefault: for each workspace that has no default collection,
       // mark the lowest-position collection as default (mirrors createWorkspace logic).
+      // Exclude archived and trashed collections from candidacy.
       const workspaceIds = new Set(workspaces.map(w => w.id));
       workspaceIds.forEach(wsId => {
-        const wsCols = collections.filter(c => c.workspaceId === wsId);
+        const wsCols = collections.filter(c => c.workspaceId === wsId && !c.deletedAt && !c.archivedAt);
         const hasDefault = wsCols.some(c => c.isDefault);
         if (!hasDefault && wsCols.length > 0) {
           const firstCol = [...wsCols].sort((a, b) => a.position - b.position)[0];
