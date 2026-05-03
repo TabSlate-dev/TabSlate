@@ -20,7 +20,6 @@ import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useTabsStore } from "@/store/tabs-store";
-import { migrateFromChromeStorage } from "@/lib/idb";
 import type { ExtensionMessage } from "@/lib/messages";
 import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
@@ -81,13 +80,11 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   const groupsHydrated = useGroupsStore((s) => s._hydrated);
 
   useEffect(() => {
-    migrateFromChromeStorage().then(() =>
-      Promise.all([
-        useBookmarksStore.getState().hydrate(),
-        useWorkspaceStore.getState().hydrate(),
-        useGroupsStore.getState().hydrate(),
-      ]),
-    );
+    void Promise.all([
+      useBookmarksStore.getState().hydrate(),
+      useWorkspaceStore.getState().hydrate(),
+      useGroupsStore.getState().hydrate(),
+    ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
