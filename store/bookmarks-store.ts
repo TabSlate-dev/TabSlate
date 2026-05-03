@@ -68,7 +68,7 @@ function applySort(bookmarks: Bookmark[], sortBy: SortBy): Bookmark[] {
 // Types
 // ---------------------------------------------------------------------------
 interface BookmarksState {
-  // Data — persisted to chrome.storage.local
+  // Data — persisted to IndexedDB
   bookmarks: Bookmark[];
   archivedBookmarks: Bookmark[];
   trashedBookmarks: Bookmark[];
