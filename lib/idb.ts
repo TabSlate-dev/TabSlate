@@ -21,23 +21,25 @@ export function getDB(): Promise<IDBDatabase> {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
       req.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
-        const bs = db.createObjectStore("bookmarks", { keyPath: "id" });
-        bs.createIndex("collectionId", "collectionId");
-        bs.createIndex("isFavorite", "isFavorite");
-        const abs = db.createObjectStore("archived-bookmarks", { keyPath: "id" });
-        abs.createIndex("collectionId", "collectionId");
-        db.createObjectStore("trashed-bookmarks", { keyPath: "id" });
-        const ws = db.createObjectStore("workspaces", { keyPath: "id" });
-        ws.createIndex("position", "position");
-        const cs = db.createObjectStore("collections", { keyPath: "id" });
-        cs.createIndex("workspaceId", "workspaceId");
-        cs.createIndex("position", "position");
-        db.createObjectStore("tags", { keyPath: "id" });
-        db.createObjectStore("groups", { keyPath: "id" });
-        const gt = db.createObjectStore("group-tabs", { keyPath: "id" });
-        gt.createIndex("groupId", "groupId");
-        db.createObjectStore("tab-group-titles", { keyPath: "groupId" });
-        db.createObjectStore("kv", { keyPath: "key" });
+        if (event.oldVersion < 1) {
+          const bs = db.createObjectStore("bookmarks", { keyPath: "id" });
+          bs.createIndex("collectionId", "collectionId");
+          bs.createIndex("isFavorite", "isFavorite");
+          const abs = db.createObjectStore("archived-bookmarks", { keyPath: "id" });
+          abs.createIndex("collectionId", "collectionId");
+          db.createObjectStore("trashed-bookmarks", { keyPath: "id" });
+          const ws = db.createObjectStore("workspaces", { keyPath: "id" });
+          ws.createIndex("position", "position");
+          const cs = db.createObjectStore("collections", { keyPath: "id" });
+          cs.createIndex("workspaceId", "workspaceId");
+          cs.createIndex("position", "position");
+          db.createObjectStore("tags", { keyPath: "id" });
+          db.createObjectStore("groups", { keyPath: "id" });
+          const gt = db.createObjectStore("group-tabs", { keyPath: "id" });
+          gt.createIndex("groupId", "groupId");
+          db.createObjectStore("tab-group-titles", { keyPath: "groupId" });
+          db.createObjectStore("kv", { keyPath: "key" });
+        }
       };
       req.onsuccess = () => {
         const db = req.result;
@@ -118,6 +120,10 @@ export async function idbGetByIndex<T>(
   });
 }
 
+/**
+ * fn must issue all IDB requests synchronously — the transaction auto-commits
+ * on the microtask boundary, so any await inside fn will silently drop writes.
+ */
 export function idbTransaction(
   stores: StoreName[],
   mode: "readonly" | "readwrite",
@@ -142,15 +148,14 @@ export async function migrateFromChromeStorage(): Promise<void> {
     "tabslate-groups",
     "tabslate-full-titles",
     "tabslate-sync-leader",
-    "tabslate-sync",
-    "tabslate-tabs-changed",
+    "tabslate-tabs-changed", // no IDB equivalent; included only to remove it from chrome.storage
   ];
 
   const result = await new Promise<Record<string, unknown>>((resolve) =>
     chrome.storage.local.get(MIGRATION_KEYS, (r) => resolve(r)),
   );
 
-  if (!Object.values(result).some(Boolean)) {
+  if (Object.keys(result).length === 0) {
     return;
   }
 
@@ -241,6 +246,7 @@ export async function migrateFromChromeStorage(): Promise<void> {
 
         const syncLeader = result["tabslate-sync-leader"];
         if (syncLeader) {
+          // pre-populates kv entry for SSEClient's IDB-based leader election (Task 9)
           tx.objectStore("kv").put({ key: "sync-leader", value: syncLeader });
         }
       },
