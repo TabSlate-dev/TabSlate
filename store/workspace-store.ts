@@ -61,7 +61,7 @@ export const TAG_COLORS = [
 function toServerCollection(c: Collection): object {
   return {
     id: c.id,
-    workspace_id: c.workspaceId || null,
+    workspace_id: c.workspaceId !== "" ? c.workspaceId : null,
     name: c.name,
     icon: c.icon,
     position: c.position,
@@ -432,7 +432,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     useBookmarksStore.getState().reassignCollection(id, targetId);
     idbDelete("collections", id);
     set((s) => ({
-      collections: s.collections.filter(c => c.id !== id || !!c.isDefault),
+      collections: s.collections.filter(c => c.id !== id),
     }));
   },
 
