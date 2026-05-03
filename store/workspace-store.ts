@@ -130,6 +130,9 @@ interface WorkspaceState {
   createCollection: (workspaceId: string, name: string, icon: string) => Collection;
   updateCollection: (id: string, patch: Partial<Pick<Collection, "name" | "icon">>) => void;
   deleteCollection: (id: string) => void;
+  archiveCollection: (id: string) => void;
+  restoreCollection: (id: string) => void;
+  permanentlyDeleteCollection: (id: string) => void;
 
   // Tag CRUD
   createTag: (name: string, color: string) => Tag;
@@ -138,6 +141,8 @@ interface WorkspaceState {
 
   // Computed
   getWorkspaceCollections: (workspaceId?: string) => Collection[];
+  getArchivedCollections: () => Collection[];
+  getTrashedCollections: () => Collection[];
 }
 
 // Module-level timer to avoid referential equality issues with array comparison
@@ -427,14 +432,39 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   deleteCollection: (id) => {
     const col = get().collections.find(c => c.id === id && !c.isDefault);
     if (!col) { return; }
-    const defaultCol = get().collections.find(c => c.workspaceId === col.workspaceId && !!c.isDefault);
-    const targetId = defaultCol?.id ?? "";
-    syncEngine?.enqueue({ collections: [toServerCollection({ ...col, deletedAt: Date.now() })] });
-    useBookmarksStore.getState().reassignCollection(id, targetId);
+    const trashed = { ...col, deletedAt: Date.now() };
+    idbPut("collections", trashed);
+    syncEngine?.enqueue({ collections: [toServerCollection(trashed)] });
+    set((s) => ({ collections: s.collections.map(c => c.id === id ? trashed : c) }));
+    useBookmarksStore.getState().trashCollectionBookmarks(id);
+  },
+
+  archiveCollection: (id) => {
+    const col = get().collections.find(c => c.id === id && !c.isDefault);
+    if (!col) { return; }
+    const archived = { ...col, archivedAt: Date.now() };
+    idbPut("collections", archived);
+    syncEngine?.enqueue({ collections: [toServerCollection(archived)] });
+    set((s) => ({ collections: s.collections.map(c => c.id === id ? archived : c) }));
+    useBookmarksStore.getState().archiveCollectionBookmarks(id);
+  },
+
+  restoreCollection: (id) => {
+    const col = get().collections.find(c => c.id === id);
+    if (!col) { return; }
+    const restored = { ...col, deletedAt: undefined, archivedAt: undefined };
+    idbPut("collections", restored);
+    syncEngine?.enqueue({ collections: [toServerCollection(restored)] });
+    set((s) => ({ collections: s.collections.map(c => c.id === id ? restored : c) }));
+    useBookmarksStore.getState().restoreCollectionBookmarks(id);
+  },
+
+  permanentlyDeleteCollection: (id) => {
+    const col = get().collections.find(c => c.id === id && !!c.deletedAt);
+    if (!col) { return; }
     idbDelete("collections", id);
-    set((s) => ({
-      collections: s.collections.filter(c => c.id !== id),
-    }));
+    set((s) => ({ collections: s.collections.filter(c => c.id !== id) }));
+    useBookmarksStore.getState().permanentlyDeleteCollectionBookmarks(id);
   },
 
   // ── Tags ──────────────────────────────────────────────────────────────
@@ -483,7 +513,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const state = get();
     const wsId = workspaceId ?? state.activeWorkspaceId;
     return state.collections
-      .filter((c) => c.workspaceId === wsId)
+      .filter((c) => c.workspaceId === wsId && !c.deletedAt && !c.archivedAt)
       .sort((a, b) => a.position - b.position);
   },
+
+  getArchivedCollections: () =>
+    get().collections.filter(c => !!c.archivedAt && !c.deletedAt),
+
+  getTrashedCollections: () =>
+    get().collections.filter(c => !!c.deletedAt),
 }));
