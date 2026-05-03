@@ -50,6 +50,7 @@ export interface ServerCollection {
   position: number;
   seq: number;
   deleted_at?: number;
+  archived_at?: number;
   created_at: number;
   updated_at: number;
 }

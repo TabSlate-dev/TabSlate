@@ -16,6 +16,7 @@ export interface Collection {
   isDefault?: boolean; // auto-created per workspace, cannot be deleted
   seq: number;
   deletedAt?: number;
+  archivedAt?: number;  // unix ms; undefined = active, set = archived
 }
 
 export interface Tag {

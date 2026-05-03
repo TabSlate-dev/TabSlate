@@ -67,6 +67,7 @@ function toServerCollection(c: Collection): object {
     position: c.position,
     seq: c.seq,
     deleted_at: c.deletedAt ?? null,
+    archived_at: c.archivedAt ?? null,
     updated_at: Date.now(),
   };
 }
