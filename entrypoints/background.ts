@@ -51,8 +51,13 @@ export default defineBackground(() => {
       isFavorite: false,
       ...bookmarkData,
     };
-    await idbPut("bookmarks", fullBookmark);
-    // If newtab is open but wasn't ready for ADD_BOOKMARK, notify it now
+    try {
+      await idbPut("bookmarks", fullBookmark);
+    } catch (err) {
+      console.error("[TabSlate] IDB write failed in bookmark fallback:", err);
+      return;
+    }
+    // newtabTab was queried above for the primary path; reuse it here
     if (newtabTab?.id) {
       chrome.tabs.sendMessage(newtabTab.id, { type: "BOOKMARKS_CHANGED" } as ExtensionMessage).catch(() => {});
     }
