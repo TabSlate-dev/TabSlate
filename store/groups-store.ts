@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { openAsTabGroup } from "@/lib/chrome/tab-groups";
 import { generateId } from "@/lib/id";
-import { idbGetAll, idbPut, idbDelete, idbGetByIndex } from "@/lib/idb";
+import { idbGetAll, idbPut, idbDelete, idbGetByIndex, idbTransaction } from "@/lib/idb";
 
 export interface GroupTab {
   id: string;
@@ -73,8 +73,10 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
 
   deleteGroup: async (id) => {
     const tabsToDelete = await idbGetByIndex<GroupTab>("group-tabs", "groupId", id);
-    idbDelete("groups", id);
-    for (const t of tabsToDelete) { idbDelete("group-tabs", t.id); }
+    await idbTransaction(["groups", "group-tabs"], "readwrite", (tx) => {
+      tx.objectStore("groups").delete(id);
+      for (const t of tabsToDelete) { tx.objectStore("group-tabs").delete(t.id); }
+    });
     set((state) => ({
       groups: state.groups.filter((g) => g.id !== id),
       groupTabs: state.groupTabs.filter((t) => t.groupId !== id),
@@ -103,6 +105,8 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   },
 
   moveTab: (tabId, toGroupId) => {
+    const existingTab = get().groupTabs.find((t) => t.id === tabId);
+    if (!existingTab || existingTab.groupId === toGroupId) { return; }
     set((state) => {
       const tab = state.groupTabs.find((t) => t.id === tabId);
       if (!tab) { return {}; }
