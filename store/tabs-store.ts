@@ -251,7 +251,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const group = tabGroups.find((g) => g.id === groupId);
     let finalPatch = { ...patch };
     
-    if (patch.title) {
+    if (patch.title !== undefined) {
       // Store full title internally
       const nextFullTitles = { ...fullTitles, [groupId]: patch.title };
       idbPut("tab-group-titles", { groupId, title: patch.title });
@@ -292,6 +292,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     if (tabIds.length) {
       await Promise.all(tabIds.map((id) => closeTab(id)));
     }
+    idbDelete("tab-group-titles", groupId);
     await get().loadTabs(true);
   },
 
