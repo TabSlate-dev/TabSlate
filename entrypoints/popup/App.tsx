@@ -70,14 +70,28 @@ function PopupContent() {
 
     setSaveState("saving");
     try {
-      const bookmark: BookmarkInput = {
+      const bookmarkData: BookmarkInput & { tags: string[]; seq: number } = {
         title: tab.title,
         url: tab.url,
         favicon: tab.favIconUrl,
         description: note,
         collectionId: selectedCollectionId,
+        tags: [],
+        seq: 0,
       };
-      await storageService.addBookmark(bookmark);
+
+      // Primary path: send to newtab so syncEngine picks it up immediately
+      const [newtabTab] = await chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") });
+      if (newtabTab?.id) {
+        try {
+          await chrome.tabs.sendMessage(newtabTab.id, { type: "ADD_BOOKMARK", data: bookmarkData });
+          setSaveState("saved");
+          return;
+        } catch { /* newtab not ready, fall through to storage */ }
+      }
+
+      // Fallback: write directly to storage (seq=0 sweep will sync on next newtab open)
+      await storageService.addBookmark(bookmarkData);
       setSaveState("saved");
     } catch {
       setSaveState("error");

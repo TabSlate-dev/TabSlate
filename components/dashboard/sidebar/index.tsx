@@ -34,10 +34,18 @@ import {
   Star,
   Tag,
   Archive,
+  MoreHorizontal,
   Trash2,
   Trash,
   Wrench,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
@@ -46,6 +54,8 @@ import type { Collection } from "@/lib/types";
 import { CollectionDialog } from "./collection-dialog";
 import { TagDialog } from "./tag-dialog";
 import { GroupDialog } from "./group-dialog";
+import { SyncStatusIndicator } from "./sync-status";
+import type { SyncStatus } from "@/lib/sync-engine";
 
 // ---------------------------------------------------------------------------
 // Icon map
@@ -152,7 +162,12 @@ function AddItemButton({ label, onClick }: { label: string; onClick: () => void 
 // ---------------------------------------------------------------------------
 // BookmarksSidebar
 // ---------------------------------------------------------------------------
-export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+interface BookmarksSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  syncStatus: SyncStatus;
+  onForceSync: () => void;
+}
+
+export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: BookmarksSidebarProps) {
   const { pathname } = useLocation();
   const [collectionsOpen, setCollectionsOpen] = React.useState(true);
   const [groupsOpen, setGroupsOpen] = React.useState(true);
@@ -177,6 +192,7 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const createCollection = useWorkspaceStore(s => s.createCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
+  const archiveCollection = useWorkspaceStore(s => s.archiveCollection);
   const createTag = useWorkspaceStore(s => s.createTag);
   const deleteTag = useWorkspaceStore(s => s.deleteTag);
   const highlightedCollectionIds = useWorkspaceStore(s => s.highlightedCollectionIds);
@@ -187,7 +203,7 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
   const workspaceCollections = React.useMemo(
     () =>
       collections
-        .filter((c) => c.workspaceId === activeWorkspaceId)
+        .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
         .sort((a, b) => a.position - b.position),
     [collections, activeWorkspaceId]
   );
@@ -286,16 +302,32 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
                               <span className="flex-1 text-sm truncate">{col.name}</span>
                               <div className="flex items-center">
                                 {!col.isDefault && (
-                                  <button
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      deleteCollection(col.id);
-                                    }}
-                                    className="flex items-center justify-center overflow-hidden opacity-0 -translate-x-2 w-0 group-hover/col:w-4 group-hover/col:mr-1 group-hover/col:opacity-100 group-hover/col:translate-x-0 text-muted-foreground hover:text-destructive transition-all duration-300 ease-out"
-                                  >
-                                    <Trash className="size-3 shrink-0" />
-                                  </button>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button
+                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                                        className="flex items-center justify-center overflow-hidden opacity-0 -translate-x-2 w-0 group-hover/col:w-4 group-hover/col:mr-1 group-hover/col:opacity-100 group-hover/col:translate-x-0 text-muted-foreground hover:text-foreground transition-all duration-300 ease-out"
+                                      >
+                                        <MoreHorizontal className="size-3 shrink-0" />
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" side="right">
+                                      <DropdownMenuItem
+                                        onClick={(e) => { e.preventDefault(); archiveCollection(col.id); }}
+                                      >
+                                        <Archive className="size-4 mr-2" />
+                                        Archive
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive"
+                                        onClick={(e) => { e.preventDefault(); deleteCollection(col.id); }}
+                                      >
+                                        <Trash2 className="size-4 mr-2" />
+                                        Delete
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
                                 )}
                                 <span className="text-muted-foreground text-xs shrink-0">{bookmarkCounts[col.id] ?? 0}</span>
                               </div>
@@ -447,7 +479,9 @@ export function BookmarksSidebar({ ...props }: React.ComponentProps<typeof Sideb
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="px-4 pb-4" />
+        <SidebarFooter className="px-4 pb-4">
+          <SyncStatusIndicator status={syncStatus} onForceSync={onForceSync} />
+        </SidebarFooter>
       </Sidebar>
 
       {/* Dialogs (rendered outside Sidebar to avoid z-index issues) */}

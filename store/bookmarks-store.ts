@@ -1,14 +1,37 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
 import type { Bookmark } from "@/lib/types";
 import { generateId } from "@/lib/id";
-import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
+import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
+import { syncEngine } from "@/lib/sync-engine";
+import type { SyncPullResponse } from "@/lib/api";
 
 export type { Bookmark };
 
 type ViewMode = "grid" | "list";
 type SortBy = "date-newest" | "date-oldest" | "alpha-az" | "alpha-za";
 type FilterType = "all" | "favorites" | "with-tags" | "without-tags";
+
+// ---------------------------------------------------------------------------
+// Sync helpers
+// ---------------------------------------------------------------------------
+function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?: boolean } = {}): object {
+  return {
+    id: b.id,
+    collection_id: b.collectionId || null,
+    title: b.title,
+    url: b.url,
+    favicon_url: b.favicon,
+    description: b.description,
+    is_favorite: b.isFavorite,
+    is_archived: opts.isArchived ?? false,
+    is_trashed: opts.isTrashed ?? false,
+    tag_ids: b.tags,
+    position: 0,
+    seq: b.seq,
+    deleted_at: b.deletedAt ?? null,
+    updated_at: Date.now(),
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Local helpers (module-private)
@@ -45,7 +68,7 @@ function applySort(bookmarks: Bookmark[], sortBy: SortBy): Bookmark[] {
 // Types
 // ---------------------------------------------------------------------------
 interface BookmarksState {
-  // Data — persisted to chrome.storage.local
+  // Data — persisted to IndexedDB
   bookmarks: Bookmark[];
   archivedBookmarks: Bookmark[];
   trashedBookmarks: Bookmark[];
@@ -60,7 +83,7 @@ interface BookmarksState {
 
   // Hydration flag
   _hydrated: boolean;
-  setHydrated: () => void;
+  hydrate: () => Promise<void>;
 
   // Actions
   setSelectedCollection: (collectionId: string) => void;
@@ -80,6 +103,13 @@ interface BookmarksState {
   trashBookmark: (bookmarkId: string) => void;
   restoreFromTrash: (bookmarkId: string) => void;
   permanentlyDelete: (bookmarkId: string) => void;
+  mergeFromServer: (resp: SyncPullResponse) => void;
+  enqueueAllToSync: () => void;
+  sweepUnsynced: () => void;
+  archiveCollectionBookmarks: (collectionId: string) => void;
+  trashCollectionBookmarks: (collectionId: string) => void;
+  restoreCollectionBookmarks: (collectionId: string) => void;
+  permanentlyDeleteCollectionBookmarks: (collectionId: string) => void;
 
   // Computed
   getFilteredBookmarks: (workspaceCollectionIds: Set<string>) => Bookmark[];
@@ -92,8 +122,7 @@ interface BookmarksState {
 // Store
 // ---------------------------------------------------------------------------
 export const useBookmarksStore = create<BookmarksState>()(
-  persist(
-    (set, get) => ({
+  (set, get) => ({
       bookmarks: [],
       archivedBookmarks: [],
       trashedBookmarks: [],
@@ -106,7 +135,14 @@ export const useBookmarksStore = create<BookmarksState>()(
       filterType: "all",
 
       _hydrated: false,
-      setHydrated: () => set({ _hydrated: true }),
+      hydrate: async () => {
+        const [bookmarks, archivedBookmarks, trashedBookmarks] = await Promise.all([
+          idbGetAll<Bookmark>("bookmarks"),
+          idbGetAll<Bookmark>("archived-bookmarks"),
+          idbGetAll<Bookmark>("trashed-bookmarks"),
+        ]);
+        set({ bookmarks, archivedBookmarks, trashedBookmarks, _hydrated: true });
+      },
 
       setSelectedCollection: (collectionId) =>
         set({ selectedCollection: collectionId }),
@@ -132,81 +168,243 @@ export const useBookmarksStore = create<BookmarksState>()(
           ...input,
         };
         set((s) => ({ bookmarks: [bookmark, ...s.bookmarks] }));
+        idbPut("bookmarks", bookmark);
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
         return bookmark;
       },
 
       addBookmarks: (newBookmarks) => {
         set((s) => ({ bookmarks: [...newBookmarks, ...s.bookmarks] }));
+        for (const b of newBookmarks) { idbPut("bookmarks", b); }
+        if (newBookmarks.length > 0) {
+          syncEngine?.enqueue({ bookmarks: newBookmarks.map(b => toServerBookmark(b)) });
+        }
       },
 
-      updateBookmark: (id, patch) =>
+      updateBookmark: (id, patch) => {
         set((s) => ({
           bookmarks: s.bookmarks.map((b) =>
             b.id === id ? { ...b, ...patch } : b
           ),
-        })),
+        }));
+        const updated = get().bookmarks.find(b => b.id === id);
+        if (updated) {
+          idbPut("bookmarks", updated);
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark(updated)] });
+        }
+      },
 
-      toggleFavorite: (bookmarkId) =>
+      toggleFavorite: (bookmarkId) => {
         set((state) => ({
           bookmarks: state.bookmarks.map((b) =>
             b.id === bookmarkId ? { ...b, isFavorite: !b.isFavorite } : b
           ),
-        })),
+        }));
+        const updated = get().bookmarks.find(b => b.id === bookmarkId);
+        if (updated) {
+          idbPut("bookmarks", updated);
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark(updated)] });
+        }
+      },
 
-      archiveBookmark: (bookmarkId) =>
-        set((state) => {
-          const bookmark = state.bookmarks.find((b) => b.id === bookmarkId);
-          if (!bookmark) return state;
-          return {
-            bookmarks: state.bookmarks.filter((b) => b.id !== bookmarkId),
-            archivedBookmarks: [...state.archivedBookmarks, bookmark],
-          };
-        }),
-
-      restoreFromArchive: (bookmarkId) =>
-        set((state) => {
-          const bookmark = state.archivedBookmarks.find(
-            (b) => b.id === bookmarkId
-          );
-          if (!bookmark) return state;
-          return {
-            archivedBookmarks: state.archivedBookmarks.filter(
-              (b) => b.id !== bookmarkId
-            ),
-            bookmarks: [...state.bookmarks, bookmark],
-          };
-        }),
-
-      trashBookmark: (bookmarkId) =>
-        set((state) => {
-          const bookmark = state.bookmarks.find((b) => b.id === bookmarkId);
-          if (!bookmark) return state;
-          return {
-            bookmarks: state.bookmarks.filter((b) => b.id !== bookmarkId),
-            trashedBookmarks: [...state.trashedBookmarks, bookmark],
-          };
-        }),
-
-      restoreFromTrash: (bookmarkId) =>
-        set((state) => {
-          const bookmark = state.trashedBookmarks.find(
-            (b) => b.id === bookmarkId
-          );
-          if (!bookmark) return state;
-          return {
-            trashedBookmarks: state.trashedBookmarks.filter(
-              (b) => b.id !== bookmarkId
-            ),
-            bookmarks: [...state.bookmarks, bookmark],
-          };
-        }),
-
-      permanentlyDelete: (bookmarkId) =>
+      archiveBookmark: (bookmarkId) => {
+        const bookmark = get().bookmarks.find((b) => b.id === bookmarkId);
+        if (!bookmark) return;
+        idbDelete("bookmarks", bookmarkId);
+        idbPut("archived-bookmarks", bookmark);
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark, { isArchived: true })] });
         set((state) => ({
-          trashedBookmarks: state.trashedBookmarks.filter(
-            (b) => b.id !== bookmarkId
-          ),
-        })),
+          bookmarks: state.bookmarks.filter((b) => b.id !== bookmarkId),
+          archivedBookmarks: [...state.archivedBookmarks, bookmark],
+        }));
+      },
+
+      restoreFromArchive: (bookmarkId) => {
+        const bookmark = get().archivedBookmarks.find(b => b.id === bookmarkId);
+        if (!bookmark) { return; }
+        idbDelete("archived-bookmarks", bookmarkId);
+        idbPut("bookmarks", bookmark);
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
+        set((state) => ({
+          archivedBookmarks: state.archivedBookmarks.filter(b => b.id !== bookmarkId),
+          bookmarks: [...state.bookmarks, bookmark],
+        }));
+      },
+
+      trashBookmark: (bookmarkId) => {
+        const bookmark = get().bookmarks.find((b) => b.id === bookmarkId);
+        if (!bookmark) return;
+        idbDelete("bookmarks", bookmarkId);
+        idbPut("trashed-bookmarks", bookmark);
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark, { isTrashed: true })] });
+        set((state) => ({
+          bookmarks: state.bookmarks.filter((b) => b.id !== bookmarkId),
+          trashedBookmarks: [...state.trashedBookmarks, bookmark],
+        }));
+      },
+
+      restoreFromTrash: (bookmarkId) => {
+        const bookmark = get().trashedBookmarks.find(b => b.id === bookmarkId);
+        if (!bookmark) { return; }
+        idbDelete("trashed-bookmarks", bookmarkId);
+        idbPut("bookmarks", bookmark);
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
+        set((state) => ({
+          trashedBookmarks: state.trashedBookmarks.filter(b => b.id !== bookmarkId),
+          bookmarks: [...state.bookmarks, bookmark],
+        }));
+      },
+
+      permanentlyDelete: (bookmarkId) => {
+        const bookmark = get().trashedBookmarks.find(b => b.id === bookmarkId);
+        if (bookmark) {
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark({ ...bookmark, deletedAt: Date.now() })] });
+        }
+        idbDelete("trashed-bookmarks", bookmarkId);
+        set((state) => ({
+          trashedBookmarks: state.trashedBookmarks.filter(b => b.id !== bookmarkId),
+        }));
+      },
+
+      enqueueAllToSync: () => {
+        const { bookmarks, archivedBookmarks, trashedBookmarks } = get();
+        syncEngine?.enqueue({
+          bookmarks: [
+            ...bookmarks.map(b => toServerBookmark(b)),
+            ...archivedBookmarks.map(b => toServerBookmark(b, { isArchived: true })),
+            ...trashedBookmarks.map(b => toServerBookmark(b, { isTrashed: true })),
+          ],
+        });
+      },
+
+      mergeFromServer: (resp) => {
+        if (resp.entities.bookmarks.length === 0) return;
+        set((state) => {
+          let bookmarks = [...state.bookmarks];
+          let archivedBookmarks = [...state.archivedBookmarks];
+          let trashedBookmarks = [...state.trashedBookmarks];
+
+          for (const sb of resp.entities.bookmarks) {
+            if (sb.deleted_at) {
+              bookmarks = bookmarks.filter(b => b.id !== sb.id);
+              archivedBookmarks = archivedBookmarks.filter(b => b.id !== sb.id);
+              trashedBookmarks = trashedBookmarks.filter(b => b.id !== sb.id);
+            } else {
+              const existing =
+                bookmarks.find(b => b.id === sb.id) ||
+                archivedBookmarks.find(b => b.id === sb.id) ||
+                trashedBookmarks.find(b => b.id === sb.id);
+
+              bookmarks = bookmarks.filter(b => b.id !== sb.id);
+              archivedBookmarks = archivedBookmarks.filter(b => b.id !== sb.id);
+              trashedBookmarks = trashedBookmarks.filter(b => b.id !== sb.id);
+
+              const merged: Bookmark = {
+                id: sb.id,
+                title: sb.title,
+                url: sb.url,
+                description: sb.description ?? existing?.description ?? "",
+                favicon: sb.favicon_url ?? existing?.favicon ?? "",
+                collectionId: sb.collection_id ?? existing?.collectionId ?? "",
+                tags: sb.tag_ids ?? existing?.tags ?? [],
+                createdAt: existing?.createdAt ?? String(sb.created_at),
+                isFavorite: sb.is_favorite,
+                seq: sb.seq,
+              };
+
+              if (sb.is_trashed) {
+                trashedBookmarks.push(merged);
+              } else if (sb.is_archived) {
+                archivedBookmarks.push(merged);
+              } else {
+                bookmarks.push(merged);
+              }
+            }
+          }
+
+          return { bookmarks, archivedBookmarks, trashedBookmarks };
+        });
+        // Sync IDB after Zustand state update (fire-and-forget)
+        const { bookmarks, archivedBookmarks, trashedBookmarks } = get();
+        for (const b of bookmarks) { idbPut("bookmarks", b); }
+        for (const b of archivedBookmarks) { idbPut("archived-bookmarks", b); }
+        for (const b of trashedBookmarks) { idbPut("trashed-bookmarks", b); }
+        for (const sb of resp.entities.bookmarks) {
+          if (sb.deleted_at) {
+            idbDelete("bookmarks", sb.id);
+            idbDelete("archived-bookmarks", sb.id);
+            idbDelete("trashed-bookmarks", sb.id);
+          }
+        }
+      },
+
+      sweepUnsynced: () => {
+        const { bookmarks, archivedBookmarks, trashedBookmarks } = get();
+        const unsynced = [
+          ...bookmarks.filter(b => b.seq === 0).map(b => toServerBookmark(b)),
+          ...archivedBookmarks.filter(b => b.seq === 0).map(b => toServerBookmark(b, { isArchived: true })),
+          ...trashedBookmarks.filter(b => b.seq === 0).map(b => toServerBookmark(b, { isTrashed: true })),
+        ];
+        if (unsynced.length > 0) { syncEngine?.enqueue({ bookmarks: unsynced }); }
+      },
+
+      archiveCollectionBookmarks: (collectionId) => {
+        const affected = get().bookmarks.filter(b => b.collectionId === collectionId);
+        if (affected.length === 0) { return; }
+        for (const b of affected) {
+          idbDelete("bookmarks", b.id);
+          idbPut("archived-bookmarks", b);
+        }
+        syncEngine?.enqueue({ bookmarks: affected.map(b => toServerBookmark(b, { isArchived: true })) });
+        set((s) => ({
+          bookmarks: s.bookmarks.filter(b => b.collectionId !== collectionId),
+          archivedBookmarks: [...s.archivedBookmarks, ...affected],
+        }));
+      },
+
+      trashCollectionBookmarks: (collectionId) => {
+        const affected = get().bookmarks.filter(b => b.collectionId === collectionId);
+        if (affected.length === 0) { return; }
+        for (const b of affected) {
+          idbDelete("bookmarks", b.id);
+          idbPut("trashed-bookmarks", b);
+        }
+        syncEngine?.enqueue({ bookmarks: affected.map(b => toServerBookmark(b, { isTrashed: true })) });
+        set((s) => ({
+          bookmarks: s.bookmarks.filter(b => b.collectionId !== collectionId),
+          trashedBookmarks: [...s.trashedBookmarks, ...affected],
+        }));
+      },
+
+      restoreCollectionBookmarks: (collectionId) => {
+        const fromArchive = get().archivedBookmarks.filter(b => b.collectionId === collectionId);
+        const fromTrash = get().trashedBookmarks.filter(b => b.collectionId === collectionId);
+        const all = [...fromArchive, ...fromTrash];
+        if (all.length === 0) { return; }
+        for (const b of all) {
+          idbDelete("archived-bookmarks", b.id);
+          idbDelete("trashed-bookmarks", b.id);
+          idbPut("bookmarks", b);
+        }
+        syncEngine?.enqueue({ bookmarks: all.map(b => toServerBookmark(b)) });
+        set((s) => ({
+          archivedBookmarks: s.archivedBookmarks.filter(b => b.collectionId !== collectionId),
+          trashedBookmarks: s.trashedBookmarks.filter(b => b.collectionId !== collectionId),
+          bookmarks: [...s.bookmarks, ...all],
+        }));
+      },
+
+      permanentlyDeleteCollectionBookmarks: (collectionId) => {
+        const affected = get().trashedBookmarks.filter(b => b.collectionId === collectionId);
+        if (affected.length === 0) { return; }
+        for (const b of affected) {
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark({ ...b, deletedAt: Date.now() })] });
+          idbDelete("trashed-bookmarks", b.id);
+        }
+        set((s) => ({
+          trashedBookmarks: s.trashedBookmarks.filter(b => b.collectionId !== collectionId),
+        }));
+      },
 
       // workspaceCollectionIds: Set of collection IDs in the active workspace
       // (pass from caller to avoid circular import with workspace-store)
@@ -260,51 +458,5 @@ export const useBookmarksStore = create<BookmarksState>()(
         const state = get();
         return applySearch([...state.trashedBookmarks], state.searchQuery);
       },
-    }),
-    {
-      name: "tabslate-bookmarks",
-      storage: createJSONStorage(() => chromeStorageAdapter),
-      partialize: (state) =>
-        ({
-          bookmarks: state.bookmarks,
-          archivedBookmarks: state.archivedBookmarks,
-          trashedBookmarks: state.trashedBookmarks,
-        } as BookmarksState),
-      onRehydrateStorage: () => (state) => {
-        if (state) {
-          state.setHydrated();
-        }
-      },
-    }
-  )
+    })
 );
-
-// ---------------------------------------------------------------------------
-// Listen for external changes (e.g. popup saved a bookmark)
-// ---------------------------------------------------------------------------
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes["tabslate-bookmarks"]) { return; }
-  const newValue = changes["tabslate-bookmarks"].newValue;
-  if (!newValue) { return; }
-  try {
-    const parsed = typeof newValue === "string" ? JSON.parse(newValue) : newValue;
-    const data = parsed?.state;
-    if (data) {
-      const current = useBookmarksStore.getState();
-      const needsUpdate =
-        JSON.stringify(data.bookmarks) !== JSON.stringify(current.bookmarks) ||
-        JSON.stringify(data.archivedBookmarks) !== JSON.stringify(current.archivedBookmarks) ||
-        JSON.stringify(data.trashedBookmarks) !== JSON.stringify(current.trashedBookmarks);
-
-      if (needsUpdate) {
-        useBookmarksStore.setState({
-          bookmarks: data.bookmarks ?? [],
-          archivedBookmarks: data.archivedBookmarks ?? [],
-          trashedBookmarks: data.trashedBookmarks ?? [],
-        });
-      }
-    }
-  } catch {
-    // ignore malformed data
-  }
-});

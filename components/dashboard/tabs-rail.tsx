@@ -6,6 +6,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, Loader2, ExternalLink, Globe } from "lucide-react";
+import type { ExtensionMessage } from "@/lib/messages";
 import { cn } from "@/lib/utils";
 import { FaviconImage } from "@/components/ui/favicon-image";
 
@@ -82,12 +83,12 @@ export function TabsRail() {
   }
 
   React.useEffect(() => {
-    refresh();
-    const handler = (changes: Record<string, chrome.storage.StorageChange>) => {
-      if ("tabslate-tabs-changed" in changes) { refresh(); }
+    void refresh();
+    const handler = (message: ExtensionMessage) => {
+      if (message.type === "TABS_CHANGED") { void refresh(); }
     };
-    chrome.storage.onChanged.addListener(handler);
-    return () => chrome.storage.onChanged.removeListener(handler);
+    chrome.runtime.onMessage.addListener(handler);
+    return () => chrome.runtime.onMessage.removeListener(handler);
   }, []);
 
   const selectedWindow = windows.find((w) => w.id === selectedWindowId);

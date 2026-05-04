@@ -20,6 +20,7 @@ import { useWorkspaceStore } from "@/store/workspace-store";
 import { generateId } from "@/lib/id";
 import { normalizeUrl, getNormalizedUrlSet } from "@/lib/bookmark-utils";
 import type { Bookmark } from "@/lib/types";
+import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 
 interface TabsState {
   openTabs: BrowserTab[];
@@ -78,16 +79,24 @@ async function _saveTabsToCollectionHelper(
 ) {
   if (!tabsToSave.length) { return { saved: 0, skipped: 0 }; }
 
-  const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
+  const { activeWorkspaceId, collections, createCollection } = useWorkspaceStore.getState();
   const { bookmarks, addBookmarks } = useBookmarksStore.getState();
-  
+
   const now = new Date().toISOString();
   const newBookmarksData: Omit<Bookmark, "collectionId">[] = [];
   const seenUrlsInBatch = new Set<string>();
   let skippedCount = 0;
 
-  const existingUrls = deduplicate 
-    ? getNormalizedUrlSet(bookmarks)
+  const existingUrls = deduplicate
+    ? (() => {
+        const wsColIds = new Set(
+          collections.filter((c) => c.workspaceId === activeWorkspaceId).map((c) => c.id)
+        );
+        const wsBookmarks = bookmarks.filter(
+          (b) => b.collectionId === "" || wsColIds.has(b.collectionId)
+        );
+        return getNormalizedUrlSet(wsBookmarks);
+      })()
     : new Set<string>();
   
   for (const tab of tabsToSave) {
@@ -118,6 +127,7 @@ async function _saveTabsToCollectionHelper(
       tags: [],
       createdAt: now,
       isFavorite: false,
+      seq: 0,
     });
   }
 
@@ -160,12 +170,15 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   // -------------------------------------------------------------------------
   loadTabs: async (silent = false) => {
     if (!silent) { set({ isLoading: true }); }
-    const [tabs, groups, storage] = await Promise.all([
+    const [tabs, groups, titleEntries] = await Promise.all([
       getCurrentWindowTabs(),
       getCurrentWindowGroups(),
-      chrome.storage.local.get("tabslate-full-titles"),
+      idbGetAll<{ groupId: number; title: string }>("tab-group-titles"),
     ]);
-    const fullTitles = (storage["tabslate-full-titles"] || {}) as Record<number, string>;
+    const fullTitles = titleEntries.reduce<Record<number, string>>(
+      (acc, e) => { acc[e.groupId] = e.title; return acc; },
+      {},
+    );
     set({ openTabs: tabs, tabGroups: groups, fullTitles, isLoading: false });
   },
 
@@ -222,7 +235,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     
     // Store full title for syncing later
     const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
-    await chrome.storage.local.set({ "tabslate-full-titles": currentTitles });
+    idbPut("tab-group-titles", { groupId, title: fullTitle });
 
     // Reload so groupId fields on tabs are updated
     const [tabs, groups] = await Promise.all([
@@ -238,10 +251,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const group = tabGroups.find((g) => g.id === groupId);
     let finalPatch = { ...patch };
     
-    if (patch.title) {
+    if (patch.title !== undefined) {
       // Store full title internally
       const nextFullTitles = { ...fullTitles, [groupId]: patch.title };
-      await chrome.storage.local.set({ "tabslate-full-titles": nextFullTitles });
+      idbPut("tab-group-titles", { groupId, title: patch.title });
       
       // If the group is currently compact (length 1), keep it compact in Chrome
       if (group && group.title.length === 1 && patch.title.length > 1) {
@@ -260,15 +273,17 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   dissolveGroup: async (groupId) => {
-    const { openTabs } = get();
+    const { openTabs, fullTitles } = get();
     const tabIds = openTabs.filter((t) => t.groupId === groupId).map((t) => t.id);
     if (tabIds.length) { await ungroupTabs(tabIds); }
-    // Reload
+    idbDelete("tab-group-titles", groupId);
+    const updatedTitles = { ...fullTitles };
+    delete updatedTitles[groupId];
     const [tabs, groups] = await Promise.all([
       getCurrentWindowTabs(),
       getCurrentWindowGroups(),
     ]);
-    set({ openTabs: tabs, tabGroups: groups });
+    set({ openTabs: tabs, tabGroups: groups, fullTitles: updatedTitles });
   },
 
   closeGroup: async (groupId) => {
@@ -277,6 +292,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     if (tabIds.length) {
       await Promise.all(tabIds.map((id) => closeTab(id)));
     }
+    idbDelete("tab-group-titles", groupId);
     await get().loadTabs(true);
   },
 
@@ -317,7 +333,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const groupId = await openAsTabGroup(urls, chromeTitle, color);
     
     const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
-    await chrome.storage.local.set({ "tabslate-full-titles": currentTitles });
+    idbPut("tab-group-titles", { groupId, title: fullTitle });
 
     // Reload after tabs open
     const [tabs, groups] = await Promise.all([
@@ -336,37 +352,29 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   toggleGroupCompact: async (groupId: number) => {
-    const { tabGroups } = get();
+    const { tabGroups, fullTitles } = get();
     const group = tabGroups.find((g) => g.id === groupId);
     if (!group) { return; }
 
-    const storage = await chrome.storage.local.get("tabslate-full-titles");
-    const fullTitles = (storage["tabslate-full-titles"] || {}) as Record<number, string>;
-    
-    const fullTitle = fullTitles[groupId];
-    
-    // If we don't have a full title, but the current title is long, then the current title IS the full title
-    if (!fullTitle && group.title.length > 1) {
-      fullTitles[groupId] = group.title;
+    let storedFullTitle = fullTitles[groupId];
+    if (!storedFullTitle && group.title.length > 1) {
+      storedFullTitle = group.title;
     }
 
-    const currentFullTitle = fullTitles[groupId] || group.title;
+    const currentFullTitle = storedFullTitle || group.title;
     const isCurrentlyCompact = group.title.length === 1 && currentFullTitle.length > 1;
-    
-    // Toggle: if compact -> expand, if expanded -> compact
     const nextTitle = isCurrentlyCompact ? currentFullTitle : (currentFullTitle[0] || "");
 
     await updateGroup(groupId, { title: nextTitle });
-    
-    // Persist any new full titles
-    if (!fullTitles[groupId]) { fullTitles[groupId] = currentFullTitle; }
-    await chrome.storage.local.set({ "tabslate-full-titles": fullTitles });
 
-    // Reload state
+    const updatedTitles = { ...fullTitles };
+    if (!updatedTitles[groupId]) { updatedTitles[groupId] = currentFullTitle; }
+    idbPut("tab-group-titles", { groupId, title: updatedTitles[groupId] });
+
     const [tabs, groups] = await Promise.all([
       getCurrentWindowTabs(),
       getCurrentWindowGroups(),
     ]);
-    set({ openTabs: tabs, tabGroups: groups });
+    set({ openTabs: tabs, tabGroups: groups, fullTitles: updatedTitles });
   },
 }));

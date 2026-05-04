@@ -84,6 +84,7 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
       tags: [],
       createdAt: new Date().toISOString(),
       isFavorite: false,
+      seq: 0,
     }));
 
     addBookmarks(newBookmarks);
@@ -104,6 +105,7 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
       tags: [],
       createdAt: new Date().toISOString(),
       isFavorite: false,
+      seq: 0,
     }]);
     setSavedTabIds(prev => new Set(prev).add(tab.id));
     setTimeout(() => {

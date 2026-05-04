@@ -1,4 +1,6 @@
+import * as React from "react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -9,11 +11,92 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Trash2, MoreHorizontal, RotateCcw, XCircle, ExternalLink } from "lucide-react";
-import type { Bookmark } from "@/lib/types";
+import {
+  Bookmark,
+  BookOpen,
+  Code,
+  Folder,
+  Globe,
+  Heart,
+  Inbox,
+  MoreHorizontal,
+  Palette,
+  RotateCcw,
+  Sparkles,
+  Star,
+  Trash2,
+  Wrench,
+  XCircle,
+  ExternalLink,
+} from "lucide-react";
+import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 
-function TrashedBookmarkCard({ bookmark }: { bookmark: Bookmark }) {
-  const { restoreFromTrash, permanentlyDelete } = useBookmarksStore();
+// ---------------------------------------------------------------------------
+// Icon map (mirrors sidebar)
+// ---------------------------------------------------------------------------
+const ICON_MAP: Record<string, React.ElementType> = {
+  folder: Folder,
+  bookmark: Bookmark,
+  code: Code,
+  palette: Palette,
+  wrench: Wrench,
+  "book-open": BookOpen,
+  sparkles: Sparkles,
+  star: Star,
+  heart: Heart,
+  globe: Globe,
+  inbox: Inbox,
+};
+
+function CollectionIcon({ icon, className }: { icon: string; className?: string }) {
+  const Icon = ICON_MAP[icon] ?? Folder;
+  return <Icon className={className ?? "size-4"} />;
+}
+
+function TrashedCollectionCard({ collection, bookmarkCount }: { collection: Collection; bookmarkCount: number }) {
+  const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
+  const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
+
+  return (
+    <div className="flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100">
+      <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+        <CollectionIcon icon={collection.icon} className="size-5 text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <h3 className="font-medium truncate">{collection.name}</h3>
+        <p className="text-sm text-muted-foreground">
+          {bookmarkCount} bookmark{bookmarkCount !== 1 ? "s" : ""}
+        </p>
+      </div>
+      <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" onClick={() => restoreCollection(collection.id)}>
+          <RotateCcw className="size-4 mr-1" />
+          Restore
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-xs">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => permanentlyDeleteCollection(collection.id)}
+            >
+              <XCircle className="size-4 mr-2" />
+              Delete Permanently
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
+function TrashedBookmarkCard({ bookmark }: { bookmark: BookmarkType }) {
+  const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
+  const permanentlyDelete = useBookmarksStore(s => s.permanentlyDelete);
 
   return (
     <div className="group flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100">
@@ -63,8 +146,31 @@ function TrashedBookmarkCard({ bookmark }: { bookmark: Bookmark }) {
 }
 
 export function TrashContent() {
-  const { getTrashedBookmarks, trashedBookmarks } = useBookmarksStore();
-  const filteredTrash = getTrashedBookmarks();
+  const trashedBookmarks = useBookmarksStore(s => s.trashedBookmarks);
+  const getTrashedCollections = useWorkspaceStore(s => s.getTrashedCollections);
+
+  const trashedCollections = getTrashedCollections();
+  const trashedCollectionIds = React.useMemo(
+    () => new Set(trashedCollections.map(c => c.id)),
+    [trashedCollections]
+  );
+
+  const collectionBookmarkCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const b of trashedBookmarks) {
+      if (trashedCollectionIds.has(b.collectionId)) {
+        counts[b.collectionId] = (counts[b.collectionId] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [trashedBookmarks, trashedCollectionIds]);
+
+  const individualTrashedBookmarks = React.useMemo(
+    () => trashedBookmarks.filter(b => !trashedCollectionIds.has(b.collectionId)),
+    [trashedBookmarks, trashedCollectionIds]
+  );
+
+  const totalCount = trashedCollections.length + individualTrashedBookmarks.length;
 
   return (
     <div className="flex-1 w-full overflow-auto">
@@ -77,29 +183,41 @@ export function TrashContent() {
             <div>
               <h2 className="text-lg font-semibold">Trash</h2>
               <p className="text-sm text-muted-foreground">
-                {trashedBookmarks.length} bookmark
-                {trashedBookmarks.length !== 1 ? "s" : ""} in trash
+                {trashedCollections.length > 0 && `${trashedCollections.length} collection${trashedCollections.length !== 1 ? "s" : ""}, `}
+                {individualTrashedBookmarks.length} bookmark{individualTrashedBookmarks.length !== 1 ? "s" : ""}
               </p>
             </div>
           </div>
-          {trashedBookmarks.length > 0 && (
+          {totalCount > 0 && (
             <p className="text-xs text-muted-foreground hidden sm:block">
               Items in trash will be permanently deleted after 30 days
             </p>
           )}
         </div>
 
+        {trashedCollections.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {trashedCollections.map(col => (
+              <TrashedCollectionCard
+                key={col.id}
+                collection={col}
+                bookmarkCount={collectionBookmarkCounts[col.id] ?? 0}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
-          {filteredTrash.map((bookmark) => (
+          {individualTrashedBookmarks.map((bookmark) => (
             <TrashedBookmarkCard key={bookmark.id} bookmark={bookmark} />
           ))}
         </div>
 
-        {trashedBookmarks.length === 0 && (
+        {totalCount === 0 && (
           <EmptyState
             icon={Trash2}
             title="Trash is empty"
-            description="Deleted bookmarks will appear here. You can restore them or delete them permanently."
+            description="Deleted bookmarks and collections will appear here."
           />
         )}
       </div>

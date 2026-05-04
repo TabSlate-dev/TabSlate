@@ -1,9 +1,8 @@
 import { create } from "zustand";
-import { persist, createJSONStorage } from "zustand/middleware";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { openAsTabGroup } from "@/lib/chrome/tab-groups";
 import { generateId } from "@/lib/id";
-import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
+import { idbGetAll, idbPut, idbDelete, idbGetByIndex, idbTransaction } from "@/lib/idb";
 
 export interface GroupTab {
   id: string;
@@ -26,11 +25,12 @@ interface GroupsState {
   groups: SavedGroup[];
   groupTabs: GroupTab[];
   _hydrated: boolean;
+  hydrate: () => Promise<void>;
 
   // Group CRUD
   createGroup: (name: string, color: TabGroupColor, isCompact: boolean) => string;
   updateGroup: (id: string, patch: Partial<Pick<SavedGroup, "name" | "color" | "isCompact">>) => void;
-  deleteGroup: (id: string) => void;
+  deleteGroup: (id: string) => Promise<void>;
 
   // Tab management
   addTabToGroup: (groupId: string, tab: { title: string; url: string; favicon: string }) => void;
@@ -41,126 +41,97 @@ interface GroupsState {
   openGroup: (groupId: string) => Promise<void>;
 }
 
-export const useGroupsStore = create<GroupsState>()(
-  persist(
-    (set, get) => ({
-      groups: [],
-      groupTabs: [],
-      _hydrated: false,
+export const useGroupsStore = create<GroupsState>()((set, get) => ({
+  groups: [],
+  groupTabs: [],
+  _hydrated: false,
+  hydrate: async () => {
+    const [groups, groupTabs] = await Promise.all([
+      idbGetAll<SavedGroup>("groups"),
+      idbGetAll<GroupTab>("group-tabs"),
+    ]);
+    set({ groups, groupTabs, _hydrated: true });
+  },
 
-      createGroup: (name, color, isCompact) => {
-        const id = generateId();
-        set((state) => ({
-          groups: [
-            ...state.groups,
-            { id, name, color, isCompact, createdAt: new Date().toISOString() },
-          ],
-        }));
-        return id;
-      },
+  createGroup: (name, color, isCompact) => {
+    const id = generateId();
+    const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString() };
+    set((state) => ({ groups: [...state.groups, group] }));
+    idbPut("groups", group);
+    return id;
+  },
 
-      updateGroup: (id, patch) => {
-        set((state) => ({
-          groups: state.groups.map((g) =>
-            g.id === id ? { ...g, ...patch } : g
-          ),
-        }));
-      },
+  updateGroup: (id, patch) => {
+    set((state) => ({
+      groups: state.groups.map((g) =>
+        g.id === id ? { ...g, ...patch } : g
+      ),
+    }));
+    const updated = get().groups.find(g => g.id === id);
+    if (updated) { idbPut("groups", updated); }
+  },
 
-      deleteGroup: (id) => {
-        set((state) => ({
-          groups: state.groups.filter((g) => g.id !== id),
-          groupTabs: state.groupTabs.filter((t) => t.groupId !== id),
-        }));
-      },
+  deleteGroup: async (id) => {
+    const tabsToDelete = await idbGetByIndex<GroupTab>("group-tabs", "groupId", id);
+    await idbTransaction(["groups", "group-tabs"], "readwrite", (tx) => {
+      tx.objectStore("groups").delete(id);
+      for (const t of tabsToDelete) { tx.objectStore("group-tabs").delete(t.id); }
+    });
+    set((state) => ({
+      groups: state.groups.filter((g) => g.id !== id),
+      groupTabs: state.groupTabs.filter((t) => t.groupId !== id),
+    }));
+  },
 
-      addTabToGroup: (groupId, tab) => {
-        const { groupTabs } = get();
-        const existing = groupTabs.find(
-          (t) => t.groupId === groupId && t.url === tab.url
-        );
-        if (existing) { return; } // deduplicate
-        const position = groupTabs.filter((t) => t.groupId === groupId).length;
-        set((state) => ({
-          groupTabs: [
-            ...state.groupTabs,
-            { id: generateId(), groupId, ...tab, position },
-          ],
-        }));
-      },
+  addTabToGroup: (groupId, tab) => {
+    const { groupTabs } = get();
+    const existing = groupTabs.find(
+      (t) => t.groupId === groupId && t.url === tab.url
+    );
+    if (existing) { return; }
+    const position = groupTabs.filter((t) => t.groupId === groupId).length;
+    const newTab: GroupTab = { id: generateId(), groupId, ...tab, position };
+    set((state) => ({
+      groupTabs: [...state.groupTabs, newTab],
+    }));
+    idbPut("group-tabs", newTab);
+  },
 
-      removeTabFromGroup: (tabId) => {
-        set((state) => ({
-          groupTabs: state.groupTabs.filter((t) => t.id !== tabId),
-        }));
-      },
+  removeTabFromGroup: (tabId) => {
+    idbDelete("group-tabs", tabId);
+    set((state) => ({
+      groupTabs: state.groupTabs.filter((t) => t.id !== tabId),
+    }));
+  },
 
-      moveTab: (tabId, toGroupId) => {
-        set((state) => {
-          const tab = state.groupTabs.find((t) => t.id === tabId);
-          if (!tab) { return {}; }
-          const position = state.groupTabs.filter(
-            (t) => t.groupId === toGroupId
-          ).length;
-          return {
-            groupTabs: state.groupTabs.map((t) =>
-              t.id === tabId ? { ...t, groupId: toGroupId, position } : t
-            ),
-          };
-        });
-      },
+  moveTab: (tabId, toGroupId) => {
+    const existingTab = get().groupTabs.find((t) => t.id === tabId);
+    if (!existingTab || existingTab.groupId === toGroupId) { return; }
+    set((state) => {
+      const tab = state.groupTabs.find((t) => t.id === tabId);
+      if (!tab) { return {}; }
+      const position = state.groupTabs.filter(
+        (t) => t.groupId === toGroupId
+      ).length;
+      return {
+        groupTabs: state.groupTabs.map((t) =>
+          t.id === tabId ? { ...t, groupId: toGroupId, position } : t
+        ),
+      };
+    });
+    const moved = get().groupTabs.find(t => t.id === tabId);
+    if (moved) { idbPut("group-tabs", moved); }
+  },
 
-      openGroup: async (groupId) => {
-        const { groups, groupTabs } = get();
-        const group = groups.find((g) => g.id === groupId);
-        if (!group) { return; }
-        const urls = groupTabs
-          .filter((t) => t.groupId === groupId)
-          .sort((a, b) => a.position - b.position)
-          .map((t) => t.url);
-        if (!urls.length) { return; }
-        await openAsTabGroup(urls, group.name, group.color, group.isCompact);
-      },
-    }),
-    {
-      name: "tabslate-groups",
-      storage: createJSONStorage(() => chromeStorageAdapter),
-      partialize: (state) =>
-        ({
-          groups: state.groups,
-          groupTabs: state.groupTabs,
-        } as GroupsState),
-      onRehydrateStorage: () => (state) => {
-        if (state) { state._hydrated = true; }
-      },
-    }
-  )
-);
-
-// ---------------------------------------------------------------------------
-// Keep UI in sync across different windows/tabs
-// ---------------------------------------------------------------------------
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes["tabslate-groups"]) { return; }
-  const newValue = changes["tabslate-groups"].newValue;
-  if (!newValue) { return; }
-  try {
-    const parsed = typeof newValue === "string" ? JSON.parse(newValue) : newValue;
-    const data = parsed?.state;
-    if (data) {
-      const current = useGroupsStore.getState();
-      const needsUpdate =
-        JSON.stringify(data.groups) !== JSON.stringify(current.groups) ||
-        JSON.stringify(data.groupTabs) !== JSON.stringify(current.groupTabs);
-
-      if (needsUpdate) {
-        useGroupsStore.setState({
-          groups: data.groups ?? [],
-          groupTabs: data.groupTabs ?? [],
-        });
-      }
-    }
-  } catch {
-    // ignore malformed data
-  }
-});
+  openGroup: async (groupId) => {
+    const { groups, groupTabs } = get();
+    const group = groups.find((g) => g.id === groupId);
+    if (!group) { return; }
+    const urls = groupTabs
+      .filter((t) => t.groupId === groupId)
+      .sort((a, b) => a.position - b.position)
+      .map((t) => t.url);
+    if (!urls.length) { return; }
+    await openAsTabGroup(urls, group.name, group.color, group.isCompact);
+  },
+}));

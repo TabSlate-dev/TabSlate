@@ -143,21 +143,22 @@ function WorkspaceDialog({
 // ---------------------------------------------------------------------------
 
 export function WorkspaceRail() {
-  const {
-    workspaces,
-    activeWorkspaceId,
-    setActiveWorkspaceId,
-    createWorkspace,
-    updateWorkspace,
-    deleteWorkspace,
-  } = useWorkspaceStore();
+  const workspaces = useWorkspaceStore(s => s.workspaces);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const setActiveWorkspaceId = useWorkspaceStore(s => s.setActiveWorkspaceId);
+  const createWorkspace = useWorkspaceStore(s => s.createWorkspace);
+  const updateWorkspace = useWorkspaceStore(s => s.updateWorkspace);
+  const deleteWorkspace = useWorkspaceStore(s => s.deleteWorkspace);
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [editWorkspace, setEditWorkspace] = React.useState<Workspace | null>(
     null
   );
 
-  const sorted = [...workspaces].sort((a, b) => a.position - b.position);
+  const sorted = React.useMemo(
+    () => [...workspaces].sort((a, b) => a.position - b.position),
+    [workspaces]
+  );
 
   return (
     <TooltipProvider delayDuration={300}>

@@ -53,18 +53,21 @@ function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted }: Dr
 }
 
 export function BookmarksContent() {
-  const {
-    selectedCollection,
-    getFilteredBookmarks,
-    viewMode,
-    selectedTags,
-    toggleTag,
-    filterType,
-    setFilterType,
-    sortBy,
-  } = useBookmarksStore();
+  const selectedCollection = useBookmarksStore(s => s.selectedCollection);
+  const viewMode = useBookmarksStore(s => s.viewMode);
+  const selectedTags = useBookmarksStore(s => s.selectedTags);
+  const toggleTag = useBookmarksStore(s => s.toggleTag);
+  const filterType = useBookmarksStore(s => s.filterType);
+  const setFilterType = useBookmarksStore(s => s.setFilterType);
+  const sortBy = useBookmarksStore(s => s.sortBy);
+  const bookmarks = useBookmarksStore(s => s.bookmarks);
+  const searchQuery = useBookmarksStore(s => s.searchQuery);
+  const getFilteredBookmarks = useBookmarksStore(s => s.getFilteredBookmarks);
 
-  const { collections, tags, activeWorkspaceId } = useWorkspaceStore();
+  const collections = useWorkspaceStore(s => s.collections);
+  const tags = useWorkspaceStore(s => s.tags);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
   const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, dropZoneProps } =
     useTabDragDrop();
 
@@ -79,17 +82,26 @@ export function BookmarksContent() {
     return () => clearTimeout(timer);
   }, [highlightedBookmarkId]);
 
-  const workspaceCollectionIds = new Set(
-    collections.filter((c) => c.workspaceId === activeWorkspaceId).map((c) => c.id)
+  const workspaceCollectionIds = React.useMemo(
+    () => new Set(collections.filter((c) => c.workspaceId === activeWorkspaceId).map((c) => c.id)),
+    [collections, activeWorkspaceId]
   );
-  const filteredBookmarks = getFilteredBookmarks(workspaceCollectionIds);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const filteredBookmarks = React.useMemo(
+    () => getFilteredBookmarks(workspaceCollectionIds),
+    [bookmarks, selectedCollection, selectedTags, filterType, searchQuery, sortBy, workspaceCollectionIds]
+  );
 
   const currentCollection =
     selectedCollection === "all"
       ? { name: "All Bookmarks" }
       : collections.find((c) => c.id === selectedCollection);
 
-  const activeTagsData = tags.filter((t) => selectedTags.includes(t.id));
+  const activeTagsData = React.useMemo(
+    () => tags.filter((t) => selectedTags.includes(t.id)),
+    [tags, selectedTags]
+  );
   const hasActiveFilters =
     selectedTags.length > 0 || filterType !== "all" || sortBy !== "date-newest";
 

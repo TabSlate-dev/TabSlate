@@ -28,6 +28,93 @@ export interface LoginCaptchaStatusResponse {
   captcha_required: boolean;
 }
 
+export interface ServerWorkspace {
+  id: string;
+  user_id: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  position: number;
+  seq: number;
+  deleted_at?: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ServerCollection {
+  id: string;
+  user_id: string;
+  workspace_id?: string;
+  name: string;
+  icon?: string;
+  position: number;
+  seq: number;
+  deleted_at?: number;
+  archived_at?: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ServerBookmark {
+  id: string;
+  user_id: string;
+  collection_id?: string;
+  title: string;
+  url: string;
+  favicon_url?: string;
+  description?: string;
+  is_favorite: boolean;
+  is_archived: boolean;
+  is_trashed: boolean;
+  tag_ids?: string[];
+  position: number;
+  seq: number;
+  deleted_at?: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface ServerTag {
+  id: string;
+  user_id: string;
+  name: string;
+  color?: string;
+  seq: number;
+  deleted_at?: number;
+  updated_at: number;
+}
+
+export interface SyncEntities {
+  workspaces: ServerWorkspace[];
+  collections: ServerCollection[];
+  bookmarks: ServerBookmark[];
+  tags: ServerTag[];
+}
+
+export interface SyncRejected {
+  id: string;
+  reason: "stale" | "quota_exceeded";
+}
+
+export interface SyncPushResponse {
+  server_seq: number;
+  rejected: SyncRejected[];
+}
+
+export interface SyncPullResponse {
+  entities: SyncEntities;
+  server_seq: number;
+}
+
+export interface SyncPushPayload {
+  entities: {
+    workspaces: object[];
+    collections: object[];
+    bookmarks: object[];
+    tags: object[];
+  };
+}
+
 // ApiError carries the HTTP status code so callers can branch on 401, 409, etc.
 export class ApiError extends Error {
   /** Whether the server is requesting a captcha (login failure threshold). */
@@ -203,5 +290,39 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, code, new_password: newPassword }),
     });
+  },
+
+  issueSSEToken(baseUrl: string, accessToken: string): Promise<{ token: string }> {
+    return request<{ token: string }>(baseUrl, "/auth/sse-token", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  },
+
+  syncPush(
+    baseUrl: string,
+    accessToken: string,
+    payload: SyncPushPayload,
+  ): Promise<SyncPushResponse> {
+    return request<SyncPushResponse>(baseUrl, "/sync/push", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  syncPull(
+    baseUrl: string,
+    accessToken: string,
+    afterSeq: number,
+  ): Promise<SyncPullResponse> {
+    return request<SyncPullResponse>(
+      baseUrl,
+      `/sync/pull?after_seq=${afterSeq}`,
+      {
+        method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
   },
 };

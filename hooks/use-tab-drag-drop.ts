@@ -93,49 +93,38 @@ export function useTabDragDrop(): UseTabDragDropResult {
         favIconUrl: string;
       };
 
-      // ── Duplicate detection ──────────────────────────────────────────────
+      // ── Duplicate detection (current workspace only) ─────────────────────
       if (Array.isArray(bookmarks)) {
-        const existing = findDuplicateBookmark(bookmarks, url);
+        const workspaceColIds = new Set(
+          collections
+            .filter((c) => c.workspaceId === activeWorkspaceId)
+            .map((c) => c.id)
+        );
+        const workspaceBookmarks = bookmarks.filter(
+          (b) => b.collectionId === "" || workspaceColIds.has(b.collectionId)
+        );
+        const existing = findDuplicateBookmark(workspaceBookmarks, url);
 
         if (existing) {
-          console.log("TabSlate: Duplicate tab detected", { url, existingId: existing.id });
-          const workspaceColIds = new Set(
-            collections
-              .filter((c) => c.workspaceId === activeWorkspaceId)
-              .map((c) => c.id)
-          );
-          const isVisible =
-            existing.collectionId === "" || workspaceColIds.has(existing.collectionId);
-
-          if (isVisible) {
-            // Navigate to the duplicate and highlight it
-            setSelectedCollection(existing.collectionId || "all");
-            setHighlightedBookmarkId(existing.id);
-            if (existing.collectionId) {
-              setHighlightedCollectionIds([existing.collectionId], 3000);
-            }
-            const colName =
-              collections.find((c) => c.id === existing.collectionId)?.name ?? "Default";
-            showNotification(
-              { type: "duplicate", text: `Already saved in "${colName}"` },
-              3000
-            );
-            setTimeout(() => setHighlightedBookmarkId(null), 3000);
-          } else {
-            showNotification(
-              { type: "duplicate", text: "Already saved in another workspace" },
-              3000
-            );
+          setSelectedCollection(existing.collectionId || "all");
+          setHighlightedBookmarkId(existing.id);
+          if (existing.collectionId) {
+            setHighlightedCollectionIds([existing.collectionId], 3000);
           }
+          const colName =
+            collections.find((c) => c.id === existing.collectionId)?.name ?? "Default";
+          showNotification(
+            { type: "duplicate", text: `Already saved in "${colName}"` },
+            3000
+          );
+          setTimeout(() => setHighlightedBookmarkId(null), 3000);
           return;
         }
-      } else {
-        console.error("TabSlate: Bookmarks is not an array, skipping duplicate detection.");
       }
 
       // ── Save new bookmark ────────────────────────────────────────────────
       const { id: collectionId, name: collectionName } = resolveTargetCollection();
-      addBookmark({ title, url, favicon: favIconUrl, collectionId, tags: [], description: "" });
+      addBookmark({ title, url, favicon: favIconUrl, collectionId, tags: [], description: "", seq: 0 });
       showNotification({ type: "success", text: `Saved to ${collectionName}` });
     } catch {
       // ignore malformed drag data
