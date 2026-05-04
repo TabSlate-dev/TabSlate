@@ -56,6 +56,7 @@ import { TagDialog } from "./tag-dialog";
 import { GroupDialog } from "./group-dialog";
 import { SyncStatusIndicator } from "./sync-status";
 import type { SyncStatus } from "@/lib/sync-engine";
+import { StatsCards } from "../stats-cards";
 
 // ---------------------------------------------------------------------------
 // Icon map
@@ -477,6 +478,11 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+
+          {/* Stats */}
+          <div className="mt-auto pt-6 pb-2">
+            <StatsCards />
+          </div>
         </SidebarContent>
 
         <SidebarFooter className="px-4 pb-4">

@@ -4,7 +4,7 @@ import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useTabDragDrop } from "@/hooks/use-tab-drag-drop";
 import { BookmarkCard } from "./bookmark-card";
-import { StatsCards } from "./stats-cards";
+
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -134,7 +134,7 @@ export function BookmarksContent() {
 
       <div className="p-4 md:p-6 space-y-6">
         {selectedCollection === "all" && !hasActiveFilters && <HeroSection />}
-        <StatsCards />
+
 
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
