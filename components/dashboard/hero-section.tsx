@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FaviconImage } from "@/components/ui/favicon-image";
+import { AdBanner } from "@/components/dashboard/ad-banner";
 
 const SEARCH_ENGINES = [
   { id: "google", name: "Google", url: "https://www.google.com/search?q=", siteUrl: "https://www.google.com" },
@@ -18,15 +19,7 @@ const SEARCH_ENGINES = [
   { id: "youtube", name: "YouTube", url: "https://www.youtube.com/results?search_query=", siteUrl: "https://www.youtube.com" },
 ];
 
-const SHORTCUTS = [
-  { name: "GitHub", url: "https://github.com" },
-  { name: "YouTube", url: "https://youtube.com" },
-  { name: "Twitter", url: "https://twitter.com" },
-  { name: "LinkedIn", url: "https://linkedin.com" },
-  { name: "Reddit", url: "https://reddit.com" },
-  { name: "Product Hunt", url: "https://producthunt.com" },
-  { name: "Hacker News", url: "https://news.ycombinator.com" },
-];
+
 
 function getFaviconUrl(pageUrl: string, size: number = 64) {
   try {
@@ -122,22 +115,7 @@ export function HeroSection() {
         </form>
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-4 max-w-3xl px-4">
-        {SHORTCUTS.map((shortcut) => (
-          <a
-            key={shortcut.name}
-            href={shortcut.url}
-            className="flex flex-col items-center gap-2 p-3 rounded-xl hover:bg-muted/50 transition-colors group min-w-[80px]"
-          >
-            <div className="size-12 rounded-full bg-background/80 shadow-sm border border-muted/50 flex items-center justify-center group-hover:shadow-md transition-all group-hover:scale-105 overflow-hidden">
-              <FaviconImage src={getFaviconUrl(shortcut.url, 64)} className="size-6" />
-            </div>
-            <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors">
-              {shortcut.name}
-            </span>
-          </a>
-        ))}
-      </div>
+      <AdBanner />
     </div>
   );
 }
