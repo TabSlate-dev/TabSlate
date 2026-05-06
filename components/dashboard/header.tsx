@@ -70,6 +70,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* 
           <div className="relative hidden md:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
@@ -79,6 +80,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
               className="pl-9 w-64 h-9"
             />
           </div>
+          */}
 
           <div className="flex items-center border rounded-md p-0.5">
             <Button

@@ -73,7 +73,7 @@ export function HeroSection() {
         </p>
       </div>
 
-      <div className="w-full max-w-2xl px-4">
+      <div className="w-full max-w-3xl px-4">
         <form onSubmit={handleSearch} className="relative flex items-center w-full group">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

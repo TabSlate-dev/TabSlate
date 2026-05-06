@@ -229,12 +229,15 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
   return (
     <>
       <Sidebar collapsible="offcanvas" {...props}>
+        {/*
         <SidebarHeader className="px-4 pt-4 pb-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input placeholder="Search..." className="pl-9 h-9 bg-background text-sm" />
           </div>
         </SidebarHeader>
+        */}
+
 
         <SidebarContent className="px-3 pt-3">
           {/* Collections */}
