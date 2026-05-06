@@ -117,38 +117,38 @@ TabSlate/
 
 ### Store 设计原则
 
-所有 store 使用 Zustand，持久化通过 `chromeStorageAdapter` 写入 `chrome.storage.local`。
+所有 store 使用 Zustand。持久化分为两层：
 
 ```
-useAuthStore       ──persist──▶  "tabslate-auth"
-useBookmarksStore  ──persist──▶  "tabslate-bookmarks"
-useWorkspaceStore  ──persist──▶  "tabslate-workspace"     （含 localSeq 同步游标）
-useGroupsStore     ──persist──▶  "tabslate-groups"
+useAuthStore       ──Zustand persist──▶  chrome.storage.local  "tabslate-auth"
+useBookmarksStore  ──手动 idbPut/Get──▶  IndexedDB  bookmarks / archived-bookmarks / trashed-bookmarks
+useWorkspaceStore  ──手动 idbPut/Get──▶  IndexedDB  workspaces / collections / tags / kv
+useGroupsStore     ──手动 idbPut/Get──▶  IndexedDB  groups / group-tabs
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
-SSE leader         ──共享──▶  "tabslate-sync-leader"      （30s TTL，多窗口 leader election）
+SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  （30s TTL）
 ```
+
+`lib/idb.ts` 封装 `indexedDB.open("tabslate-db", 1)`，暴露 `idbGet/idbPut/idbDelete/idbGetAll/idbGetByIndex/idbTransaction`。各 store 的 `hydrate()` 在挂载时调用 `idbGetAll` 批量读取，写操作直接 `idbPut`（同步触发，无需等待）。
 
 ### Store 职责
 
-| Store | 持久化 | 职责 |
+| Store | 持久化后端 | 职责 |
 |---|---|---|
-| `useAuthStore` | ✅ | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
-| `useBookmarksStore` | ✅ | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
-| `useWorkspaceStore` | ✅ | 工作区、集合、标签、高亮状态；`localSeq` 同步游标（持久化在 `"tabslate-workspace"`）；`mergeFromServer` 执行 LWW 合并；`sweepUnsynced` 补推 `seq=0` 的实体 |
-| `useGroupsStore` | ✅ | 用户手动保存的标签组及其包含的 tab URL |
-| `useTabsStore` | ❌ | Chrome 当前窗口的实时标签页和 tab group 数据 |
+| `useAuthStore` | chrome.storage.local | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
+| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
+| `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标（存于 `kv["localSeq"]`）；`mergeFromServer` 执行 LWW 合并；`sweepUnsynced` 补推 `seq=0` 的实体 |
+| `useGroupsStore` | IndexedDB | 用户手动保存的标签组及其包含的 tab URL |
+| `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
-### 跨页面同步
+### 跨进程通知
 
-```
-newtab (Zustand)  ──写入──▶  chrome.storage.local
-                                    │
-                              onChanged 事件
-                                    │
-                  ◀──读取──  newtab (另一窗口) / background / popup
-```
+chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome.runtime.sendMessage` 传递轻量信号：
 
-各 store 文件底部都注册了 `chrome.storage.onChanged` 监听器，用 JSON.stringify 对比变更内容，有差异才 `setState`。
+| 消息 | 发送方 | 接收方 | 说明 |
+|---|---|---|---|
+| `TABS_CHANGED` | background | newtab | tab/group 有变化，触发 `loadTabs()` |
+| `BOOKMARKS_CHANGED` | background | newtab | background 回退写 IDB 后通知刷新 |
+| `ADD_BOOKMARK` | popup / background | newtab | 直接投递书签数据（优先路径） |
 
 ## 路由
 

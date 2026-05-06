@@ -149,16 +149,40 @@ Dialog 必须使用标准 shadcn 结构，禁止在 `DialogContent` 上添加破
 </Alert>
 ```
 
-### Chrome Storage Key 布局
+### 数据持久化布局
+
+大部分数据已迁移到 **IndexedDB**（`tabslate-db` v1），仅认证状态保留在 `chrome.storage.local`。
+
+#### chrome.storage.local（仅剩一个 key）
 
 | Key | 格式 | 用途 |
 |---|---|---|
-| `tabslate-bookmarks` | Zustand JSON `{state: {...}}` | 书签、归档、回收站 |
-| `tabslate-workspace` | Zustand JSON `{state: {...}}` | 工作区、集合、标签、localSeq |
-| `tabslate-groups` | Zustand JSON `{state: {...}}` | 保存的标签组 |
 | `tabslate-auth` | Zustand JSON `{state: {...}}` | 用户认证（user、accessToken、refreshToken、serverUrl） |
-| `tabslate-full-titles` | `Record<number, string>` | Chrome tab group 完整标题 |
-| `tabslate-tabs-changed` | `number` (timestamp) | background → newtab 变更信号 |
+
+适配器：`lib/chrome-storage-adapter.ts`（供 Zustand `persist` 中间件使用）。
+
+#### IndexedDB — `tabslate-db` v1（`lib/idb.ts`）
+
+| Object Store | keyPath | 索引 | 用途 |
+|---|---|---|---|
+| `bookmarks` | `id` | `collectionId`、`isFavorite` | 活跃书签 |
+| `archived-bookmarks` | `id` | `collectionId` | 已归档书签 |
+| `trashed-bookmarks` | `id` | — | 已删除书签 |
+| `workspaces` | `id` | `position` | 工作区 |
+| `collections` | `id` | `workspaceId`、`position` | 集合 |
+| `tags` | `id` | — | 标签 |
+| `groups` | `id` | — | 保存的标签组 |
+| `group-tabs` | `id` | `groupId` | 保存组内的 tab |
+| `tab-group-titles` | `groupId` | — | Chrome tab group 完整标题（compact 模式下 Chrome 侧只存首字母） |
+| `kv` | `key` | — | 键值对：`activeWorkspaceId`、`compactGroupTitles`、`localSeq`、`sync-leader` |
+
+#### 跨进程消息信号（不存储，runtime 消息）
+
+| 消息类型 | 方向 | 触发时机 |
+|---|---|---|
+| `TABS_CHANGED` | background → newtab | 任意 tab/group 增删改 |
+| `BOOKMARKS_CHANGED` | background → newtab | background 回退写 IDB 后通知刷新 |
+| `ADD_BOOKMARK` | popup/background → newtab | 保存书签（优先路径） |
 
 ### Highlight Timer 模式
 
