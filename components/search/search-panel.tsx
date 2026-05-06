@@ -150,7 +150,7 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
                   onMouseEnter={() => setActiveIndex(i)}
                   onClick={() => handleSelect(i)}
                 >
-                  <FaviconImage src={`https://www.google.com/s2/favicons?domain=${new URL(bm.url).hostname}&sz=16`} className="size-4 mt-0.5 shrink-0" />
+                  <FaviconImage src={(() => { try { return `https://www.google.com/s2/favicons?domain=${new URL(bm.url).hostname}&sz=16`; } catch { return ""; } })()} className="size-4 mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 truncate">
                       <span className="text-sm font-medium truncate">{bm.title}</span>
