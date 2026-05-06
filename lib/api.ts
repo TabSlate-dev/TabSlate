@@ -326,3 +326,31 @@ export const api = {
     );
   },
 };
+
+export interface SearchBookmark {
+  id: string;
+  title: string;
+  url: string;
+  description: string;
+  collectionId: string;
+  isArchived: boolean;
+}
+
+export interface SearchResponse {
+  bookmarks: SearchBookmark[];
+}
+
+export async function searchBookmarks(
+  serverUrl: string,
+  accessToken: string,
+  query: string,
+): Promise<SearchResponse> {
+  const res = await fetch(
+    `${serverUrl}/search?q=${encodeURIComponent(query)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+  if (!res.ok) {
+    throw new ApiError(`search failed`, res.status);
+  }
+  return res.json() as Promise<SearchResponse>;
+}
