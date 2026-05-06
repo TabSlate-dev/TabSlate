@@ -92,4 +92,18 @@ export default defineBackground(() => {
   chrome.tabGroups.onRemoved.addListener(broadcastTabChange);
   chrome.tabGroups.onUpdated.addListener(broadcastTabChange);
   chrome.tabGroups.onMoved.addListener(broadcastTabChange);
+
+  // -------------------------------------------------------------------------
+  // Global search shortcut
+  // -------------------------------------------------------------------------
+  chrome.commands.onCommand.addListener((command) => {
+    if (command !== "open-search") { return; }
+    chrome.windows.create({
+      url: chrome.runtime.getURL("search.html"),
+      type: "popup",
+      width: 640,
+      height: 420,
+      focused: true,
+    });
+  });
 });

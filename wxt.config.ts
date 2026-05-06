@@ -11,6 +11,15 @@ export default defineConfig({
     chrome_url_overrides: {
       newtab: "newtab.html",
     },
+    commands: {
+      "open-search": {
+        suggested_key: {
+          default: "Ctrl+Shift+K",
+          mac: "Command+Shift+K",
+        },
+        description: "Open TabSlate search",
+      },
+    },
   },
   vite: () => ({
     build: {
