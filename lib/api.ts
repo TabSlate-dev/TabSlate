@@ -346,7 +346,7 @@ export async function searchBookmarks(
   query: string,
 ): Promise<SearchResponse> {
   const res = await fetch(
-    `${serverUrl}/search?q=${encodeURIComponent(query)}`,
+    `${serverUrl.replace(/\/$/, "")}/search?q=${encodeURIComponent(query)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },
   );
   if (!res.ok) {
