@@ -282,10 +282,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               archivedAt: sc.archived_at ?? undefined,
             });
           } else {
-            // Local pending soft-delete or archive (seq=0) wins over server alive state.
-            // The tombstone will be re-pushed by sweepUnsynced on next sync cycle.
+            // Local pending archive (seq=0) wins over server alive state, but not over a
+            // server-confirmed archive — that ack must land so sweepUnsynced stops re-queuing.
             const local = collections[idx];
-            if ((local.deletedAt || local.archivedAt) && local.seq === 0) {
+            if ((local.deletedAt || local.archivedAt) && local.seq === 0 && !sc.archived_at) {
               continue;
             }
             collections[idx] = {
