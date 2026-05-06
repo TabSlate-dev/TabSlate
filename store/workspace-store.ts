@@ -54,6 +54,13 @@ export const TAG_COLORS = [
   "bg-pink-500/10 text-pink-500",
 ] as const;
 
+// Exported just to guarantee Tailwind v4 scanner picks up these solid colors
+export const SOLID_TAG_COLORS = [
+  "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500",
+  "bg-rose-500", "bg-cyan-500", "bg-orange-500", "bg-pink-500"
+];
+
+
 
 // ---------------------------------------------------------------------------
 // Sync helpers
