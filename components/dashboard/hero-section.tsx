@@ -54,10 +54,21 @@ export function HeroSection() {
   const [bookmarkResults, setBookmarkResults] = React.useState<SearchBookmark[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const wrapperRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   const openTabs = useTabsStore(s => s.openTabs);
   const accessToken = useAuthStore(s => s.accessToken);
   const serverUrl = useAuthStore(s => s.serverUrl);
+
+  // Focus search input when global shortcut fires on newtab page
+  React.useEffect(() => {
+    const handler = () => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    };
+    window.addEventListener("tabslate-focus-search", handler);
+    return () => window.removeEventListener("tabslate-focus-search", handler);
+  }, []);
 
   React.useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -181,6 +192,7 @@ export function HeroSection() {
           </DropdownMenu>
 
           <Input
+            ref={inputRef}
             type="text"
             name="q"
             autoComplete="off"

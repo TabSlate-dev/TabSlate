@@ -1,5 +1,7 @@
 import { generateId } from "@/lib/id";
 import { idbPut } from "@/lib/idb";
+import { getAllTabs, focusTab } from "@/lib/chrome/tabs";
+import { searchBookmarks } from "@/lib/api";
 import type { ExtensionMessage } from "@/lib/messages";
 
 export default defineBackground(() => {
@@ -61,9 +63,7 @@ export default defineBackground(() => {
   });
 
   // -------------------------------------------------------------------------
-  // Tab events — write a lightweight signal to chrome.storage.local
-  // so the newtab page can react via onChanged listener
-  // (Service Workers can't maintain open ports in MV3)
+  // Tab events — broadcast signal so newtab page can react
   // -------------------------------------------------------------------------
   async function broadcastTabChange() {
     chrome.runtime.sendMessage({ type: "TABS_CHANGED" } as ExtensionMessage).catch(() => {});
@@ -79,23 +79,42 @@ export default defineBackground(() => {
   chrome.tabs.onActivated.addListener(broadcastTabChange);
   chrome.tabs.onMoved.addListener(broadcastTabChange);
 
-  // Tab group events
   chrome.tabGroups.onCreated.addListener(broadcastTabChange);
   chrome.tabGroups.onRemoved.addListener(broadcastTabChange);
   chrome.tabGroups.onUpdated.addListener(broadcastTabChange);
   chrome.tabGroups.onMoved.addListener(broadcastTabChange);
 
   // -------------------------------------------------------------------------
-  // Global search shortcut
+  // Global search shortcut — send OPEN_SEARCH to active tab, fallback to popup
   // -------------------------------------------------------------------------
-  chrome.commands.onCommand.addListener((command) => {
+  chrome.commands.onCommand.addListener(async (command) => {
     if (command !== "open-search") { return; }
-    chrome.windows.create({
-      url: chrome.runtime.getURL("search.html"),
-      type: "popup",
-      width: 640,
-      height: 420,
-      focused: true,
-    });
+
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) { return; }
+
+    // Silently ignore if content script is not injectable (chrome://, pdf, etc.)
+    chrome.tabs.sendMessage(tab.id, { type: "OPEN_SEARCH" } as ExtensionMessage).catch(() => {});
+  });
+
+  // -------------------------------------------------------------------------
+  // Message routing for content script — proxy tab APIs
+  // -------------------------------------------------------------------------
+  chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
+    if (message.type === "GET_OPEN_TABS") {
+      getAllTabs().then(sendResponse);
+      return true;
+    }
+    if (message.type === "FOCUS_TAB") {
+      focusTab(message.tabId, message.windowId).then(() => sendResponse({ ok: true }));
+      return true;
+    }
+    if (message.type === "SEARCH_BOOKMARKS") {
+      // Content scripts can't make cross-origin fetch calls; proxy through background.
+      searchBookmarks(message.serverUrl, message.accessToken, message.query)
+        .then(result => sendResponse({ ok: true, bookmarks: result.bookmarks }))
+        .catch(() => sendResponse({ ok: false, bookmarks: [] }));
+      return true; // keep channel open for async response
+    }
   });
 });

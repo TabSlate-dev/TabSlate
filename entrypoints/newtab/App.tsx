@@ -200,6 +200,9 @@ export default function App() {
       if (message.type === "TABS_CHANGED") {
         useTabsStore.getState().loadTabs();
       }
+      if (message.type === "OPEN_SEARCH") {
+        window.dispatchEvent(new CustomEvent("tabslate-focus-search"));
+      }
     };
     chrome.runtime.onMessage.addListener(listener);
     return () => chrome.runtime.onMessage.removeListener(listener);
