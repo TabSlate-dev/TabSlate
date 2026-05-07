@@ -101,7 +101,7 @@ interface BookmarksState {
   archiveBookmark: (bookmarkId: string) => void;
   restoreFromArchive: (bookmarkId: string) => void;
   trashBookmark: (bookmarkId: string) => void;
-  restoreFromTrash: (bookmarkId: string) => void;
+  restoreFromTrash: (bookmarkId: string, collectionIdOverride?: string) => void;
   permanentlyDelete: (bookmarkId: string) => void;
   mergeFromServer: (resp: SyncPullResponse) => void;
   enqueueAllToSync: () => void;
@@ -243,15 +243,18 @@ export const useBookmarksStore = create<BookmarksState>()(
         }));
       },
 
-      restoreFromTrash: (bookmarkId) => {
+      restoreFromTrash: (bookmarkId, collectionIdOverride) => {
         const bookmark = get().trashedBookmarks.find(b => b.id === bookmarkId);
         if (!bookmark) { return; }
+        const restored = collectionIdOverride !== undefined
+          ? { ...bookmark, collectionId: collectionIdOverride }
+          : bookmark;
         idbDelete("trashed-bookmarks", bookmarkId);
-        idbPut("bookmarks", bookmark);
-        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
+        idbPut("bookmarks", restored);
+        syncEngine?.enqueue({ bookmarks: [toServerBookmark(restored)] });
         set((state) => ({
           trashedBookmarks: state.trashedBookmarks.filter(b => b.id !== bookmarkId),
-          bookmarks: [...state.bookmarks, bookmark],
+          bookmarks: [...state.bookmarks, restored],
         }));
       },
 

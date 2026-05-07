@@ -116,6 +116,15 @@ function TrashedCollectionCard({ collection, bookmarks }: { collection: Collecti
 function TrashedBookmarkCard({ bookmark, isNested }: { bookmark: BookmarkType; isNested?: boolean }) {
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDelete = useBookmarksStore(s => s.permanentlyDelete);
+  const collections = useWorkspaceStore(s => s.collections);
+
+  function handleRestore() {
+    const col = collections.find(c => c.id === bookmark.collectionId);
+    const safeCollectionId = col && !col.deletedAt && !col.archivedAt
+      ? bookmark.collectionId
+      : "";
+    restoreFromTrash(bookmark.id, safeCollectionId);
+  }
 
   return (
     <div className={cn(
@@ -137,7 +146,7 @@ function TrashedBookmarkCard({ bookmark, isNested }: { bookmark: BookmarkType; i
       </div>
 
       <div className="flex items-center gap-1">
-        <Button variant="outline" size="sm" onClick={() => restoreFromTrash(bookmark.id)}>
+        <Button variant="outline" size="sm" onClick={handleRestore}>
           <RotateCcw className="size-4 mr-1" />
           Restore
         </Button>
