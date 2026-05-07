@@ -9,6 +9,7 @@ import { ChevronDown, Loader2, ExternalLink, Globe } from "lucide-react";
 import type { ExtensionMessage } from "@/lib/messages";
 import { cn } from "@/lib/utils";
 import { FaviconImage } from "@/components/ui/favicon-image";
+import { TabsAdStrip } from "./tabs-panel/tabs-ad-strip";
 
 interface WindowTab {
   id: number;
@@ -136,6 +137,11 @@ export function TabsRail() {
             </DropdownMenuContent>
           </DropdownMenu>
         )}
+      </div>
+
+      {/* Ad Strip */}
+      <div className="px-2 py-2 border-b shrink-0">
+        <TabsAdStrip vertical />
       </div>
 
       {/* Tab list */}

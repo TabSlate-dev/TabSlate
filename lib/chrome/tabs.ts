@@ -107,7 +107,7 @@ export async function smartOpenUrl(url: string): Promise<void> {
     await focusTab(existing.id, existing.windowId);
   } else {
     return new Promise((resolve) => {
-      chrome.tabs.update({ url }, () => resolve());
+      chrome.tabs.create({ url }, () => resolve());
     });
   }
 }

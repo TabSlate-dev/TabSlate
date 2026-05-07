@@ -1,4 +1,5 @@
 import * as React from "react";
+import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,8 @@ import {
   Wrench,
   XCircle,
   ExternalLink,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 
@@ -53,53 +56,72 @@ function CollectionIcon({ icon, className }: { icon: string; className?: string 
   return <Icon className={className ?? "size-4"} />;
 }
 
-function TrashedCollectionCard({ collection, bookmarkCount }: { collection: Collection; bookmarkCount: number }) {
+function TrashedCollectionCard({ collection, bookmarks }: { collection: Collection; bookmarks: BookmarkType[] }) {
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
+  const [expanded, setExpanded] = React.useState(false);
 
   return (
-    <div className="flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100">
-      <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
-        <CollectionIcon icon={collection.icon} className="size-5 text-muted-foreground" />
+    <div className="flex flex-col rounded-lg border bg-card overflow-hidden">
+      <div 
+        className="flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100 cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+          <CollectionIcon icon={collection.icon} className="size-5 text-muted-foreground" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <h3 className="font-medium truncate">{collection.name}</h3>
+            {expanded ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {bookmarks.length} bookmark{bookmarks.length !== 1 ? "s" : ""}
+          </p>
+        </div>
+        <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+          <Button variant="outline" size="sm" onClick={() => restoreCollection(collection.id)}>
+            <RotateCcw className="size-4 mr-1" />
+            Restore
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon-xs">
+                <MoreHorizontal className="size-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => permanentlyDeleteCollection(collection.id)}
+              >
+                <XCircle className="size-4 mr-2" />
+                Delete Permanently
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <h3 className="font-medium truncate">{collection.name}</h3>
-        <p className="text-sm text-muted-foreground">
-          {bookmarkCount} bookmark{bookmarkCount !== 1 ? "s" : ""}
-        </p>
-      </div>
-      <div className="flex items-center gap-1">
-        <Button variant="outline" size="sm" onClick={() => restoreCollection(collection.id)}>
-          <RotateCcw className="size-4 mr-1" />
-          Restore
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon-xs">
-              <MoreHorizontal className="size-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onClick={() => permanentlyDeleteCollection(collection.id)}
-            >
-              <XCircle className="size-4 mr-2" />
-              Delete Permanently
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {expanded && bookmarks.length > 0 && (
+        <div className="flex flex-col border-t bg-card/30 divide-y divide-border/50">
+          {bookmarks.map((b) => (
+            <TrashedBookmarkCard key={b.id} bookmark={b} isNested />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-function TrashedBookmarkCard({ bookmark }: { bookmark: BookmarkType }) {
+function TrashedBookmarkCard({ bookmark, isNested }: { bookmark: BookmarkType; isNested?: boolean }) {
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDelete = useBookmarksStore(s => s.permanentlyDelete);
 
   return (
-    <div className="group flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100">
+    <div className={cn(
+      "group flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100",
+      !isNested && "rounded-lg border bg-card"
+    )}>
       <div className="size-10 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
         <FaviconImage
           src={bookmark.favicon}
@@ -155,20 +177,29 @@ export function TrashContent() {
     [trashedCollections]
   );
 
-  const collectionBookmarkCounts = React.useMemo(() => {
-    const counts: Record<string, number> = {};
+  const collectionBookmarks = React.useMemo(() => {
+    const map: Record<string, BookmarkType[]> = {};
+    const seen = new Set<string>();
     for (const b of trashedBookmarks) {
       if (trashedCollectionIds.has(b.collectionId)) {
-        counts[b.collectionId] = (counts[b.collectionId] ?? 0) + 1;
+        if (seen.has(b.id)) continue;
+        seen.add(b.id);
+        if (!map[b.collectionId]) map[b.collectionId] = [];
+        map[b.collectionId].push(b);
       }
     }
-    return counts;
+    return map;
   }, [trashedBookmarks, trashedCollectionIds]);
 
-  const individualTrashedBookmarks = React.useMemo(
-    () => trashedBookmarks.filter(b => !trashedCollectionIds.has(b.collectionId)),
-    [trashedBookmarks, trashedCollectionIds]
-  );
+  const individualTrashedBookmarks = React.useMemo(() => {
+    const unique = new Map<string, BookmarkType>();
+    for (const b of trashedBookmarks) {
+      if (!trashedCollectionIds.has(b.collectionId)) {
+        unique.set(b.id, b);
+      }
+    }
+    return Array.from(unique.values());
+  }, [trashedBookmarks, trashedCollectionIds]);
 
   const totalCount = trashedCollections.length + individualTrashedBookmarks.length;
 
@@ -201,7 +232,7 @@ export function TrashContent() {
               <TrashedCollectionCard
                 key={col.id}
                 collection={col}
-                bookmarkCount={collectionBookmarkCounts[col.id] ?? 0}
+                bookmarks={collectionBookmarks[col.id] || []}
               />
             ))}
           </div>

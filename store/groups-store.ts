@@ -62,6 +62,9 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   },
 
   updateGroup: (id, patch) => {
+    const oldGroup = get().groups.find(g => g.id === id);
+    const oldName = oldGroup?.name;
+
     set((state) => ({
       groups: state.groups.map((g) =>
         g.id === id ? { ...g, ...patch } : g
@@ -69,6 +72,27 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     }));
     const updated = get().groups.find(g => g.id === id);
     if (updated) { idbPut("groups", updated); }
+
+    // Sync to open Chrome tab groups
+    if (oldName && (patch.name !== undefined || patch.color !== undefined)) {
+      import("./tabs-store").then(({ useTabsStore }) => {
+        const { tabGroups, fullTitles, updateGroup: updateChromeGroup } = useTabsStore.getState();
+        const chromeGroup = tabGroups.find(g => (fullTitles[g.id] || g.title) === oldName);
+        if (chromeGroup) {
+          const chromePatch: any = {};
+          if (patch.name !== undefined && (fullTitles[chromeGroup.id] || chromeGroup.title) !== patch.name) {
+            chromePatch.title = patch.name;
+          }
+          if (patch.color !== undefined && chromeGroup.color !== patch.color) {
+            chromePatch.color = patch.color;
+          }
+          
+          if (Object.keys(chromePatch).length > 0) {
+            updateChromeGroup(chromeGroup.id, chromePatch);
+          }
+        }
+      });
+    }
   },
 
   deleteGroup: async (id) => {

@@ -57,10 +57,7 @@ export default defineBackground(() => {
       console.error("[TabSlate] IDB write failed in bookmark fallback:", err);
       return;
     }
-    // newtabTab was queried above for the primary path; reuse it here
-    if (newtabTab?.id) {
-      chrome.tabs.sendMessage(newtabTab.id, { type: "BOOKMARKS_CHANGED" } as ExtensionMessage).catch(() => {});
-    }
+    chrome.runtime.sendMessage({ type: "BOOKMARKS_CHANGED" } as ExtensionMessage).catch(() => {});
   });
 
   // -------------------------------------------------------------------------
@@ -69,12 +66,7 @@ export default defineBackground(() => {
   // (Service Workers can't maintain open ports in MV3)
   // -------------------------------------------------------------------------
   async function broadcastTabChange() {
-    const tabs = await chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") });
-    for (const tab of tabs) {
-      if (tab.id) {
-        chrome.tabs.sendMessage(tab.id, { type: "TABS_CHANGED" } as ExtensionMessage).catch(() => {});
-      }
-    }
+    chrome.runtime.sendMessage({ type: "TABS_CHANGED" } as ExtensionMessage).catch(() => {});
   }
 
   chrome.tabs.onCreated.addListener(broadcastTabChange);

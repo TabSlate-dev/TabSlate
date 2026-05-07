@@ -90,56 +90,58 @@ function AdCard({ ad, compact }: { ad: typeof ADS[0]; compact: boolean }) {
   const Icon = ad.icon;
   return (
     <div className={cn(
-      "relative h-full overflow-hidden rounded-2xl border border-muted/60 bg-gradient-to-br from-background/80 to-muted/30 backdrop-blur-md shadow-sm transition-all hover:shadow-md group flex",
-      compact ? "flex-col p-5" : "flex-col md:flex-row p-5 md:p-6 items-center gap-6"
+      "relative z-0 h-full rounded-2xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg group flex flex-col",
+      compact ? "p-5" : "p-6 md:p-8"
     )}>
-      {/* Subtle background glow effect */}
-      <div className={cn("absolute -inset-0.5 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-xl z-0", ad.gradient)} />
+      {/* Outer Glow Effect (Restored and tightened) */}
+      <div className={cn("absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md z-[-1] rounded-2xl pointer-events-none", ad.gradient)} />
       
+      {/* Inner Mask for clipping the background icon */}
+      <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none z-0">
+        {/* Layer 1: Soft color glow */}
+        <div className="absolute -bottom-12 -right-12 opacity-30 dark:opacity-20 group-hover:opacity-50 transition-opacity duration-500">
+          <Icon className={cn("w-64 h-64 blur-2xl -rotate-12", ad.iconColor)} />
+        </div>
+        {/* Layer 2: Crisp visible silhouette */}
+        <div className="absolute -bottom-8 -right-8 opacity-[0.07] dark:opacity-[0.12] group-hover:opacity-[0.14] dark:group-hover:opacity-[0.22] transition-opacity duration-500">
+          <Icon className={cn("w-52 h-52 -rotate-12", ad.iconColor)} />
+        </div>
+      </div>
+
       {/* Ad Badge */}
-      <div className="absolute top-3 right-3 flex items-center gap-1 px-2 py-1 rounded-md bg-muted/80 backdrop-blur-md text-[10px] font-medium text-muted-foreground uppercase tracking-widest z-20">
+      <div className="absolute top-4 right-4 flex items-center gap-1 px-2.5 py-1 rounded-md bg-background/80 backdrop-blur-md border shadow-xs text-[10px] font-bold text-muted-foreground uppercase tracking-wider z-20 transition-colors group-hover:text-foreground">
         <span>{ad.badge}</span>
       </div>
 
-      <div className={cn(
-        "relative z-10 flex",
-        compact ? "flex-col items-start w-full" : "flex-col md:flex-row items-center w-full"
-      )}>
-        {/* Visual element */}
-        <div className={cn(
-          "shrink-0 rounded-xl bg-gradient-to-tr flex items-center justify-center border border-primary/10 shadow-inner",
-          ad.gradient,
-          compact ? "size-12 mb-4" : "size-16 md:size-20 mb-4 md:mb-0 md:mr-6"
-        )}>
-          <Icon className={cn(ad.iconColor, compact ? "size-6" : "size-8 md:size-10")} />
+      <div className="relative z-10 flex flex-col h-full">
+        {/* Title and Icon inline */}
+        <div className="flex items-start gap-3.5 mb-3 pr-16">
+          <div className={cn(
+            "shrink-0 rounded-xl flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:shadow-md",
+            ad.gradient,
+            "size-12"
+          )}>
+            <Icon className={cn(ad.iconColor, "size-6")} />
+          </div>
+          <h3 className="text-base md:text-lg font-semibold tracking-tight text-foreground leading-tight mt-1.5 drop-shadow-sm">
+            {ad.title}
+          </h3>
         </div>
 
         {/* Content */}
-        <div className={cn(
-          "flex-1",
-          compact ? "space-y-1.5 w-full" : "space-y-2 text-center md:text-left"
-        )}>
-          <h3 className="text-base md:text-lg font-semibold tracking-tight text-foreground flex items-center justify-center md:justify-start gap-2">
-            {ad.title}
-          </h3>
-          <p className={cn(
-            "text-sm text-muted-foreground leading-relaxed",
-            compact ? "line-clamp-2" : "max-w-xl"
-          )}>
+        <div className="flex-1 mb-5">
+          <p className="text-sm text-foreground/70 leading-relaxed line-clamp-2">
             {ad.description}
           </p>
         </div>
-      </div>
 
-      {/* Action */}
-      <div className={cn(
-        "relative z-10 shrink-0",
-        compact ? "w-full mt-auto pt-5" : "w-full md:w-auto mt-4 md:mt-0"
-      )}>
-        <Button size={compact ? "sm" : "default"} className="w-full md:w-auto rounded-xl shadow-sm hover:shadow transition-all group/btn">
-          <span>{ad.action}</span>
-          <ArrowRight className="ml-2 size-4 transition-transform group-hover/btn:translate-x-1" />
-        </Button>
+        {/* Action */}
+        <div className="mt-auto pt-2">
+          <Button size="sm" variant="secondary" className="w-full rounded-xl shadow-sm hover:shadow group/btn hover:bg-primary hover:text-primary-foreground transition-all duration-300">
+            <span>{ad.action}</span>
+            <ArrowRight className="ml-2 size-4 transition-transform duration-300 group-hover/btn:translate-x-1" />
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -157,7 +159,6 @@ export function AdBanner() {
   // Initialize scroll position to the start of the middle set
   React.useEffect(() => {
     if (!isCarousel || !scrollRef.current) return;
-    // Small delay to ensure layout is calculated and cards have width
     const timer = setTimeout(() => {
       if (scrollRef.current) {
         const itemWidth = scrollRef.current.children[0].clientWidth + 16; // 16px gap
@@ -184,28 +185,36 @@ export function AdBanner() {
     }
   }, [isCarousel, originalItems.length]);
 
+  // Smooth continuous auto-scroll
   React.useEffect(() => {
     if (!isCarousel || isHovered) return;
-    const timer = setInterval(() => {
-      if (scrollRef.current) {
+    
+    let animationFrameId: number;
+    let lastTimestamp: number = 0;
+    const speedPixelsPerMs = 0.05; // Adjust this to control scroll speed
+
+    const animate = (timestamp: number) => {
+      if (!lastTimestamp) lastTimestamp = timestamp;
+      const deltaTime = timestamp - lastTimestamp;
+      
+      if (scrollRef.current && deltaTime > 0) {
+        // Move by fraction based on time elapsed
+        scrollRef.current.scrollLeft += speedPixelsPerMs * deltaTime;
+        
+        // Let handleScroll deal with the wrapping, or do it here
         const itemWidth = scrollRef.current.children[0].clientWidth + 16;
         const setWidth = itemWidth * originalItems.length;
-        const scrollLeft = scrollRef.current.scrollLeft;
-        
-        // Preemptively check if the next smooth scroll will hit the end boundary
-        if (scrollLeft + itemWidth >= setWidth * 2) {
-          // Instantly jump back one set length
-          scrollRef.current.scrollTo({ left: scrollLeft - setWidth, behavior: "auto" });
-          // Wait for the DOM to update, then apply the smooth scroll
-          requestAnimationFrame(() => {
-            scrollRef.current?.scrollBy({ left: itemWidth, behavior: "smooth" });
-          });
-        } else {
-          scrollRef.current.scrollBy({ left: itemWidth, behavior: "smooth" });
+        if (scrollRef.current.scrollLeft >= setWidth * 2) {
+          scrollRef.current.scrollLeft -= setWidth;
         }
       }
-    }, 4000); // cycle every 4s
-    return () => clearInterval(timer);
+      
+      lastTimestamp = timestamp;
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(animationFrameId);
   }, [isCarousel, isHovered, originalItems.length]);
 
   return (
@@ -227,14 +236,14 @@ export function AdBanner() {
       <div 
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 px-4 md:px-8 [&::-webkit-scrollbar]:hidden"
+        className="flex overflow-x-auto gap-4 pb-4 px-4 md:px-8 [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {items.map((ad, idx) => (
           <div 
             key={`${ad.id}-${idx}`} 
             className={cn(
-              "snap-start shrink-0 h-auto transition-all",
+              "shrink-0 h-auto transition-all",
               !isCarousel 
                 ? "w-full max-w-3xl mx-auto" 
                 : "w-[calc(100vw-2.5rem)] sm:w-[340px] md:w-[420px]"

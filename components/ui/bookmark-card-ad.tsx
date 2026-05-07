@@ -66,29 +66,53 @@ export function BookmarkCardAd({
   return (
     <div
       className={cn(
-        "relative flex flex-col rounded-xl border bg-card overflow-hidden",
+        "relative z-0 flex flex-col rounded-xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg group h-full",
         className
       )}
     >
-      {/* Favorite indicator */}
-      <div className="absolute top-3 right-3 z-10">
-        <Heart
-          className={cn("size-4", isFavorite ? "fill-red-500 text-red-500" : "text-muted-foreground/50")}
-        />
-      </div>
+      {/* Outer Glow Effect on Hover */}
+      <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-purple-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md z-[-1] rounded-xl pointer-events-none" />
 
-      {/* Favicon banner */}
-      <div className="h-32 bg-linear-to-br from-muted/50 to-muted flex items-center justify-center">
-        <div className="size-12 rounded-xl bg-background shadow-sm flex items-center justify-center">
-          <FaviconImage src={favicon} alt={title} className="size-8" hasDarkIcon={hasDarkIcon} />
+      {/* Crisp Background Icon Fading to Left */}
+      <div 
+        className="absolute inset-y-0 -right-4 w-3/4 z-0 pointer-events-none select-none overflow-hidden rounded-r-xl opacity-40 dark:opacity-30 group-hover:opacity-80 transition-opacity duration-500"
+        style={{ WebkitMaskImage: 'linear-gradient(to left, rgba(0,0,0,1) 10%, rgba(0,0,0,0) 100%)', maskImage: 'linear-gradient(to left, rgba(0,0,0,1) 10%, rgba(0,0,0,0) 100%)' }}
+      >
+        <div className="absolute top-1/2 right-0 -translate-y-1/2 w-56 h-56 flex items-center justify-center">
+          <FaviconImage 
+            src={favicon} 
+            alt="" 
+            className="w-full h-full object-cover -rotate-[15deg] scale-110 drop-shadow-xl [image-rendering:pixelated] dark:brightness-150" 
+            hasDarkIcon={hasDarkIcon} 
+          />
         </div>
       </div>
 
-      {/* Body */}
-      <div className="p-4 space-y-2">
-        <h3 className="font-medium line-clamp-1">{title}</h3>
-        <p className="text-sm text-muted-foreground line-clamp-2">{description || hostname}</p>
-        <TagList tags={tags} max={3} wrap className="pt-1" />
+      {/* Favorite indicator */}
+      <div className="absolute top-4 right-4 z-20">
+        <Heart
+          className={cn("size-4", isFavorite ? "fill-red-500 text-red-500" : "text-muted-foreground/50 transition-colors group-hover:text-muted-foreground")}
+        />
+      </div>
+
+      {/* Body Content */}
+      <div className="relative z-10 flex flex-col p-5 pt-6 h-full min-h-[160px]">
+        <div className="flex items-start gap-3 mb-3 pr-8">
+          <div className="size-10 rounded-xl bg-background/80 backdrop-blur-md border shadow-sm flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-105 group-hover:shadow-md">
+            <FaviconImage src={favicon} alt={title} className="size-6" hasDarkIcon={hasDarkIcon} />
+          </div>
+          <h3 className="font-semibold text-base line-clamp-2 leading-tight mt-1 text-foreground drop-shadow-sm">
+            {title}
+          </h3>
+        </div>
+        <div className="mt-auto flex flex-col gap-3">
+          <p className="text-sm text-foreground/70 line-clamp-2 leading-relaxed">
+            {description || hostname}
+          </p>
+          {tags && tags.length > 0 && (
+            <TagList tags={tags} max={3} wrap className="pt-1" />
+          )}
+        </div>
       </div>
     </div>
   );

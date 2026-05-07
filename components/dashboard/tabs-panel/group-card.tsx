@@ -135,33 +135,57 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
   const groupColor = TAB_GROUP_COLORS[group.color];
 
   // Header components
-  const titleSlot = editingName ? (
-    <Input
-      ref={nameRef}
-      value={nameInput}
-      onChange={(e) => setNameInput(e.target.value)}
-      onBlur={handleNameCommit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") { handleNameCommit(); }
-        if (e.key === "Escape") {
-          setNameInput(displayTitle);
-          setEditingName(false);
-        }
-      }}
-      className="h-7 text-sm py-0 w-32"
-      autoFocus
-    />
-  ) : (
-    <button
-      onClick={() => {
-        setEditingName(true);
-        setNameInput(displayTitle);
-      }}
-      className="text-sm font-semibold hover:text-primary transition-colors truncate max-w-[150px]"
-      title="Click to rename"
-    >
-      {displayTitle || "Unnamed group"}
-    </button>
+  const titleSlot = (
+    <div className="flex items-center gap-2 min-w-0">
+      {editingName ? (
+        <Input
+          ref={nameRef}
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          onBlur={handleNameCommit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { handleNameCommit(); }
+            if (e.key === "Escape") {
+              setNameInput(displayTitle);
+              setEditingName(false);
+            }
+          }}
+          className="h-7 text-sm py-0 w-32"
+          autoFocus
+        />
+      ) : (
+        <button
+          onClick={() => {
+            setEditingName(true);
+            setNameInput(displayTitle);
+          }}
+          className="text-sm font-semibold hover:text-primary transition-colors truncate max-w-[150px]"
+          title="Click to rename"
+        >
+          {displayTitle || "Unnamed group"}
+        </button>
+      )}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="size-6 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+          onClick={() => setSaveDialogOpen(true)}
+          title="Save as Collection"
+        >
+          <Save className="size-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="size-6 text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors"
+          onClick={() => dissolveGroup(group.id)}
+          title="Ungroup Tabs"
+        >
+          <Ungroup className="size-3.5" />
+        </Button>
+      </div>
+    </div>
   );
 
   const headerActions = (

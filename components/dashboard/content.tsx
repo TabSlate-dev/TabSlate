@@ -15,7 +15,7 @@ import type { Bookmark as BookmarkType } from "@/lib/types";
 
 import { HeroSection } from "./hero-section";
 import { useTabsStore } from "@/store/tabs-store";
-import { SearchPanel } from "@/components/search/search-panel";
+// import { SearchPanel } from "@/components/search/search-panel";
 
 interface DraggableBookmarkCardProps {
   bookmark: BookmarkType;
@@ -144,12 +144,14 @@ export function BookmarksContent() {
 
       <div className="p-4 md:p-6 space-y-6">
         {/* Inline search */}
+        {/*
         <div className="w-full">
           <SearchPanel
             openTabs={openTabs}
             smartOpen
           />
         </div>
+        */}
         {selectedCollection === "all" && !hasActiveFilters && <HeroSection />}
 
 

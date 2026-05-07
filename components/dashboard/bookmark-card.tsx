@@ -102,12 +102,13 @@ export function BookmarkCard({
         <div
           data-bookmark-id={bookmark.id}
           className={cn(
-            "group flex items-center gap-4 p-4 rounded-lg border bg-card/40 hover:bg-accent/50 backdrop-blur-lg hover:shadow-md hover:border-primary/20 transition-all duration-200 z-0 hover:z-10",
+            "group flex items-center gap-4 p-4 rounded-lg border bg-card/40 hover:bg-accent/50 backdrop-blur-lg hover:shadow-md hover:border-primary/20 transition-all duration-200 z-0 hover:z-10 cursor-pointer",
             menuOpen &&
               "bg-accent/50 backdrop-blur-lg shadow-md border-primary/20 z-10",
             isHighlighted &&
               "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle",
           )}
+          onClick={handleNewTabOpen}
         >
           {dragHandleProps && (
             <div
@@ -138,7 +139,7 @@ export function BookmarkCard({
             </p>
           </div>
 
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
             <Button
               variant="ghost"
               size="icon-xs"
@@ -190,7 +191,7 @@ export function BookmarkCard({
           isHighlighted &&
             "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle",
         )}
-        onClick={handleSmartOpen}
+        onClick={handleNewTabOpen}
       >
         {/* Header: favicon + title + slide-in actions */}
         <div className="flex items-center gap-2 px-3 pt-3 pb-2">

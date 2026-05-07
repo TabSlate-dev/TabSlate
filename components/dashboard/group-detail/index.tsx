@@ -73,42 +73,6 @@ export function GroupDetail() {
 
   const { isDragOver, dropZoneProps } = useGroupDragDrop(groupId ?? "");
 
-  if (!group) {
-    return (
-      <div className="flex flex-col items-center justify-center flex-1 text-muted-foreground p-10">
-        <p className="text-sm">Group not found</p>
-        <Button variant="link" onClick={() => navigate("/tabs")} className="mt-2 text-xs">
-          Back to Tabs
-        </Button>
-      </div>
-    );
-  }
-
-  const handleSaveName = () => {
-    if (nameVal.trim() && nameVal.trim() !== group.name) {
-      updateGroup(group.id, { name: nameVal.trim() });
-    }
-    setEditing(false);
-  };
-
-  const handleToggleSelect = (tabId: string, checked: boolean) => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      checked ? next.add(tabId) : next.delete(tabId);
-      return next;
-    });
-  };
-
-  const handleRemoveSelected = () => {
-    selected.forEach(id => removeTabFromGroup(id));
-    setSelected(new Set());
-  };
-
-  const handleDeleteGroup = () => {
-    deleteGroup(group.id);
-    navigate("/tabs");
-  };
-
   const handleSaveGroup = React.useCallback(async (name: string) => {
     setIsSaving(true);
     const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
@@ -156,6 +120,42 @@ export function GroupDetail() {
       });
     }, 2000);
   }, [addBookmarks]);
+
+  if (!group) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 text-muted-foreground p-10">
+        <p className="text-sm">Group not found</p>
+        <Button variant="link" onClick={() => navigate("/tabs")} className="mt-2 text-xs">
+          Back to Tabs
+        </Button>
+      </div>
+    );
+  }
+
+  const handleSaveName = () => {
+    if (nameVal.trim() && nameVal.trim() !== group.name) {
+      updateGroup(group.id, { name: nameVal.trim() });
+    }
+    setEditing(false);
+  };
+
+  const handleToggleSelect = (tabId: string, checked: boolean) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      checked ? next.add(tabId) : next.delete(tabId);
+      return next;
+    });
+  };
+
+  const handleRemoveSelected = () => {
+    selected.forEach(id => removeTabFromGroup(id));
+    setSelected(new Set());
+  };
+
+  const handleDeleteGroup = () => {
+    deleteGroup(group.id);
+    navigate("/tabs");
+  };
 
   // Header components
   const titleSlot = editing ? (
