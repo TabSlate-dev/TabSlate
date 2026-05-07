@@ -27,12 +27,8 @@ TabSlate/
 │   │   └── App.tsx      # 路由、布局、StoreGate → AuthGate → SyncProvider → HashRouter
 │   ├── popup/           # 快速保存 popup
 │   │   └── App.tsx      # 独立 React 树，不使用 Zustand；保存时调用 GET_PAGE_INFO 获取 ogTitle/metaDescription
-│   ├── search/          # 全局搜索弹出窗口（Ctrl+Shift+K）
-│   │   ├── index.html   # WXT 入口 HTML（产物：search.html）
-│   │   ├── main.tsx     # ReactDOM.createRoot
-│   │   └── App.tsx      # auth/tabs 水化守卫 + SearchPanel（autoFocus，onClose=window.close）
 │   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单 + open-search 快捷键监听
-│   └── content.ts       # 注入页面：GET_PAGE_INFO 响应（title/url/favicon/selectedText/ogTitle/metaDescription）
+│   └── content.ts       # 注入页面：GET_PAGE_INFO 响应 + 挂载全局 SearchOverlay (Shadow DOM)
 │
 ├── components/
 │   ├── auth/
@@ -41,7 +37,8 @@ TabSlate/
 │   ├── login-form.tsx          # login/register/forgot-password/reset-password 四模式 + Prosopo 验证码 + 密码强度提示
 │   ├── procaptcha.tsx          # Prosopo iframe 包装组件（绕过 MV3 CSP 限制；通过 postMessage 接收 token）
 │   ├── search/
-│   │   └── search-panel.tsx    # 共享搜索 UI：输入框 + 书签/标签/Google 三栏下拉；键盘导航；已归档 badge
+│   │   ├── search-panel.tsx    # 内联搜索 UI：输入框 + 书签/标签/Google 三栏下拉；键盘导航；已归档 badge
+│   │   └── search-overlay.tsx  # 全局搜索浮层（供 content.ts 注入），基于 SearchPanel 封装
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
@@ -149,6 +146,10 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `TABS_CHANGED` | background | newtab | tab/group 有变化，触发 `loadTabs()` |
 | `BOOKMARKS_CHANGED` | background | newtab | background 回退写 IDB 后通知刷新 |
 | `ADD_BOOKMARK` | popup / background | newtab | 直接投递书签数据（优先路径） |
+| `OPEN_SEARCH` | background | active tab | 触发全局搜索快捷键，挂载 SearchOverlay |
+| `GET_OPEN_TABS` | active tab | background | SearchOverlay 请求打开的标签页列表 |
+| `FOCUS_TAB` | active tab | background | SearchOverlay 请求切换到指定标签页 |
+| `SEARCH_BOOKMARKS` | active tab | background | SearchOverlay 代理发起搜索请求（绕过跨域限制） |
 
 ## 路由
 
@@ -323,5 +324,5 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 | `storage` | chrome.storage.local 读写 |
 | `bookmarks` | （暂未使用 Chrome 原生书签 API） |
 | `contextMenus` | 右键菜单"Save to TabSlate" |
-| `host_permissions: <all_urls>` | 读取任意页面的 favicon |
-| `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 打开 search.html 弹窗 |
+| `host_permissions: <all_urls>` | 读取任意页面的 favicon；向当前页面注入 SearchOverlay 搜索框 |
+| `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 发送 `OPEN_SEARCH` 唤起当前页搜索层 |
