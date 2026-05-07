@@ -274,8 +274,22 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
       for (const sc of resp.entities.collections) {
         if (sc.deleted_at) {
-          // Server confirmed delete — remove from state
-          collections = collections.filter(c => c.id !== sc.id);
+          // Server confirmed soft-delete — keep in collections with deletedAt so
+          // TrashContent can still find and display the collection card.
+          const idx = collections.findIndex(c => c.id === sc.id);
+          if (idx === -1) {
+            collections.push({
+              id: sc.id,
+              workspaceId: sc.workspace_id ?? "",
+              name: sc.name,
+              icon: sc.icon ?? "folder",
+              position: sc.position,
+              seq: sc.seq,
+              deletedAt: sc.deleted_at,
+            });
+          } else {
+            collections[idx] = { ...collections[idx], seq: sc.seq, deletedAt: sc.deleted_at };
+          }
         } else {
           const idx = collections.findIndex(c => c.id === sc.id);
           if (idx === -1) {
@@ -351,9 +365,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     for (const sw of resp.entities.workspaces) {
       if (sw.deleted_at) { idbDelete("workspaces", sw.id); }
     }
-    for (const sc of resp.entities.collections) {
-      if (sc.deleted_at) { idbDelete("collections", sc.id); }
-    }
+    // Note: deleted collections are kept in IDB with deletedAt set (not hard-deleted)
+    // so TrashContent can display them after a page reload. permanentlyDeleteCollection
+    // is the only path that calls idbDelete("collections", id).
     for (const st of resp.entities.tags) {
       if (st.deleted_at) { idbDelete("tags", st.id); }
     }
