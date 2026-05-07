@@ -24,11 +24,15 @@ TabSlate/
 ├── entrypoints/
 │   ├── newtab/          # 主应用入口
 │   │   ├── main.tsx     # ReactDOM.createRoot
-│   │   │   └── App.tsx      # 路由、布局、StoreGate → AuthGate → SyncProvider → HashRouter
+│   │   └── App.tsx      # 路由、布局、StoreGate → AuthGate → SyncProvider → HashRouter
 │   ├── popup/           # 快速保存 popup
-│   │   └── App.tsx      # 独立 React 树，不使用 Zustand
-│   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单
-│   └── content.ts       # 注入页面：提供 GET_PAGE_INFO 给 background
+│   │   └── App.tsx      # 独立 React 树，不使用 Zustand；保存时调用 GET_PAGE_INFO 获取 ogTitle/metaDescription
+│   ├── search/          # 全局搜索弹出窗口（Ctrl+Shift+K）
+│   │   ├── index.html   # WXT 入口 HTML（产物：search.html）
+│   │   ├── main.tsx     # ReactDOM.createRoot
+│   │   └── App.tsx      # auth/tabs 水化守卫 + SearchPanel（autoFocus，onClose=window.close）
+│   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单 + open-search 快捷键监听
+│   └── content.ts       # 注入页面：GET_PAGE_INFO 响应（title/url/favicon/selectedText/ogTitle/metaDescription）
 │
 ├── components/
 │   ├── auth/
@@ -36,6 +40,8 @@ TabSlate/
 │   │   └── verify-email-screen.tsx  # 全屏 OTP 邮箱验证页（AuthGate 拦截未验证用户时显示）
 │   ├── login-form.tsx          # login/register/forgot-password/reset-password 四模式 + Prosopo 验证码 + 密码强度提示
 │   ├── procaptcha.tsx          # Prosopo iframe 包装组件（绕过 MV3 CSP 限制；通过 postMessage 接收 token）
+│   ├── search/
+│   │   └── search-panel.tsx    # 共享搜索 UI：输入框 + 书签/标签/Google 三栏下拉；键盘导航；已归档 badge
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
@@ -65,7 +71,7 @@ TabSlate/
 │       ├── tabs-dnd-provider.tsx # 全局 DnD context（tab → collection/saved-group）
 │       ├── tab-row.tsx         # 单行 tab 组件（React.memo）
 │       ├── stats-cards.tsx     # 书签统计卡片
-│       ├── content.tsx         # / 路由：书签网格/列表
+│       ├── content.tsx         # / 路由：书签网格/列表；顶部嵌入 SearchPanel（smartOpen 模式）
 │       ├── header.tsx          # 顶部搜索/过滤栏
 │       ├── workspace-rail.tsx  # 最左侧工作区切换轨道
 │       ├── tabs-rail.tsx       # 最右侧标签页快速预览轨道
@@ -85,7 +91,7 @@ TabSlate/
 │   └── prosopo.d.ts        # window.procaptcha 全局类型声明（captcha widget 页面使用）
 │
 ├── lib/
-│   ├── api.ts              # TabSlate-server HTTP 客户端（auth + sync: issueSSEToken/syncPush/syncPull）；ApiError 携带 status/captchaRequired/retryAfter
+│   ├── api.ts              # TabSlate-server HTTP 客户端（auth + sync + search）；ApiError 携带 status/captchaRequired/retryAfter；searchBookmarks() 调用 GET /search
 │   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义（含 seq, deletedAt 同步字段）
 │   ├── sync-engine.ts      # SyncEngine：协调 SyncQueue + SSEClient + 定期拉取；模块单例 syncEngine
 │   ├── sync-queue.ts       # SyncQueue：按实体 ID 去重、2s 防抖、指数退避推送（2s→60s）
@@ -111,38 +117,38 @@ TabSlate/
 
 ### Store 设计原则
 
-所有 store 使用 Zustand，持久化通过 `chromeStorageAdapter` 写入 `chrome.storage.local`。
+所有 store 使用 Zustand。持久化分为两层：
 
 ```
-useAuthStore       ──persist──▶  "tabslate-auth"
-useBookmarksStore  ──persist──▶  "tabslate-bookmarks"
-useWorkspaceStore  ──persist──▶  "tabslate-workspace"     （含 localSeq 同步游标）
-useGroupsStore     ──persist──▶  "tabslate-groups"
+useAuthStore       ──Zustand persist──▶  chrome.storage.local  "tabslate-auth"
+useBookmarksStore  ──手动 idbPut/Get──▶  IndexedDB  bookmarks / archived-bookmarks / trashed-bookmarks
+useWorkspaceStore  ──手动 idbPut/Get──▶  IndexedDB  workspaces / collections / tags / kv
+useGroupsStore     ──手动 idbPut/Get──▶  IndexedDB  groups / group-tabs
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
-SSE leader         ──共享──▶  "tabslate-sync-leader"      （30s TTL，多窗口 leader election）
+SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  （30s TTL）
 ```
+
+`lib/idb.ts` 封装 `indexedDB.open("tabslate-db", 1)`，暴露 `idbGet/idbPut/idbDelete/idbGetAll/idbGetByIndex/idbTransaction`。各 store 的 `hydrate()` 在挂载时调用 `idbGetAll` 批量读取，写操作直接 `idbPut`（同步触发，无需等待）。
 
 ### Store 职责
 
-| Store | 持久化 | 职责 |
+| Store | 持久化后端 | 职责 |
 |---|---|---|
-| `useAuthStore` | ✅ | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
-| `useBookmarksStore` | ✅ | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
-| `useWorkspaceStore` | ✅ | 工作区、集合、标签、高亮状态；`localSeq` 同步游标（持久化在 `"tabslate-workspace"`）；`mergeFromServer` 执行 LWW 合并；`sweepUnsynced` 补推 `seq=0` 的实体 |
-| `useGroupsStore` | ✅ | 用户手动保存的标签组及其包含的 tab URL |
-| `useTabsStore` | ❌ | Chrome 当前窗口的实时标签页和 tab group 数据 |
+| `useAuthStore` | chrome.storage.local | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
+| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
+| `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标（存于 `kv["localSeq"]`）；`mergeFromServer` 执行 LWW 合并；`sweepUnsynced` 补推 `seq=0` 的实体 |
+| `useGroupsStore` | IndexedDB | 用户手动保存的标签组及其包含的 tab URL |
+| `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
-### 跨页面同步
+### 跨进程通知
 
-```
-newtab (Zustand)  ──写入──▶  chrome.storage.local
-                                    │
-                              onChanged 事件
-                                    │
-                  ◀──读取──  newtab (另一窗口) / background / popup
-```
+chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome.runtime.sendMessage` 传递轻量信号：
 
-各 store 文件底部都注册了 `chrome.storage.onChanged` 监听器，用 JSON.stringify 对比变更内容，有差异才 `setState`。
+| 消息 | 发送方 | 接收方 | 说明 |
+|---|---|---|---|
+| `TABS_CHANGED` | background | newtab | tab/group 有变化，触发 `loadTabs()` |
+| `BOOKMARKS_CHANGED` | background | newtab | background 回退写 IDB 后通知刷新 |
+| `ADD_BOOKMARK` | popup / background | newtab | 直接投递书签数据（优先路径） |
 
 ## 路由
 
@@ -150,7 +156,7 @@ newtab (Zustand)  ──写入──▶  chrome.storage.local
 
 | 路径 | 组件 | 说明 |
 |---|---|---|
-| `/` | `BookmarksContent` | 书签主界面（grid/list） |
+| `/` | `BookmarksContent` | 书签主界面（grid/list）；顶部搜索栏（书签 + open tabs + Google 回退） |
 | `/favorites` | `FavoritesContent` | 收藏夹 |
 | `/archive` | `ArchiveContent` | 已归档集合卡片（含一键还原）+ 已归档单个书签 |
 | `/trash` | `TrashContent` | 已删除集合卡片（含还原 + 永久删除）+ 已删除单个书签 |
@@ -318,3 +324,4 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 | `bookmarks` | （暂未使用 Chrome 原生书签 API） |
 | `contextMenus` | 右键菜单"Save to TabSlate" |
 | `host_permissions: <all_urls>` | 读取任意页面的 favicon |
+| `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 打开 search.html 弹窗 |

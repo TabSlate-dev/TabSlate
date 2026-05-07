@@ -14,6 +14,8 @@ import type { BookmarkDragData } from "./tabs-dnd-provider";
 import type { Bookmark as BookmarkType } from "@/lib/types";
 
 import { HeroSection } from "./hero-section";
+import { useTabsStore } from "@/store/tabs-store";
+import { SearchPanel } from "@/components/search/search-panel";
 
 interface DraggableBookmarkCardProps {
   bookmark: BookmarkType;
@@ -53,6 +55,14 @@ function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted }: Dr
 }
 
 export function BookmarksContent() {
+  const openTabs = useTabsStore(s => s.openTabs);
+  const loadTabs = useTabsStore(s => s.loadTabs);
+
+  React.useEffect(() => {
+    if (openTabs.length === 0) { loadTabs(true); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const selectedCollection = useBookmarksStore(s => s.selectedCollection);
   const viewMode = useBookmarksStore(s => s.viewMode);
   const selectedTags = useBookmarksStore(s => s.selectedTags);
@@ -133,6 +143,13 @@ export function BookmarksContent() {
       )}
 
       <div className="p-4 md:p-6 space-y-6">
+        {/* Inline search */}
+        <div className="w-full">
+          <SearchPanel
+            openTabs={openTabs}
+            smartOpen
+          />
+        </div>
         {selectedCollection === "all" && !hasActiveFilters && <HeroSection />}
         <StatsCards />
 

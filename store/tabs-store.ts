@@ -118,12 +118,24 @@ async function _saveTabsToCollectionHelper(
     }
     
     seenUrlsInBatch.add(normalizedUrl);
+    let title = tab.title;
+    let description = "";
+    try {
+      const info = await chrome.tabs.sendMessage(tab.id, { type: "GET_PAGE_INFO" }) as {
+        ogTitle?: string;
+        metaDescription?: string;
+      };
+      if (info.ogTitle) { title = info.ogTitle; }
+      description = info.metaDescription ?? "";
+    } catch {
+      // Content script not injected (pdf, chrome:// page) — use tab defaults
+    }
     newBookmarksData.push({
       id: generateId(),
-      title: tab.title,
+      title,
       url: tab.url,
       favicon: tab.favIconUrl,
-      description: "",
+      description,
       tags: [],
       createdAt: now,
       isFavorite: false,
