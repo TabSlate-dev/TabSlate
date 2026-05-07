@@ -37,6 +37,7 @@ function PopupContent() {
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [note, setNote] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [pageInfo, setPageInfo] = useState<{ ogTitle: string; metaDescription: string } | null>(null);
 
   useEffect(() => {
     // Load current tab
@@ -47,6 +48,13 @@ function PopupContent() {
           url: activeTab.url ?? "",
           favIconUrl: activeTab.favIconUrl ?? "",
         });
+      }
+      if (activeTab?.id) {
+        chrome.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_INFO" })
+          .then((info: { ogTitle?: string; metaDescription?: string }) => {
+            setPageInfo({ ogTitle: info.ogTitle ?? "", metaDescription: info.metaDescription ?? "" });
+          })
+          .catch(() => {});
       }
       setLoading(false);
     });
@@ -71,10 +79,10 @@ function PopupContent() {
     setSaveState("saving");
     try {
       const bookmarkData: BookmarkInput & { tags: string[]; seq: number } = {
-        title: tab.title,
+        title: pageInfo?.ogTitle || tab.title,
         url: tab.url,
         favicon: tab.favIconUrl,
-        description: note,
+        description: note || pageInfo?.metaDescription || "",
         collectionId: selectedCollectionId,
         tags: [],
         seq: 0,

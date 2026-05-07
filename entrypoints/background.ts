@@ -18,7 +18,7 @@ export default defineBackground(() => {
     if (info.menuItemId !== "save-to-tabslate" || !tab?.id) { return; }
 
     // Try to get richer info from the content script
-    let pageInfo: { title: string; url: string; selectedText: string; favicon: string } | null = null;
+    let pageInfo: { title: string; url: string; selectedText: string; favicon: string; ogTitle?: string; metaDescription?: string } | null = null;
     try {
       pageInfo = await chrome.tabs.sendMessage(tab.id, { type: "GET_PAGE_INFO" });
     } catch {
@@ -26,10 +26,10 @@ export default defineBackground(() => {
     }
 
     const bookmarkData = {
-      title: pageInfo?.title ?? tab.title ?? "Untitled",
+      title: pageInfo?.ogTitle || pageInfo?.title || tab.title || "Untitled",
       url: info.linkUrl ?? pageInfo?.url ?? tab.url ?? "",
       favicon: pageInfo?.favicon ?? tab.favIconUrl ?? "",
-      description: pageInfo?.selectedText ?? "",
+      description: pageInfo?.selectedText || pageInfo?.metaDescription || "",
       collectionId: "",
       tags: [] as string[],
       seq: 0,
@@ -92,4 +92,18 @@ export default defineBackground(() => {
   chrome.tabGroups.onRemoved.addListener(broadcastTabChange);
   chrome.tabGroups.onUpdated.addListener(broadcastTabChange);
   chrome.tabGroups.onMoved.addListener(broadcastTabChange);
+
+  // -------------------------------------------------------------------------
+  // Global search shortcut
+  // -------------------------------------------------------------------------
+  chrome.commands.onCommand.addListener((command) => {
+    if (command !== "open-search") { return; }
+    chrome.windows.create({
+      url: chrome.runtime.getURL("search.html"),
+      type: "popup",
+      width: 640,
+      height: 420,
+      focused: true,
+    });
+  });
 });
