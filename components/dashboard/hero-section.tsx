@@ -182,6 +182,8 @@ export function HeroSection() {
 
           <Input
             type="text"
+            name="q"
+            autoComplete="off"
             placeholder={`Search your bookmarks, tabs or with ${engine.name}...`}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
