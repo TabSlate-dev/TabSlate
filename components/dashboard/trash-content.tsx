@@ -117,13 +117,31 @@ function TrashedBookmarkCard({ bookmark, isNested }: { bookmark: BookmarkType; i
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDelete = useBookmarksStore(s => s.permanentlyDelete);
   const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
   function handleRestore() {
-    const col = collections.find(c => c.id === bookmark.collectionId);
-    const safeCollectionId = col && !col.deletedAt && !col.archivedAt
-      ? bookmark.collectionId
-      : "";
-    restoreFromTrash(bookmark.id, safeCollectionId);
+    const active = collections.filter(
+      c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
+    );
+
+    // 1. collectionId still points to an active collection
+    const byId = active.find(c => c.id === bookmark.collectionId);
+    if (byId) {
+      restoreFromTrash(bookmark.id, byId.id);
+      return;
+    }
+
+    // 2. Original collection name exists under a different id (e.g. re-created)
+    const srcCol = collections.find(c => c.id === bookmark.collectionId);
+    const byName = srcCol ? active.find(c => c.name === srcCol.name) : undefined;
+    if (byName) {
+      restoreFromTrash(bookmark.id, byName.id);
+      return;
+    }
+
+    // 3. Fall back to default collection
+    const defaultCol = active.find(c => c.isDefault);
+    restoreFromTrash(bookmark.id, defaultCol?.id ?? "");
   }
 
   return (
