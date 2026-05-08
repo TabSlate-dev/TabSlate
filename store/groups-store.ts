@@ -251,7 +251,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
           }
           // Replace tab snapshot: remove old tabs then add server tabs.
           groupTabs = groupTabs.filter(t => t.groupId !== sg.id);
-          for (const st of sg.tabs) {
+          for (const st of sg.tabs ?? []) {
             groupTabs.push({
               id: st.id,
               groupId: st.group_id,
