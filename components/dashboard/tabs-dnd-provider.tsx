@@ -176,7 +176,12 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     if (dragData.type === "bookmark") {
       if (dropId.startsWith("sidebar-collection-")) {
         const rawId = dropId.replace("sidebar-collection-", "");
-        const targetCollectionId = rawId === "all" ? "" : rawId;
+        let targetCollectionId = rawId;
+        if (rawId === "all") {
+          const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
+          const defaultCol = collections.find(c => c.workspaceId === activeWorkspaceId && c.isDefault);
+          targetCollectionId = defaultCol?.id ?? "";
+        }
 
         const bookmark = useBookmarksStore.getState().bookmarks.find(b => b.id === dragData.bookmarkId);
         if (bookmark && bookmark.collectionId === targetCollectionId) {

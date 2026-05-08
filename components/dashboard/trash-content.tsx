@@ -62,11 +62,15 @@ function TrashedCollectionCard({
   bookmarks,
   selected,
   onSelect,
+  selectedBmIds,
+  onToggleBm,
 }: {
   collection: Collection;
   bookmarks: BookmarkType[];
   selected?: boolean;
   onSelect?: (checked: boolean) => void;
+  selectedBmIds?: Set<string>;
+  onToggleBm?: (id: string) => void;
 }) {
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
@@ -74,7 +78,7 @@ function TrashedCollectionCard({
 
   return (
     <div className="flex flex-col rounded-lg border bg-card overflow-hidden">
-      <div 
+      <div
         className="flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100 cursor-pointer"
         onClick={() => setExpanded(!expanded)}
       >
@@ -130,7 +134,13 @@ function TrashedCollectionCard({
       {expanded && bookmarks.length > 0 && (
         <div className="flex flex-col border-t bg-card/30 divide-y divide-border/50">
           {bookmarks.map((b) => (
-            <TrashedBookmarkCard key={b.id} bookmark={b} isNested />
+            <TrashedBookmarkCard
+              key={b.id}
+              bookmark={b}
+              isNested
+              selected={selectedBmIds?.has(b.id)}
+              onSelect={onToggleBm ? () => onToggleBm(b.id) : undefined}
+            />
           ))}
         </div>
       )}
@@ -432,6 +442,8 @@ export function TrashContent() {
                 bookmarks={collectionBookmarks[col.id] || []}
                 selected={selectedColIds.has(col.id)}
                 onSelect={() => toggleCol(col.id)}
+                selectedBmIds={selectedBmIds}
+                onToggleBm={toggleBm}
               />
             ))}
           </div>

@@ -104,7 +104,7 @@ export function GroupDetail() {
       title: tab.title,
       url: tab.url,
       favicon: tab.favicon,
-      collectionId: "all",
+      collectionId: "",
       description: "",
       tags: [],
       createdAt: new Date().toISOString(),

@@ -100,7 +100,7 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
       title: tab.title,
       url: tab.url,
       favicon: tab.favicon,
-      collectionId: "all",
+      collectionId: "",
       description: "",
       tags: [],
       createdAt: new Date().toISOString(),

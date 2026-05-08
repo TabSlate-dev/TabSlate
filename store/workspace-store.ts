@@ -430,6 +430,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         collections: colsToDelete.map(c => toServerCollection({ ...c, deletedAt: Date.now() })),
       });
     }
+    for (const c of colsToDelete) { useBookmarksStore.getState().trashCollectionBookmarks(c.id); }
     idbDelete("workspaces", id);
     for (const c of colsToDelete) { idbDelete("collections", c.id); }
     const remaining = workspaces.filter(w => w.id !== id);
