@@ -64,6 +64,7 @@ function SortableSearchEngineItem({
           <Button
             variant="ghost"
             size="icon"
+            aria-label={`Delete ${engine.name}`}
             className="size-7 text-muted-foreground hover:text-destructive"
             onClick={() => onDelete(engine.id)}
           >
@@ -81,7 +82,8 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
-  const { searchEngines, updateSearchEngines } = useSettingsStore();
+  const searchEngines = useSettingsStore(s => s.searchEngines);
+  const updateSearchEngines = useSettingsStore(s => s.updateSearchEngines);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
