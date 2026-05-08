@@ -33,6 +33,7 @@ function toServerGroup(g: SavedGroup, tabs: GroupTab[]): object {
     is_compact: g.isCompact,
     seq: g.seq,
     deleted_at: g.deletedAt ?? null,
+    created_at: new Date(g.createdAt).getTime(),
     updated_at: Date.now(),
     tabs: tabs.map(t => ({
       id: t.id,

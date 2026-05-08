@@ -39,7 +39,7 @@ export function GroupDetail() {
   const { groupId } = useParams<{ groupId: string }>();
   const navigate = useNavigate();
 
-  const group = useGroupsStore(s => s.groups.find(g => g.id === groupId));
+  const group = useGroupsStore(s => s.groups.find(g => g.id === groupId && !g.deletedAt));
   const updateGroup = useGroupsStore(s => s.updateGroup);
   const deleteGroup = useGroupsStore(s => s.deleteGroup);
   const openGroup = useGroupsStore(s => s.openGroup);

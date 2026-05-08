@@ -186,8 +186,9 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
   const clearTags = useBookmarksStore(s => s.clearTags);
   const bookmarks = useBookmarksStore(s => s.bookmarks);
 
-  const groups = useGroupsStore(s => s.groups);
+  const allGroups = useGroupsStore(s => s.groups);
   const deleteGroup = useGroupsStore(s => s.deleteGroup);
+  const groups = React.useMemo(() => allGroups.filter(g => !g.deletedAt), [allGroups]);
 
   const collections = useWorkspaceStore(s => s.collections);
   const tags = useWorkspaceStore(s => s.tags);
