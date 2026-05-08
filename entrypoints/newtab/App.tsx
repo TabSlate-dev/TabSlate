@@ -80,6 +80,7 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   const authHydrated = useAuthStore((s) => s._hydrated);
   const groupsHydrated = useGroupsStore((s) => s._hydrated);
   const settingsHydrated = useSettingsStore((s) => s._hydrated);
+  const searchEngines = useSettingsStore((s) => s.searchEngines);
 
   useEffect(() => {
     void Promise.all([
@@ -90,6 +91,11 @@ function StoreGate({ children }: { children: React.ReactNode }) {
     ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep chrome.storage.local in sync so search-overlay (content script) can read user engines.
+  useEffect(() => {
+    chrome.storage.local.set({ "tabslate-search-engines": JSON.stringify(searchEngines) });
+  }, [searchEngines]);
 
   const hydrated = bookmarksHydrated && workspaceHydrated && authHydrated && groupsHydrated && settingsHydrated;
 

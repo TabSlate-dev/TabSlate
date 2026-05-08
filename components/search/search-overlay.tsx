@@ -3,13 +3,20 @@ import { Search, Archive, BookmarkIcon, Globe, X } from "lucide-react";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import type { SearchBookmark } from "@/lib/api";
 import type { BrowserTab } from "@/lib/chrome/tabs";
+import type { SearchEngine } from "@/store/settings-store";
 import { cn } from "@/lib/utils";
 
-const SEARCH_ENGINES = [
-  { id: "google", name: "Google", url: "https://www.google.com/search?q=%s" },
-  { id: "bing",   name: "Bing",   url: "https://www.bing.com/search?q=%s" },
-  { id: "duckduckgo", name: "DuckDuckGo", url: "https://duckduckgo.com/?q=%s" },
-];
+const FALLBACK_ENGINE: SearchEngine = {
+  id: "google", name: "Google", url: "https://www.google.com/search?q=%s",
+  siteUrl: "https://www.google.com", iconUrl: "search-engine-icon/brand-google.svg", enabled: true,
+};
+
+function getEngineIconSrc(engine: SearchEngine): string {
+  if (engine.iconUrl) { return chrome.runtime.getURL(engine.iconUrl); }
+  try {
+    return `https://icons.duckduckgo.com/ip3/${new URL(engine.siteUrl).hostname}.ico`;
+  } catch { return ""; }
+}
 
 interface Props {
   onClose: () => void;
@@ -20,7 +27,8 @@ export function SearchOverlay({ onClose }: Props) {
   const [openTabs, setOpenTabs] = React.useState<BrowserTab[]>([]);
   const [bookmarkResults, setBookmarkResults] = React.useState<SearchBookmark[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
-  const [engine] = React.useState(SEARCH_ENGINES[0]);
+  const [engines, setEngines] = React.useState<SearchEngine[]>([FALLBACK_ENGINE]);
+  const engine = React.useMemo(() => engines.find(e => e.enabled) ?? engines[0], [engines]);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   // Read auth from chrome.storage.local directly — Zustand's async persist
@@ -43,6 +51,18 @@ export function SearchOverlay({ onClose }: Props) {
           setAccessToken(state.accessToken as string);
           if (state.serverUrl) { setServerUrl(state.serverUrl as string); }
         }
+      } catch { /* ignore malformed data */ }
+    });
+  }, []);
+
+  // Load user's search engines from chrome.storage.local (written by newtab StoreGate)
+  React.useEffect(() => {
+    chrome.storage.local.get("tabslate-search-engines", (result: Record<string, unknown>) => {
+      const raw = result["tabslate-search-engines"];
+      if (typeof raw !== "string") { return; }
+      try {
+        const parsed = JSON.parse(raw) as SearchEngine[];
+        if (Array.isArray(parsed) && parsed.length > 0) { setEngines(parsed); }
       } catch { /* ignore malformed data */ }
     });
   }, []);
@@ -137,7 +157,7 @@ export function SearchOverlay({ onClose }: Props) {
             ref={inputRef}
             type="text"
             autoComplete="off"
-            placeholder="Search bookmarks, tabs, or Google…"
+            placeholder={`Search bookmarks, tabs, or ${engine.name}…`}
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -222,16 +242,16 @@ export function SearchOverlay({ onClose }: Props) {
                 </section>
               )}
 
-              {/* Google fallback */}
+              {/* Engine fallback */}
               <button
                 type="button"
                 className={cn("w-full flex items-center gap-3 px-4 py-2.5 text-left border-t border-border transition-colors", isActive(engineIndex) ? "bg-accent" : "hover:bg-accent/60")}
                 onMouseEnter={() => setActiveIndex(engineIndex)}
                 onClick={() => handleSelect(engineIndex)}
               >
-                <Search className="size-4 shrink-0 text-muted-foreground" />
+                <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
                 <span className="text-sm text-foreground">
-                  Search <span className="font-semibold">"{query}"</span> on Google
+                  Search <span className="font-semibold">"{query}"</span> with {engine.name}
                 </span>
               </button>
             </div>

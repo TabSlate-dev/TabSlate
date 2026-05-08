@@ -50,11 +50,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 
   hydrate: async () => {
     const enginesKv = await idbGet<{ key: string; value: SearchEngine[] }>("kv", "searchEngines");
-    if (enginesKv?.value && Array.isArray(enginesKv.value) && enginesKv.value.length > 0) {
-      set({ searchEngines: mergeEngines(enginesKv.value), _hydrated: true });
-    } else {
-      set({ _hydrated: true });
-    }
+    const engines = (enginesKv?.value && Array.isArray(enginesKv.value) && enginesKv.value.length > 0)
+      ? mergeEngines(enginesKv.value)
+      : DEFAULT_SEARCH_ENGINES;
+    set({ searchEngines: engines, _hydrated: true });
   },
 
   updateSearchEngines: (engines) => {
