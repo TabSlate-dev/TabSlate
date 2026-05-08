@@ -3,12 +3,20 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useSettingsStore, SearchEngine } from "@/store/settings-store";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { GripVertical } from "lucide-react";
+import { GripVertical, Trash2 } from "lucide-react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-function SortableSearchEngineItem({ engine, onToggle }: { engine: SearchEngine; onToggle: (id: string, enabled: boolean) => void }) {
+function SortableSearchEngineItem({
+  engine,
+  onToggle,
+  onDelete,
+}: {
+  engine: SearchEngine;
+  onToggle: (id: string, enabled: boolean) => void;
+  onDelete: (id: string) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: engine.id });
 
   const style = {
@@ -17,19 +25,12 @@ function SortableSearchEngineItem({ engine, onToggle }: { engine: SearchEngine; 
     zIndex: isDragging ? 1 : 0,
   };
 
-  function getFaviconUrl(pageUrl: string, size: number = 64) {
-    try {
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
-        const urlObj = new URL(chrome.runtime.getURL("/_favicon/"));
-        urlObj.searchParams.set("pageUrl", pageUrl);
-        urlObj.searchParams.set("size", size.toString());
-        return urlObj.toString();
-      }
-    } catch (e) {
-      // Fallback
+  function getEngineIconSrc(engine: { iconUrl?: string; siteUrl: string }): string {
+    if (engine.iconUrl && typeof chrome !== "undefined" && chrome.runtime?.id) {
+      return chrome.runtime.getURL(engine.iconUrl);
     }
     try {
-      const domain = new URL(pageUrl).hostname;
+      const domain = new URL(engine.siteUrl).hostname;
       return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
     } catch {
       return "";
@@ -51,13 +52,25 @@ function SortableSearchEngineItem({ engine, onToggle }: { engine: SearchEngine; 
         >
           <GripVertical className="size-4" />
         </button>
-        <img src={getFaviconUrl(engine.siteUrl, 32)} alt={engine.name} className="size-5 rounded-sm" />
+        <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-5 rounded-sm" />
         <span className="font-medium text-sm">{engine.name}</span>
       </div>
-      <Switch
-        checked={engine.enabled}
-        onCheckedChange={(checked) => onToggle(engine.id, checked)}
-      />
+      <div className="flex items-center gap-2">
+        <Switch
+          checked={engine.enabled}
+          onCheckedChange={(checked) => onToggle(engine.id, checked)}
+        />
+        {engine.custom && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7 text-muted-foreground hover:text-destructive"
+            onClick={() => onDelete(engine.id)}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -92,6 +105,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     );
   };
 
+  const handleDelete = (id: string) => {
+    updateSearchEngines(searchEngines.filter((e) => e.id !== id));
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
@@ -122,6 +139,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         key={engine.id}
                         engine={engine}
                         onToggle={handleToggle}
+                        onDelete={handleDelete}
                       />
                     ))}
                   </div>
