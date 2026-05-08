@@ -3,7 +3,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useSettingsStore, SearchEngine } from "@/store/settings-store";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { GripVertical, Trash2 } from "lucide-react";
+import { GripVertical, Trash2, Plus, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -111,6 +112,34 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     updateSearchEngines(searchEngines.filter((e) => e.id !== id));
   };
 
+  const [showForm, setShowForm] = React.useState(false);
+  const [newName, setNewName] = React.useState("");
+  const [newUrl, setNewUrl] = React.useState("");
+
+  const canAdd = newName.trim().length > 0 && newUrl.trim().includes("%s");
+
+  const handleAdd = () => {
+    const siteUrl = (() => {
+      try {
+        return new URL(newUrl.trim().replace("%s", "x")).origin;
+      } catch {
+        return "";
+      }
+    })();
+    const engine: SearchEngine = {
+      id: crypto.randomUUID(),
+      name: newName.trim(),
+      url: newUrl.trim(),
+      siteUrl,
+      custom: true,
+      enabled: true,
+    };
+    updateSearchEngines([...searchEngines, engine]);
+    setNewName("");
+    setNewUrl("");
+    setShowForm(false);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
@@ -147,6 +176,52 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   </div>
                 </SortableContext>
               </DndContext>
+
+              {showForm ? (
+                <div className="mt-3 space-y-2 rounded-lg border bg-card p-3">
+                  <Input
+                    placeholder="Name"
+                    value={newName}
+                    onChange={(e) => setNewName(e.target.value)}
+                    autoFocus
+                  />
+                  <Input
+                    placeholder="https://example.com/search?q=%s"
+                    value={newUrl}
+                    onChange={(e) => setNewUrl(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Use <code className="font-mono">%s</code> as the search term placeholder
+                  </p>
+                  <div className="flex justify-end gap-2 pt-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setShowForm(false);
+                        setNewName("");
+                        setNewUrl("");
+                      }}
+                    >
+                      <X className="size-3.5 mr-1" />
+                      Cancel
+                    </Button>
+                    <Button size="sm" disabled={!canAdd} onClick={handleAdd}>
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 w-full text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowForm(true)}
+                >
+                  <Plus className="size-3.5 mr-1" />
+                  Add engine
+                </Button>
+              )}
             </div>
           </div>
         </div>
