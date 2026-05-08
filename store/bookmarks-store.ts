@@ -184,14 +184,28 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       updateBookmark: (id, patch) => {
         set((s) => ({
-          bookmarks: s.bookmarks.map((b) =>
-            b.id === id ? { ...b, ...patch } : b
-          ),
+          bookmarks: s.bookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+          archivedBookmarks: s.archivedBookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+          trashedBookmarks: s.trashedBookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)),
         }));
-        const updated = get().bookmarks.find(b => b.id === id);
-        if (updated) {
-          idbPut("bookmarks", updated);
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark(updated)] });
+
+        const s = get();
+        const b = s.bookmarks.find((x) => x.id === id);
+        if (b) {
+          idbPut("bookmarks", b);
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark(b)] });
+          return;
+        }
+        const ab = s.archivedBookmarks.find((x) => x.id === id);
+        if (ab) {
+          idbPut("archived-bookmarks", ab);
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark(ab, { isArchived: true })] });
+          return;
+        }
+        const tb = s.trashedBookmarks.find((x) => x.id === id);
+        if (tb) {
+          idbPut("trashed-bookmarks", tb);
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark(tb, { isTrashed: true })] });
         }
       },
 

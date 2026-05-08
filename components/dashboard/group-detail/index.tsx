@@ -10,8 +10,9 @@ import {
   X, 
   MoreHorizontal, 
   Save, 
-  Bookmark,
-  BrushCleaning
+  BookmarkPlus,
+  BrushCleaning,
+  FolderPlus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -33,6 +34,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-collection-dialog";
+import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { generateId } from "@/lib/id";
 
 export function GroupDetail() {
@@ -63,6 +65,18 @@ export function GroupDetail() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<{ saved: number; skipped: number } | null>(null);
   const [savedTabIds, setSavedTabIds] = React.useState<Set<string>>(new Set());
+  const [saveMenuOpenMap, setSaveMenuOpenMap] = React.useState<Record<string, boolean>>({});
+  const [collectionDialogTab, setCollectionDialogTab] = React.useState<GroupTab | null>(null);
+
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const createCollection = useWorkspaceStore(s => s.createCollection);
+
+  const activeCollections = React.useMemo(() => {
+    return collections
+      .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
+      .sort((a, b) => a.position - b.position);
+  }, [collections, activeWorkspaceId]);
 
   // Init local state when group loads
   React.useEffect(() => {
@@ -98,13 +112,13 @@ export function GroupDetail() {
     setTimeout(() => setSaveResult(null), 3000);
   }, [groupTabs, addBookmarks]);
 
-  const handleSaveTab = React.useCallback((tab: GroupTab) => {
+  const handleSaveTab = React.useCallback((tab: GroupTab, collectionId: string) => {
     addBookmarks([{
       id: generateId(),
       title: tab.title,
       url: tab.url,
       favicon: tab.favicon,
-      collectionId: "",
+      collectionId,
       description: "",
       tags: [],
       createdAt: new Date().toISOString(),
@@ -311,18 +325,47 @@ export function GroupDetail() {
             actions={
               <div className="flex items-center gap-0.5">
 
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSaveTab(tab);
-                  }}
-                  title={savedTabIds.has(tab.id) ? "Saved!" : "Save bookmark"}
-                  className={cn("size-6 text-muted-foreground", savedTabIds.has(tab.id) && "text-green-600 hover:text-green-600")}
+                <DropdownMenu
+                  open={saveMenuOpenMap[tab.id] ?? false}
+                  onOpenChange={(open) => setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: open }))}
                 >
-                  {savedTabIds.has(tab.id) ? <Check className="size-3" /> : <Bookmark className="size-3" />}
-                </Button>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={(e) => e.stopPropagation()}
+                      title={savedTabIds.has(tab.id) ? "Saved!" : "Save to collection"}
+                      className={cn("size-6 text-muted-foreground", savedTabIds.has(tab.id) && "text-green-600 hover:text-green-600")}
+                    >
+                      {savedTabIds.has(tab.id) ? <Check className="size-3" /> : <BookmarkPlus className="size-3" />}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48 max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                    {activeCollections.map((c) => (
+                      <DropdownMenuItem
+                        key={c.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: false }));
+                          handleSaveTab(tab, c.id);
+                        }}
+                      >
+                        <span className="truncate">{c.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                    {activeCollections.length > 0 && <DropdownMenuSeparator />}
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: false }));
+                        setCollectionDialogTab(tab);
+                      }}
+                    >
+                      <FolderPlus className="size-3.5 mr-2" />
+                      New Collection...
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   variant="ghost"
                   size="icon-xs"
@@ -360,6 +403,18 @@ export function GroupDetail() {
           onConfirm={handleSaveGroup}
           onClose={() => setSaveDialogOpen(false)}
         />
+
+        {collectionDialogTab && (
+          <CollectionDialog
+            open={!!collectionDialogTab}
+            onOpenChange={(open) => { if (!open) { setCollectionDialogTab(null); } }}
+            onSubmit={(name, icon) => {
+              const newCol = createCollection(activeWorkspaceId, name, icon);
+              handleSaveTab(collectionDialogTab, newCol.id);
+              setCollectionDialogTab(null);
+            }}
+          />
+        )}
       </GroupCardBase>
     </div>
   );

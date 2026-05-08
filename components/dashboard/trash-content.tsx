@@ -109,7 +109,17 @@ function TrashedCollectionCard({
           </p>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-          <Button variant="outline" size="sm" onClick={() => restoreCollection(collection.id)}>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => {
+              restoreCollection(collection.id);
+              // Restore ALL bookmarks currently in this collection, ignoring selection
+              bookmarks.forEach(b => {
+                useBookmarksStore.getState().restoreFromTrash(b.id, collection.id);
+              });
+            }}
+          >
             <RotateCcw className="size-4 mr-1" />
             Restore
           </Button>
@@ -256,7 +266,6 @@ function TrashedBookmarkCard({
 
 export function TrashContent() {
   const trashedBookmarks = useBookmarksStore(s => s.trashedBookmarks);
-  const getTrashedCollections = useWorkspaceStore(s => s.getTrashedCollections);
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDeleteBookmark = useBookmarksStore(s => s.permanentlyDelete);
   
@@ -265,13 +274,24 @@ export function TrashContent() {
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
 
-  const trashedCollections = getTrashedCollections();
-  const trashedCollectionIds = React.useMemo(
-    () => new Set(trashedCollections.map(c => c.id)),
-    [trashedCollections]
+  const trashedCollections = React.useMemo(
+    () => collections.filter(c => !!c.deletedAt),
+    [collections]
   );
 
+  const individualTrashedBookmarks = React.useMemo(() => {
+    const trashedCollectionIds = new Set(trashedCollections.map(c => c.id));
+    const unique = new Map<string, BookmarkType>();
+    for (const b of trashedBookmarks) {
+      if (!trashedCollectionIds.has(b.collectionId)) {
+        unique.set(b.id, b);
+      }
+    }
+    return Array.from(unique.values());
+  }, [trashedBookmarks, trashedCollections]);
+
   const collectionBookmarks = React.useMemo(() => {
+    const trashedCollectionIds = new Set(trashedCollections.map(c => c.id));
     const map: Record<string, BookmarkType[]> = {};
     const seen = new Set<string>();
     for (const b of trashedBookmarks) {
@@ -283,17 +303,7 @@ export function TrashContent() {
       }
     }
     return map;
-  }, [trashedBookmarks, trashedCollectionIds]);
-
-  const individualTrashedBookmarks = React.useMemo(() => {
-    const unique = new Map<string, BookmarkType>();
-    for (const b of trashedBookmarks) {
-      if (!trashedCollectionIds.has(b.collectionId)) {
-        unique.set(b.id, b);
-      }
-    }
-    return Array.from(unique.values());
-  }, [trashedBookmarks, trashedCollectionIds]);
+  }, [trashedBookmarks, trashedCollections]);
 
   const totalCount = trashedCollections.length + individualTrashedBookmarks.length;
 
@@ -304,8 +314,21 @@ export function TrashContent() {
   const toggleCol = (id: string) => {
     setSelectedColIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      const isSelecting = !next.has(id);
+      if (isSelecting) next.add(id);
+      else next.delete(id);
+
+      // Cascade to bookmarks in this collection
+      const bmsInCol = collectionBookmarks[id] || [];
+      setSelectedBmIds(prevBm => {
+        const nextBm = new Set(prevBm);
+        for (const bm of bmsInCol) {
+          if (isSelecting) nextBm.add(bm.id);
+          else nextBm.delete(bm.id);
+        }
+        return nextBm;
+      });
+
       return next;
     });
   };
@@ -330,24 +353,38 @@ export function TrashContent() {
   };
 
   const handleBatchRestore = () => {
-    for (const colId of selectedColIds) {
-      restoreCollection(colId);
-    }
+    const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
     const active = collections.filter(
       c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
     );
     const defaultCol = active.find(c => c.isDefault);
 
+    // 1. Restore selected collections first
+    for (const colId of selectedColIds) {
+      restoreCollection(colId);
+      
+      // For each restored collection, detach its bookmarks that were NOT selected
+      const allBmsInCol = collectionBookmarks[colId] || [];
+      for (const bm of allBmsInCol) {
+        if (!selectedBmIds.has(bm.id)) {
+          useBookmarksStore.getState().updateBookmark(bm.id, { collectionId: "" });
+        }
+      }
+    }
+
+    // 2. Restore selected bookmarks
     for (const bmId of selectedBmIds) {
       const bm = trashedBookmarks.find(b => b.id === bmId);
       if (!bm) continue;
+
       let targetColId = defaultCol?.id ?? "";
+      
       if (selectedColIds.has(bm.collectionId)) {
-         targetColId = bm.collectionId;
+        targetColId = bm.collectionId;
       } else {
-        const byId = active.find(c => c.id === bm.collectionId);
-        if (byId) {
-          targetColId = byId.id;
+        const isAlreadyActive = active.find(c => c.id === bm.collectionId);
+        if (isAlreadyActive) {
+          targetColId = isAlreadyActive.id;
         } else {
           const srcCol = collections.find(c => c.id === bm.collectionId);
           const byName = srcCol ? active.find(c => c.name === srcCol.name) : undefined;
@@ -356,8 +393,10 @@ export function TrashContent() {
           }
         }
       }
+      
       restoreFromTrash(bmId, targetColId);
     }
+
     setSelectedColIds(new Set());
     setSelectedBmIds(new Set());
   };
