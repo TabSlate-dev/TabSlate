@@ -6,22 +6,20 @@ import { useAuthStore } from "@/store/auth-store";
 export interface SearchEngine {
   id: string;
   name: string;
-  url: string;
+  url: string;       // %s placeholder, e.g. "https://example.com/search?q=%s"
   siteUrl: string;
+  iconUrl?: string;
+  custom?: boolean;  // true for user-created engines
   enabled: boolean;
 }
 
 export const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
-  { id: "google", name: "Google", url: "https://www.google.com/search?q=", siteUrl: "https://www.google.com", enabled: true },
-  { id: "bing", name: "Bing", url: "https://www.bing.com/search?q=", siteUrl: "https://www.bing.com", enabled: true },
-  { id: "duckduckgo", name: "DuckDuckGo", url: "https://duckduckgo.com/?q=", siteUrl: "https://duckduckgo.com", enabled: true },
-  { id: "baidu", name: "Baidu", url: "https://www.baidu.com/s?wd=", siteUrl: "https://www.baidu.com", enabled: true },
-  { id: "yahoo", name: "Yahoo", url: "https://search.yahoo.com/search?p=", siteUrl: "https://www.yahoo.com", enabled: true },
-  { id: "yandex", name: "Yandex", url: "https://yandex.com/search/?text=", siteUrl: "https://yandex.com", enabled: true },
-  { id: "ecosia", name: "Ecosia", url: "https://www.ecosia.org/search?q=", siteUrl: "https://www.ecosia.org", enabled: true },
-  { id: "kagi", name: "Kagi", url: "https://kagi.com/search?q=", siteUrl: "https://kagi.com", enabled: true },
-  { id: "github", name: "GitHub", url: "https://github.com/search?q=", siteUrl: "https://github.com", enabled: true },
-  { id: "youtube", name: "YouTube", url: "https://www.youtube.com/results?search_query=", siteUrl: "https://www.youtube.com", enabled: true },
+  { id: "google", name: "Google", url: "https://www.google.com/search?q=%s", siteUrl: "https://www.google.com", iconUrl: "search-engine-icon/brand-google.svg", enabled: true },
+  { id: "bing", name: "Bing", url: "https://www.bing.com/search?q=%s", siteUrl: "https://www.bing.com", iconUrl: "search-engine-icon/brand-bing.svg", enabled: true },
+  { id: "duckduckgo", name: "DuckDuckGo", url: "https://duckduckgo.com/?q=%s", siteUrl: "https://duckduckgo.com", iconUrl: "search-engine-icon/brand-duckduckgo.svg", enabled: true },
+  { id: "yahoo", name: "Yahoo", url: "https://search.yahoo.com/search?p=%s", siteUrl: "https://www.yahoo.com", iconUrl: "search-engine-icon/brand-yahoo.svg", enabled: true },
+  { id: "yandex", name: "Yandex", url: "https://yandex.com/search/?text=%s", siteUrl: "https://yandex.com", iconUrl: "search-engine-icon/brand-yandex.svg", enabled: true },
+  { id: "github", name: "GitHub", url: "https://github.com/search?q=%s", siteUrl: "https://github.com", iconUrl: "search-engine-icon/brand-github.svg", enabled: true },
 ];
 
 function mergeEngines(saved: SearchEngine[]): SearchEngine[] {
