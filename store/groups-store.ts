@@ -63,6 +63,7 @@ interface GroupsState {
   addTabToGroup: (groupId: string, tab: { title: string; url: string; favicon: string }) => void;
   removeTabFromGroup: (tabId: string) => void;
   moveTab: (tabId: string, toGroupId: string) => void;
+  deleteTabFromTrash: (tabId: string) => void;
 
   // Open
   openGroup: (groupId: string) => Promise<void>;
@@ -140,25 +141,35 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     const deletedGroup = { ...group, deletedAt: Date.now() };
     syncEngine?.enqueue({ groups: [toServerGroup(deletedGroup, tabs)] });
     idbPut("groups", deletedGroup);
-    for (const t of tabs) { idbDelete("group-tabs", t.id); }
+    // Tabs are kept in IDB and state so they can be restored later.
     set((state) => ({
       groups: state.groups.map(g => g.id === id ? deletedGroup : g),
-      groupTabs: state.groupTabs.filter(t => t.groupId !== id),
     }));
   },
 
   restoreGroup: (id) => {
     const group = get().groups.find(g => g.id === id);
     if (!group) { return; }
+    const tabs = get().groupTabs.filter(t => t.groupId === id);
     const restored: SavedGroup = { ...group, deletedAt: undefined, seq: 0 };
-    syncEngine?.enqueue({ groups: [toServerGroup(restored, [])] });
+    syncEngine?.enqueue({ groups: [toServerGroup(restored, tabs)] });
     idbPut("groups", restored);
     set((state) => ({ groups: state.groups.map(g => g.id === id ? restored : g) }));
   },
 
   permanentlyDeleteGroup: (id) => {
+    const tabs = get().groupTabs.filter(t => t.groupId === id);
+    for (const t of tabs) { idbDelete("group-tabs", t.id); }
     idbDelete("groups", id);
-    set((state) => ({ groups: state.groups.filter(g => g.id !== id) }));
+    set((state) => ({
+      groups: state.groups.filter(g => g.id !== id),
+      groupTabs: state.groupTabs.filter(t => t.groupId !== id),
+    }));
+  },
+
+  deleteTabFromTrash: (tabId) => {
+    idbDelete("group-tabs", tabId);
+    set((state) => ({ groupTabs: state.groupTabs.filter(t => t.id !== tabId) }));
   },
 
   addTabToGroup: (groupId, tab) => {
@@ -250,7 +261,22 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
           } else {
             groups[idx] = deletedGroup;
           }
-          groupTabs = groupTabs.filter(t => t.groupId !== sg.id);
+          // Server always cascade-deletes group_tabs on push, so the pull response
+          // returns tabs: [] for soft-deleted groups. Preserve local tabs so the
+          // trash view can still show them; only replace if server sends real data.
+          if (sg.tabs.length > 0) {
+            groupTabs = groupTabs.filter(t => t.groupId !== sg.id);
+            for (const st of sg.tabs) {
+              groupTabs.push({
+                id: st.id,
+                groupId: st.group_id,
+                title: st.title,
+                url: st.url,
+                favicon: st.favicon,
+                position: st.position,
+              });
+            }
+          }
         } else {
           // Active: LWW — server wins.
           const updatedGroup: SavedGroup = {
@@ -290,7 +316,9 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       const group = state.groups.find(g => g.id === sg.id);
       if (group) { idbPut("groups", group); }
       if (sg.deleted_at) {
-        for (const t of sg.tabs ?? []) { idbDelete("group-tabs", t.id); }
+        // Local tabs are preserved (see state logic above); only sync IDB if
+        // server actually returned tabs for this deleted group.
+        for (const t of sg.tabs) { idbPut("group-tabs", { id: t.id, groupId: t.group_id, title: t.title, url: t.url, favicon: t.favicon, position: t.position }); }
       } else {
         for (const t of state.groupTabs.filter(t => t.groupId === sg.id)) {
           idbPut("group-tabs", t);
