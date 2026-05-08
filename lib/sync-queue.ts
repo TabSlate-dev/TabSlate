@@ -105,6 +105,7 @@ export class SyncQueue {
       snapshot.entities.collections.forEach(e => this.queue.collections.set((e as { id: string }).id, e));
       snapshot.entities.bookmarks.forEach(e => this.queue.bookmarks.set((e as { id: string }).id, e));
       snapshot.entities.tags.forEach(e => this.queue.tags.set((e as { id: string }).id, e));
+      snapshot.entities.groups.forEach(e => this.queue.groups.set((e as { id: string }).id, e));
 
       this.onError(err instanceof Error ? err : new Error(String(err)));
       if (this.retryTimer) clearTimeout(this.retryTimer);
