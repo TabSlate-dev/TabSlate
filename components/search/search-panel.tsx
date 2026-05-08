@@ -118,7 +118,7 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
   };
 
   const isActive = (idx: number) => idx === activeIndex;
-  const googleIndex = bookmarkResults.length + filteredTabs.length;
+  const engineIndex = bookmarkResults.length + filteredTabs.length;
 
   return (
     <div ref={panelRef} className="relative w-full max-w-xl">
@@ -208,19 +208,19 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
             </section>
           )}
 
-          {/* Google fallback — always present */}
+          {/* Search with default engine — always present */}
           <button
             type="button"
             className={cn(
               "w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent border-t",
-              isActive(googleIndex) && "bg-accent",
+              isActive(engineIndex) && "bg-accent",
             )}
-            onMouseEnter={() => setActiveIndex(googleIndex)}
-            onClick={() => handleSelect(googleIndex)}
+            onMouseEnter={() => setActiveIndex(engineIndex)}
+            onClick={() => handleSelect(engineIndex)}
           >
             <Search className="size-4 shrink-0 text-muted-foreground" />
             <span className="text-sm">
-              Search <span className="font-medium">"{query}"</span> on Google
+              Search <span className="font-medium">"{query}"</span> with {defaultEngine.name}
             </span>
           </button>
         </div>

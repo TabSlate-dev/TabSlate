@@ -95,11 +95,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
-    if (active.id !== over.id) {
-      const oldIndex = searchEngines.findIndex((e) => e.id === active.id);
-      const newIndex = searchEngines.findIndex((e) => e.id === over.id);
-      updateSearchEngines(arrayMove(searchEngines, oldIndex, newIndex));
-    }
+    if (!over || active.id === over.id) { return; }
+    const oldIndex = searchEngines.findIndex((e) => e.id === active.id);
+    const newIndex = searchEngines.findIndex((e) => e.id === over.id);
+    updateSearchEngines(arrayMove(searchEngines, oldIndex, newIndex));
   };
 
   const handleToggle = (id: string, enabled: boolean) => {

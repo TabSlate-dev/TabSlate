@@ -25,7 +25,9 @@ export const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
 function mergeEngines(saved: SearchEngine[]): SearchEngine[] {
   const merged = saved.map(s => {
     const def = DEFAULT_SEARCH_ENGINES.find(d => d.id === s.id);
-    return def ? { ...def, enabled: s.enabled !== false } : s;
+    if (def) { return { ...def, enabled: s.enabled !== false }; }
+    // Patch legacy engines that predate the %s URL format migration
+    return { ...s, url: s.url.includes("%s") ? s.url : s.url + "%s" };
   });
   // Append any new engines added to DEFAULT_SEARCH_ENGINES later
   const newEngines = DEFAULT_SEARCH_ENGINES.filter(d => !saved.find(s => s.id === d.id));
