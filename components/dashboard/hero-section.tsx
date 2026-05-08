@@ -15,21 +15,12 @@ import { useSettingsStore } from "@/store/settings-store";
 
 
 
-function getFaviconUrl(pageUrl: string, size: number = 64) {
-  try {
-    // Try to use Chrome's native favicon API if available (requires "favicon" permission)
-    if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
-      const urlObj = new URL(chrome.runtime.getURL("/_favicon/"));
-      urlObj.searchParams.set("pageUrl", pageUrl);
-      urlObj.searchParams.set("size", size.toString());
-      return urlObj.toString();
-    }
-  } catch (e) {
-    // Fallback
+function getEngineIconSrc(engine: { iconUrl?: string; siteUrl: string }): string {
+  if (engine.iconUrl && typeof chrome !== "undefined" && chrome.runtime?.id) {
+    return chrome.runtime.getURL(engine.iconUrl);
   }
-  // Fallback to DuckDuckGo's reliable favicon service
   try {
-    const domain = new URL(pageUrl).hostname;
+    const domain = new URL(engine.siteUrl).hostname;
     return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
   } catch {
     return "";
@@ -114,7 +105,7 @@ export function HeroSection() {
       chrome.tabs.update(tab.id, { active: true });
       chrome.windows.update(tab.windowId, { focused: true });
     } else {
-      window.location.href = `${engine.url}${encodeURIComponent(query.trim())}`;
+      window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
     }
     setQuery("");
   }, [bookmarkResults, filteredTabs, engine, query]);
@@ -138,7 +129,7 @@ export function HeroSection() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
-      window.location.href = `${engine.url}${encodeURIComponent(query.trim())}`;
+      window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
       setQuery("");
     }
   };
@@ -170,13 +161,13 @@ export function HeroSection() {
                 className="absolute left-1 z-10 size-12 rounded-full hover:bg-muted focus-visible:ring-0"
                 type="button"
               >
-                <img src={getFaviconUrl(engine.siteUrl, 32)} alt={engine.name} className="size-5 rounded-sm" />
+                <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-5 rounded-sm" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-[150px] max-h-[300px] overflow-y-auto">
               {searchEngines.map((e) => (
                 <DropdownMenuItem key={e.id} onClick={() => setEngine(e)} className="cursor-pointer">
-                  <img src={getFaviconUrl(e.siteUrl, 32)} alt={e.name} className="size-4 mr-2 rounded-sm" />
+                  <img src={getEngineIconSrc(e)} alt={e.name} className="size-4 mr-2 rounded-sm" />
                   {e.name}
                 </DropdownMenuItem>
               ))}
@@ -285,7 +276,7 @@ export function HeroSection() {
               onMouseEnter={() => setActiveIndex(engineIndex)}
               onClick={() => handleSelect(engineIndex)}
             >
-              <img src={getFaviconUrl(engine.siteUrl, 32)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
+              <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
               <span className="text-sm">
                 Search <span className="font-medium">"{query}"</span> with {engine.name}
               </span>

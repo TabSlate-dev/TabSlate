@@ -97,7 +97,7 @@ export function SearchOverlay({ onClose }: Props) {
       const tab = filteredTabs[index - bookmarkResults.length];
       chrome.runtime.sendMessage({ type: "FOCUS_TAB", tabId: tab.id, windowId: tab.windowId });
     } else {
-      chrome.tabs.create({ url: `${engine.url}${encodeURIComponent(query.trim())}` });
+      chrome.tabs.create({ url: engine.url.replace("%s", encodeURIComponent(query.trim())) });
     }
     onClose();
   }, [bookmarkResults, filteredTabs, engine, query, onClose]);
