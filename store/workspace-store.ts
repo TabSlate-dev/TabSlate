@@ -502,7 +502,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     idbPut("collections", restored);
     syncEngine?.enqueue({ collections: [toServerCollection(restored)] });
     set((s) => ({ collections: s.collections.map(c => c.id === id ? restored : c) }));
-    useBookmarksStore.getState().restoreCollectionBookmarks(id);
   },
 
   permanentlyDeleteCollection: (id) => {

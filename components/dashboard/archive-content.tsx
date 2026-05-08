@@ -110,7 +110,17 @@ function ArchivedCollectionCard({
           </p>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-          <Button variant="outline" size="sm" onClick={() => restoreCollection(collection.id)}>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => {
+              restoreCollection(collection.id);
+              // Restore ALL bookmarks currently in this collection, ignoring selection
+              bookmarks.forEach(b => {
+                useBookmarksStore.getState().restoreFromArchive(b.id);
+              });
+            }}
+          >
             <RotateCcw className="size-4 mr-1" />
             Restore
           </Button>
@@ -168,6 +178,37 @@ function ArchivedBookmarkCard({
     [tags, bookmark.tags]
   );
 
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
+  function handleRestore() {
+    const active = collections.filter(
+      c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
+    );
+
+    // 1. collectionId still points to an active collection
+    const byId = active.find(c => c.id === bookmark.collectionId);
+    if (byId) {
+      restoreFromArchive(bookmark.id);
+      return;
+    }
+
+    // 2. Original collection name exists under a different id (e.g. re-created)
+    const srcCol = collections.find(c => c.id === bookmark.collectionId);
+    const byName = srcCol ? active.find(c => c.name === srcCol.name) : undefined;
+    if (byName) {
+      useBookmarksStore.getState().updateBookmark(bookmark.id, { collectionId: byName.id });
+      restoreFromArchive(bookmark.id);
+      return;
+    }
+
+    // 3. Fall back to default collection
+    const defaultCol = active.find(c => c.isDefault);
+    const targetColId = defaultCol?.id ?? "";
+    useBookmarksStore.getState().updateBookmark(bookmark.id, { collectionId: targetColId });
+    restoreFromArchive(bookmark.id);
+  }
+
   function handleMoveToTrash() {
     restoreFromArchive(bookmark.id);
     setTimeout(() => trashBookmark(bookmark.id), 0);
@@ -214,7 +255,7 @@ function ArchivedBookmarkCard({
       </div>
 
       <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-        <Button variant="outline" size="sm" onClick={() => restoreFromArchive(bookmark.id)}>
+        <Button variant="outline" size="sm" onClick={handleRestore}>
           <RotateCcw className="size-4 mr-1" />
           Restore
         </Button>
@@ -248,11 +289,16 @@ export function ArchiveContent() {
   const archivedBookmarks = useBookmarksStore(s => s.archivedBookmarks);
   const restoreFromArchive = useBookmarksStore(s => s.restoreFromArchive);
   const trashBookmark = useBookmarksStore(s => s.trashBookmark);
-  const getArchivedCollections = useWorkspaceStore(s => s.getArchivedCollections);
+  
+  const collections = useWorkspaceStore(s => s.collections);
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
 
-  const archivedCollections = getArchivedCollections();
+  const archivedCollections = React.useMemo(
+    () => collections.filter(c => !!c.archivedAt && !c.deletedAt),
+    [collections]
+  );
+
   const archivedCollectionIds = React.useMemo(
     () => new Set(archivedCollections.map(c => c.id)),
     [archivedCollections]
@@ -283,7 +329,20 @@ export function ArchiveContent() {
   const toggleCol = (id: string) => {
     setSelectedColIds(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      const isSelecting = !next.has(id);
+      if (isSelecting) next.add(id); else next.delete(id);
+
+      // Cascade to bookmarks in this collection
+      const bmsInCol = collectionBookmarks[id] || [];
+      setSelectedBmIds(prevBm => {
+        const nextBm = new Set(prevBm);
+        for (const bm of bmsInCol) {
+          if (isSelecting) nextBm.add(bm.id);
+          else nextBm.delete(bm.id);
+        }
+        return nextBm;
+      });
+
       return next;
     });
   };
@@ -307,12 +366,46 @@ export function ArchiveContent() {
   };
 
   const handleBatchRestore = () => {
+    const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
+    const active = collections.filter(
+      c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
+    );
+    const defaultCol = active.find(c => c.isDefault);
+
+    // 1. Restore collections
     for (const colId of selectedColIds) {
       restoreCollection(colId);
+
+      // For each restored collection, detach its bookmarks that were NOT selected
+      const allBmsInCol = collectionBookmarks[colId] || [];
+      for (const bm of allBmsInCol) {
+        if (!selectedBmIds.has(bm.id)) {
+          useBookmarksStore.getState().updateBookmark(bm.id, { collectionId: "" });
+        }
+      }
     }
+
+    // 2. Restore bookmarks
     for (const bmId of selectedBmIds) {
+      const bm = archivedBookmarks.find(b => b.id === bmId);
+      if (!bm) continue;
+
+      let targetColId = bm.collectionId;
+
+      const isRestoringCol = selectedColIds.has(bm.collectionId);
+      const isColAlreadyActive = active.some(c => c.id === bm.collectionId);
+
+      if (!isRestoringCol && !isColAlreadyActive) {
+        targetColId = defaultCol?.id ?? "";
+      }
+
+      if (targetColId !== bm.collectionId) {
+        useBookmarksStore.getState().updateBookmark(bm.id, { collectionId: targetColId });
+      }
+      
       restoreFromArchive(bmId);
     }
+
     setSelectedColIds(new Set());
     setSelectedBmIds(new Set());
   };
