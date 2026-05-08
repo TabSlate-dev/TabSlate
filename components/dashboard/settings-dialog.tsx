@@ -116,7 +116,23 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [newName, setNewName] = React.useState("");
   const [newUrl, setNewUrl] = React.useState("");
 
-  const canAdd = newName.trim().length > 0 && newUrl.trim().includes("%s");
+  React.useEffect(() => {
+    if (!open) {
+      setShowForm(false);
+      setNewName("");
+      setNewUrl("");
+    }
+  }, [open]);
+
+  const canAdd = (() => {
+    if (!newName.trim() || !newUrl.trim().includes("%s")) { return false; }
+    try {
+      new URL(newUrl.trim().replace("%s", "x"));
+      return true;
+    } catch {
+      return false;
+    }
+  })();
 
   const handleAdd = () => {
     const siteUrl = (() => {
