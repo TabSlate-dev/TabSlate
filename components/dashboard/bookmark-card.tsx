@@ -108,7 +108,7 @@ export function BookmarkCard({
             isHighlighted &&
               "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle",
           )}
-          onClick={handleNewTabOpen}
+          onClick={handleSmartOpen}
         >
           {dragHandleProps && (
             <div
@@ -191,7 +191,7 @@ export function BookmarkCard({
           isHighlighted &&
             "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle",
         )}
-        onClick={handleNewTabOpen}
+        onClick={handleSmartOpen}
       >
         {/* Header: favicon + title + slide-in actions */}
         <div className="flex items-center gap-2 px-3 pt-3 pb-2">

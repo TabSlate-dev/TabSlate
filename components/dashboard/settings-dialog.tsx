@@ -218,7 +218,6 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                         setNewUrl("");
                       }}
                     >
-                      <X className="size-3.5 mr-1" />
                       Cancel
                     </Button>
                     <Button size="sm" disabled={!canAdd} onClick={handleAdd}>
