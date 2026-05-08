@@ -206,15 +206,96 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     await openAsTabGroup(urls, group.name, group.color, group.isCompact);
   },
 
-  mergeFromServer: (_resp) => {
-    // TODO: implement in Task 8
+  mergeFromServer: (resp) => {
+    const serverGroups = resp.entities.groups;
+    if (!serverGroups?.length) { return; }
+
+    set((state) => {
+      let groups = [...state.groups];
+      let groupTabs = [...state.groupTabs];
+
+      for (const sg of serverGroups) {
+        const idx = groups.findIndex(g => g.id === sg.id);
+
+        if (sg.deleted_at) {
+          // Soft-deleted: update + keep in state so a future trash view can find it.
+          const deletedGroup: SavedGroup = {
+            id: sg.id,
+            name: sg.name,
+            color: sg.color as TabGroupColor,
+            isCompact: sg.is_compact,
+            createdAt: new Date(sg.created_at).toISOString(),
+            seq: sg.seq,
+            deletedAt: sg.deleted_at,
+          };
+          if (idx === -1) {
+            groups.push(deletedGroup);
+          } else {
+            groups[idx] = deletedGroup;
+          }
+          groupTabs = groupTabs.filter(t => t.groupId !== sg.id);
+        } else {
+          // Active: LWW — server wins.
+          const updatedGroup: SavedGroup = {
+            id: sg.id,
+            name: sg.name,
+            color: sg.color as TabGroupColor,
+            isCompact: sg.is_compact,
+            createdAt: new Date(sg.created_at).toISOString(),
+            seq: sg.seq,
+          };
+          if (idx === -1) {
+            groups.push(updatedGroup);
+          } else {
+            groups[idx] = updatedGroup;
+          }
+          // Replace tab snapshot: remove old tabs then add server tabs.
+          groupTabs = groupTabs.filter(t => t.groupId !== sg.id);
+          for (const st of sg.tabs) {
+            groupTabs.push({
+              id: st.id,
+              groupId: st.group_id,
+              title: st.title,
+              url: st.url,
+              favicon: st.favicon,
+              position: st.position,
+            });
+          }
+        }
+      }
+
+      return { groups, groupTabs };
+    });
+
+    // Persist to IDB (fire-and-forget).
+    const state = get();
+    for (const sg of serverGroups) {
+      const group = state.groups.find(g => g.id === sg.id);
+      if (group) { idbPut("groups", group); }
+      if (sg.deleted_at) {
+        for (const t of sg.tabs ?? []) { idbDelete("group-tabs", t.id); }
+      } else {
+        for (const t of state.groupTabs.filter(t => t.groupId === sg.id)) {
+          idbPut("group-tabs", t);
+        }
+      }
+    }
   },
 
   sweepUnsynced: () => {
-    // TODO: implement in Task 8
+    const { groups, groupTabs } = get();
+    const unsynced = groups.filter(g => g.seq === 0);
+    if (unsynced.length === 0) { return; }
+    syncEngine?.enqueue({
+      groups: unsynced.map(g => toServerGroup(g, groupTabs.filter(t => t.groupId === g.id))),
+    });
   },
 
   enqueueAllToSync: () => {
-    // TODO: implement in Task 9
+    const { groups, groupTabs } = get();
+    if (groups.length === 0) { return; }
+    syncEngine?.enqueue({
+      groups: groups.map(g => toServerGroup(g, groupTabs.filter(t => t.groupId === g.id))),
+    });
   },
 }));
