@@ -3,6 +3,7 @@ import { Search, Globe, BookmarkIcon, Archive } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { useAuthStore } from "@/store/auth-store";
+import { useSettingsStore } from "@/store/settings-store";
 import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
 import type { BrowserTab } from "@/lib/chrome/tabs";
@@ -25,6 +26,11 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
 
   const accessToken = useAuthStore(s => s.accessToken);
   const serverUrl = useAuthStore(s => s.serverUrl);
+  const searchEngines = useSettingsStore(s => s.searchEngines);
+  const defaultEngine = React.useMemo(
+    () => searchEngines.find(e => e.enabled) ?? searchEngines[0],
+    [searchEngines]
+  );
 
   const filteredTabs = React.useMemo(() => {
     if (query.length < 2) { return []; }
@@ -89,11 +95,11 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
       onClose?.();
     } else {
       chrome.tabs.create({
-        url: `https://www.google.com/search?q=${encodeURIComponent(query)}`,
+        url: defaultEngine.url.replace("%s", encodeURIComponent(query.trim())),
       });
       onClose?.();
     }
-  }, [bookmarkResults, filteredTabs, query, openUrl, onClose]);
+  }, [bookmarkResults, filteredTabs, query, openUrl, onClose, defaultEngine]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showDropdown) { return; }

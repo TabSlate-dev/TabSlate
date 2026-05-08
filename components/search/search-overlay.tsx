@@ -6,9 +6,9 @@ import type { BrowserTab } from "@/lib/chrome/tabs";
 import { cn } from "@/lib/utils";
 
 const SEARCH_ENGINES = [
-  { id: "google", name: "Google", url: "https://www.google.com/search?q=" },
-  { id: "bing",   name: "Bing",   url: "https://www.bing.com/search?q=" },
-  { id: "duckduckgo", name: "DuckDuckGo", url: "https://duckduckgo.com/?q=" },
+  { id: "google", name: "Google", url: "https://www.google.com/search?q=%s" },
+  { id: "bing",   name: "Bing",   url: "https://www.bing.com/search?q=%s" },
+  { id: "duckduckgo", name: "DuckDuckGo", url: "https://duckduckgo.com/?q=%s" },
 ];
 
 interface Props {
