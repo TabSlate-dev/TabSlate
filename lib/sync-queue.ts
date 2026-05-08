@@ -6,6 +6,7 @@ interface QueuedEntities {
   collections: Map<string, object>;
   bookmarks: Map<string, object>;
   tags: Map<string, object>;
+  groups: Map<string, object>;
 }
 
 type OnPushSuccess = (resp: SyncPushResponse) => void;
@@ -22,6 +23,7 @@ export class SyncQueue {
     collections: new Map(),
     bookmarks: new Map(),
     tags: new Map(),
+    groups: new Map(),
   };
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -34,7 +36,7 @@ export class SyncQueue {
     private readonly onError: OnPushError,
   ) {}
 
-  enqueue(entities: Partial<{ workspaces: object[]; collections: object[]; bookmarks: object[]; tags: object[] }>) {
+  enqueue(entities: Partial<{ workspaces: object[]; collections: object[]; bookmarks: object[]; tags: object[]; groups: object[] }>) {
     const set = <T extends { id: string }>(map: Map<string, object>, items?: T[]) => {
       items?.forEach(item => map.set(item.id, item));
     };
@@ -42,6 +44,7 @@ export class SyncQueue {
     set(this.queue.collections, entities.collections as Array<{ id: string }>);
     set(this.queue.bookmarks, entities.bookmarks as Array<{ id: string }>);
     set(this.queue.tags, entities.tags as Array<{ id: string }>);
+    set(this.queue.groups, entities.groups as Array<{ id: string }>);
 
     this.schedulePush(2000);
   }
@@ -69,7 +72,8 @@ export class SyncQueue {
       this.queue.workspaces.size === 0 &&
       this.queue.collections.size === 0 &&
       this.queue.bookmarks.size === 0 &&
-      this.queue.tags.size === 0
+      this.queue.tags.size === 0 &&
+      this.queue.groups.size === 0
     );
   }
 
@@ -86,9 +90,10 @@ export class SyncQueue {
         collections: Array.from(this.queue.collections.values()),
         bookmarks: Array.from(this.queue.bookmarks.values()),
         tags: Array.from(this.queue.tags.values()),
+        groups: Array.from(this.queue.groups.values()),
       },
     };
-    this.queue = { workspaces: new Map(), collections: new Map(), bookmarks: new Map(), tags: new Map() };
+    this.queue = { workspaces: new Map(), collections: new Map(), bookmarks: new Map(), tags: new Map(), groups: new Map() };
 
     try {
       const resp = await api.syncPush(creds.baseUrl, creds.accessToken, snapshot);
@@ -100,6 +105,7 @@ export class SyncQueue {
       snapshot.entities.collections.forEach(e => this.queue.collections.set((e as { id: string }).id, e));
       snapshot.entities.bookmarks.forEach(e => this.queue.bookmarks.set((e as { id: string }).id, e));
       snapshot.entities.tags.forEach(e => this.queue.tags.set((e as { id: string }).id, e));
+      snapshot.entities.groups.forEach(e => this.queue.groups.set((e as { id: string }).id, e));
 
       this.onError(err instanceof Error ? err : new Error(String(err)));
       if (this.retryTimer) clearTimeout(this.retryTimer);

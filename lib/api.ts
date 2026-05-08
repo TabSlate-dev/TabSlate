@@ -84,11 +84,34 @@ export interface ServerTag {
   updated_at: number;
 }
 
+export interface ServerGroupTab {
+  id: string;
+  group_id: string;
+  title: string;
+  url: string;
+  favicon: string;
+  position: number;
+}
+
+export interface ServerGroup {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string;
+  is_compact: boolean;
+  seq: number;
+  deleted_at?: number;
+  created_at: number;
+  updated_at: number;
+  tabs: ServerGroupTab[];
+}
+
 export interface SyncEntities {
   workspaces: ServerWorkspace[];
   collections: ServerCollection[];
   bookmarks: ServerBookmark[];
   tags: ServerTag[];
+  groups: ServerGroup[];
 }
 
 export interface SyncRejected {
@@ -112,6 +135,7 @@ export interface SyncPushPayload {
     collections: object[];
     bookmarks: object[];
     tags: object[];
+    groups: object[];
   };
 }
 

@@ -132,6 +132,7 @@ function SyncProvider({
   const localSeq = useWorkspaceStore((s) => s.localSeq);
   const mergeWorkspaces = useWorkspaceStore((s) => s.mergeFromServer);
   const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
+  const mergeGroups = useGroupsStore((s) => s.mergeFromServer);
   const setLocalSeq = useWorkspaceStore((s) => s.setLocalSeq);
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -143,7 +144,12 @@ function SyncProvider({
 
   const mergeWorkspacesRef = useRef(mergeWorkspaces);
   const mergeBookmarksRef = useRef(mergeBookmarks);
+  const mergeGroupsRef = useRef(mergeGroups);
   const setLocalSeqRef = useRef(setLocalSeq);
+
+  useEffect(() => { mergeWorkspacesRef.current = mergeWorkspaces; }, [mergeWorkspaces]);
+  useEffect(() => { mergeBookmarksRef.current = mergeBookmarks; }, [mergeBookmarks]);
+  useEffect(() => { mergeGroupsRef.current = mergeGroups; }, [mergeGroups]);
 
   useEffect(() => {
     if (!accessToken || !serverUrl) return;
@@ -158,11 +164,13 @@ function SyncProvider({
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
         mergeWorkspacesRef.current(resp);
         mergeBookmarksRef.current(resp);
+        mergeGroupsRef.current(resp);
         localSeqRef.current = resp.server_seq;
         setLocalSeqRef.current(resp.server_seq);
         if (needsInitialPush) {
           useWorkspaceStore.getState().enqueueAllToSync();
           useBookmarksStore.getState().enqueueAllToSync();
+          useGroupsStore.getState().enqueueAllToSync();
           // New account: server is empty and local store is also empty → seed default workspace.
           if (useWorkspaceStore.getState().workspaces.length === 0) {
             useWorkspaceStore.getState().createWorkspace("My Workspace", "blue");
@@ -170,6 +178,7 @@ function SyncProvider({
         } else {
           useWorkspaceStore.getState().sweepUnsynced();
           useBookmarksStore.getState().sweepUnsynced();
+          useGroupsStore.getState().sweepUnsynced();
         }
       },
       (_pushResp) => { /* seq updates happen inside mergeFromServer */ },

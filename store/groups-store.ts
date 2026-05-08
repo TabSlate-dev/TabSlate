@@ -2,7 +2,9 @@ import { create } from "zustand";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { openAsTabGroup } from "@/lib/chrome/tab-groups";
 import { generateId } from "@/lib/id";
-import { idbGetAll, idbPut, idbDelete, idbGetByIndex, idbTransaction } from "@/lib/idb";
+import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
+import { syncEngine } from "@/lib/sync-engine";
+import type { SyncPullResponse } from "@/lib/api";
 
 export interface GroupTab {
   id: string;
@@ -19,6 +21,29 @@ export interface SavedGroup {
   color: TabGroupColor;
   isCompact: boolean;
   createdAt: string;
+  seq: number;        // 0 = never synced; >0 = server-confirmed
+  deletedAt?: number; // unix ms; undefined = alive
+}
+
+function toServerGroup(g: SavedGroup, tabs: GroupTab[]): object {
+  return {
+    id: g.id,
+    name: g.name,
+    color: g.color,
+    is_compact: g.isCompact,
+    seq: g.seq,
+    deleted_at: g.deletedAt ?? null,
+    created_at: new Date(g.createdAt).getTime(),
+    updated_at: Date.now(),
+    tabs: tabs.map(t => ({
+      id: t.id,
+      group_id: t.groupId,
+      title: t.title,
+      url: t.url,
+      favicon: t.favicon,
+      position: t.position,
+    })),
+  };
 }
 
 interface GroupsState {
@@ -30,7 +55,9 @@ interface GroupsState {
   // Group CRUD
   createGroup: (name: string, color: TabGroupColor, isCompact: boolean) => string;
   updateGroup: (id: string, patch: Partial<Pick<SavedGroup, "name" | "color" | "isCompact">>) => void;
-  deleteGroup: (id: string) => Promise<void>;
+  deleteGroup: (id: string) => void;
+  restoreGroup: (id: string) => void;
+  permanentlyDeleteGroup: (id: string) => void;
 
   // Tab management
   addTabToGroup: (groupId: string, tab: { title: string; url: string; favicon: string }) => void;
@@ -39,6 +66,11 @@ interface GroupsState {
 
   // Open
   openGroup: (groupId: string) => Promise<void>;
+
+  // Sync
+  mergeFromServer: (resp: SyncPullResponse) => void;
+  sweepUnsynced: () => void;
+  enqueueAllToSync: () => void;
 }
 
 export const useGroupsStore = create<GroupsState>()((set, get) => ({
@@ -55,7 +87,8 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
 
   createGroup: (name, color, isCompact) => {
     const id = generateId();
-    const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString() };
+    const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0 };
+    syncEngine?.enqueue({ groups: [toServerGroup(group, [])] });
     set((state) => ({ groups: [...state.groups, group] }));
     idbPut("groups", group);
     return id;
@@ -64,6 +97,12 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   updateGroup: (id, patch) => {
     const oldGroup = get().groups.find(g => g.id === id);
     const oldName = oldGroup?.name;
+
+    if (oldGroup) {
+      const updatedForSync = { ...oldGroup, ...patch };
+      const tabs = get().groupTabs.filter(t => t.groupId === id);
+      syncEngine?.enqueue({ groups: [toServerGroup(updatedForSync, tabs)] });
+    }
 
     set((state) => ({
       groups: state.groups.map((g) =>
@@ -86,7 +125,6 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
           if (patch.color !== undefined && chromeGroup.color !== patch.color) {
             chromePatch.color = patch.color;
           }
-          
           if (Object.keys(chromePatch).length > 0) {
             updateChromeGroup(chromeGroup.id, chromePatch);
           }
@@ -95,56 +133,82 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     }
   },
 
-  deleteGroup: async (id) => {
-    const tabsToDelete = await idbGetByIndex<GroupTab>("group-tabs", "groupId", id);
-    await idbTransaction(["groups", "group-tabs"], "readwrite", (tx) => {
-      tx.objectStore("groups").delete(id);
-      for (const t of tabsToDelete) { tx.objectStore("group-tabs").delete(t.id); }
-    });
+  deleteGroup: (id) => {
+    const group = get().groups.find(g => g.id === id);
+    if (!group) { return; }
+    const tabs = get().groupTabs.filter(t => t.groupId === id);
+    const deletedGroup = { ...group, deletedAt: Date.now() };
+    syncEngine?.enqueue({ groups: [toServerGroup(deletedGroup, tabs)] });
+    idbPut("groups", deletedGroup);
+    for (const t of tabs) { idbDelete("group-tabs", t.id); }
     set((state) => ({
-      groups: state.groups.filter((g) => g.id !== id),
-      groupTabs: state.groupTabs.filter((t) => t.groupId !== id),
+      groups: state.groups.map(g => g.id === id ? deletedGroup : g),
+      groupTabs: state.groupTabs.filter(t => t.groupId !== id),
     }));
   },
 
+  restoreGroup: (id) => {
+    const group = get().groups.find(g => g.id === id);
+    if (!group) { return; }
+    const restored: SavedGroup = { ...group, deletedAt: undefined, seq: 0 };
+    syncEngine?.enqueue({ groups: [toServerGroup(restored, [])] });
+    idbPut("groups", restored);
+    set((state) => ({ groups: state.groups.map(g => g.id === id ? restored : g) }));
+  },
+
+  permanentlyDeleteGroup: (id) => {
+    idbDelete("groups", id);
+    set((state) => ({ groups: state.groups.filter(g => g.id !== id) }));
+  },
+
   addTabToGroup: (groupId, tab) => {
-    const { groupTabs } = get();
-    const existing = groupTabs.find(
-      (t) => t.groupId === groupId && t.url === tab.url
-    );
+    const { groupTabs, groups } = get();
+    const existing = groupTabs.find(t => t.groupId === groupId && t.url === tab.url);
     if (existing) { return; }
-    const position = groupTabs.filter((t) => t.groupId === groupId).length;
+    const position = groupTabs.filter(t => t.groupId === groupId).length;
     const newTab: GroupTab = { id: generateId(), groupId, ...tab, position };
-    set((state) => ({
-      groupTabs: [...state.groupTabs, newTab],
-    }));
+    const newGroupTabs = [...groupTabs, newTab];
+    const group = groups.find(g => g.id === groupId);
+    if (group) {
+      syncEngine?.enqueue({ groups: [toServerGroup(group, newGroupTabs.filter(t => t.groupId === groupId))] });
+    }
+    set(() => ({ groupTabs: newGroupTabs }));
     idbPut("group-tabs", newTab);
   },
 
   removeTabFromGroup: (tabId) => {
+    const { groups, groupTabs } = get();
+    const tab = groupTabs.find(t => t.id === tabId);
+    if (tab) {
+      const group = groups.find(g => g.id === tab.groupId);
+      const remainingTabs = groupTabs.filter(t => t.id !== tabId && t.groupId === tab.groupId);
+      if (group) {
+        syncEngine?.enqueue({ groups: [toServerGroup(group, remainingTabs)] });
+      }
+    }
     idbDelete("group-tabs", tabId);
-    set((state) => ({
-      groupTabs: state.groupTabs.filter((t) => t.id !== tabId),
-    }));
+    set((state) => ({ groupTabs: state.groupTabs.filter(t => t.id !== tabId) }));
   },
 
   moveTab: (tabId, toGroupId) => {
-    const existingTab = get().groupTabs.find((t) => t.id === tabId);
+    const { groups, groupTabs } = get();
+    const existingTab = groupTabs.find(t => t.id === tabId);
     if (!existingTab || existingTab.groupId === toGroupId) { return; }
-    set((state) => {
-      const tab = state.groupTabs.find((t) => t.id === tabId);
-      if (!tab) { return {}; }
-      const position = state.groupTabs.filter(
-        (t) => t.groupId === toGroupId
-      ).length;
-      return {
-        groupTabs: state.groupTabs.map((t) =>
-          t.id === tabId ? { ...t, groupId: toGroupId, position } : t
-        ),
-      };
-    });
-    const moved = get().groupTabs.find(t => t.id === tabId);
-    if (moved) { idbPut("group-tabs", moved); }
+
+    const fromGroupId = existingTab.groupId;
+    const position = groupTabs.filter(t => t.groupId === toGroupId).length;
+    const movedTab = { ...existingTab, groupId: toGroupId, position };
+    const updatedTabs = groupTabs.map(t => t.id === tabId ? movedTab : t);
+
+    const fromGroup = groups.find(g => g.id === fromGroupId);
+    const toGroup = groups.find(g => g.id === toGroupId);
+    const toEnqueue: object[] = [];
+    if (fromGroup) { toEnqueue.push(toServerGroup(fromGroup, updatedTabs.filter(t => t.groupId === fromGroupId))); }
+    if (toGroup) { toEnqueue.push(toServerGroup(toGroup, updatedTabs.filter(t => t.groupId === toGroupId))); }
+    if (toEnqueue.length > 0) { syncEngine?.enqueue({ groups: toEnqueue }); }
+
+    set(() => ({ groupTabs: updatedTabs }));
+    idbPut("group-tabs", movedTab);
   },
 
   openGroup: async (groupId) => {
@@ -157,5 +221,98 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       .map((t) => t.url);
     if (!urls.length) { return; }
     await openAsTabGroup(urls, group.name, group.color, group.isCompact);
+  },
+
+  mergeFromServer: (resp) => {
+    const serverGroups = resp.entities.groups;
+    if (!serverGroups?.length) { return; }
+
+    set((state) => {
+      let groups = [...state.groups];
+      let groupTabs = [...state.groupTabs];
+
+      for (const sg of serverGroups) {
+        const idx = groups.findIndex(g => g.id === sg.id);
+
+        if (sg.deleted_at) {
+          // Soft-deleted: update + keep in state so a future trash view can find it.
+          const deletedGroup: SavedGroup = {
+            id: sg.id,
+            name: sg.name,
+            color: sg.color as TabGroupColor,
+            isCompact: sg.is_compact,
+            createdAt: new Date(sg.created_at).toISOString(),
+            seq: sg.seq,
+            deletedAt: sg.deleted_at,
+          };
+          if (idx === -1) {
+            groups.push(deletedGroup);
+          } else {
+            groups[idx] = deletedGroup;
+          }
+          groupTabs = groupTabs.filter(t => t.groupId !== sg.id);
+        } else {
+          // Active: LWW — server wins.
+          const updatedGroup: SavedGroup = {
+            id: sg.id,
+            name: sg.name,
+            color: sg.color as TabGroupColor,
+            isCompact: sg.is_compact,
+            createdAt: new Date(sg.created_at).toISOString(),
+            seq: sg.seq,
+          };
+          if (idx === -1) {
+            groups.push(updatedGroup);
+          } else {
+            groups[idx] = updatedGroup;
+          }
+          // Replace tab snapshot: remove old tabs then add server tabs.
+          groupTabs = groupTabs.filter(t => t.groupId !== sg.id);
+          for (const st of sg.tabs ?? []) {
+            groupTabs.push({
+              id: st.id,
+              groupId: st.group_id,
+              title: st.title,
+              url: st.url,
+              favicon: st.favicon,
+              position: st.position,
+            });
+          }
+        }
+      }
+
+      return { groups, groupTabs };
+    });
+
+    // Persist to IDB (fire-and-forget).
+    const state = get();
+    for (const sg of serverGroups) {
+      const group = state.groups.find(g => g.id === sg.id);
+      if (group) { idbPut("groups", group); }
+      if (sg.deleted_at) {
+        for (const t of sg.tabs ?? []) { idbDelete("group-tabs", t.id); }
+      } else {
+        for (const t of state.groupTabs.filter(t => t.groupId === sg.id)) {
+          idbPut("group-tabs", t);
+        }
+      }
+    }
+  },
+
+  sweepUnsynced: () => {
+    const { groups, groupTabs } = get();
+    const unsynced = groups.filter(g => g.seq === 0);
+    if (unsynced.length === 0) { return; }
+    syncEngine?.enqueue({
+      groups: unsynced.map(g => toServerGroup(g, groupTabs.filter(t => t.groupId === g.id))),
+    });
+  },
+
+  enqueueAllToSync: () => {
+    const { groups, groupTabs } = get();
+    if (groups.length === 0) { return; }
+    syncEngine?.enqueue({
+      groups: groups.map(g => toServerGroup(g, groupTabs.filter(t => t.groupId === g.id))),
+    });
   },
 }));
