@@ -37,8 +37,8 @@ TabSlate/
 │   ├── login-form.tsx          # login/register/forgot-password/reset-password 四模式 + Prosopo 验证码 + 密码强度提示
 │   ├── procaptcha.tsx          # Prosopo iframe 包装组件（绕过 MV3 CSP 限制；通过 postMessage 接收 token）
 │   ├── search/
-│   │   ├── search-panel.tsx    # 内联搜索 UI：输入框 + 书签/标签/Google 三栏下拉；键盘导航；已归档 badge
-│   │   └── search-overlay.tsx  # 全局搜索浮层（供 content.ts 注入），基于 SearchPanel 封装
+│   │   ├── search-panel.tsx    # 内联搜索 UI：输入框 + 书签/标签/搜索引擎三栏下拉；键盘导航；已归档 badge；从 useSettingsStore 读取默认引擎
+│   │   └── search-overlay.tsx  # 全局搜索浮层（供 content.ts 注入 Shadow DOM）；从 chrome.storage.local["tabslate-search-engines"] 读取用户引擎（content script 无法用 Zustand）
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
@@ -72,6 +72,7 @@ TabSlate/
 │       ├── header.tsx          # 顶部搜索/过滤栏
 │       ├── workspace-rail.tsx  # 最左侧工作区切换轨道
 │       ├── tabs-rail.tsx       # 最右侧标签页快速预览轨道
+│       ├── settings-dialog.tsx # 设置对话框：搜索引擎管理（启用/禁用/拖拽排序/添加/删除）
 │       ├── bookmark-card.tsx   # 单个书签卡片/列表项
 │       ├── favorites-content.tsx
 │       ├── archive-content.tsx
@@ -82,6 +83,7 @@ TabSlate/
 │   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态；含 mergeFromServer（同步合并）
 │   ├── workspace-store.ts  # 工作区/集合/标签配置；含 localSeq、mergeFromServer、setLocalSeq
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
+│   ├── settings-store.ts   # 搜索引擎列表（启用状态、顺序、自定义引擎）；持久化到 IDB kv["searchEngines"]；pullFromServer 从服务端拉取偏好
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
 ├── types/
@@ -121,6 +123,8 @@ useAuthStore       ──Zustand persist──▶  chrome.storage.local  "tabsla
 useBookmarksStore  ──手动 idbPut/Get──▶  IndexedDB  bookmarks / archived-bookmarks / trashed-bookmarks
 useWorkspaceStore  ──手动 idbPut/Get──▶  IndexedDB  workspaces / collections / tags / kv
 useGroupsStore     ──手动 idbPut/Get──▶  IndexedDB  groups / group-tabs
+useSettingsStore   ──手动 idbPut/Get──▶  IndexedDB  kv["searchEngines"]
+                   ──StoreGate 镜像──▶  chrome.storage.local  "tabslate-search-engines"（供 content script 读取）
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
 SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  （30s TTL）
 ```
@@ -135,6 +139,7 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
 | `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标（存于 `kv["localSeq"]`）；`mergeFromServer` 执行 LWW 合并；`sweepUnsynced` 补推 `seq=0` 的实体 |
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`mergeFromServer` / `sweepUnsynced` / `enqueueAllToSync`；`restoreGroup` / `permanentlyDeleteGroup` |
+| `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
 | `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
 ### 跨进程通知

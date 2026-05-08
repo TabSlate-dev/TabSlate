@@ -125,7 +125,7 @@ const tabs = React.useMemo(
 - **ColorPicker** (`components/ui/color-picker.tsx`) — Tab group 颜色选择器，支持 `size="sm" | "md"`
 - **Alert** (`components/ui/alert.tsx`) — 标准 shadcn Alert，用于内联提示和浮动通知（duplicate tab 检测等）
 - **InputOTP** (`components/ui/input-otp.tsx`) — 6 格 OTP 输入框（基于 `input-otp` 包），用于邮箱验证和密码重置
-- **SearchPanel** (`components/search/search-panel.tsx`) — 统一搜索组件，同时用于 BookmarksContent 内联和 search popup；Props：`openTabs`、`onClose?`、`autoFocus?`、`smartOpen?`
+- **SearchPanel** (`components/search/search-panel.tsx`) — 统一搜索组件，同时用于 BookmarksContent 内联和 search popup；Props：`openTabs`、`onClose?`、`autoFocus?`、`smartOpen?`；fallback 搜索使用 `useSettingsStore` 中第一个 enabled 引擎（非硬编码 Google）
 - **shadcn/ui** (`components/ui/`) — Button、Input、Dialog 等基础组件
 
 ### Dialog 样式规范
@@ -151,13 +151,14 @@ Dialog 必须使用标准 shadcn 结构，禁止在 `DialogContent` 上添加破
 
 ### 数据持久化布局
 
-大部分数据已迁移到 **IndexedDB**（`tabslate-db` v1），仅认证状态保留在 `chrome.storage.local`。
+大部分数据已迁移到 **IndexedDB**（`tabslate-db` v1），少量需要 content script 跨上下文读取的数据保留在 `chrome.storage.local`。
 
-#### chrome.storage.local（仅剩一个 key）
+#### chrome.storage.local
 
 | Key | 格式 | 用途 |
 |---|---|---|
 | `tabslate-auth` | Zustand JSON `{state: {...}}` | 用户认证（user、accessToken、refreshToken、serverUrl） |
+| `tabslate-search-engines` | `JSON.stringify(SearchEngine[])` | 用户搜索引擎配置，供 `SearchOverlay`（content script）读取；由 newtab `StoreGate` 在 `searchEngines` 变更时写入 |
 
 适配器：`lib/chrome-storage-adapter.ts`（供 Zustand `persist` 中间件使用）。
 
@@ -174,7 +175,7 @@ Dialog 必须使用标准 shadcn 结构，禁止在 `DialogContent` 上添加破
 | `groups` | `id` | — | 保存的标签组 |
 | `group-tabs` | `id` | `groupId` | 保存组内的 tab |
 | `tab-group-titles` | `groupId` | — | Chrome tab group 完整标题（compact 模式下 Chrome 侧只存首字母） |
-| `kv` | `key` | — | 键值对：`activeWorkspaceId`、`compactGroupTitles`、`localSeq`、`sync-leader` |
+| `kv` | `key` | — | 键值对：`activeWorkspaceId`、`compactGroupTitles`、`localSeq`、`sync-leader`、`searchEngines` |
 
 #### 跨进程消息信号（不存储，runtime 消息）
 
