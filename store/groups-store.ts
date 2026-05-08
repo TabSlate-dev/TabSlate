@@ -56,6 +56,8 @@ interface GroupsState {
   createGroup: (name: string, color: TabGroupColor, isCompact: boolean) => string;
   updateGroup: (id: string, patch: Partial<Pick<SavedGroup, "name" | "color" | "isCompact">>) => void;
   deleteGroup: (id: string) => void;
+  restoreGroup: (id: string) => void;
+  permanentlyDeleteGroup: (id: string) => void;
 
   // Tab management
   addTabToGroup: (groupId: string, tab: { title: string; url: string; favicon: string }) => void;
@@ -143,6 +145,20 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       groups: state.groups.map(g => g.id === id ? deletedGroup : g),
       groupTabs: state.groupTabs.filter(t => t.groupId !== id),
     }));
+  },
+
+  restoreGroup: (id) => {
+    const group = get().groups.find(g => g.id === id);
+    if (!group) { return; }
+    const restored: SavedGroup = { ...group, deletedAt: undefined, seq: 0 };
+    syncEngine?.enqueue({ groups: [toServerGroup(restored, [])] });
+    idbPut("groups", restored);
+    set((state) => ({ groups: state.groups.map(g => g.id === id ? restored : g) }));
+  },
+
+  permanentlyDeleteGroup: (id) => {
+    idbDelete("groups", id);
+    set((state) => ({ groups: state.groups.filter(g => g.id !== id) }));
   },
 
   addTabToGroup: (groupId, tab) => {

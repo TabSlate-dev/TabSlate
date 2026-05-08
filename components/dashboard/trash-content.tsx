@@ -2,6 +2,8 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
+import { useGroupsStore, type SavedGroup } from "@/store/groups-store";
+import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -32,6 +34,7 @@ import {
   ChevronDown,
   ChevronRight,
   Check,
+  Layers,
 } from "lucide-react";
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 
@@ -254,6 +257,73 @@ function TrashedBookmarkCard({
   );
 }
 
+function TrashedGroupCard({
+  group,
+  selected,
+  onSelect,
+}: {
+  group: SavedGroup;
+  selected?: boolean;
+  onSelect?: () => void;
+}) {
+  const restoreGroup = useGroupsStore(s => s.restoreGroup);
+  const permanentlyDeleteGroup = useGroupsStore(s => s.permanentlyDeleteGroup);
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100",
+        onSelect && "cursor-pointer"
+      )}
+      onClick={() => onSelect?.()}
+    >
+      {onSelect && (
+        <div
+          className={cn(
+            "flex size-4 shrink-0 items-center justify-center rounded-sm border border-primary transition-all cursor-pointer",
+            selected ? "bg-primary text-primary-foreground" : "bg-transparent text-transparent"
+          )}
+          onClick={(e) => { e.stopPropagation(); onSelect(); }}
+        >
+          <Check className={cn("size-3", selected ? "opacity-100" : "opacity-0")} strokeWidth={3} />
+        </div>
+      )}
+      <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+        <Layers className="size-5 text-muted-foreground" />
+      </div>
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <span
+          className="size-2.5 rounded-full shrink-0"
+          style={{ backgroundColor: TAB_GROUP_COLORS[group.color] }}
+        />
+        <h3 className="font-medium truncate">{group.name}</h3>
+      </div>
+      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <Button variant="outline" size="sm" onClick={() => restoreGroup(group.id)}>
+          <RotateCcw className="size-4 mr-1" />
+          Restore
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon-xs">
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => permanentlyDeleteGroup(group.id)}
+            >
+              <XCircle className="size-4 mr-2" />
+              Delete Permanently
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
 export function TrashContent() {
   const trashedBookmarks = useBookmarksStore(s => s.trashedBookmarks);
   const getTrashedCollections = useWorkspaceStore(s => s.getTrashedCollections);
@@ -264,6 +334,11 @@ export function TrashContent() {
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
+
+  const allGroups = useGroupsStore(s => s.groups);
+  const restoreGroup = useGroupsStore(s => s.restoreGroup);
+  const permanentlyDeleteGroup = useGroupsStore(s => s.permanentlyDeleteGroup);
+  const trashedGroups = React.useMemo(() => allGroups.filter(g => !!g.deletedAt), [allGroups]);
 
   const trashedCollections = getTrashedCollections();
   const trashedCollectionIds = React.useMemo(
@@ -295,14 +370,24 @@ export function TrashContent() {
     return Array.from(unique.values());
   }, [trashedBookmarks, trashedCollectionIds]);
 
-  const totalCount = trashedCollections.length + individualTrashedBookmarks.length;
+  const totalCount = trashedCollections.length + trashedGroups.length + individualTrashedBookmarks.length;
 
   const [selectedColIds, setSelectedColIds] = React.useState<Set<string>>(new Set());
+  const [selectedGroupIds, setSelectedGroupIds] = React.useState<Set<string>>(new Set());
   const [selectedBmIds, setSelectedBmIds] = React.useState<Set<string>>(new Set());
-  const selectedCount = selectedColIds.size + selectedBmIds.size;
+  const selectedCount = selectedColIds.size + selectedGroupIds.size + selectedBmIds.size;
 
   const toggleCol = (id: string) => {
     setSelectedColIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleGroup = (id: string) => {
+    setSelectedGroupIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -322,9 +407,11 @@ export function TrashContent() {
   const handleSelectAll = () => {
     if (selectedCount === totalCount) {
       setSelectedColIds(new Set());
+      setSelectedGroupIds(new Set());
       setSelectedBmIds(new Set());
     } else {
       setSelectedColIds(new Set(trashedCollections.map(c => c.id)));
+      setSelectedGroupIds(new Set(trashedGroups.map(g => g.id)));
       setSelectedBmIds(new Set(individualTrashedBookmarks.map(b => b.id)));
     }
   };
@@ -332,6 +419,9 @@ export function TrashContent() {
   const handleBatchRestore = () => {
     for (const colId of selectedColIds) {
       restoreCollection(colId);
+    }
+    for (const groupId of selectedGroupIds) {
+      restoreGroup(groupId);
     }
     const active = collections.filter(
       c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
@@ -359,6 +449,7 @@ export function TrashContent() {
       restoreFromTrash(bmId, targetColId);
     }
     setSelectedColIds(new Set());
+    setSelectedGroupIds(new Set());
     setSelectedBmIds(new Set());
   };
 
@@ -366,10 +457,14 @@ export function TrashContent() {
     for (const colId of selectedColIds) {
       permanentlyDeleteCollection(colId);
     }
+    for (const groupId of selectedGroupIds) {
+      permanentlyDeleteGroup(groupId);
+    }
     for (const bmId of selectedBmIds) {
       permanentlyDeleteBookmark(bmId);
     }
     setSelectedColIds(new Set());
+    setSelectedGroupIds(new Set());
     setSelectedBmIds(new Set());
   };
 
@@ -377,10 +472,14 @@ export function TrashContent() {
     for (const col of trashedCollections) {
       permanentlyDeleteCollection(col.id);
     }
+    for (const group of trashedGroups) {
+      permanentlyDeleteGroup(group.id);
+    }
     for (const bm of individualTrashedBookmarks) {
       permanentlyDeleteBookmark(bm.id);
     }
     setSelectedColIds(new Set());
+    setSelectedGroupIds(new Set());
     setSelectedBmIds(new Set());
   };
 
@@ -396,6 +495,7 @@ export function TrashContent() {
               <h2 className="text-lg font-semibold">Trash</h2>
               <p className="text-sm text-muted-foreground">
                 {trashedCollections.length > 0 && `${trashedCollections.length} collection${trashedCollections.length !== 1 ? "s" : ""}, `}
+                {trashedGroups.length > 0 && `${trashedGroups.length} group${trashedGroups.length !== 1 ? "s" : ""}, `}
                 {individualTrashedBookmarks.length} bookmark{individualTrashedBookmarks.length !== 1 ? "s" : ""}
               </p>
             </div>
@@ -417,7 +517,7 @@ export function TrashContent() {
           {selectedCount > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium mr-2 hidden sm:inline-block">{selectedCount} selected</span>
-              <Button variant="outline" size="sm" onClick={() => { setSelectedColIds(new Set()); setSelectedBmIds(new Set()); }}>
+              <Button variant="outline" size="sm" onClick={() => { setSelectedColIds(new Set()); setSelectedGroupIds(new Set()); setSelectedBmIds(new Set()); }}>
                 Cancel
               </Button>
               <Button variant="outline" size="sm" onClick={handleSelectAll}>
@@ -449,6 +549,19 @@ export function TrashContent() {
           </div>
         )}
 
+        {trashedGroups.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {trashedGroups.map(group => (
+              <TrashedGroupCard
+                key={group.id}
+                group={group}
+                selected={selectedGroupIds.has(group.id)}
+                onSelect={() => toggleGroup(group.id)}
+              />
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-col gap-2">
           {individualTrashedBookmarks.map((bookmark) => (
             <TrashedBookmarkCard 
@@ -464,7 +577,7 @@ export function TrashContent() {
           <EmptyState
             icon={Trash2}
             title="Trash is empty"
-            description="Deleted bookmarks and collections will appear here."
+            description="Deleted bookmarks, collections, and groups will appear here."
           />
         )}
       </div>
