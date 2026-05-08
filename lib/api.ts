@@ -354,3 +354,26 @@ export async function searchBookmarks(
   }
   return res.json() as Promise<SearchResponse>;
 }
+
+export function getPreferences(
+  baseUrl: string,
+  accessToken: string,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(baseUrl, "/preferences", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export function updatePreferences(
+  baseUrl: string,
+  accessToken: string,
+  preferences: Record<string, unknown>,
+): Promise<void> {
+  return request<void>(baseUrl, "/preferences", {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(preferences),
+  });
+}
+

@@ -31,6 +31,7 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronRight,
+  Check,
 } from "lucide-react";
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 
@@ -56,7 +57,17 @@ function CollectionIcon({ icon, className }: { icon: string; className?: string 
   return <Icon className={className ?? "size-4"} />;
 }
 
-function TrashedCollectionCard({ collection, bookmarks }: { collection: Collection; bookmarks: BookmarkType[] }) {
+function TrashedCollectionCard({
+  collection,
+  bookmarks,
+  selected,
+  onSelect,
+}: {
+  collection: Collection;
+  bookmarks: BookmarkType[];
+  selected?: boolean;
+  onSelect?: (checked: boolean) => void;
+}) {
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
   const [expanded, setExpanded] = React.useState(false);
@@ -67,6 +78,20 @@ function TrashedCollectionCard({ collection, bookmarks }: { collection: Collecti
         className="flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100 cursor-pointer"
         onClick={() => setExpanded(!expanded)}
       >
+        {onSelect && (
+          <div
+            className={cn(
+              "flex size-4 shrink-0 items-center justify-center rounded-sm border border-primary transition-all cursor-pointer",
+              selected ? "bg-primary text-primary-foreground" : "bg-transparent text-transparent"
+            )}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(!selected);
+            }}
+          >
+            <Check className={cn("size-3", selected ? "opacity-100" : "opacity-0")} strokeWidth={3} />
+          </div>
+        )}
         <div className="size-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
           <CollectionIcon icon={collection.icon} className="size-5 text-muted-foreground" />
         </div>
@@ -113,7 +138,17 @@ function TrashedCollectionCard({ collection, bookmarks }: { collection: Collecti
   );
 }
 
-function TrashedBookmarkCard({ bookmark, isNested }: { bookmark: BookmarkType; isNested?: boolean }) {
+function TrashedBookmarkCard({
+  bookmark,
+  isNested,
+  selected,
+  onSelect,
+}: {
+  bookmark: BookmarkType;
+  isNested?: boolean;
+  selected?: boolean;
+  onSelect?: (checked: boolean) => void;
+}) {
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDelete = useBookmarksStore(s => s.permanentlyDelete);
   const collections = useWorkspaceStore(s => s.collections);
@@ -147,8 +182,23 @@ function TrashedBookmarkCard({ bookmark, isNested }: { bookmark: BookmarkType; i
   return (
     <div className={cn(
       "group flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100",
-      !isNested && "rounded-lg border bg-card"
-    )}>
+      !isNested && "rounded-lg border bg-card",
+      onSelect && "cursor-pointer"
+    )} onClick={() => onSelect?.(!selected)}>
+      {onSelect && (
+        <div
+          className={cn(
+            "flex size-4 shrink-0 items-center justify-center rounded-sm border border-primary transition-all cursor-pointer",
+            selected ? "bg-primary text-primary-foreground" : "bg-transparent text-transparent"
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect(!selected);
+          }}
+        >
+          <Check className={cn("size-3", selected ? "opacity-100" : "opacity-0")} strokeWidth={3} />
+        </div>
+      )}
       <div className="size-10 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
         <FaviconImage
           src={bookmark.favicon}
@@ -163,7 +213,7 @@ function TrashedBookmarkCard({ bookmark, isNested }: { bookmark: BookmarkType; i
         <p className="text-sm text-muted-foreground truncate">{bookmark.url}</p>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
         <Button variant="outline" size="sm" onClick={handleRestore}>
           <RotateCcw className="size-4 mr-1" />
           Restore
@@ -197,6 +247,13 @@ function TrashedBookmarkCard({ bookmark, isNested }: { bookmark: BookmarkType; i
 export function TrashContent() {
   const trashedBookmarks = useBookmarksStore(s => s.trashedBookmarks);
   const getTrashedCollections = useWorkspaceStore(s => s.getTrashedCollections);
+  const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
+  const permanentlyDeleteBookmark = useBookmarksStore(s => s.permanentlyDelete);
+  
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
+  const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
 
   const trashedCollections = getTrashedCollections();
   const trashedCollectionIds = React.useMemo(
@@ -230,6 +287,93 @@ export function TrashContent() {
 
   const totalCount = trashedCollections.length + individualTrashedBookmarks.length;
 
+  const [selectedColIds, setSelectedColIds] = React.useState<Set<string>>(new Set());
+  const [selectedBmIds, setSelectedBmIds] = React.useState<Set<string>>(new Set());
+  const selectedCount = selectedColIds.size + selectedBmIds.size;
+
+  const toggleCol = (id: string) => {
+    setSelectedColIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleBm = (id: string) => {
+    setSelectedBmIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedCount === totalCount) {
+      setSelectedColIds(new Set());
+      setSelectedBmIds(new Set());
+    } else {
+      setSelectedColIds(new Set(trashedCollections.map(c => c.id)));
+      setSelectedBmIds(new Set(individualTrashedBookmarks.map(b => b.id)));
+    }
+  };
+
+  const handleBatchRestore = () => {
+    for (const colId of selectedColIds) {
+      restoreCollection(colId);
+    }
+    const active = collections.filter(
+      c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
+    );
+    const defaultCol = active.find(c => c.isDefault);
+
+    for (const bmId of selectedBmIds) {
+      const bm = trashedBookmarks.find(b => b.id === bmId);
+      if (!bm) continue;
+      let targetColId = defaultCol?.id ?? "";
+      if (selectedColIds.has(bm.collectionId)) {
+         targetColId = bm.collectionId;
+      } else {
+        const byId = active.find(c => c.id === bm.collectionId);
+        if (byId) {
+          targetColId = byId.id;
+        } else {
+          const srcCol = collections.find(c => c.id === bm.collectionId);
+          const byName = srcCol ? active.find(c => c.name === srcCol.name) : undefined;
+          if (byName) {
+            targetColId = byName.id;
+          }
+        }
+      }
+      restoreFromTrash(bmId, targetColId);
+    }
+    setSelectedColIds(new Set());
+    setSelectedBmIds(new Set());
+  };
+
+  const handleBatchDelete = () => {
+    for (const colId of selectedColIds) {
+      permanentlyDeleteCollection(colId);
+    }
+    for (const bmId of selectedBmIds) {
+      permanentlyDeleteBookmark(bmId);
+    }
+    setSelectedColIds(new Set());
+    setSelectedBmIds(new Set());
+  };
+
+  const handleEmptyTrash = () => {
+    for (const col of trashedCollections) {
+      permanentlyDeleteCollection(col.id);
+    }
+    for (const bm of individualTrashedBookmarks) {
+      permanentlyDeleteBookmark(bm.id);
+    }
+    setSelectedColIds(new Set());
+    setSelectedBmIds(new Set());
+  };
+
   return (
     <div className="flex-1 w-full overflow-auto">
       <div className="p-4 md:p-6 space-y-6">
@@ -246,10 +390,36 @@ export function TrashContent() {
               </p>
             </div>
           </div>
-          {totalCount > 0 && (
-            <p className="text-xs text-muted-foreground hidden sm:block">
-              Items in trash will be permanently deleted after 30 days
-            </p>
+          {totalCount > 0 && selectedCount === 0 && (
+            <div className="flex items-center gap-4">
+              <p className="text-xs text-muted-foreground hidden md:block mr-2">
+                Items in trash will be permanently deleted after 30 days
+              </p>
+              <Button variant="destructive" size="sm" onClick={handleEmptyTrash}>
+                Empty Trash
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleSelectAll}>
+                Select All
+              </Button>
+            </div>
+          )}
+
+          {selectedCount > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium mr-2 hidden sm:inline-block">{selectedCount} selected</span>
+              <Button variant="outline" size="sm" onClick={() => { setSelectedColIds(new Set()); setSelectedBmIds(new Set()); }}>
+                Cancel
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleSelectAll}>
+                {selectedCount === totalCount ? "Deselect All" : "Select All"}
+              </Button>
+              <Button size="sm" onClick={handleBatchRestore}>
+                <RotateCcw className="size-4 mr-1" /> Restore
+              </Button>
+              <Button size="sm" variant="destructive" onClick={handleBatchDelete}>
+                <Trash2 className="size-4 mr-1" /> Delete
+              </Button>
+            </div>
           )}
         </div>
 
@@ -260,6 +430,8 @@ export function TrashContent() {
                 key={col.id}
                 collection={col}
                 bookmarks={collectionBookmarks[col.id] || []}
+                selected={selectedColIds.has(col.id)}
+                onSelect={() => toggleCol(col.id)}
               />
             ))}
           </div>
@@ -267,7 +439,12 @@ export function TrashContent() {
 
         <div className="flex flex-col gap-2">
           {individualTrashedBookmarks.map((bookmark) => (
-            <TrashedBookmarkCard key={bookmark.id} bookmark={bookmark} />
+            <TrashedBookmarkCard 
+              key={bookmark.id} 
+              bookmark={bookmark} 
+              selected={selectedBmIds.has(bookmark.id)}
+              onSelect={() => toggleBm(bookmark.id)}
+            />
           ))}
         </div>
 

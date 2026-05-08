@@ -11,18 +11,7 @@ import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-const SEARCH_ENGINES = [
-  { id: "google", name: "Google", url: "https://www.google.com/search?q=", siteUrl: "https://www.google.com" },
-  { id: "bing", name: "Bing", url: "https://www.bing.com/search?q=", siteUrl: "https://www.bing.com" },
-  { id: "duckduckgo", name: "DuckDuckGo", url: "https://duckduckgo.com/?q=", siteUrl: "https://duckduckgo.com" },
-  { id: "baidu", name: "Baidu", url: "https://www.baidu.com/s?wd=", siteUrl: "https://www.baidu.com" },
-  { id: "yahoo", name: "Yahoo", url: "https://search.yahoo.com/search?p=", siteUrl: "https://www.yahoo.com" },
-  { id: "yandex", name: "Yandex", url: "https://yandex.com/search/?text=", siteUrl: "https://yandex.com" },
-  { id: "ecosia", name: "Ecosia", url: "https://www.ecosia.org/search?q=", siteUrl: "https://www.ecosia.org" },
-  { id: "kagi", name: "Kagi", url: "https://kagi.com/search?q=", siteUrl: "https://kagi.com" },
-  { id: "github", name: "GitHub", url: "https://github.com/search?q=", siteUrl: "https://github.com" },
-  { id: "youtube", name: "YouTube", url: "https://www.youtube.com/results?search_query=", siteUrl: "https://www.youtube.com" },
-];
+import { useSettingsStore } from "@/store/settings-store";
 
 
 
@@ -48,9 +37,12 @@ function getFaviconUrl(pageUrl: string, size: number = 64) {
 }
 
 export function HeroSection() {
+  const allEngines = useSettingsStore(s => s.searchEngines);
+  const searchEngines = React.useMemo(() => allEngines.filter(e => e.enabled), [allEngines]);
+  
   const [time, setTime] = React.useState(new Date());
   const [query, setQuery] = React.useState("");
-  const [engine, setEngine] = React.useState(SEARCH_ENGINES[0]);
+  const [engine, setEngine] = React.useState(searchEngines[0] || allEngines[0]);
   const [bookmarkResults, setBookmarkResults] = React.useState<SearchBookmark[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const wrapperRef = React.useRef<HTMLDivElement>(null);
@@ -182,7 +174,7 @@ export function HeroSection() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-[150px] max-h-[300px] overflow-y-auto">
-              {SEARCH_ENGINES.map((e) => (
+              {searchEngines.map((e) => (
                 <DropdownMenuItem key={e.id} onClick={() => setEngine(e)} className="cursor-pointer">
                   <img src={getFaviconUrl(e.siteUrl, 32)} alt={e.name} className="size-4 mr-2 rounded-sm" />
                   {e.name}
