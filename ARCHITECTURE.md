@@ -136,9 +136,9 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | Store | 持久化后端 | 职责 |
 |---|---|---|
 | `useAuthStore` | chrome.storage.local | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
-| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
-| `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标（存于 `kv["localSeq"]`）；`mergeFromServer` 执行 LWW 合并；`sweepUnsynced` 补推 `seq=0` 的实体 |
-| `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`mergeFromServer` / `sweepUnsynced` / `enqueueAllToSync`；`restoreGroup` / `permanentlyDeleteGroup` |
+| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时立即从所有 bucket 删除 |
+| `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并；`permanentlyDeleteCollection` 先推 `isDeleted:2` 再清理本地；`is_deleted===2` 时从 state+IDB 删除 |
+| `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 先推 `isDeleted:2` 再清理本地；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
 | `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
 | `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
@@ -275,9 +275,9 @@ SyncEngine
 **拉取（服务器变更 → 本地）：**
 1. SSE leader 收到 `{seq: N}` 事件 → `serverSeq > localSeq` 时触发 `GET /sync/pull?after_seq=localSeq`
 2. 或每 5 分钟定期拉取（SSE 离线时使用）
-3. 响应中的 workspaces/collections/tags 经 `mergeFromServer`（workspace-store）LWW 合并
-4. bookmarks 经 `mergeFromServer`（bookmarks-store）LWW 合并（含 `tag_ids`）
-5. groups 经 `mergeFromServer`（groups-store）LWW 合并；软删除组 update+keep（供回收站过滤），活跃组整体替换 tab 快照
+3. 响应中的 workspaces/collections/tags 经 `mergeFromServer`（workspace-store）LWW 合并；`sc.is_deleted===2` 的 collection 记录直接从 state+IDB 删除，不参与 LWW
+4. bookmarks 经 `mergeFromServer`（bookmarks-store）LWW 合并（含 `tag_ids`）；`sb.is_trashed===2` 的记录从 active/archived/trashed 三个 bucket 全部清除
+5. groups 经 `mergeFromServer`（groups-store）LWW 合并；`sg.is_deleted===2` 的 group 及其 tabs 从 state+IDB 删除；软删除组 update+keep（供回收站过滤），活跃组整体替换 tab 快照
 6. App.tsx 的 `onPullSuccess` 回调更新 `localSeq`；若非首次推送，调用 `sweepUnsynced()` 将所有 `seq=0` 实体补推（处理 popup/background 在 newtab 关闭时直接写 storage 的情况）
 
 **SSE 连接（实时通知）：**
