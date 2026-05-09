@@ -4,21 +4,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { useGroupsStore } from "@/store/groups-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 
 export function CreateGroupBar() {
   const createGroup = useGroupsStore(s => s.createGroup);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const [name, setName] = React.useState("");
   const [color, setColor] = React.useState<TabGroupColor>("blue");
   const [open, setOpen] = React.useState(false);
 
   const handleCreate = React.useCallback(() => {
     if (!name.trim()) { return; }
-    createGroup(name.trim(), color, true, "");
+    createGroup(name.trim(), color, true, activeWorkspaceId);
     setName("");
     setColor("blue");
     setOpen(false);
-  }, [createGroup, name, color]);
+  }, [createGroup, name, color, activeWorkspaceId]);
 
   if (!open) {
     return (

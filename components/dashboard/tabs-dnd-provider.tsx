@@ -198,11 +198,12 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     if (dragData.type === "tab-group") {
       if (dropId === "sidebar-groups") {
         const { createGroup, addTabToGroup } = useGroupsStore.getState();
+        const { activeWorkspaceId } = useWorkspaceStore.getState();
         const savedGroupId = createGroup(
           dragData.groupName || "Unnamed",
           dragData.groupColor,
           true,
-          ""
+          activeWorkspaceId
         );
         dragData.tabs.forEach((tab) => {
           addTabToGroup(savedGroupId, {

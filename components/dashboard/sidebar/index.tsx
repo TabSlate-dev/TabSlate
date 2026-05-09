@@ -514,7 +514,7 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
         onOpenChange={setNewGroupOpen}
         onSubmit={(name, color, selectedTabs, isCompact) => {
           const { createGroup, addTabToGroup } = useGroupsStore.getState();
-          const groupId = createGroup(name, color, isCompact, "");
+          const groupId = createGroup(name, color, isCompact, activeWorkspaceId);
           selectedTabs.forEach((tab) => {
             addTabToGroup(groupId, {
               title: tab.title,

@@ -136,7 +136,8 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
 
   const handleSaveAsGroup = useCallback(() => {
     const { createGroup, addTabToGroup } = useGroupsStore.getState();
-    const savedGroupId = createGroup(displayTitle || "Unnamed", group.color, group.title.length === 1, "");
+    const { activeWorkspaceId } = useWorkspaceStore.getState();
+    const savedGroupId = createGroup(displayTitle || "Unnamed", group.color, group.title.length === 1, activeWorkspaceId);
     for (const tab of tabs) {
       addTabToGroup(savedGroupId, { title: tab.title || "", url: tab.url, favicon: tab.favIconUrl || "" });
     }
