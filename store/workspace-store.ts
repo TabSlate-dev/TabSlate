@@ -66,7 +66,7 @@ export const SOLID_TAG_COLORS = [
 // ---------------------------------------------------------------------------
 // Sync helpers
 // ---------------------------------------------------------------------------
-function toServerCollection(c: Collection): object {
+function toServerCollection(c: Collection, opts?: { isDeleted?: number }): object {
   return {
     id: c.id,
     workspace_id: c.workspaceId !== "" ? c.workspaceId : null,
@@ -77,6 +77,7 @@ function toServerCollection(c: Collection): object {
     deleted_at: c.deletedAt ?? null,
     archived_at: c.archivedAt ?? null,
     updated_at: Date.now(),
+    is_deleted: opts?.isDeleted ?? 0,
   };
 }
 
@@ -240,7 +241,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const { workspaces, collections, tags } = get();
     syncEngine?.enqueue({
       workspaces: workspaces.map(toServerWorkspace),
-      collections: collections.map(toServerCollection),
+      collections: collections.map(c => toServerCollection(c)),
       tags: tags.map(toServerTag),
     });
   },
@@ -274,6 +275,12 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }
 
       for (const sc of resp.entities.collections) {
+        if (sc.is_deleted === 2) {
+          // Permanently deleted on server — remove from IDB and skip adding to state
+          idbDelete("collections", sc.id);
+          collections = collections.filter(c => c.id !== sc.id);
+          continue;
+        }
         if (sc.deleted_at) {
           // Server confirmed soft-delete — keep in collections with deletedAt so
           // TrashContent can still find and display the collection card.
@@ -517,6 +524,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   permanentlyDeleteCollection: (id) => {
     const col = get().collections.find(c => c.id === id && !!c.deletedAt);
     if (!col) { return; }
+    syncEngine?.enqueue({ collections: [toServerCollection(col, { isDeleted: 2 })] });
     idbDelete("collections", id);
     set((s) => ({ collections: s.collections.filter(c => c.id !== id) }));
     useBookmarksStore.getState().permanentlyDeleteCollectionBookmarks(id);
@@ -557,7 +565,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     if (ws.length > 0 || cols.length > 0 || ts.length > 0) {
       syncEngine?.enqueue({
         workspaces: ws.map(toServerWorkspace),
-        collections: cols.map(toServerCollection),
+        collections: cols.map(c => toServerCollection(c)),
         tags: ts.map(toServerTag),
       });
     }

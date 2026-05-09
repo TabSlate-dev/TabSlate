@@ -59,7 +59,8 @@ export function Procaptcha({ siteKey, serverUrl, onToken, theme = "light", captc
       ref={iframeRef}
       src={src}
       title="CAPTCHA verification"
-      style={{ border: "none", width: "100%", height }}
+      allowTransparency={true}
+      style={{ border: "none", width: "100%", height, background: "transparent" }}
     />
   );
 }

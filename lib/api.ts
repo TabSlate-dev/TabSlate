@@ -49,6 +49,7 @@ export interface ServerCollection {
   icon?: string;
   position: number;
   seq: number;
+  is_deleted: number;
   deleted_at?: number;
   archived_at?: number;
   created_at: number;
@@ -65,7 +66,7 @@ export interface ServerBookmark {
   description?: string;
   is_favorite: boolean;
   is_archived: boolean;
-  is_trashed: boolean;
+  is_trashed: number;
   tag_ids?: string[];
   position: number;
   seq: number;
@@ -99,6 +100,7 @@ export interface ServerGroup {
   name: string;
   color: string;
   is_compact: boolean;
+  is_deleted: number;
   seq: number;
   deleted_at?: number;
   created_at: number;
