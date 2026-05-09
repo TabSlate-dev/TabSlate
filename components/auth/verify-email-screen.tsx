@@ -8,6 +8,7 @@
 import * as React from "react";
 import { Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { FieldDescription, FieldGroup } from "@/components/ui/field";
 import {
   InputOTP,
@@ -38,11 +39,8 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
   const [error, setError] = React.useState("");
   const [resent, setResent] = React.useState(false);
   const [retryAfter, setRetryAfter] = React.useState(0);
-
-  // Per-IP captcha state for resend
   const [captchaRequired, setCaptchaRequired] = React.useState(false);
-  const [captchaToken, setCaptchaToken] = React.useState("");
-  const [captchaKey, setCaptchaKey] = React.useState(0);
+  const [captchaDialogOpen, setCaptchaDialogOpen] = React.useState(false);
 
   const verifyEmailOTP = useAuthStore((s) => s.verifyEmailOTP);
   const resendVerification = useAuthStore((s) => s.resendVerification);
@@ -113,17 +111,13 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
     submitCode(code);
   }
 
-  async function handleResend() {
-    if (retryAfter > 0) return;
+  async function doResend(captchaToken?: string) {
     setResent(false);
     setError("");
     try {
-      await resendVerification(email, captchaToken || undefined);
+      await resendVerification(email, captchaToken);
       setResent(true);
       setRetryAfter(60);
-      setCaptchaToken("");
-      setCaptchaKey((k) => k + 1);
-      // Re-check captcha status after resend
       if (PROSOPO_SITE_KEY) {
         const r = await api.otpCaptchaStatus(serverUrl);
         setCaptchaRequired(r.captcha_required);
@@ -132,8 +126,7 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
       if (err instanceof ApiError) {
         if (err.captchaRequired) {
           setCaptchaRequired(true);
-          setCaptchaToken("");
-          setCaptchaKey((k) => k + 1);
+          setCaptchaDialogOpen(true);
         } else if (err.status === 429) {
           setError(err.message);
           setRetryAfter(err.retryAfter ?? 60);
@@ -144,7 +137,19 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
     }
   }
 
-  const showCaptcha = PROSOPO_SITE_KEY && captchaRequired;
+  function handleResend() {
+    if (retryAfter > 0) return;
+    if (captchaRequired) {
+      setCaptchaDialogOpen(true);
+      return;
+    }
+    doResend();
+  }
+
+  async function handleCaptchaToken(token: string) {
+    setCaptchaDialogOpen(false);
+    await doResend(token);
+  }
 
   return (
     <div className="flex items-center justify-center h-svh bg-background">
@@ -189,34 +194,20 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
             </Button>
           </form>
 
-          {/* Resend section — shows captcha when IP threshold is reached */}
-          <div className="flex flex-col gap-3">
-            {showCaptcha && (
-              <Procaptcha
-                key={captchaKey}
-                siteKey={PROSOPO_SITE_KEY}
-                serverUrl={serverUrl}
-                onToken={setCaptchaToken}
-                captchaType={PROSOPO_CAPTCHA_TYPE}
-                theme={theme}
-              />
+          <FieldDescription className="text-center text-sm">
+            Didn&apos;t receive it?{" "}
+            <button
+              type="button"
+              disabled={retryAfter > 0}
+              className="underline underline-offset-4 hover:text-primary disabled:opacity-50 disabled:no-underline"
+              onClick={handleResend}
+            >
+              {retryAfter > 0 ? `Resend in ${retryAfter}s` : "Resend code"}
+            </button>
+            {resent && (
+              <span className="ml-1 text-muted-foreground">— sent!</span>
             )}
-
-            <FieldDescription className="text-center text-sm">
-              Didn&apos;t receive it?{" "}
-              <button
-                type="button"
-                disabled={retryAfter > 0 || (!!showCaptcha && !captchaToken)}
-                className="underline underline-offset-4 hover:text-primary disabled:opacity-50 disabled:no-underline"
-                onClick={handleResend}
-              >
-                {retryAfter > 0 ? `Resend in ${retryAfter}s` : "Resend code"}
-              </button>
-              {resent && (
-                <span className="ml-1 text-muted-foreground">— sent!</span>
-              )}
-            </FieldDescription>
-          </div>
+          </FieldDescription>
 
           <FieldDescription className="text-center">
             <button
@@ -229,6 +220,25 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
           </FieldDescription>
         </FieldGroup>
       </div>
+
+      {PROSOPO_SITE_KEY && (
+        <Dialog open={captchaDialogOpen} onOpenChange={setCaptchaDialogOpen}>
+          <DialogContent className="sm:max-w-xs" aria-describedby={undefined}>
+            <DialogHeader>
+              <DialogTitle>Verify you&apos;re human</DialogTitle>
+            </DialogHeader>
+            <div className="rounded-lg overflow-hidden bg-white p-1">
+              <Procaptcha
+                siteKey={PROSOPO_SITE_KEY}
+                serverUrl={serverUrl}
+                onToken={handleCaptchaToken}
+                captchaType={PROSOPO_CAPTCHA_TYPE}
+                theme={theme}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
