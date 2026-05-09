@@ -56,6 +56,8 @@ import { TagDialog } from "./tag-dialog";
 import { GroupDialog } from "./group-dialog";
 import { SyncStatusIndicator } from "./sync-status";
 import type { SyncStatus } from "@/lib/sync-engine";
+import { StatsCards } from "../stats-cards";
+import { UserProfile } from "./user-profile";
 
 // ---------------------------------------------------------------------------
 // Icon map
@@ -184,12 +186,17 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
   const clearTags = useBookmarksStore(s => s.clearTags);
   const bookmarks = useBookmarksStore(s => s.bookmarks);
 
-  const groups = useGroupsStore(s => s.groups);
+  const allGroups = useGroupsStore(s => s.groups);
   const deleteGroup = useGroupsStore(s => s.deleteGroup);
 
   const collections = useWorkspaceStore(s => s.collections);
   const tags = useWorkspaceStore(s => s.tags);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
+  const groups = React.useMemo(
+    () => allGroups.filter(g => !g.deletedAt && g.workspaceId === activeWorkspaceId),
+    [allGroups, activeWorkspaceId]
+  );
   const createCollection = useWorkspaceStore(s => s.createCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
   const archiveCollection = useWorkspaceStore(s => s.archiveCollection);
@@ -228,12 +235,10 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
   return (
     <>
       <Sidebar collapsible="offcanvas" {...props}>
-        <SidebarHeader className="px-4 pt-4 pb-0">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-            <Input placeholder="Search..." className="pl-9 h-9 bg-background text-sm" />
-          </div>
+        <SidebarHeader className="p-0">
+          <UserProfile />
         </SidebarHeader>
+
 
         <SidebarContent className="px-3 pt-3">
           {/* Collections */}
@@ -477,6 +482,11 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+
+          {/* Stats */}
+          <div className="mt-auto pt-6 pb-2">
+            <StatsCards />
+          </div>
         </SidebarContent>
 
         <SidebarFooter className="px-4 pb-4">
@@ -508,7 +518,7 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
         onOpenChange={setNewGroupOpen}
         onSubmit={(name, color, selectedTabs, isCompact) => {
           const { createGroup, addTabToGroup } = useGroupsStore.getState();
-          const groupId = createGroup(name, color, isCompact);
+          const groupId = createGroup(name, color, isCompact, activeWorkspaceId);
           selectedTabs.forEach((tab) => {
             addTabToGroup(groupId, {
               title: tab.title,

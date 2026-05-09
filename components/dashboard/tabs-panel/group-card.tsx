@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useTabsStore } from "@/store/tabs-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
+import { useGroupsStore } from "@/store/groups-store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -15,6 +16,7 @@ import {
 import {
   ChevronDown,
   ChevronRight,
+  Layers,
   MoreHorizontal,
   Ungroup,
   Save,
@@ -132,36 +134,80 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
     setTimeout(() => setSaveResult(null), 3000);
   }, [saveGroupAsCollection, group.id]);
 
+  const handleSaveAsGroup = useCallback(() => {
+    const { createGroup, addTabToGroup } = useGroupsStore.getState();
+    const { activeWorkspaceId } = useWorkspaceStore.getState();
+    const savedGroupId = createGroup(displayTitle || "Unnamed", group.color, group.title.length === 1, activeWorkspaceId);
+    for (const tab of tabs) {
+      addTabToGroup(savedGroupId, { title: tab.title || "", url: tab.url, favicon: tab.favIconUrl || "" });
+    }
+    setSaveResult({ saved: tabs.length, skipped: 0 });
+    setTimeout(() => setSaveResult(null), 3000);
+  }, [displayTitle, group.color, group.title, tabs]);
+
   const groupColor = TAB_GROUP_COLORS[group.color];
 
   // Header components
-  const titleSlot = editingName ? (
-    <Input
-      ref={nameRef}
-      value={nameInput}
-      onChange={(e) => setNameInput(e.target.value)}
-      onBlur={handleNameCommit}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") { handleNameCommit(); }
-        if (e.key === "Escape") {
-          setNameInput(displayTitle);
-          setEditingName(false);
-        }
-      }}
-      className="h-7 text-sm py-0 w-32"
-      autoFocus
-    />
-  ) : (
-    <button
-      onClick={() => {
-        setEditingName(true);
-        setNameInput(displayTitle);
-      }}
-      className="text-sm font-semibold hover:text-primary transition-colors truncate max-w-[150px]"
-      title="Click to rename"
-    >
-      {displayTitle || "Unnamed group"}
-    </button>
+  const titleSlot = (
+    <div className="flex items-center gap-2 min-w-0">
+      {editingName ? (
+        <Input
+          ref={nameRef}
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          onBlur={handleNameCommit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { handleNameCommit(); }
+            if (e.key === "Escape") {
+              setNameInput(displayTitle);
+              setEditingName(false);
+            }
+          }}
+          className="h-7 text-sm py-0 w-32"
+          autoFocus
+        />
+      ) : (
+        <button
+          onClick={() => {
+            setEditingName(true);
+            setNameInput(displayTitle);
+          }}
+          className="text-sm font-semibold hover:text-primary transition-colors truncate max-w-[150px]"
+          title="Click to rename"
+        >
+          {displayTitle || "Unnamed group"}
+        </button>
+      )}
+      <div className="flex items-center gap-0.5 shrink-0">
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="size-6 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+          onClick={handleSaveAsGroup}
+          title="Save as Group"
+        >
+          <Save className="size-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="size-6 text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors"
+          onClick={() => dissolveGroup(group.id)}
+          title="Ungroup Tabs"
+        >
+          <Ungroup className="size-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="size-6 text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors"
+          onClick={() => closeGroup(group.id)}
+          title="Close Group"
+        >
+          <X className="size-3.5" />
+        </Button>
+      </div>
+    </div>
   );
 
   const headerActions = (
@@ -222,6 +268,10 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={handleSaveAsGroup}>
+            <Layers className="size-4 mr-2" />
+            Save as Group
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setSaveDialogOpen(true)}>
             <Save className="size-4 mr-2" />
             Save as Collection

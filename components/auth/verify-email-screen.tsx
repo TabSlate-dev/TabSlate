@@ -89,18 +89,28 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
     return () => mq.removeEventListener("change", h);
   }, []);
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function submitCode(value: string) {
+    if (value.length < 6 || loading) return;
     setError("");
     setLoading(true);
     try {
-      await verifyEmailOTP(email, code);
+      await verifyEmailOTP(email, value);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong");
       setCode("");
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleChange(value: string) {
+    setCode(value);
+    if (value.length === 6) { submitCode(value); }
+  }
+
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    submitCode(code);
   }
 
   async function handleResend() {
@@ -153,7 +163,7 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
 
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
             <div className="flex justify-center">
-              <InputOTP maxLength={6} value={code} onChange={setCode} autoFocus>
+              <InputOTP maxLength={6} value={code} onChange={handleChange} autoFocus>
                 <InputOTPGroup className="gap-2 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border">
                   <InputOTPSlot index={0} />
                   <InputOTPSlot index={1} />

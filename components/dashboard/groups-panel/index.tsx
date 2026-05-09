@@ -11,6 +11,7 @@ import {
 import { Globe } from "lucide-react";
 import { useTabsStore } from "@/store/tabs-store";
 import { useGroupsStore } from "@/store/groups-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import type { BrowserTab } from "@/lib/chrome/tabs";
 import { DraggableTabRow, TabRowPreview } from "./draggable-tab-row";
 import { DroppableGroupCard } from "./droppable-group-card";
@@ -21,6 +22,12 @@ export function GroupsPanel() {
   const loadTabs = useTabsStore(s => s.loadTabs);
   const groups = useGroupsStore(s => s.groups);
   const groupTabs = useGroupsStore(s => s.groupTabs);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
+  const activeGroups = React.useMemo(
+    () => groups.filter(g => !g.deletedAt && g.workspaceId === activeWorkspaceId),
+    [groups, activeWorkspaceId]
+  );
   const addTabToGroup = useGroupsStore(s => s.addTabToGroup);
   const moveTab = useGroupsStore(s => s.moveTab);
 
@@ -94,14 +101,14 @@ export function GroupsPanel() {
         {/* Right: saved groups */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <CreateGroupBar />
-          {groups.length === 0 && (
+          {activeGroups.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
               <Globe className="size-10 mb-3 opacity-30" />
               <p className="text-sm">No groups yet</p>
               <p className="text-xs mt-1">Create a group and drag tabs into it</p>
             </div>
           )}
-          {groups.map((group) => (
+          {activeGroups.map((group) => (
             <DroppableGroupCard
               key={group.id}
               group={group}

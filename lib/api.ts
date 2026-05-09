@@ -84,11 +84,35 @@ export interface ServerTag {
   updated_at: number;
 }
 
+export interface ServerGroupTab {
+  id: string;
+  group_id: string;
+  title: string;
+  url: string;
+  favicon: string;
+  position: number;
+}
+
+export interface ServerGroup {
+  id: string;
+  user_id: string;
+  name: string;
+  color: string;
+  is_compact: boolean;
+  seq: number;
+  deleted_at?: number;
+  created_at: number;
+  updated_at: number;
+  workspace_id: string | null;
+  tabs: ServerGroupTab[];
+}
+
 export interface SyncEntities {
   workspaces: ServerWorkspace[];
   collections: ServerCollection[];
   bookmarks: ServerBookmark[];
   tags: ServerTag[];
+  groups: ServerGroup[];
 }
 
 export interface SyncRejected {
@@ -112,6 +136,7 @@ export interface SyncPushPayload {
     collections: object[];
     bookmarks: object[];
     tags: object[];
+    groups: object[];
   };
 }
 
@@ -354,3 +379,26 @@ export async function searchBookmarks(
   }
   return res.json() as Promise<SearchResponse>;
 }
+
+export function getPreferences(
+  baseUrl: string,
+  accessToken: string,
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(baseUrl, "/preferences", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
+export function updatePreferences(
+  baseUrl: string,
+  accessToken: string,
+  preferences: Record<string, unknown>,
+): Promise<void> {
+  return request<void>(baseUrl, "/preferences", {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify(preferences),
+  });
+}
+

@@ -32,6 +32,7 @@ import {
   type WorkspaceColor,
 } from "@/store/workspace-store";
 import type { Workspace } from "@/lib/types";
+import { SettingsDialog } from "@/components/dashboard/settings-dialog";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -151,6 +152,7 @@ export function WorkspaceRail() {
   const deleteWorkspace = useWorkspaceStore(s => s.deleteWorkspace);
 
   const [createOpen, setCreateOpen] = React.useState(false);
+  const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [editWorkspace, setEditWorkspace] = React.useState<Workspace | null>(
     null
   );
@@ -244,7 +246,10 @@ export function WorkspaceRail() {
         {/* Settings */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <button className="size-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
+            <button 
+              onClick={() => setSettingsOpen(true)}
+              className="size-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
               <Settings className="size-4" />
             </button>
           </TooltipTrigger>
@@ -275,6 +280,8 @@ export function WorkspaceRail() {
           }}
         />
       )}
+      
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </TooltipProvider>
   );
 }

@@ -60,19 +60,23 @@ export const BaseTabRow = React.forwardRef<HTMLDivElement, BaseTabRowProps>(
 
         {showCheckbox && (
           <div
-            className={cn(
-              "shrink-0 mr-1 flex size-4 items-center justify-center rounded-sm border border-primary transition-all",
-              selected ? "bg-primary text-primary-foreground" : "bg-transparent text-transparent"
-            )}
+            className="shrink-0 flex items-center justify-center p-2 -ml-2 -my-2 mr-0 cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               onSelect?.(!selected);
             }}
           >
-            <Check
-              className={cn("size-3", selected ? "opacity-100" : "opacity-0")}
-              strokeWidth={3}
-            />
+            <div
+              className={cn(
+                "flex size-4 items-center justify-center rounded-sm border border-primary transition-all",
+                selected ? "bg-primary text-primary-foreground" : "bg-transparent text-transparent"
+              )}
+            >
+              <Check
+                className={cn("size-3", selected ? "opacity-100" : "opacity-0")}
+                strokeWidth={3}
+              />
+            </div>
           </div>
         )}
 

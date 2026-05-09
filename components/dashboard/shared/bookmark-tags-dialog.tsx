@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Plus } from "lucide-react";
+import { TagDialog } from "@/components/dashboard/sidebar/tag-dialog";
 import type { Bookmark } from "@/lib/types";
 
 interface BookmarkTagsDialogProps {
@@ -20,9 +22,11 @@ interface BookmarkTagsDialogProps {
 }
 
 export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTagsDialogProps) {
-  const { tags } = useWorkspaceStore();
+  const tags = useWorkspaceStore(s => s.tags);
+  const createTag = useWorkspaceStore(s => s.createTag);
   const updateBookmark = useBookmarksStore(s => s.updateBookmark);
   const [selected, setSelected] = React.useState<Set<string>>(new Set(bookmark.tags));
+  const [newTagOpen, setNewTagOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (open) {
@@ -44,8 +48,9 @@ export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTag
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xs">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-xs">
         <DialogHeader>
           <DialogTitle>Manage Tags</DialogTitle>
           <DialogDescription className="sr-only">
@@ -76,6 +81,15 @@ export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTag
               </div>
             ))
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-start text-muted-foreground mt-2"
+            onClick={() => setNewTagOpen(true)}
+          >
+            <Plus className="size-4 mr-2" />
+            Create new tag
+          </Button>
         </div>
 
         <DialogFooter>
@@ -87,6 +101,15 @@ export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTag
           </Button>
         </DialogFooter>
       </DialogContent>
-    </Dialog>
+      </Dialog>
+      <TagDialog
+        open={newTagOpen}
+        onOpenChange={setNewTagOpen}
+        onSubmit={(name, color) => {
+          const newTag = createTag(name, color);
+          handleToggle(newTag.id, true);
+        }}
+      />
+    </>
   );
 }

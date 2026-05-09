@@ -27,12 +27,8 @@ TabSlate/
 │   │   └── App.tsx      # 路由、布局、StoreGate → AuthGate → SyncProvider → HashRouter
 │   ├── popup/           # 快速保存 popup
 │   │   └── App.tsx      # 独立 React 树，不使用 Zustand；保存时调用 GET_PAGE_INFO 获取 ogTitle/metaDescription
-│   ├── search/          # 全局搜索弹出窗口（Ctrl+Shift+K）
-│   │   ├── index.html   # WXT 入口 HTML（产物：search.html）
-│   │   ├── main.tsx     # ReactDOM.createRoot
-│   │   └── App.tsx      # auth/tabs 水化守卫 + SearchPanel（autoFocus，onClose=window.close）
 │   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单 + open-search 快捷键监听
-│   └── content.ts       # 注入页面：GET_PAGE_INFO 响应（title/url/favicon/selectedText/ogTitle/metaDescription）
+│   └── content.ts       # 注入页面：GET_PAGE_INFO 响应 + 挂载全局 SearchOverlay (Shadow DOM)
 │
 ├── components/
 │   ├── auth/
@@ -41,7 +37,8 @@ TabSlate/
 │   ├── login-form.tsx          # login/register/forgot-password/reset-password 四模式 + Prosopo 验证码 + 密码强度提示
 │   ├── procaptcha.tsx          # Prosopo iframe 包装组件（绕过 MV3 CSP 限制；通过 postMessage 接收 token）
 │   ├── search/
-│   │   └── search-panel.tsx    # 共享搜索 UI：输入框 + 书签/标签/Google 三栏下拉；键盘导航；已归档 badge
+│   │   ├── search-panel.tsx    # 内联搜索 UI：输入框 + 书签/标签/搜索引擎三栏下拉；键盘导航；已归档 badge；从 useSettingsStore 读取默认引擎
+│   │   └── search-overlay.tsx  # 全局搜索浮层（供 content.ts 注入 Shadow DOM）；从 chrome.storage.local["tabslate-search-engines"] 读取用户引擎（content script 无法用 Zustand）
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
@@ -75,6 +72,7 @@ TabSlate/
 │       ├── header.tsx          # 顶部搜索/过滤栏
 │       ├── workspace-rail.tsx  # 最左侧工作区切换轨道
 │       ├── tabs-rail.tsx       # 最右侧标签页快速预览轨道
+│       ├── settings-dialog.tsx # 设置对话框：搜索引擎管理（启用/禁用/拖拽排序/添加/删除）
 │       ├── bookmark-card.tsx   # 单个书签卡片/列表项
 │       ├── favorites-content.tsx
 │       ├── archive-content.tsx
@@ -85,6 +83,7 @@ TabSlate/
 │   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态；含 mergeFromServer（同步合并）
 │   ├── workspace-store.ts  # 工作区/集合/标签配置；含 localSeq、mergeFromServer、setLocalSeq
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
+│   ├── settings-store.ts   # 搜索引擎列表（启用状态、顺序、自定义引擎）；持久化到 IDB kv["searchEngines"]；pullFromServer 从服务端拉取偏好
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
 ├── types/
@@ -124,6 +123,8 @@ useAuthStore       ──Zustand persist──▶  chrome.storage.local  "tabsla
 useBookmarksStore  ──手动 idbPut/Get──▶  IndexedDB  bookmarks / archived-bookmarks / trashed-bookmarks
 useWorkspaceStore  ──手动 idbPut/Get──▶  IndexedDB  workspaces / collections / tags / kv
 useGroupsStore     ──手动 idbPut/Get──▶  IndexedDB  groups / group-tabs
+useSettingsStore   ──手动 idbPut/Get──▶  IndexedDB  kv["searchEngines"]
+                   ──StoreGate 镜像──▶  chrome.storage.local  "tabslate-search-engines"（供 content script 读取）
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
 SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  （30s TTL）
 ```
@@ -137,7 +138,8 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | `useAuthStore` | chrome.storage.local | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
 | `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并 |
 | `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标（存于 `kv["localSeq"]`）；`mergeFromServer` 执行 LWW 合并；`sweepUnsynced` 补推 `seq=0` 的实体 |
-| `useGroupsStore` | IndexedDB | 用户手动保存的标签组及其包含的 tab URL |
+| `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`mergeFromServer` / `sweepUnsynced` / `enqueueAllToSync`；`restoreGroup` / `permanentlyDeleteGroup` |
+| `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
 | `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
 ### 跨进程通知
@@ -149,6 +151,11 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `TABS_CHANGED` | background | newtab | tab/group 有变化，触发 `loadTabs()` |
 | `BOOKMARKS_CHANGED` | background | newtab | background 回退写 IDB 后通知刷新 |
 | `ADD_BOOKMARK` | popup / background | newtab | 直接投递书签数据（优先路径） |
+| `OPEN_SEARCH` | background | active tab | 触发全局搜索快捷键，挂载 SearchOverlay |
+| `GET_OPEN_TABS` | active tab | background | SearchOverlay 请求打开的标签页列表 |
+| `FOCUS_TAB` | active tab | background | SearchOverlay 请求切换到指定标签页 |
+| `OPEN_TAB` | active tab | background | SearchOverlay 请求打开新标签页（content script 无法直接调用 `chrome.tabs.create`） |
+| `SEARCH_BOOKMARKS` | active tab | background | SearchOverlay 代理发起搜索请求（绕过跨域限制） |
 
 ## 路由
 
@@ -159,7 +166,7 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `/` | `BookmarksContent` | 书签主界面（grid/list）；顶部搜索栏（书签 + open tabs + Google 回退） |
 | `/favorites` | `FavoritesContent` | 收藏夹 |
 | `/archive` | `ArchiveContent` | 已归档集合卡片（含一键还原）+ 已归档单个书签 |
-| `/trash` | `TrashContent` | 已删除集合卡片（含还原 + 永久删除）+ 已删除单个书签 |
+| `/trash` | `TrashContent` | 已删除集合 + 已删除保存组（含还原 + 永久删除）+ 已删除单个书签 |
 | `/tabs` | `TabsPanel` | 当前标签页管理 |
 | `/groups/:groupId` | `GroupDetail` | 保存组详情（标签列表、内联编辑、删除、从 TabsRail 拖入） |
 
@@ -270,7 +277,8 @@ SyncEngine
 2. 或每 5 分钟定期拉取（SSE 离线时使用）
 3. 响应中的 workspaces/collections/tags 经 `mergeFromServer`（workspace-store）LWW 合并
 4. bookmarks 经 `mergeFromServer`（bookmarks-store）LWW 合并（含 `tag_ids`）
-5. App.tsx 的 `onPullSuccess` 回调更新 `localSeq`；若非首次推送，调用 `sweepUnsynced()` 将所有 `seq=0` 实体补推（处理 popup/background 在 newtab 关闭时直接写 storage 的情况）
+5. groups 经 `mergeFromServer`（groups-store）LWW 合并；软删除组 update+keep（供回收站过滤），活跃组整体替换 tab 快照
+6. App.tsx 的 `onPullSuccess` 回调更新 `localSeq`；若非首次推送，调用 `sweepUnsynced()` 将所有 `seq=0` 实体补推（处理 popup/background 在 newtab 关闭时直接写 storage 的情况）
 
 **SSE 连接（实时通知）：**
 - `POST /auth/sse-token` 获取 30s 单次使用令牌（EventSource 无法携带 Authorization header）
@@ -306,8 +314,8 @@ Workspace { id, name, color, position, seq, deletedAt? }
 Tag { id, name, color, seq, deletedAt? }
 
 // store/groups-store.ts
-SavedGroup { id, name, color: TabGroupColor, isCompact, createdAt }
-  └── GroupTab[] { id, groupId, title, url, favicon, position }
+SavedGroup { id, name, color: TabGroupColor, isCompact, createdAt, seq, deletedAt? }
+  └── GroupTab[] { id, groupId, title, url, favicon, position }  // tab 列表整体替换（无单独 seq）
 
 // lib/chrome/tab-groups.ts
 BrowserTabGroup { id, title, color, collapsed, windowId }  // Chrome 实时数据
@@ -323,5 +331,6 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 | `storage` | chrome.storage.local 读写 |
 | `bookmarks` | （暂未使用 Chrome 原生书签 API） |
 | `contextMenus` | 右键菜单"Save to TabSlate" |
-| `host_permissions: <all_urls>` | 读取任意页面的 favicon |
-| `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 打开 search.html 弹窗 |
+| `host_permissions: <all_urls>` | 读取任意页面的 favicon；向当前页面注入 SearchOverlay 搜索框 |
+| `web_accessible_resources: search-engine-icon/*` | 允许 Shadow DOM（content script 上下文）加载扩展内置的搜索引擎 SVG 图标 |
+| `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 发送 `OPEN_SEARCH` 唤起当前页搜索层 |

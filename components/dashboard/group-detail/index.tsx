@@ -10,8 +10,9 @@ import {
   X, 
   MoreHorizontal, 
   Save, 
-  Bookmark,
-  BrushCleaning
+  BookmarkPlus,
+  BrushCleaning,
+  FolderPlus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
@@ -33,13 +34,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-collection-dialog";
+import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { generateId } from "@/lib/id";
 
 export function GroupDetail() {
   const { groupId } = useParams<{ groupId: string }>();
   const navigate = useNavigate();
 
-  const group = useGroupsStore(s => s.groups.find(g => g.id === groupId));
+  const group = useGroupsStore(s => s.groups.find(g => g.id === groupId && !g.deletedAt));
   const updateGroup = useGroupsStore(s => s.updateGroup);
   const deleteGroup = useGroupsStore(s => s.deleteGroup);
   const openGroup = useGroupsStore(s => s.openGroup);
@@ -63,6 +65,25 @@ export function GroupDetail() {
   const [isSaving, setIsSaving] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<{ saved: number; skipped: number } | null>(null);
   const [savedTabIds, setSavedTabIds] = React.useState<Set<string>>(new Set());
+  const [saveMenuOpenMap, setSaveMenuOpenMap] = React.useState<Record<string, boolean>>({});
+  const [collectionDialogTab, setCollectionDialogTab] = React.useState<GroupTab | null>(null);
+
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const createCollection = useWorkspaceStore(s => s.createCollection);
+
+  const activeCollections = React.useMemo(() => {
+    return collections
+      .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
+      .sort((a, b) => a.position - b.position);
+  }, [collections, activeWorkspaceId]);
+
+  // Navigate away when workspace switches and this group doesn't belong to the new workspace
+  React.useEffect(() => {
+    if (group && group.workspaceId !== activeWorkspaceId) {
+      navigate("/");
+    }
+  }, [activeWorkspaceId, group, navigate]);
 
   // Init local state when group loads
   React.useEffect(() => {
@@ -72,6 +93,54 @@ export function GroupDetail() {
   }, [group, editing]);
 
   const { isDragOver, dropZoneProps } = useGroupDragDrop(groupId ?? "");
+
+  const handleSaveGroup = React.useCallback(async (name: string) => {
+    setIsSaving(true);
+    const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
+    const collection = createCollection(activeWorkspaceId, name, "folder");
+    
+    const newBookmarks = groupTabs.map(t => ({
+      id: generateId(),
+      title: t.title,
+      url: t.url,
+      favicon: t.favicon,
+      collectionId: collection.id,
+      description: "",
+      tags: [],
+      createdAt: new Date().toISOString(),
+      isFavorite: false,
+      seq: 0,
+    }));
+
+    addBookmarks(newBookmarks);
+    setIsSaving(false);
+    setSaveDialogOpen(false);
+    setSaveResult({ saved: newBookmarks.length, skipped: 0 });
+    setTimeout(() => setSaveResult(null), 3000);
+  }, [groupTabs, addBookmarks]);
+
+  const handleSaveTab = React.useCallback((tab: GroupTab, collectionId: string) => {
+    addBookmarks([{
+      id: generateId(),
+      title: tab.title,
+      url: tab.url,
+      favicon: tab.favicon,
+      collectionId,
+      description: "",
+      tags: [],
+      createdAt: new Date().toISOString(),
+      isFavorite: false,
+      seq: 0,
+    }]);
+    setSavedTabIds(prev => new Set(prev).add(tab.id));
+    setTimeout(() => {
+      setSavedTabIds(prev => {
+        const next = new Set(prev);
+        next.delete(tab.id);
+        return next;
+      });
+    }, 2000);
+  }, [addBookmarks]);
 
   if (!group) {
     return (
@@ -108,54 +177,6 @@ export function GroupDetail() {
     deleteGroup(group.id);
     navigate("/tabs");
   };
-
-  const handleSaveGroup = React.useCallback(async (name: string) => {
-    setIsSaving(true);
-    const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
-    const collection = createCollection(activeWorkspaceId, name, "folder");
-    
-    const newBookmarks = groupTabs.map(t => ({
-      id: generateId(),
-      title: t.title,
-      url: t.url,
-      favicon: t.favicon,
-      collectionId: collection.id,
-      description: "",
-      tags: [],
-      createdAt: new Date().toISOString(),
-      isFavorite: false,
-      seq: 0,
-    }));
-
-    addBookmarks(newBookmarks);
-    setIsSaving(false);
-    setSaveDialogOpen(false);
-    setSaveResult({ saved: newBookmarks.length, skipped: 0 });
-    setTimeout(() => setSaveResult(null), 3000);
-  }, [groupTabs, addBookmarks]);
-
-  const handleSaveTab = React.useCallback((tab: GroupTab) => {
-    addBookmarks([{
-      id: generateId(),
-      title: tab.title,
-      url: tab.url,
-      favicon: tab.favicon,
-      collectionId: "all",
-      description: "",
-      tags: [],
-      createdAt: new Date().toISOString(),
-      isFavorite: false,
-      seq: 0,
-    }]);
-    setSavedTabIds(prev => new Set(prev).add(tab.id));
-    setTimeout(() => {
-      setSavedTabIds(prev => {
-        const next = new Set(prev);
-        next.delete(tab.id);
-        return next;
-      });
-    }, 2000);
-  }, [addBookmarks]);
 
   // Header components
   const titleSlot = editing ? (
@@ -311,18 +332,47 @@ export function GroupDetail() {
             actions={
               <div className="flex items-center gap-0.5">
 
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSaveTab(tab);
-                  }}
-                  title={savedTabIds.has(tab.id) ? "Saved!" : "Save bookmark"}
-                  className={cn("size-6 text-muted-foreground", savedTabIds.has(tab.id) && "text-green-600 hover:text-green-600")}
+                <DropdownMenu
+                  open={saveMenuOpenMap[tab.id] ?? false}
+                  onOpenChange={(open) => setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: open }))}
                 >
-                  {savedTabIds.has(tab.id) ? <Check className="size-3" /> : <Bookmark className="size-3" />}
-                </Button>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={(e) => e.stopPropagation()}
+                      title={savedTabIds.has(tab.id) ? "Saved!" : "Save to collection"}
+                      className={cn("size-6 text-muted-foreground", savedTabIds.has(tab.id) && "text-green-600 hover:text-green-600")}
+                    >
+                      {savedTabIds.has(tab.id) ? <Check className="size-3" /> : <BookmarkPlus className="size-3" />}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48 max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                    {activeCollections.map((c) => (
+                      <DropdownMenuItem
+                        key={c.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: false }));
+                          handleSaveTab(tab, c.id);
+                        }}
+                      >
+                        <span className="truncate">{c.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                    {activeCollections.length > 0 && <DropdownMenuSeparator />}
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: false }));
+                        setCollectionDialogTab(tab);
+                      }}
+                    >
+                      <FolderPlus className="size-3.5 mr-2" />
+                      New Collection...
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   variant="ghost"
                   size="icon-xs"
@@ -360,6 +410,18 @@ export function GroupDetail() {
           onConfirm={handleSaveGroup}
           onClose={() => setSaveDialogOpen(false)}
         />
+
+        {collectionDialogTab && (
+          <CollectionDialog
+            open={!!collectionDialogTab}
+            onOpenChange={(open) => { if (!open) { setCollectionDialogTab(null); } }}
+            onSubmit={(name, icon) => {
+              const newCol = createCollection(activeWorkspaceId, name, icon);
+              handleSaveTab(collectionDialogTab, newCol.id);
+              setCollectionDialogTab(null);
+            }}
+          />
+        )}
       </GroupCardBase>
     </div>
   );

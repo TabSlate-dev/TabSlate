@@ -1,5 +1,6 @@
 
 
+import { useState } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -25,6 +26,7 @@ import {
 } from "lucide-react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { cn } from "@/lib/utils";
+import { AddBookmarkDialog } from "@/components/dashboard/add-bookmark-dialog";
 
 
 interface BookmarksHeaderProps {
@@ -57,6 +59,8 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
     setFilterType,
   } = useBookmarksStore();
 
+  const [addBookmarkOpen, setAddBookmarkOpen] = useState(false);
+
   const currentSort = sortOptions.find((opt) => opt.value === sortBy);
   const currentFilter = filterOptions.find((opt) => opt.value === filterType);
 
@@ -70,6 +74,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* 
           <div className="relative hidden md:block">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
             <Input
@@ -79,6 +84,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
               className="pl-9 w-64 h-9"
             />
           </div>
+          */}
 
           <div className="flex items-center border rounded-md p-0.5">
             <Button
@@ -167,7 +173,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button size="sm" className="hidden sm:flex">
+          <Button size="sm" className="hidden sm:flex" onClick={() => setAddBookmarkOpen(true)}>
             <Plus className="size-4" />
             Add Bookmark
           </Button>
@@ -187,6 +193,8 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
           </Button>
         </div>
       </div>
+
+      <AddBookmarkDialog open={addBookmarkOpen} onOpenChange={setAddBookmarkOpen} />
     </header>
   );
 }

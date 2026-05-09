@@ -11,6 +11,9 @@ export default defineConfig({
     chrome_url_overrides: {
       newtab: "newtab.html",
     },
+    web_accessible_resources: [
+      { resources: ["search-engine-icon/*"], matches: ["<all_urls>"] },
+    ],
     commands: {
       "open-search": {
         suggested_key: {

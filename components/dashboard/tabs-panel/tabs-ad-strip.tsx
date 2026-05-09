@@ -1,0 +1,104 @@
+import * as React from "react";
+import { ArrowRight, Sparkles, Bot, ShieldCheck } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+const STRIP_ADS = [
+  {
+    id: "a1",
+    title: "TabSlate Premium",
+    description: "Unlock AI organization & cloud sync.",
+    badge: "Pro",
+    icon: Sparkles,
+    action: "Upgrade",
+    gradient: "from-primary/20 to-purple-500/20",
+    iconColor: "text-primary/80",
+  },
+  {
+    id: "a2",
+    title: "AI Tab Grouping",
+    description: "Let AI organize your tabs intelligently.",
+    badge: "New",
+    icon: Bot,
+    action: "Try Now",
+    gradient: "from-emerald-500/20 to-teal-500/20",
+    iconColor: "text-emerald-500/80",
+  },
+  {
+    id: "a3",
+    title: "Privacy Shield",
+    description: "End-to-end encryption for all your data.",
+    badge: "Offer",
+    icon: ShieldCheck,
+    action: "Learn More",
+    gradient: "from-rose-500/20 to-orange-500/20",
+    iconColor: "text-rose-500/80",
+  },
+];
+
+function StripAdCard({ ad, vertical }: { ad: typeof STRIP_ADS[0]; vertical?: boolean }) {
+  const Icon = ad.icon;
+
+  if (vertical) {
+    return (
+      <div className="relative z-0 flex items-center overflow-hidden rounded-lg border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/30 group cursor-pointer px-2.5 py-2 gap-2.5">
+        {/* Outer glow */}
+        <div className={cn("absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md z-[-1] rounded-lg pointer-events-none", ad.gradient)} />
+        {/* Icon */}
+        <div className={cn("shrink-0 size-7 rounded-md flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-110 z-10", ad.gradient)}>
+          <Icon className={cn(ad.iconColor, "size-3.5")} />
+        </div>
+        {/* Text */}
+        <div className="flex-1 min-w-0 z-10">
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-foreground truncate">{ad.title}</span>
+            <span className="shrink-0 px-1 py-0.5 rounded text-[8px] font-bold bg-background/80 border text-muted-foreground uppercase tracking-wide">{ad.badge}</span>
+          </div>
+          <p className="text-[10px] text-foreground/50 truncate mt-0.5">{ad.description}</p>
+        </div>
+        {/* Arrow */}
+        <ArrowRight className="size-3 shrink-0 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all duration-300 z-10" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative z-0 flex flex-col overflow-hidden rounded-xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg hover:border-primary/30 hover:-translate-y-0.5 group cursor-pointer p-4">
+      {/* Outer glow */}
+      <div className={cn("absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md z-[-1] rounded-xl pointer-events-none", ad.gradient)} />
+      {/* Background icon watermark */}
+      <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none z-0">
+        <div className="absolute -bottom-4 -right-4 opacity-20 dark:opacity-10 group-hover:opacity-35 transition-opacity duration-500">
+          <Icon className={cn("w-20 h-20 blur-[6px] -rotate-12", ad.iconColor)} />
+        </div>
+      </div>
+      {/* Badge */}
+      <div className="absolute top-3 right-3 px-1.5 py-0.5 rounded bg-background/80 backdrop-blur-md border text-[9px] font-bold text-muted-foreground uppercase tracking-wider z-20 group-hover:text-foreground transition-colors">
+        {ad.badge}
+      </div>
+      {/* Content */}
+      <div className="relative z-10 flex flex-col gap-2">
+        <div className="flex items-center gap-2.5 pr-8">
+          <div className={cn("shrink-0 size-8 rounded-lg flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-110", ad.gradient)}>
+            <Icon className={cn(ad.iconColor, "size-4")} />
+          </div>
+          <span className="text-sm font-semibold text-foreground leading-tight line-clamp-1">{ad.title}</span>
+        </div>
+        <p className="text-[11px] text-foreground/60 leading-relaxed line-clamp-2">{ad.description}</p>
+        <button className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors w-fit group/btn">
+          {ad.action}
+          <ArrowRight className="size-3 transition-transform duration-300 group-hover/btn:translate-x-0.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function TabsAdStrip({ vertical }: { vertical?: boolean }) {
+  return (
+    <div className={cn(vertical ? "flex flex-col gap-2" : "grid grid-cols-3 gap-3")}>
+      {STRIP_ADS.map((ad) => (
+        <StripAdCard key={ad.id} ad={ad} vertical={vertical} />
+      ))}
+    </div>
+  );
+}

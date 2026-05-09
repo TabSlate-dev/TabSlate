@@ -5,6 +5,7 @@ import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
+import { useGroupsStore } from "@/store/groups-store";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -53,6 +54,13 @@ export const TAG_COLORS = [
   "bg-orange-500/10 text-orange-500",
   "bg-pink-500/10 text-pink-500",
 ] as const;
+
+// Exported just to guarantee Tailwind v4 scanner picks up these solid colors
+export const SOLID_TAG_COLORS = [
+  "bg-blue-500", "bg-emerald-500", "bg-violet-500", "bg-amber-500",
+  "bg-rose-500", "bg-cyan-500", "bg-orange-500", "bg-pink-500"
+];
+
 
 
 // ---------------------------------------------------------------------------
@@ -267,8 +275,22 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
       for (const sc of resp.entities.collections) {
         if (sc.deleted_at) {
-          // Server confirmed delete — remove from state
-          collections = collections.filter(c => c.id !== sc.id);
+          // Server confirmed soft-delete — keep in collections with deletedAt so
+          // TrashContent can still find and display the collection card.
+          const idx = collections.findIndex(c => c.id === sc.id);
+          if (idx === -1) {
+            collections.push({
+              id: sc.id,
+              workspaceId: sc.workspace_id ?? "",
+              name: sc.name,
+              icon: sc.icon ?? "folder",
+              position: sc.position,
+              seq: sc.seq,
+              deletedAt: sc.deleted_at,
+            });
+          } else {
+            collections[idx] = { ...collections[idx], seq: sc.seq, deletedAt: sc.deleted_at };
+          }
         } else {
           const idx = collections.findIndex(c => c.id === sc.id);
           if (idx === -1) {
@@ -344,9 +366,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     for (const sw of resp.entities.workspaces) {
       if (sw.deleted_at) { idbDelete("workspaces", sw.id); }
     }
-    for (const sc of resp.entities.collections) {
-      if (sc.deleted_at) { idbDelete("collections", sc.id); }
-    }
+    // Note: deleted collections are kept in IDB with deletedAt set (not hard-deleted)
+    // so TrashContent can display them after a page reload. permanentlyDeleteCollection
+    // is the only path that calls idbDelete("collections", id).
     for (const st of resp.entities.tags) {
       if (st.deleted_at) { idbDelete("tags", st.id); }
     }
@@ -400,6 +422,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   deleteWorkspace: (id) => {
+    // Soft-delete all active groups in this workspace so they get tombstoned
+    // on the server with a valid workspace_id (avoids ON DELETE SET NULL).
+    const { groups, deleteGroup } = useGroupsStore.getState();
+    for (const g of groups) {
+      if (g.workspaceId === id && !g.deletedAt) {
+        deleteGroup(g.id);
+      }
+    }
+
     const { workspaces, collections, activeWorkspaceId } = get();
     const ws = workspaces.find(w => w.id === id);
     const colsToDelete = collections.filter(c => c.workspaceId === id);
@@ -409,6 +440,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         collections: colsToDelete.map(c => toServerCollection({ ...c, deletedAt: Date.now() })),
       });
     }
+    for (const c of colsToDelete) { useBookmarksStore.getState().trashCollectionBookmarks(c.id); }
     idbDelete("workspaces", id);
     for (const c of colsToDelete) { idbDelete("collections", c.id); }
     const remaining = workspaces.filter(w => w.id !== id);
@@ -480,7 +512,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     idbPut("collections", restored);
     syncEngine?.enqueue({ collections: [toServerCollection(restored)] });
     set((s) => ({ collections: s.collections.map(c => c.id === id ? restored : c) }));
-    useBookmarksStore.getState().restoreCollectionBookmarks(id);
   },
 
   permanentlyDeleteCollection: (id) => {

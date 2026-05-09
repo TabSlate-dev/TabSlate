@@ -88,7 +88,8 @@ export class SyncEngine {
           resp.entities.workspaces.length +
           resp.entities.collections.length +
           resp.entities.bookmarks.length +
-          resp.entities.tags.length;
+          resp.entities.tags.length +
+          (resp.entities.groups?.length ?? 0);
       }
     } catch { /* ignore */ }
 

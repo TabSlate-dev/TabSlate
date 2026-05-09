@@ -4,7 +4,7 @@ import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useTabDragDrop } from "@/hooks/use-tab-drag-drop";
 import { BookmarkCard } from "./bookmark-card";
-import { StatsCards } from "./stats-cards";
+
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,7 +15,7 @@ import type { Bookmark as BookmarkType } from "@/lib/types";
 
 import { HeroSection } from "./hero-section";
 import { useTabsStore } from "@/store/tabs-store";
-import { SearchPanel } from "@/components/search/search-panel";
+// import { SearchPanel } from "@/components/search/search-panel";
 
 interface DraggableBookmarkCardProps {
   bookmark: BookmarkType;
@@ -64,6 +64,7 @@ export function BookmarksContent() {
   }, []);
 
   const selectedCollection = useBookmarksStore(s => s.selectedCollection);
+  const setSelectedCollection = useBookmarksStore(s => s.setSelectedCollection);
   const viewMode = useBookmarksStore(s => s.viewMode);
   const selectedTags = useBookmarksStore(s => s.selectedTags);
   const toggleTag = useBookmarksStore(s => s.toggleTag);
@@ -77,6 +78,11 @@ export function BookmarksContent() {
   const collections = useWorkspaceStore(s => s.collections);
   const tags = useWorkspaceStore(s => s.tags);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
+  React.useEffect(() => {
+    setSelectedCollection("all");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId]);
 
   const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, dropZoneProps } =
     useTabDragDrop();
@@ -144,14 +150,16 @@ export function BookmarksContent() {
 
       <div className="p-4 md:p-6 space-y-6">
         {/* Inline search */}
+        {/*
         <div className="w-full">
           <SearchPanel
             openTabs={openTabs}
             smartOpen
           />
         </div>
+        */}
         {selectedCollection === "all" && !hasActiveFilters && <HeroSection />}
-        <StatsCards />
+
 
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">

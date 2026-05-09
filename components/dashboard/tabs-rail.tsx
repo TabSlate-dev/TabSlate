@@ -9,6 +9,7 @@ import { ChevronDown, Loader2, ExternalLink, Globe } from "lucide-react";
 import type { ExtensionMessage } from "@/lib/messages";
 import { cn } from "@/lib/utils";
 import { FaviconImage } from "@/components/ui/favicon-image";
+import { TabsAdStrip } from "./tabs-panel/tabs-ad-strip";
 
 interface WindowTab {
   id: number;
@@ -101,10 +102,22 @@ export function TabsRail() {
 
   return (
     <div className="w-64 shrink-0 flex flex-col bg-background overflow-hidden">
-      {/* Header */}
+      {/* Ads Header */}
       <div className="flex items-center justify-between px-3 py-2.5 border-b shrink-0">
         <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-          Open Tabs
+          Ads
+        </span>
+      </div>
+
+      {/* Ad Strip */}
+      <div className="px-2 py-2 border-b shrink-0">
+        <TabsAdStrip vertical />
+      </div>
+
+      {/* Open Tabs Header */}
+      <div className="flex items-center justify-between px-3 py-2.5 border-b shrink-0">
+        <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+          Opened Tabs
         </span>
         {windows.length > 1 && (
           <DropdownMenu>

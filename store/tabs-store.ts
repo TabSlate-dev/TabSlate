@@ -263,6 +263,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const group = tabGroups.find((g) => g.id === groupId);
     let finalPatch = { ...patch };
     
+    // Remember old full title for syncing to Saved Groups
+    const oldTitle = group ? (fullTitles[groupId] || group.title) : undefined;
+    
     if (patch.title !== undefined) {
       // Store full title internally
       const nextFullTitles = { ...fullTitles, [groupId]: patch.title };
@@ -282,6 +285,22 @@ export const useTabsStore = create<TabsState>((set, get) => ({
         g.id === groupId ? updated : g
       ),
     }));
+
+    // Sync title/color changes to Saved Groups with matching names
+    if (oldTitle && (patch.color !== undefined || patch.title !== undefined)) {
+      const { useGroupsStore } = await import("./groups-store");
+      const { groups, updateGroup: updateSavedGroup } = useGroupsStore.getState();
+      const savedGroup = groups.find(g => g.name === oldTitle);
+      if (savedGroup) {
+        const savedPatch: any = {};
+        if (patch.title !== undefined && savedGroup.name !== patch.title) savedPatch.name = patch.title;
+        if (patch.color !== undefined && savedGroup.color !== patch.color) savedPatch.color = patch.color;
+        
+        if (Object.keys(savedPatch).length > 0) {
+          updateSavedGroup(savedGroup.id, savedPatch);
+        }
+      }
+    }
   },
 
   dissolveGroup: async (groupId) => {

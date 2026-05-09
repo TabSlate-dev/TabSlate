@@ -2,7 +2,7 @@ import React, { useState, useCallback } from "react";
 import { useTabsStore } from "@/store/tabs-store";
 import { Button } from "@/components/ui/button";
 import {
-  Bookmark,
+  BookmarkPlus,
   ExternalLink,
   X,
   Check,
@@ -12,10 +12,19 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { storageService } from "@/lib/storage";
+import { useBookmarksStore } from "@/store/bookmarks-store";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import type { BrowserTab } from "@/lib/chrome/tabs";
 import { BaseTabRow } from "@/components/dashboard/shared/base-tab-row";
-
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useWorkspaceStore } from "@/store/workspace-store";
+import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 interface TabRowProps {
   tab: BrowserTab;
   selected?: boolean;
@@ -43,20 +52,35 @@ export const TabRow = React.memo(function TabRow({
   const isHighlighted = useTabsStore(s => s.highlightedTabIds.includes(tab.id));
   const closeTab = useTabsStore(s => s.closeTab);
   const focusTab = useTabsStore(s => s.focusTab);
+  const addBookmark = useBookmarksStore(s => s.addBookmark);
+
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const createCollection = useWorkspaceStore(s => s.createCollection);
+
+  const activeCollections = React.useMemo(() => {
+    return collections
+      .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
+      .sort((a, b) => a.position - b.position);
+  }, [collections, activeWorkspaceId]);
 
   const [saved, setSaved] = useState(false);
+  const [saveMenuOpen, setSaveMenuOpen] = useState(false);
+  const [collectionDialogOpen, setCollectionDialogOpen] = useState(false);
 
-  const handleSave = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    storageService.addBookmark({
+  const handleSaveToCollection = useCallback((collectionId: string) => {
+    addBookmark({
       title: tab.title,
       url: tab.url,
       favicon: tab.favIconUrl,
-      collectionId: "all",
+      collectionId,
+      description: "",
+      tags: [],
+      seq: 0,
     });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }, [tab.title, tab.url, tab.favIconUrl]);
+  }, [tab.title, tab.url, tab.favIconUrl, addBookmark]);
 
   const handleFocus = useCallback((e: React.MouseEvent | React.FormEvent) => {
     e.stopPropagation();
@@ -105,15 +129,31 @@ export const TabRow = React.memo(function TabRow({
           <FolderPlus className="size-3" />
         </Button>
       )}
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={handleSave}
-        title={saved ? "Saved!" : "Save bookmark"}
-        className={cn("size-6 text-muted-foreground", saved && "text-green-600 hover:text-green-600")}
-      >
-        {saved ? <Check className="size-3" /> : <Bookmark className="size-3" />}
-      </Button>
+      <DropdownMenu open={saveMenuOpen} onOpenChange={setSaveMenuOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={(e) => e.stopPropagation()}
+            title={saved ? "Saved!" : "Save to collection"}
+            className={cn("size-6 text-muted-foreground", saved && "text-green-600 hover:text-green-600")}
+          >
+            {saved ? <Check className="size-3" /> : <BookmarkPlus className="size-3" />}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48 max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+          {activeCollections.map((c) => (
+            <DropdownMenuItem key={c.id} onClick={(e) => { e.stopPropagation(); setSaveMenuOpen(false); handleSaveToCollection(c.id); }}>
+              <span className="truncate">{c.name}</span>
+            </DropdownMenuItem>
+          ))}
+          {activeCollections.length > 0 && <DropdownMenuSeparator />}
+          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setSaveMenuOpen(false); setCollectionDialogOpen(true); }}>
+            <FolderPlus className="size-3.5 mr-2" />
+            New Collection...
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <Button
         variant="ghost"
         size="icon-xs"
@@ -144,6 +184,7 @@ export const TabRow = React.memo(function TabRow({
     }
 
     return (
+      <>
       <div
         className={cn(
           "relative group flex items-start gap-2.5 p-2.5 rounded-xl border bg-card transition-all cursor-pointer hover:shadow-sm hover:border-primary/20",
@@ -155,16 +196,20 @@ export const TabRow = React.memo(function TabRow({
       >
         {showCheckbox && (
           <div
-            className={cn(
-              "absolute top-2 right-2 z-10 flex size-4 shrink-0 items-center justify-center rounded-sm border border-primary transition-all",
-              selected ? "bg-primary text-primary-foreground" : "bg-transparent text-transparent"
-            )}
+            className="absolute top-0 right-0 z-10 p-2 cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               onSelect?.(!selected);
             }}
           >
-            <Check className={cn("size-3", selected ? "opacity-100" : "opacity-0")} strokeWidth={3} />
+            <div
+              className={cn(
+                "flex size-4 shrink-0 items-center justify-center rounded-sm border border-primary transition-all",
+                selected ? "bg-primary text-primary-foreground" : "bg-transparent text-transparent"
+              )}
+            >
+              <Check className={cn("size-3", selected ? "opacity-100" : "opacity-0")} strokeWidth={3} />
+            </div>
           </div>
         )}
 
@@ -207,15 +252,31 @@ export const TabRow = React.memo(function TabRow({
                 <FolderPlus className="size-3" />
               </Button>
             )}
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={handleSave}
-              title={saved ? "Saved!" : "Save"}
-              className={cn("size-6 rounded-md", saved && "text-green-600")}
-            >
-              {saved ? <Check className="size-3" /> : <Bookmark className="size-3" />}
-            </Button>
+            <DropdownMenu open={saveMenuOpen} onOpenChange={setSaveMenuOpen}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={(e) => e.stopPropagation()}
+                  title={saved ? "Saved!" : "Save to collection"}
+                  className={cn("size-6 rounded-md", saved && "text-green-600")}
+                >
+                  {saved ? <Check className="size-3" /> : <BookmarkPlus className="size-3" />}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48 max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                {activeCollections.map((c) => (
+                  <DropdownMenuItem key={c.id} onClick={(e) => { e.stopPropagation(); setSaveMenuOpen(false); handleSaveToCollection(c.id); }}>
+                    <span className="truncate">{c.name}</span>
+                  </DropdownMenuItem>
+                ))}
+                {activeCollections.length > 0 && <DropdownMenuSeparator />}
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setSaveMenuOpen(false); setCollectionDialogOpen(true); }}>
+                  <FolderPlus className="size-3.5 mr-2" />
+                  New Collection...
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               variant="ghost"
               size="icon-xs"
@@ -237,23 +298,50 @@ export const TabRow = React.memo(function TabRow({
           </div>
         )}
       </div>
+      {collectionDialogOpen && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <CollectionDialog
+            open={collectionDialogOpen}
+            onOpenChange={setCollectionDialogOpen}
+            onSubmit={(name, icon) => {
+              const newCol = createCollection(activeWorkspaceId, name, icon);
+              handleSaveToCollection(newCol.id);
+            }}
+          />
+        </div>
+      )}
+      </>
     );
   }
 
   // Use shared BaseTabRow for the standard "list" variant
   return (
-    <BaseTabRow
-      title={tab.title}
-      url={tab.url}
-      favicon={tab.favIconUrl}
-      active={tab.active}
-      selected={selected}
-      isHighlighted={isHighlighted}
-      showCheckbox={showCheckbox}
-      onSelect={onSelect}
-      onClick={handleCardClick}
-      isUngrouped={isUngrouped}
-      actions={actionsContent}
-    />
+    <>
+      <BaseTabRow
+        title={tab.title}
+        url={tab.url}
+        favicon={tab.favIconUrl}
+        active={tab.active}
+        selected={selected}
+        isHighlighted={isHighlighted}
+        showCheckbox={showCheckbox}
+        onSelect={onSelect}
+        onClick={handleCardClick}
+        isUngrouped={isUngrouped}
+        actions={actionsContent}
+      />
+      {collectionDialogOpen && (
+        <div onClick={(e) => e.stopPropagation()}>
+          <CollectionDialog
+            open={collectionDialogOpen}
+            onOpenChange={setCollectionDialogOpen}
+            onSubmit={(name, icon) => {
+              const newCol = createCollection(activeWorkspaceId, name, icon);
+              handleSaveToCollection(newCol.id);
+            }}
+          />
+        </div>
+      )}
+    </>
   );
 });

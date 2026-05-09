@@ -8,9 +8,10 @@ import {
   Trash2, 
   MoreHorizontal, 
   Save, 
-  Bookmark,
+  BookmarkPlus,
   ExternalLink,
-  BrushCleaning
+  BrushCleaning,
+  FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { GroupCardBase } from "@/components/dashboard/shared/group-card-base";
 import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-collection-dialog";
+import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { generateId } from "@/lib/id";
 
 interface DroppableGroupCardProps {
@@ -57,6 +59,18 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
   const [isSaving, setIsSaving] = React.useState(false);
   const [saveResult, setSaveResult] = React.useState<{ saved: number; skipped: number } | null>(null);
   const [savedTabIds, setSavedTabIds] = React.useState<Set<string>>(new Set());
+  const [saveMenuOpenMap, setSaveMenuOpenMap] = React.useState<Record<string, boolean>>({});
+  const [collectionDialogTab, setCollectionDialogTab] = React.useState<GroupTab | null>(null);
+
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const createCollection = useWorkspaceStore(s => s.createCollection);
+
+  const activeCollections = React.useMemo(() => {
+    return collections
+      .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
+      .sort((a, b) => a.position - b.position);
+  }, [collections, activeWorkspaceId]);
 
   const saveEdit = React.useCallback(() => {
     updateGroup(group.id, { name: nameVal, color: colorVal });
@@ -94,13 +108,13 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
     setTimeout(() => setSaveResult(null), 3000);
   }, [tabs, addBookmarks]);
 
-  const handleSaveTab = React.useCallback((tab: GroupTab) => {
+  const handleSaveTab = React.useCallback((tab: GroupTab, collectionId: string) => {
     addBookmarks([{
       id: generateId(),
       title: tab.title,
       url: tab.url,
       favicon: tab.favicon,
-      collectionId: "all",
+      collectionId,
       description: "",
       tags: [],
       createdAt: new Date().toISOString(),
@@ -263,15 +277,47 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
                 >
                   <BrushCleaning className="size-3" />
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => handleSaveTab(t)}
-                  className={cn("size-6 text-muted-foreground", savedTabIds.has(t.id) && "text-green-600 hover:text-green-600")}
-                  title={savedTabIds.has(t.id) ? "Saved!" : "Save bookmark"}
+                <DropdownMenu
+                  open={saveMenuOpenMap[t.id] ?? false}
+                  onOpenChange={(open) => setSaveMenuOpenMap(prev => ({ ...prev, [t.id]: open }))}
                 >
-                  {savedTabIds.has(t.id) ? <Check className="size-3" /> : <Bookmark className="size-3" />}
-                </Button>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={(e) => e.stopPropagation()}
+                      title={savedTabIds.has(t.id) ? "Saved!" : "Save to collection"}
+                      className={cn("size-6 text-muted-foreground", savedTabIds.has(t.id) && "text-green-600 hover:text-green-600")}
+                    >
+                      {savedTabIds.has(t.id) ? <Check className="size-3" /> : <BookmarkPlus className="size-3" />}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48 max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                    {activeCollections.map((c) => (
+                      <DropdownMenuItem
+                        key={c.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSaveMenuOpenMap(prev => ({ ...prev, [t.id]: false }));
+                          handleSaveTab(t, c.id);
+                        }}
+                      >
+                        <span className="truncate">{c.name}</span>
+                      </DropdownMenuItem>
+                    ))}
+                    {activeCollections.length > 0 && <DropdownMenuSeparator />}
+                    <DropdownMenuItem
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSaveMenuOpenMap(prev => ({ ...prev, [t.id]: false }));
+                        setCollectionDialogTab(t);
+                      }}
+                    >
+                      <FolderPlus className="size-3.5 mr-2" />
+                      New Collection...
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Button
                   variant="ghost"
                   size="icon-xs"
@@ -303,6 +349,18 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
         onConfirm={handleSaveGroup}
         onClose={() => setSaveDialogOpen(false)}
       />
+
+      {collectionDialogTab && (
+        <CollectionDialog
+          open={!!collectionDialogTab}
+          onOpenChange={(open) => { if (!open) { setCollectionDialogTab(null); } }}
+          onSubmit={(name, icon) => {
+            const newCol = createCollection(activeWorkspaceId, name, icon);
+            handleSaveTab(collectionDialogTab, newCol.id);
+            setCollectionDialogTab(null);
+          }}
+        />
+      )}
     </GroupCardBase>
   );
 }

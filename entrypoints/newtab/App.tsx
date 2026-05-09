@@ -20,6 +20,7 @@ import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useTabsStore } from "@/store/tabs-store";
+import { useSettingsStore } from "@/store/settings-store";
 import type { ExtensionMessage } from "@/lib/messages";
 import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
@@ -78,17 +79,25 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   const workspaceHydrated = useWorkspaceStore((s) => s._hydrated);
   const authHydrated = useAuthStore((s) => s._hydrated);
   const groupsHydrated = useGroupsStore((s) => s._hydrated);
+  const settingsHydrated = useSettingsStore((s) => s._hydrated);
+  const searchEngines = useSettingsStore((s) => s.searchEngines);
 
   useEffect(() => {
     void Promise.all([
       useBookmarksStore.getState().hydrate(),
       useWorkspaceStore.getState().hydrate(),
       useGroupsStore.getState().hydrate(),
+      useSettingsStore.getState().hydrate(),
     ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const hydrated = bookmarksHydrated && workspaceHydrated && authHydrated && groupsHydrated;
+  // Keep chrome.storage.local in sync so search-overlay (content script) can read user engines.
+  useEffect(() => {
+    chrome.storage.local.set({ "tabslate-search-engines": JSON.stringify(searchEngines) });
+  }, [searchEngines]);
+
+  const hydrated = bookmarksHydrated && workspaceHydrated && authHydrated && groupsHydrated && settingsHydrated;
 
   if (!hydrated) {
     return (
@@ -129,6 +138,7 @@ function SyncProvider({
   const localSeq = useWorkspaceStore((s) => s.localSeq);
   const mergeWorkspaces = useWorkspaceStore((s) => s.mergeFromServer);
   const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
+  const mergeGroups = useGroupsStore((s) => s.mergeFromServer);
   const setLocalSeq = useWorkspaceStore((s) => s.setLocalSeq);
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -140,10 +150,18 @@ function SyncProvider({
 
   const mergeWorkspacesRef = useRef(mergeWorkspaces);
   const mergeBookmarksRef = useRef(mergeBookmarks);
+  const mergeGroupsRef = useRef(mergeGroups);
   const setLocalSeqRef = useRef(setLocalSeq);
+
+  useEffect(() => { mergeWorkspacesRef.current = mergeWorkspaces; }, [mergeWorkspaces]);
+  useEffect(() => { mergeBookmarksRef.current = mergeBookmarks; }, [mergeBookmarks]);
+  useEffect(() => { mergeGroupsRef.current = mergeGroups; }, [mergeGroups]);
 
   useEffect(() => {
     if (!accessToken || !serverUrl) return;
+
+    // Pull user preferences from server on login
+    useSettingsStore.getState().pullFromServer(serverUrl, accessToken);
 
     const engine = new SyncEngine(
       () => (accessToken && serverUrl ? { baseUrl: serverUrl, accessToken } : null),
@@ -152,11 +170,13 @@ function SyncProvider({
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
         mergeWorkspacesRef.current(resp);
         mergeBookmarksRef.current(resp);
+        mergeGroupsRef.current(resp);
         localSeqRef.current = resp.server_seq;
         setLocalSeqRef.current(resp.server_seq);
         if (needsInitialPush) {
           useWorkspaceStore.getState().enqueueAllToSync();
           useBookmarksStore.getState().enqueueAllToSync();
+          useGroupsStore.getState().enqueueAllToSync();
           // New account: server is empty and local store is also empty → seed default workspace.
           if (useWorkspaceStore.getState().workspaces.length === 0) {
             useWorkspaceStore.getState().createWorkspace("My Workspace", "blue");
@@ -164,6 +184,7 @@ function SyncProvider({
         } else {
           useWorkspaceStore.getState().sweepUnsynced();
           useBookmarksStore.getState().sweepUnsynced();
+          useGroupsStore.getState().sweepUnsynced();
         }
       },
       (_pushResp) => { /* seq updates happen inside mergeFromServer */ },
@@ -199,6 +220,9 @@ export default function App() {
       }
       if (message.type === "TABS_CHANGED") {
         useTabsStore.getState().loadTabs();
+      }
+      if (message.type === "OPEN_SEARCH") {
+        window.dispatchEvent(new CustomEvent("tabslate-focus-search"));
       }
     };
     chrome.runtime.onMessage.addListener(listener);
