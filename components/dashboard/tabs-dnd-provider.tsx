@@ -201,7 +201,8 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         const savedGroupId = createGroup(
           dragData.groupName || "Unnamed",
           dragData.groupColor,
-          true
+          true,
+          ""
         );
         dragData.tabs.forEach((tab) => {
           addTabToGroup(savedGroupId, {

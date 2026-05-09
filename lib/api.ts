@@ -103,6 +103,7 @@ export interface ServerGroup {
   deleted_at?: number;
   created_at: number;
   updated_at: number;
+  workspace_id: string | null;
   tabs: ServerGroupTab[];
 }
 

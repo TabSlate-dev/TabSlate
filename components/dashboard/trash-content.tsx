@@ -306,7 +306,7 @@ function TrashedGroupCard({
   const handleRestoreTab = (tab: GroupTab) => {
     const activeGroups = useGroupsStore.getState().groups;
     const existing = activeGroups.find(g => g.name === group.name && !g.deletedAt);
-    const targetId = existing ? existing.id : createGroup(group.name, group.color, group.isCompact);
+    const targetId = existing ? existing.id : createGroup(group.name, group.color, group.isCompact, "");
     addTabToGroup(targetId, { title: tab.title, url: tab.url, favicon: tab.favicon });
     deleteTabFromTrash(tab.id);
   };
@@ -645,7 +645,7 @@ export function TrashContent() {
     for (const group of partialGroups) {
       const tabsToRestore = (groupTabsMap[group.id] ?? []).filter(t => selectedTabIds.has(t.id));
       const existing = activeGroupsSnap.find(g => g.name === group.name && !g.deletedAt);
-      const targetId = existing ? existing.id : createGroup(group.name, group.color, group.isCompact);
+      const targetId = existing ? existing.id : createGroup(group.name, group.color, group.isCompact, "");
       for (const tab of tabsToRestore) {
         addTabToGroup(targetId, { title: tab.title, url: tab.url, favicon: tab.favicon });
         deleteTabFromTrash(tab.id);

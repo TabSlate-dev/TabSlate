@@ -14,7 +14,7 @@ export function CreateGroupBar() {
 
   const handleCreate = React.useCallback(() => {
     if (!name.trim()) { return; }
-    createGroup(name.trim(), color, true);
+    createGroup(name.trim(), color, true, "");
     setName("");
     setColor("blue");
     setOpen(false);

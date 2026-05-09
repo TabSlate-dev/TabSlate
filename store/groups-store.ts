@@ -23,6 +23,7 @@ export interface SavedGroup {
   createdAt: string;
   seq: number;        // 0 = never synced; >0 = server-confirmed
   deletedAt?: number; // unix ms; undefined = alive
+  workspaceId: string;
 }
 
 function toServerGroup(g: SavedGroup, tabs: GroupTab[]): object {
@@ -35,6 +36,7 @@ function toServerGroup(g: SavedGroup, tabs: GroupTab[]): object {
     deleted_at: g.deletedAt ?? null,
     created_at: new Date(g.createdAt).getTime(),
     updated_at: Date.now(),
+    workspace_id: g.workspaceId,
     tabs: tabs.map(t => ({
       id: t.id,
       group_id: t.groupId,
@@ -53,7 +55,7 @@ interface GroupsState {
   hydrate: () => Promise<void>;
 
   // Group CRUD
-  createGroup: (name: string, color: TabGroupColor, isCompact: boolean) => string;
+  createGroup: (name: string, color: TabGroupColor, isCompact: boolean, workspaceId: string) => string;
   updateGroup: (id: string, patch: Partial<Pick<SavedGroup, "name" | "color" | "isCompact">>) => void;
   deleteGroup: (id: string) => void;
   restoreGroup: (id: string) => void;
@@ -79,16 +81,23 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   groupTabs: [],
   _hydrated: false,
   hydrate: async () => {
-    const [groups, groupTabs] = await Promise.all([
+    const [allGroups, groupTabs] = await Promise.all([
       idbGetAll<SavedGroup>("groups"),
       idbGetAll<GroupTab>("group-tabs"),
     ]);
+    const groups = allGroups.filter(g => {
+      if (!g.workspaceId) {
+        idbDelete("groups", g.id);
+        return false;
+      }
+      return true;
+    });
     set({ groups, groupTabs, _hydrated: true });
   },
 
-  createGroup: (name, color, isCompact) => {
+  createGroup: (name, color, isCompact, workspaceId) => {
     const id = generateId();
-    const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0 };
+    const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0, workspaceId };
     syncEngine?.enqueue({ groups: [toServerGroup(group, [])] });
     set((state) => ({ groups: [...state.groups, group] }));
     idbPut("groups", group);
@@ -238,12 +247,25 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     const serverGroups = resp.entities.groups;
     if (!serverGroups?.length) { return; }
 
+    // Collect null-workspace IDs before entering the set() updater (keep updater pure).
+    const nullWorkspaceIds = new Set(
+      serverGroups
+        .filter(sg => sg.workspace_id === null || sg.workspace_id === undefined)
+        .map(sg => sg.id)
+    );
+
     set((state) => {
       let groups = [...state.groups];
       let groupTabs = [...state.groupTabs];
 
       for (const sg of serverGroups) {
         const idx = groups.findIndex(g => g.id === sg.id);
+
+        if (nullWorkspaceIds.has(sg.id)) {
+          // Purge from state; IDB deletion happens after set() returns.
+          groups = groups.filter(g => g.id !== sg.id);
+          continue;
+        }
 
         if (sg.deleted_at) {
           // Soft-deleted: update + keep in state so a future trash view can find it.
@@ -255,6 +277,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
             createdAt: new Date(sg.created_at).toISOString(),
             seq: sg.seq,
             deletedAt: sg.deleted_at,
+            workspaceId: sg.workspace_id!,
           };
           if (idx === -1) {
             groups.push(deletedGroup);
@@ -286,6 +309,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
             isCompact: sg.is_compact,
             createdAt: new Date(sg.created_at).toISOString(),
             seq: sg.seq,
+            workspaceId: sg.workspace_id!,
           };
           if (idx === -1) {
             groups.push(updatedGroup);
@@ -310,9 +334,15 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       return { groups, groupTabs };
     });
 
-    // Persist to IDB (fire-and-forget).
+    // Purge null-workspace groups from IDB (fire-and-forget).
+    for (const id of nullWorkspaceIds) {
+      idbDelete("groups", id);
+    }
+
+    // Persist valid groups to IDB (fire-and-forget).
     const state = get();
     for (const sg of serverGroups) {
+      if (nullWorkspaceIds.has(sg.id)) { continue; }
       const group = state.groups.find(g => g.id === sg.id);
       if (group) { idbPut("groups", group); }
       if (sg.deleted_at) {
