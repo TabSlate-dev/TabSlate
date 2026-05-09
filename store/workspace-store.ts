@@ -5,6 +5,7 @@ import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
+import { useGroupsStore } from "@/store/groups-store";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -421,6 +422,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   deleteWorkspace: (id) => {
+    // Soft-delete all active groups in this workspace so they get tombstoned
+    // on the server with a valid workspace_id (avoids ON DELETE SET NULL).
+    const { groups, deleteGroup } = useGroupsStore.getState();
+    for (const g of groups) {
+      if (g.workspaceId === id && !g.deletedAt) {
+        deleteGroup(g.id);
+      }
+    }
+
     const { workspaces, collections, activeWorkspaceId } = get();
     const ws = workspaces.find(w => w.id === id);
     const colsToDelete = collections.filter(c => c.workspaceId === id);
