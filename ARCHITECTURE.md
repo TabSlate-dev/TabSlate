@@ -154,6 +154,7 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `OPEN_SEARCH` | background | active tab | 触发全局搜索快捷键，挂载 SearchOverlay |
 | `GET_OPEN_TABS` | active tab | background | SearchOverlay 请求打开的标签页列表 |
 | `FOCUS_TAB` | active tab | background | SearchOverlay 请求切换到指定标签页 |
+| `OPEN_TAB` | active tab | background | SearchOverlay 请求打开新标签页（content script 无法直接调用 `chrome.tabs.create`） |
 | `SEARCH_BOOKMARKS` | active tab | background | SearchOverlay 代理发起搜索请求（绕过跨域限制） |
 
 ## 路由
@@ -331,4 +332,5 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 | `bookmarks` | （暂未使用 Chrome 原生书签 API） |
 | `contextMenus` | 右键菜单"Save to TabSlate" |
 | `host_permissions: <all_urls>` | 读取任意页面的 favicon；向当前页面注入 SearchOverlay 搜索框 |
+| `web_accessible_resources: search-engine-icon/*` | 允许 Shadow DOM（content script 上下文）加载扩展内置的搜索引擎 SVG 图标 |
 | `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 发送 `OPEN_SEARCH` 唤起当前页搜索层 |
