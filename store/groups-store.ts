@@ -26,7 +26,7 @@ export interface SavedGroup {
   workspaceId: string;
 }
 
-function toServerGroup(g: SavedGroup, tabs: GroupTab[]): object {
+function toServerGroup(g: SavedGroup, tabs: GroupTab[], opts?: { isDeleted?: number }): object {
   return {
     id: g.id,
     name: g.name,
@@ -34,6 +34,7 @@ function toServerGroup(g: SavedGroup, tabs: GroupTab[]): object {
     is_compact: g.isCompact,
     seq: g.seq,
     deleted_at: g.deletedAt ?? null,
+    is_deleted: opts?.isDeleted ?? 0,
     created_at: new Date(g.createdAt).getTime(),
     updated_at: Date.now(),
     workspace_id: g.workspaceId,
@@ -167,6 +168,11 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   },
 
   permanentlyDeleteGroup: (id) => {
+    const group = get().groups.find(g => g.id === id);
+    if (group) {
+      const tabs = get().groupTabs.filter(t => t.groupId === id);
+      syncEngine?.enqueue({ groups: [toServerGroup(group, tabs, { isDeleted: 2 })] });
+    }
     const tabs = get().groupTabs.filter(t => t.groupId === id);
     for (const t of tabs) { idbDelete("group-tabs", t.id); }
     idbDelete("groups", id);
@@ -254,6 +260,18 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
         .map(sg => sg.id)
     );
 
+    // Collect permanently-deleted IDs before entering the set() updater.
+    const permDeletedGroupIds = new Set(
+      serverGroups
+        .filter(sg => sg.is_deleted === 2)
+        .map(sg => sg.id)
+    );
+
+    // Capture tab IDs for permanently-deleted groups before set() removes them from state.
+    const permDeletedTabIds = get().groupTabs
+      .filter(t => permDeletedGroupIds.has(t.groupId))
+      .map(t => t.id);
+
     set((state) => {
       let groups = [...state.groups];
       let groupTabs = [...state.groupTabs];
@@ -264,6 +282,13 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
         if (nullWorkspaceIds.has(sg.id)) {
           // Purge from state; IDB deletion happens after set() returns.
           groups = groups.filter(g => g.id !== sg.id);
+          continue;
+        }
+
+        if (permDeletedGroupIds.has(sg.id)) {
+          // Permanently deleted: remove from state; IDB deletion happens after set() returns.
+          groups = groups.filter(g => g.id !== sg.id);
+          groupTabs = groupTabs.filter(t => t.groupId !== sg.id);
           continue;
         }
 
@@ -339,10 +364,19 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       idbDelete("groups", id);
     }
 
+    // Purge permanently-deleted groups and their tabs from IDB (fire-and-forget).
+    for (const id of permDeletedGroupIds) {
+      idbDelete("groups", id);
+    }
+    for (const tabId of permDeletedTabIds) {
+      idbDelete("group-tabs", tabId);
+    }
+
     // Persist valid groups to IDB (fire-and-forget).
     const state = get();
     for (const sg of serverGroups) {
       if (nullWorkspaceIds.has(sg.id)) { continue; }
+      if (permDeletedGroupIds.has(sg.id)) { continue; }
       const group = state.groups.find(g => g.id === sg.id);
       if (group) { idbPut("groups", group); }
       if (sg.deleted_at) {
