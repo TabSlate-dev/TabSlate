@@ -41,7 +41,7 @@ export function StatsCards() {
   const values = useMemo(() => {
     const wsCollectionIds = new Set(
       collections
-        .filter((c) => c.workspaceId === activeWorkspaceId)
+        .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
         .map((c) => c.id)
     );
     const wsBookmarks = bookmarks.filter((b) => wsCollectionIds.has(b.collectionId));
@@ -49,7 +49,7 @@ export function StatsCards() {
       bookmarks: wsBookmarks.length,
       favorites: wsBookmarks.filter((b) => b.isFavorite).length,
       collections: wsCollectionIds.size,
-      tags: tags.length,
+      tags: tags.filter((t) => !t.deletedAt).length,
     };
   }, [bookmarks, collections, tags, activeWorkspaceId]);
 

@@ -112,20 +112,26 @@ export function SearchOverlay({ onClose }: Props) {
 
   const handleSelect = React.useCallback((index: number) => {
     if (index < bookmarkResults.length) {
-      chrome.tabs.create({ url: bookmarkResults[index].url });
+      const url = bookmarkResults[index].url;
+      const existingTab = openTabs.find(t => t.url === url);
+      if (existingTab) {
+        chrome.runtime.sendMessage({ type: "FOCUS_TAB", tabId: existingTab.id, windowId: existingTab.windowId });
+      } else {
+        chrome.runtime.sendMessage({ type: "OPEN_TAB", url });
+      }
     } else if (index < bookmarkResults.length + filteredTabs.length) {
       const tab = filteredTabs[index - bookmarkResults.length];
       chrome.runtime.sendMessage({ type: "FOCUS_TAB", tabId: tab.id, windowId: tab.windowId });
     } else {
-      chrome.tabs.create({ url: engine.url.replace("%s", encodeURIComponent(query.trim())) });
+      chrome.runtime.sendMessage({ type: "OPEN_TAB", url: engine.url.replace("%s", encodeURIComponent(query.trim())) });
     }
     onClose();
-  }, [bookmarkResults, filteredTabs, engine, query, onClose]);
+  }, [bookmarkResults, filteredTabs, openTabs, engine, query, onClose]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") { onClose(); return; }
     if (!showDropdown) {
-      if (e.key === "Enter" && query.trim()) { handleSelect(engineIndex); }
+      if (e.key === "Enter" && query.trim() && !e.nativeEvent.isComposing) { handleSelect(engineIndex); }
       return;
     }
     if (e.key === "ArrowDown") {
@@ -135,6 +141,7 @@ export function SearchOverlay({ onClose }: Props) {
       e.preventDefault();
       setActiveIndex(i => Math.max(i - 1, 0));
     } else if (e.key === "Enter") {
+      if (e.nativeEvent.isComposing) { return; }
       e.preventDefault();
       handleSelect(activeIndex);
     }
@@ -172,7 +179,7 @@ export function SearchOverlay({ onClose }: Props) {
           />
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => { if (query) { setQuery(""); inputRef.current?.focus(); } else { onClose(); } }}
             className="absolute right-3 size-8 flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             <X className="size-4" />
@@ -189,30 +196,32 @@ export function SearchOverlay({ onClose }: Props) {
                   <div className="px-4 py-2 text-xs font-semibold text-muted-foreground flex items-center gap-1.5 bg-muted/40 border-b border-border">
                     <BookmarkIcon className="size-3" /> BOOKMARKS
                   </div>
-                  {bookmarkResults.map((bm, i) => (
-                    <button
-                      key={bm.id} type="button"
-                      className={cn("w-full flex items-start gap-3 px-4 py-2.5 text-left transition-colors", isActive(i) ? "bg-accent" : "hover:bg-accent/60")}
-                      onMouseEnter={() => setActiveIndex(i)}
-                      onClick={() => handleSelect(i)}
-                    >
-                      <FaviconImage
-                        src={(() => { try { return `https://www.google.com/s2/favicons?domain=${new URL(bm.url).hostname}&sz=32`; } catch { return ""; } })()}
-                        className="size-4 mt-0.5 shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-medium truncate text-foreground">{bm.title}</span>
-                          {bm.isArchived && (
-                            <span className="shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-                              <Archive className="size-2.5" /> Archived
-                            </span>
-                          )}
+                  <div className="px-2 py-1 flex flex-col gap-0.5">
+                    {bookmarkResults.map((bm, i) => (
+                      <button
+                        key={bm.id} type="button"
+                        className={cn("w-full flex items-start gap-3 px-3 py-2 rounded-xl text-left transition-colors", isActive(i) ? "bg-accent" : "hover:bg-accent/60")}
+                        onMouseEnter={() => setActiveIndex(i)}
+                        onClick={() => handleSelect(i)}
+                      >
+                        <FaviconImage
+                          src={(() => { try { return `https://www.google.com/s2/favicons?domain=${new URL(bm.url).hostname}&sz=32`; } catch { return ""; } })()}
+                          className="size-4 mt-0.5 shrink-0"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium truncate text-foreground">{bm.title}</span>
+                            {bm.isArchived && (
+                              <span className="shrink-0 flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
+                                <Archive className="size-2.5" /> Archived
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">{bm.url}</div>
                         </div>
-                        <div className="text-xs text-muted-foreground truncate">{bm.url}</div>
-                      </div>
-                    </button>
-                  ))}
+                      </button>
+                    ))}
+                  </div>
                 </section>
               )}
 
@@ -222,38 +231,42 @@ export function SearchOverlay({ onClose }: Props) {
                   <div className="px-4 py-2 text-xs font-semibold text-muted-foreground flex items-center gap-1.5 bg-muted/40 border-b border-border">
                     <Globe className="size-3" /> OPEN TABS
                   </div>
-                  {filteredTabs.map((tab, i) => {
-                    const flatIdx = bookmarkResults.length + i;
-                    return (
-                      <button
-                        key={tab.id} type="button"
-                        className={cn("w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors", isActive(flatIdx) ? "bg-accent" : "hover:bg-accent/60")}
-                        onMouseEnter={() => setActiveIndex(flatIdx)}
-                        onClick={() => handleSelect(flatIdx)}
-                      >
-                        <FaviconImage src={tab.favIconUrl} className="size-4 shrink-0" />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate text-foreground">{tab.title}</div>
-                          <div className="text-xs text-muted-foreground truncate">{tab.url}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                  <div className="px-2 py-1 flex flex-col gap-0.5">
+                    {filteredTabs.map((tab, i) => {
+                      const flatIdx = bookmarkResults.length + i;
+                      return (
+                        <button
+                          key={tab.id} type="button"
+                          className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-colors", isActive(flatIdx) ? "bg-accent" : "hover:bg-accent/60")}
+                          onMouseEnter={() => setActiveIndex(flatIdx)}
+                          onClick={() => handleSelect(flatIdx)}
+                        >
+                          <FaviconImage src={tab.favIconUrl} className="size-4 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate text-foreground">{tab.title}</div>
+                            <div className="text-xs text-muted-foreground truncate">{tab.url}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </section>
               )}
 
               {/* Engine fallback */}
-              <button
-                type="button"
-                className={cn("w-full flex items-center gap-3 px-4 py-2.5 text-left border-t border-border transition-colors", isActive(engineIndex) ? "bg-accent" : "hover:bg-accent/60")}
-                onMouseEnter={() => setActiveIndex(engineIndex)}
-                onClick={() => handleSelect(engineIndex)}
-              >
-                <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
-                <span className="text-sm text-foreground">
-                  Search <span className="font-semibold">"{query}"</span> with {engine.name}
-                </span>
-              </button>
+              <div className="border-t border-border px-2 py-1">
+                <button
+                  type="button"
+                  className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-colors", isActive(engineIndex) ? "bg-accent" : "hover:bg-accent/60")}
+                  onMouseEnter={() => setActiveIndex(engineIndex)}
+                  onClick={() => handleSelect(engineIndex)}
+                >
+                  <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
+                  <span className="text-sm text-foreground">
+                    Search <span className="font-semibold">"{query}"</span> with {engine.name}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         )}

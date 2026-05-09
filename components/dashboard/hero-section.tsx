@@ -99,7 +99,14 @@ export function HeroSection() {
 
   const handleSelect = React.useCallback((index: number) => {
     if (index < bookmarkResults.length) {
-      window.location.href = bookmarkResults[index].url;
+      const url = bookmarkResults[index].url;
+      const existingTab = openTabs.find(t => t.url === url);
+      if (existingTab) {
+        chrome.tabs.update(existingTab.id, { active: true });
+        chrome.windows.update(existingTab.windowId, { focused: true });
+      } else {
+        window.location.href = url;
+      }
     } else if (index < bookmarkResults.length + filteredTabs.length) {
       const tab = filteredTabs[index - bookmarkResults.length];
       chrome.tabs.update(tab.id, { active: true });
@@ -108,7 +115,7 @@ export function HeroSection() {
       window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
     }
     setQuery("");
-  }, [bookmarkResults, filteredTabs, engine, query]);
+  }, [bookmarkResults, filteredTabs, openTabs, engine, query]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showDropdown) { return; }
@@ -119,6 +126,7 @@ export function HeroSection() {
       e.preventDefault();
       setActiveIndex(i => Math.max(i - 1, 0));
     } else if (e.key === "Enter") {
+      if (e.nativeEvent.isComposing) { return; }
       e.preventDefault();
       handleSelect(activeIndex);
     } else if (e.key === "Escape") {
@@ -205,35 +213,37 @@ export function HeroSection() {
                   <BookmarkIcon className="size-3" />
                   Bookmarks ({bookmarkResults.length})
                 </div>
-                {bookmarkResults.map((bm, i) => (
-                  <button
-                    key={bm.id}
-                    type="button"
-                    className={cn(
-                      "w-full flex items-start gap-2.5 px-3 py-2 text-left hover:bg-accent",
-                      isActive(i) && "bg-accent",
-                    )}
-                    onMouseEnter={() => setActiveIndex(i)}
-                    onClick={() => handleSelect(i)}
-                  >
-                    <FaviconImage
-                      src={(() => { try { return `https://www.google.com/s2/favicons?domain=${new URL(bm.url).hostname}&sz=16`; } catch { return ""; } })()}
-                      className="size-4 mt-0.5 shrink-0"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-medium truncate">{bm.title}</span>
-                        {bm.isArchived && (
-                          <span className="shrink-0 flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded border text-muted-foreground">
-                            <Archive className="size-2.5" />
-                            Archived
-                          </span>
-                        )}
+                <div className="px-2 py-1 flex flex-col gap-0.5">
+                  {bookmarkResults.map((bm, i) => (
+                    <button
+                      key={bm.id}
+                      type="button"
+                      className={cn(
+                        "w-full flex items-start gap-2.5 px-3 py-2 rounded-xl text-left transition-colors",
+                        isActive(i) ? "bg-accent" : "hover:bg-accent/60",
+                      )}
+                      onMouseEnter={() => setActiveIndex(i)}
+                      onClick={() => handleSelect(i)}
+                    >
+                      <FaviconImage
+                        src={(() => { try { return `https://www.google.com/s2/favicons?domain=${new URL(bm.url).hostname}&sz=16`; } catch { return ""; } })()}
+                        className="size-4 mt-0.5 shrink-0"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm font-medium truncate">{bm.title}</span>
+                          {bm.isArchived && (
+                            <span className="shrink-0 flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded border text-muted-foreground">
+                              <Archive className="size-2.5" />
+                              Archived
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">{bm.url}</div>
                       </div>
-                      <div className="text-xs text-muted-foreground truncate">{bm.url}</div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  ))}
+                </div>
               </section>
             )}
 
@@ -243,44 +253,48 @@ export function HeroSection() {
                   <Globe className="size-3" />
                   Open Tabs ({filteredTabs.length})
                 </div>
-                {filteredTabs.map((tab, i) => {
-                  const flatIdx = bookmarkResults.length + i;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      className={cn(
-                        "w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent",
-                        isActive(flatIdx) && "bg-accent",
-                      )}
-                      onMouseEnter={() => setActiveIndex(flatIdx)}
-                      onClick={() => handleSelect(flatIdx)}
-                    >
-                      <FaviconImage src={tab.favIconUrl} className="size-4 shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate">{tab.title}</div>
-                        <div className="text-xs text-muted-foreground truncate">{tab.url}</div>
-                      </div>
-                    </button>
-                  );
-                })}
+                <div className="px-2 py-1 flex flex-col gap-0.5">
+                  {filteredTabs.map((tab, i) => {
+                    const flatIdx = bookmarkResults.length + i;
+                    return (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        className={cn(
+                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors",
+                          isActive(flatIdx) ? "bg-accent" : "hover:bg-accent/60",
+                        )}
+                        onMouseEnter={() => setActiveIndex(flatIdx)}
+                        onClick={() => handleSelect(flatIdx)}
+                      >
+                        <FaviconImage src={tab.favIconUrl} className="size-4 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate">{tab.title}</div>
+                          <div className="text-xs text-muted-foreground truncate">{tab.url}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </section>
             )}
 
-            <button
-              type="button"
-              className={cn(
-                "w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent border-t",
-                isActive(engineIndex) && "bg-accent",
-              )}
-              onMouseEnter={() => setActiveIndex(engineIndex)}
-              onClick={() => handleSelect(engineIndex)}
-            >
-              <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
-              <span className="text-sm">
-                Search <span className="font-medium">"{query}"</span> with {engine.name}
-              </span>
-            </button>
+            <div className="border-t px-2 py-1">
+              <button
+                type="button"
+                className={cn(
+                  "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors",
+                  isActive(engineIndex) ? "bg-accent" : "hover:bg-accent/60",
+                )}
+                onMouseEnter={() => setActiveIndex(engineIndex)}
+                onClick={() => handleSelect(engineIndex)}
+              >
+                <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
+                <span className="text-sm">
+                  Search <span className="font-medium">"{query}"</span> with {engine.name}
+                </span>
+              </button>
+            </div>
           </div>
         )}
       </div>

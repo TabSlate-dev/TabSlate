@@ -109,6 +109,10 @@ export default defineBackground(() => {
       focusTab(message.tabId, message.windowId).then(() => sendResponse({ ok: true }));
       return true;
     }
+    if (message.type === "OPEN_TAB") {
+      chrome.tabs.create({ url: message.url }).then(() => sendResponse({ ok: true }));
+      return true;
+    }
     if (message.type === "SEARCH_BOOKMARKS") {
       // Content scripts can't make cross-origin fetch calls; proxy through background.
       searchBookmarks(message.serverUrl, message.accessToken, message.query)
