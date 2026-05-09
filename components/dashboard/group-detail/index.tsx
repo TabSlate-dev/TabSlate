@@ -78,6 +78,13 @@ export function GroupDetail() {
       .sort((a, b) => a.position - b.position);
   }, [collections, activeWorkspaceId]);
 
+  // Navigate away when workspace switches and this group doesn't belong to the new workspace
+  React.useEffect(() => {
+    if (group && group.workspaceId !== activeWorkspaceId) {
+      navigate("/");
+    }
+  }, [activeWorkspaceId, group, navigate]);
+
   // Init local state when group loads
   React.useEffect(() => {
     if (group && !editing) {
