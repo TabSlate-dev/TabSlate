@@ -11,6 +11,7 @@ import {
 import { Globe } from "lucide-react";
 import { useTabsStore } from "@/store/tabs-store";
 import { useGroupsStore } from "@/store/groups-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import type { BrowserTab } from "@/lib/chrome/tabs";
 import { DraggableTabRow, TabRowPreview } from "./draggable-tab-row";
 import { DroppableGroupCard } from "./droppable-group-card";
@@ -21,8 +22,12 @@ export function GroupsPanel() {
   const loadTabs = useTabsStore(s => s.loadTabs);
   const groups = useGroupsStore(s => s.groups);
   const groupTabs = useGroupsStore(s => s.groupTabs);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
-  const activeGroups = React.useMemo(() => groups.filter(g => !g.deletedAt), [groups]);
+  const activeGroups = React.useMemo(
+    () => groups.filter(g => !g.deletedAt && g.workspaceId === activeWorkspaceId),
+    [groups, activeWorkspaceId]
+  );
   const addTabToGroup = useGroupsStore(s => s.addTabToGroup);
   const moveTab = useGroupsStore(s => s.moveTab);
 

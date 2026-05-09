@@ -188,11 +188,15 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
 
   const allGroups = useGroupsStore(s => s.groups);
   const deleteGroup = useGroupsStore(s => s.deleteGroup);
-  const groups = React.useMemo(() => allGroups.filter(g => !g.deletedAt), [allGroups]);
 
   const collections = useWorkspaceStore(s => s.collections);
   const tags = useWorkspaceStore(s => s.tags);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
+  const groups = React.useMemo(
+    () => allGroups.filter(g => !g.deletedAt && g.workspaceId === activeWorkspaceId),
+    [allGroups, activeWorkspaceId]
+  );
   const createCollection = useWorkspaceStore(s => s.createCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
   const archiveCollection = useWorkspaceStore(s => s.archiveCollection);

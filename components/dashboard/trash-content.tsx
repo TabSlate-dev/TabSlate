@@ -443,7 +443,10 @@ export function TrashContent() {
   const createGroup = useGroupsStore(s => s.createGroup);
   const addTabToGroup = useGroupsStore(s => s.addTabToGroup);
   const deleteTabFromTrash = useGroupsStore(s => s.deleteTabFromTrash);
-  const trashedGroups = React.useMemo(() => allGroups.filter(g => !!g.deletedAt), [allGroups]);
+  const trashedGroups = React.useMemo(
+    () => allGroups.filter(g => !!g.deletedAt && g.workspaceId === activeWorkspaceId),
+    [allGroups, activeWorkspaceId]
+  );
 
   const groupTabsMap = React.useMemo(() => {
     const map: Record<string, GroupTab[]> = {};
