@@ -277,7 +277,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
             createdAt: new Date(sg.created_at).toISOString(),
             seq: sg.seq,
             deletedAt: sg.deleted_at,
-            workspaceId: sg.workspace_id!,
+            workspaceId: sg.workspace_id ?? "",
           };
           if (idx === -1) {
             groups.push(deletedGroup);
@@ -309,7 +309,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
             isCompact: sg.is_compact,
             createdAt: new Date(sg.created_at).toISOString(),
             seq: sg.seq,
-            workspaceId: sg.workspace_id!,
+            workspaceId: sg.workspace_id ?? "",
           };
           if (idx === -1) {
             groups.push(updatedGroup);
