@@ -169,11 +169,10 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
 
   permanentlyDeleteGroup: (id) => {
     const group = get().groups.find(g => g.id === id);
+    const tabs = get().groupTabs.filter(t => t.groupId === id);
     if (group) {
-      const tabs = get().groupTabs.filter(t => t.groupId === id);
       syncEngine?.enqueue({ groups: [toServerGroup(group, tabs, { isDeleted: 2 })] });
     }
-    const tabs = get().groupTabs.filter(t => t.groupId === id);
     for (const t of tabs) { idbDelete("group-tabs", t.id); }
     idbDelete("groups", id);
     set((state) => ({
