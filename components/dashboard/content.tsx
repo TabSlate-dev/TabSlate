@@ -64,6 +64,7 @@ export function BookmarksContent() {
   }, []);
 
   const selectedCollection = useBookmarksStore(s => s.selectedCollection);
+  const setSelectedCollection = useBookmarksStore(s => s.setSelectedCollection);
   const viewMode = useBookmarksStore(s => s.viewMode);
   const selectedTags = useBookmarksStore(s => s.selectedTags);
   const toggleTag = useBookmarksStore(s => s.toggleTag);
@@ -77,6 +78,11 @@ export function BookmarksContent() {
   const collections = useWorkspaceStore(s => s.collections);
   const tags = useWorkspaceStore(s => s.tags);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
+  React.useEffect(() => {
+    setSelectedCollection("all");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeWorkspaceId]);
 
   const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, dropZoneProps } =
     useTabDragDrop();

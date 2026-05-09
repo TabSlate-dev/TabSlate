@@ -431,6 +431,7 @@ export function TrashContent() {
   const permanentlyDeleteBookmark = useBookmarksStore(s => s.permanentlyDelete);
   
   const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
 
@@ -452,21 +453,26 @@ export function TrashContent() {
     return map;
   }, [allGroupTabs]);
 
+  const wsAllColIds = React.useMemo(
+    () => new Set(collections.filter(c => c.workspaceId === activeWorkspaceId).map(c => c.id)),
+    [collections, activeWorkspaceId]
+  );
+
   const trashedCollections = React.useMemo(
-    () => collections.filter(c => !!c.deletedAt),
-    [collections]
+    () => collections.filter(c => !!c.deletedAt && c.workspaceId === activeWorkspaceId),
+    [collections, activeWorkspaceId]
   );
 
   const individualTrashedBookmarks = React.useMemo(() => {
     const trashedCollectionIds = new Set(trashedCollections.map(c => c.id));
     const unique = new Map<string, BookmarkType>();
     for (const b of trashedBookmarks) {
-      if (!trashedCollectionIds.has(b.collectionId)) {
+      if (!trashedCollectionIds.has(b.collectionId) && (b.collectionId === "" || wsAllColIds.has(b.collectionId))) {
         unique.set(b.id, b);
       }
     }
     return Array.from(unique.values());
-  }, [trashedBookmarks, trashedCollections]);
+  }, [trashedBookmarks, trashedCollections, wsAllColIds]);
 
   const collectionBookmarks = React.useMemo(() => {
     const trashedCollectionIds = new Set(trashedCollections.map(c => c.id));
@@ -491,6 +497,13 @@ export function TrashContent() {
   // Individual tab selection across all trashed groups
   const [selectedTabIds, setSelectedTabIds] = React.useState<Set<string>>(new Set());
   const [selectedBmIds, setSelectedBmIds] = React.useState<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    setSelectedColIds(new Set());
+    setSelectedGroupIds(new Set());
+    setSelectedTabIds(new Set());
+    setSelectedBmIds(new Set());
+  }, [activeWorkspaceId]);
 
   // A group counts as "touched" if fully selected OR has any individually selected tabs.
   const groupsWithSelection = React.useMemo(() => {

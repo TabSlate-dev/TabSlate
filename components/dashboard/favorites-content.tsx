@@ -1,11 +1,32 @@
+import * as React from "react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import { BookmarkCard } from "./bookmark-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Heart } from "lucide-react";
 
 export function FavoritesContent() {
-  const { getFavoriteBookmarks, viewMode } = useBookmarksStore();
-  const favoriteBookmarks = getFavoriteBookmarks();
+  const bookmarks = useBookmarksStore(s => s.bookmarks);
+  const viewMode = useBookmarksStore(s => s.viewMode);
+
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
+  const workspaceCollectionIds = React.useMemo(
+    () => new Set(
+      collections
+        .filter(c => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
+        .map(c => c.id)
+    ),
+    [collections, activeWorkspaceId]
+  );
+
+  const favoriteBookmarks = React.useMemo(
+    () => bookmarks.filter(
+      b => b.isFavorite && (b.collectionId === "" || workspaceCollectionIds.has(b.collectionId))
+    ),
+    [bookmarks, workspaceCollectionIds]
+  );
 
   return (
     <div className="flex-1 w-full overflow-auto">
@@ -30,7 +51,7 @@ export function FavoritesContent() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-2">
+          <div className="space-y-2">
             {favoriteBookmarks.map((bookmark) => (
               <BookmarkCard key={bookmark.id} bookmark={bookmark} variant="list" />
             ))}
@@ -41,7 +62,7 @@ export function FavoritesContent() {
           <EmptyState
             icon={Heart}
             title="No favorites yet"
-            description="Mark bookmarks as favorites by clicking the heart icon to see them here."
+            description="Star a bookmark to add it to your favorites."
           />
         )}
       </div>

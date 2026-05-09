@@ -291,12 +291,18 @@ export function ArchiveContent() {
   const trashBookmark = useBookmarksStore(s => s.trashBookmark);
   
   const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
 
+  const wsAllColIds = React.useMemo(
+    () => new Set(collections.filter(c => c.workspaceId === activeWorkspaceId).map(c => c.id)),
+    [collections, activeWorkspaceId]
+  );
+
   const archivedCollections = React.useMemo(
-    () => collections.filter(c => !!c.archivedAt && !c.deletedAt),
-    [collections]
+    () => collections.filter(c => !!c.archivedAt && !c.deletedAt && c.workspaceId === activeWorkspaceId),
+    [collections, activeWorkspaceId]
   );
 
   const archivedCollectionIds = React.useMemo(
@@ -316,14 +322,21 @@ export function ArchiveContent() {
   }, [archivedBookmarks, archivedCollectionIds]);
 
   const individualArchivedBookmarks = React.useMemo(
-    () => archivedBookmarks.filter(b => !archivedCollectionIds.has(b.collectionId)),
-    [archivedBookmarks, archivedCollectionIds]
+    () => archivedBookmarks.filter(
+      b => !archivedCollectionIds.has(b.collectionId) && (b.collectionId === "" || wsAllColIds.has(b.collectionId))
+    ),
+    [archivedBookmarks, archivedCollectionIds, wsAllColIds]
   );
 
   const totalCount = archivedCollections.length + individualArchivedBookmarks.length;
 
   const [selectedColIds, setSelectedColIds] = React.useState<Set<string>>(new Set());
   const [selectedBmIds, setSelectedBmIds] = React.useState<Set<string>>(new Set());
+
+  React.useEffect(() => {
+    setSelectedColIds(new Set());
+    setSelectedBmIds(new Set());
+  }, [activeWorkspaceId]);
   const selectedCount = selectedColIds.size + selectedBmIds.size;
 
   const toggleCol = (id: string) => {
