@@ -38,6 +38,7 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
   const [resent, setResent] = React.useState(false);
+  const [sending, setSending] = React.useState(false);
   const [retryAfter, setRetryAfter] = React.useState(0);
   const [captchaRequired, setCaptchaRequired] = React.useState(false);
   const [captchaDialogOpen, setCaptchaDialogOpen] = React.useState(false);
@@ -114,6 +115,7 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
   async function doResend(captchaToken?: string) {
     setResent(false);
     setError("");
+    setSending(true);
     try {
       await resendVerification(email, captchaToken);
       setResent(true);
@@ -134,6 +136,8 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
           setError(err.message);
         }
       }
+    } finally {
+      setSending(false);
     }
   }
 
@@ -198,11 +202,11 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
             Didn&apos;t receive it?{" "}
             <button
               type="button"
-              disabled={retryAfter > 0}
+              disabled={retryAfter > 0 || sending}
               className="underline underline-offset-4 hover:text-primary disabled:opacity-50 disabled:no-underline"
               onClick={handleResend}
             >
-              {retryAfter > 0 ? `Resend in ${retryAfter}s` : "Resend code"}
+              {retryAfter > 0 ? `Resend in ${retryAfter}s` : sending ? "Sending…" : "Resend code"}
             </button>
             {resent && (
               <span className="ml-1 text-muted-foreground">— sent!</span>
