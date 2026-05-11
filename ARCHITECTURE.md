@@ -27,8 +27,8 @@ TabSlate/
 │   │   └── App.tsx      # 路由、布局、StoreGate → AuthGate → SyncProvider → HashRouter
 │   ├── popup/           # 快速保存 popup
 │   │   └── App.tsx      # 独立 React 树，不使用 Zustand；保存时调用 GET_PAGE_INFO 获取 ogTitle/metaDescription
-│   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单 + open-search 快捷键监听
-│   └── content.ts       # 注入页面：GET_PAGE_INFO 响应 + 挂载全局 SearchOverlay (Shadow DOM)
+│   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单 + open-search 快捷键监听 + 动态内容脚本注册（syncContentScriptRegistration）
+│   └── content.ts       # 注入页面：GET_PAGE_INFO 响应 + 挂载全局 SearchOverlay (Shadow DOM)；配置为 runtime 注册以支持可选权限
 │
 ├── components/
 │   ├── auth/
@@ -331,6 +331,19 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 | `storage` | chrome.storage.local 读写 |
 | `bookmarks` | （暂未使用 Chrome 原生书签 API） |
 | `contextMenus` | 右键菜单"Save to TabSlate" |
-| `host_permissions: <all_urls>` | 读取任意页面的 favicon；向当前页面注入 SearchOverlay 搜索框 |
+| `scripting` | 配合 `optional_host_permissions` 实现 SearchOverlay 的动态注入 |
+| `optional_host_permissions: <all_urls>` | 用户在设置中手动开启后，用于读取任意页面的 favicon 及挂载搜索浮层；规避安装时的全站权限警告 |
 | `web_accessible_resources: search-engine-icon/*` | 允许 Shadow DOM（content script 上下文）加载扩展内置的搜索引擎 SVG 图标 |
 | `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 发送 `OPEN_SEARCH` 唤起当前页搜索层 |
+
+### 动态内容脚本注册流程
+
+为了实现合规的可选权限，Search Overlay 的注入流程如下：
+
+1. **设置触发**：用户在 `SettingsDialog` 切换开关。
+2. **权限请求**：调用 `chrome.permissions.request({ origins: ["<all_urls>"] })`。
+3. **事件响应**：`background.ts` 监听 `chrome.permissions.onAdded` 事件。
+4. **动态注册**：调用 `chrome.scripting.registerContentScripts` 将 `content.ts` 注册到所有站点。
+5. **持久化**：由于内容脚本已持久化，后续浏览器重启会自动注入（只要权限仍被授予）。
+6. **权限移除**：开关关闭时调用 `chrome.permissions.remove`，触发 `onRemoved` 事件，调用 `unregisterContentScripts` 停止注入。
+

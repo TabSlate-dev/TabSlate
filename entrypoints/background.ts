@@ -6,6 +6,35 @@ import type { ExtensionMessage } from "@/lib/messages";
 
 export default defineBackground(() => {
   // -------------------------------------------------------------------------
+  // Dynamic Content Script Registration for Search Overlay
+  // -------------------------------------------------------------------------
+  async function syncContentScriptRegistration() {
+    try {
+      const hasPermission = await chrome.permissions.contains({ origins: ["<all_urls>"] });
+      const scripts = await chrome.scripting.getRegisteredContentScripts();
+      const isRegistered = scripts.some(s => s.id === "search-overlay");
+
+      if (hasPermission && !isRegistered) {
+        await chrome.scripting.registerContentScripts([{
+          id: "search-overlay",
+          matches: ["<all_urls>"],
+          js: ["content-scripts/content.js"],
+          runAt: "document_idle",
+        }]);
+      } else if (!hasPermission && isRegistered) {
+        await chrome.scripting.unregisterContentScripts({ ids: ["search-overlay"] });
+      }
+    } catch (err) {
+      console.error("[TabSlate] Failed to sync content script registration:", err);
+    }
+  }
+
+  chrome.runtime.onInstalled.addListener(syncContentScriptRegistration);
+  chrome.runtime.onStartup.addListener(syncContentScriptRegistration);
+  chrome.permissions.onAdded.addListener(syncContentScriptRegistration);
+  chrome.permissions.onRemoved.addListener(syncContentScriptRegistration);
+
+  // -------------------------------------------------------------------------
   // Context menus — registered once on install / update
   // -------------------------------------------------------------------------
   chrome.runtime.onInstalled.addListener(() => {

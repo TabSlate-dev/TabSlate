@@ -6,8 +6,9 @@ export default defineConfig({
     name: "TabSlate (标签石板)",
     description: "一个简洁高效的标签页与书签管理工具 / A clean and efficient tab and bookmark manager",
     version: "0.1.0",
-    permissions: ["tabs", "tabGroups", "storage", "bookmarks", "sessions", "contextMenus", "favicon"],
-    host_permissions: ["<all_urls>"],
+    permissions: ["tabs", "tabGroups", "storage", "bookmarks", "sessions", "contextMenus", "favicon", "scripting"],
+    optional_host_permissions: ["<all_urls>"],
+    host_permissions: [],
     chrome_url_overrides: {
       newtab: "newtab.html",
     },
@@ -29,5 +30,11 @@ export default defineConfig({
       sourcemap: true,
     },
   }),
+  hooks: {
+    "build:manifestGenerated": (wxt, manifest) => {
+      // Remove auto-generated host_permissions that conflict with optional_host_permissions
+      delete manifest.host_permissions;
+    },
+  },
 });
 

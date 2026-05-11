@@ -133,6 +133,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     }
   })();
 
+  const [searchOverlayEnabled, setSearchOverlayEnabled] = React.useState(false);
+
+  React.useEffect(() => {
+    if (open && typeof chrome !== "undefined" && chrome.permissions) {
+      chrome.permissions.contains({ origins: ["<all_urls>"] }).then(setSearchOverlayEnabled);
+    }
+  }, [open]);
+
+  const handleToggleSearchOverlay = async (checked: boolean) => {
+    if (typeof chrome === "undefined" || !chrome.permissions) return;
+    
+    if (checked) {
+      const granted = await chrome.permissions.request({ origins: ["<all_urls>"] });
+      setSearchOverlayEnabled(granted);
+    } else {
+      const removed = await chrome.permissions.remove({ origins: ["<all_urls>"] });
+      if (removed) {
+        setSearchOverlayEnabled(false);
+      }
+    }
+  };
+
   const handleAdd = () => {
     const siteUrl = (() => {
       try {
@@ -163,7 +185,22 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <DialogDescription className="sr-only">Configure TabSlate settings</DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto pr-2 -mr-2">
-          <div className="space-y-4">
+          <div className="space-y-6">
+            <div className="rounded-lg border p-3 shadow-sm">
+              <div className="flex flex-row items-center justify-between">
+                <div className="space-y-0.5">
+                  <h3 className="text-sm font-medium">Global Search Overlay</h3>
+                  <p className="text-xs text-muted-foreground mr-4">
+                    Press <kbd className="px-1 py-0.5 rounded-md bg-muted border font-sans text-[10px]">Ctrl+Shift+K</kbd> to search your tabs and bookmarks on any website.
+                  </p>
+                </div>
+                <Switch
+                  checked={searchOverlayEnabled}
+                  onCheckedChange={handleToggleSearchOverlay}
+                />
+              </div>
+            </div>
+
             <div>
               <h3 className="text-sm font-medium mb-1">Search Engines</h3>
               <p className="text-xs text-muted-foreground mb-4">

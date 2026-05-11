@@ -6,6 +6,7 @@ import "@/assets/globals.css";
 export default defineContentScript({
   matches: ["<all_urls>"],
   cssInjectionMode: "ui",
+  registration: "runtime",
 
   async main(ctx) {
     // -----------------------------------------------------------------
