@@ -106,7 +106,7 @@ export class SyncEngine {
     try {
       const resp = await this.doPull();
       if (resp) this.onPullSuccess(resp);
-      this.setStatus(this.queue.isEmpty() ? "idle" : "error");
+      this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
     } catch {
       this.setStatus("error");
     } finally {
