@@ -81,6 +81,8 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   const groupsHydrated = useGroupsStore((s) => s._hydrated);
   const settingsHydrated = useSettingsStore((s) => s._hydrated);
   const searchEngines = useSettingsStore((s) => s.searchEngines);
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const prevAccessTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     void Promise.all([
@@ -91,6 +93,18 @@ function StoreGate({ children }: { children: React.ReactNode }) {
     ]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Reset all data stores to empty when the user logs out, so a subsequent
+  // login never sees another user's in-memory data.
+  useEffect(() => {
+    if (prevAccessTokenRef.current !== null && accessToken === null) {
+      useWorkspaceStore.getState().reset();
+      useBookmarksStore.getState().reset();
+      useGroupsStore.getState().reset();
+      useSettingsStore.getState().reset();
+    }
+    prevAccessTokenRef.current = accessToken;
+  }, [accessToken]);
 
   // Keep chrome.storage.local in sync so search-overlay (content script) can read user engines.
   useEffect(() => {

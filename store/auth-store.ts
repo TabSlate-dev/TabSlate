@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
 import { api } from "@/lib/api";
 import type { ApiUser } from "@/lib/api";
+import { clearDB } from "@/lib/idb";
 
 interface AuthState {
   user: ApiUser | null;
@@ -113,7 +114,9 @@ export const useAuthStore = create<AuthState>()(
             // best-effort: clear local state regardless
           }
         }
-        set({ user: null, accessToken: null, refreshToken: null });
+        await clearDB();
+        chrome.storage.local.remove("tabslate-search-engines");
+        set({ user: null, accessToken: null, refreshToken: null, otpSentAt: null });
       },
     }),
     {

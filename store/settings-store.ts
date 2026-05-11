@@ -38,6 +38,7 @@ interface SettingsState {
   searchEngines: SearchEngine[];
   _hydrated: boolean;
   hydrate: () => Promise<void>;
+  reset: () => void;
   /** Update search engines locally (IDB) and push to server. */
   updateSearchEngines: (engines: SearchEngine[]) => void;
   /** Pull preferences from server and merge into local state. Called after login. */
@@ -54,6 +55,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
       ? mergeEngines(enginesKv.value)
       : DEFAULT_SEARCH_ENGINES;
     set({ searchEngines: engines, _hydrated: true });
+  },
+
+  reset: () => {
+    set({ searchEngines: DEFAULT_SEARCH_ENGINES, _hydrated: true });
   },
 
   updateSearchEngines: (engines) => {

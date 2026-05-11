@@ -84,6 +84,7 @@ interface BookmarksState {
   // Hydration flag
   _hydrated: boolean;
   hydrate: () => Promise<void>;
+  reset: () => void;
 
   // Actions
   setSelectedCollection: (collectionId: string) => void;
@@ -143,6 +144,18 @@ export const useBookmarksStore = create<BookmarksState>()(
           idbGetAll<Bookmark>("trashed-bookmarks"),
         ]);
         set({ bookmarks, archivedBookmarks, trashedBookmarks, _hydrated: true });
+      },
+
+      reset: () => {
+        set({
+          bookmarks: [],
+          archivedBookmarks: [],
+          trashedBookmarks: [],
+          selectedCollection: "all",
+          selectedTags: [],
+          searchQuery: "",
+          _hydrated: true,
+        });
       },
 
       setSelectedCollection: (collectionId) =>

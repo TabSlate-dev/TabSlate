@@ -15,6 +15,25 @@ export type StoreName =
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
+export async function clearDB(): Promise<void> {
+  // Close the open connection first so the delete request isn't blocked.
+  if (dbPromise) {
+    try {
+      const db = await dbPromise;
+      db.close();
+    } catch {
+      // already closed or never opened
+    }
+    dbPromise = null;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const req = indexedDB.deleteDatabase(DB_NAME);
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => resolve(); // another tab has it open; our close above covers our tab
+  });
+}
+
 export function getDB(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {

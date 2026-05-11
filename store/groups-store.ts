@@ -54,6 +54,7 @@ interface GroupsState {
   groupTabs: GroupTab[];
   _hydrated: boolean;
   hydrate: () => Promise<void>;
+  reset: () => void;
 
   // Group CRUD
   createGroup: (name: string, color: TabGroupColor, isCompact: boolean, workspaceId: string) => string;
@@ -94,6 +95,10 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       return true;
     });
     set({ groups, groupTabs, _hydrated: true });
+  },
+
+  reset: () => {
+    set({ groups: [], groupTabs: [], _hydrated: true });
   },
 
   createGroup: (name, color, isCompact, workspaceId) => {

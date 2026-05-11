@@ -117,6 +117,7 @@ interface WorkspaceState {
 
   _hydrated: boolean;
   hydrate: () => Promise<void>;
+  reset: () => void;
 
   highlightedCollectionIds: string[];
   setHighlightedCollectionIds: (ids: string[], durationMs?: number) => void;
@@ -206,6 +207,18 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       activeWorkspaceId: activeWsKv?.value ?? "",
       compactGroupTitles: compactKv?.value ?? true,
       localSeq: localSeqKv?.value ?? 0,
+      _hydrated: true,
+    });
+  },
+
+  reset: () => {
+    set({
+      workspaces: [],
+      collections: [],
+      tags: [],
+      activeWorkspaceId: "",
+      compactGroupTitles: true,
+      localSeq: 0,
       _hydrated: true,
     });
   },
