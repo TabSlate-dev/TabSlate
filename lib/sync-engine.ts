@@ -39,7 +39,7 @@ export class SyncEngine {
         if (resp.rejected.length > 0) {
           this.pull();
         }
-        this.setStatus("idle");
+        this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
       },
       (_err) => this.setStatus("error"),
     );
@@ -58,7 +58,7 @@ export class SyncEngine {
             this.ensurePeriodicPull();
           }
         } else {
-          if (this.status === "offline") this.setStatus("idle");
+          if (this.status === "offline") this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
         }
       },
     );
@@ -93,7 +93,7 @@ export class SyncEngine {
       }
     } catch { /* ignore */ }
 
-    this.setStatus(this.queue.isEmpty() ? "idle" : "error");
+    this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
     return { pushed: 1, pulled };
   }
 
