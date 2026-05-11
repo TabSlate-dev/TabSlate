@@ -53,12 +53,23 @@ export const useAuthStore = create<AuthState>()(
       setServerUrl: (url) => set({ serverUrl: url }),
 
       login: async (email, password, captchaToken) => {
-        const { serverUrl } = get();
+        const { serverUrl, otpSentAt } = get();
         const resp = await api.login(serverUrl, email, password, captchaToken);
+        // If the user is unverified, the server auto-sends an OTP when the
+        // 60s cooldown has elapsed. Mirror that here so VerifyEmailScreen
+        // shows the correct countdown on mount.
+        let newOtpSentAt = otpSentAt;
+        if (!resp.user.is_verified) {
+          const elapsed = otpSentAt ? (Date.now() - otpSentAt) / 1000 : Infinity;
+          if (elapsed >= 60) {
+            newOtpSentAt = Date.now();
+          }
+        }
         set({
           user: resp.user,
           accessToken: resp.access_token,
           refreshToken: resp.refresh_token,
+          otpSentAt: newOtpSentAt,
         });
       },
 
