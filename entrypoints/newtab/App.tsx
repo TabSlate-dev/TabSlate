@@ -21,6 +21,8 @@ import { useAuthStore } from "@/store/auth-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useTabsStore } from "@/store/tabs-store";
 import { useSettingsStore } from "@/store/settings-store";
+import { usePlanStore } from "@/store/plan-store";
+import { QuotaAlert } from "@/components/ui/quota-alert";
 import type { ExtensionMessage } from "@/lib/messages";
 import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
@@ -102,6 +104,7 @@ function StoreGate({ children }: { children: React.ReactNode }) {
       useBookmarksStore.getState().reset();
       useGroupsStore.getState().reset();
       useSettingsStore.getState().reset();
+      usePlanStore.getState().clear();
     }
     prevAccessTokenRef.current = accessToken;
   }, [accessToken]);
@@ -130,6 +133,12 @@ function StoreGate({ children }: { children: React.ReactNode }) {
 function AuthGate({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
   const user = useAuthStore((s) => s.user);
+
+  useEffect(() => {
+    if (accessToken && user?.is_verified) {
+      void usePlanStore.getState().fetchPlan();
+    }
+  }, [accessToken, user?.is_verified]);
 
   if (!accessToken) {
     return <AuthPage />;
@@ -247,6 +256,7 @@ export default function App() {
     <ThemeProvider>
       <StoreGate>
         <AuthGate>
+          <QuotaAlert />
           <SyncProvider>
             {(syncStatus, onForceSync) => (
               <HashRouter>
