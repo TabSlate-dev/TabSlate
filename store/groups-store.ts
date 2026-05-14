@@ -202,6 +202,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   },
 
   addTabToGroup: (groupId, tab) => {
+    if (!groupId) { return; }
     const { groupTabs, groups } = get();
     const existing = groupTabs.find(t => t.groupId === groupId && t.url === tab.url);
     if (existing) { return; }

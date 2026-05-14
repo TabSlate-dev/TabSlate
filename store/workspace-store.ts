@@ -491,7 +491,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     planStore.ensureFresh();
     if (!planStore.checkQuota("collection")) {
       planStore.showQuotaAlert("collection");
-      return undefined as unknown as Collection;
+      return { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection;
     }
     const existingInWs = get().collections.filter(c => c.workspaceId === workspaceId);
     const col: Collection = {
@@ -530,7 +530,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     syncEngine?.enqueue({ collections: [toServerCollection(trashed)] });
     set((s) => ({ collections: s.collections.map(c => c.id === id ? trashed : c) }));
     useBookmarksStore.getState().trashCollectionBookmarks(id);
-    usePlanStore.getState().decrementUsage("collection");
   },
 
   archiveCollection: (id) => {
@@ -559,6 +558,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     idbDelete("collections", id);
     set((s) => ({ collections: s.collections.filter(c => c.id !== id) }));
     useBookmarksStore.getState().permanentlyDeleteCollectionBookmarks(id);
+    usePlanStore.getState().decrementUsage("collection");
   },
 
   // ── Tags ──────────────────────────────────────────────────────────────
@@ -567,7 +567,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     planStore.ensureFresh();
     if (!planStore.checkQuota("tag")) {
       planStore.showQuotaAlert("tag");
-      return undefined as unknown as Tag;
+      return { id: "", name, color, seq: 0 } as Tag;
     }
     const tag: Tag = { id: generateId(), name, color, seq: 0 };
     set((s) => ({ tags: [...s.tags, tag] }));
