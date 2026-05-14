@@ -43,7 +43,8 @@ TabSlate/
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
 │   │   ├── favicon-image.tsx   # 带 fallback 的 favicon 图片
-│   │   └── input-otp.tsx       # 6 格 OTP 输入框（基于 input-otp 包）
+│   │   ├── input-otp.tsx       # 6 格 OTP 输入框（基于 input-otp 包）
+│   │   └── quota-alert.tsx     # 配额上限浮动通知（fixed 定位，订阅 usePlanStore.quotaAlert，3s 自动消失）
 │   └── dashboard/
 │       ├── sidebar/            # 左侧书签导航栏
 │       │   ├── index.tsx       # BookmarksSidebar（主组件，接收 syncStatus + onForceSync）
@@ -83,6 +84,7 @@ TabSlate/
 │   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态；含 mergeFromServer（同步合并）
 │   ├── workspace-store.ts  # 工作区/集合/标签配置；含 localSeq、mergeFromServer、setLocalSeq
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
+│   ├── plan-store.ts       # 套餐配额状态；fetchPlan (GET /api/plan)，5 分钟 TTL；checkQuota/showQuotaAlert/incrementUsage/decrementUsage；不持久化
 │   ├── settings-store.ts   # 搜索引擎列表（启用状态、顺序、自定义引擎）；持久化到 IDB kv["searchEngines"]；pullFromServer 从服务端拉取偏好
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
@@ -123,6 +125,7 @@ useAuthStore       ──Zustand persist──▶  chrome.storage.local  "tabsla
 useBookmarksStore  ──手动 idbPut/Get──▶  IndexedDB  bookmarks / archived-bookmarks / trashed-bookmarks
 useWorkspaceStore  ──手动 idbPut/Get──▶  IndexedDB  workspaces / collections / tags / kv
 useGroupsStore     ──手动 idbPut/Get──▶  IndexedDB  groups / group-tabs
+usePlanStore       (不持久化，GET /api/plan 内存缓存，5 分钟 TTL)
 useSettingsStore   ──手动 idbPut/Get──▶  IndexedDB  kv["searchEngines"]
                    ──StoreGate 镜像──▶  chrome.storage.local  "tabslate-search-engines"（供 content script 读取）
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
@@ -139,6 +142,7 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时立即从所有 bucket 删除 |
 | `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并；`permanentlyDeleteCollection` 先推 `isDeleted:2` 再清理本地；`is_deleted===2` 时从 state+IDB 删除 |
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 先推 `isDeleted:2` 再清理本地；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
+| `usePlanStore` | 不持久化（内存） | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 在 create/delete action 中维护本地计数；`clear` 在登出时调用 |
 | `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
 | `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
