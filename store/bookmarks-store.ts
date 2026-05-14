@@ -178,7 +178,7 @@ export const useBookmarksStore = create<BookmarksState>()(
       addBookmark: (input) => {
         const planStore = usePlanStore.getState();
         planStore.ensureFresh();
-        if (!planStore.checkQuota("bookmark")) {
+        if (!planStore.checkQuota("bookmark", get().bookmarks.length)) {
           planStore.showQuotaAlert("bookmark");
           return { id: "", createdAt: "", isFavorite: false, ...input } as Bookmark;
         }
@@ -198,7 +198,7 @@ export const useBookmarksStore = create<BookmarksState>()(
       addBookmarks: (newBookmarks) => {
         const planStore = usePlanStore.getState();
         planStore.ensureFresh();
-        if (!planStore.checkQuota("bookmark")) {
+        if (!planStore.checkQuota("bookmark", get().bookmarks.length)) {
           planStore.showQuotaAlert("bookmark");
           return;
         }

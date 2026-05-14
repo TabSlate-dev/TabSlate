@@ -399,7 +399,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   createWorkspace: (name, color) => {
     const planStore = usePlanStore.getState();
     planStore.ensureFresh();
-    if (!planStore.checkQuota("workspace")) {
+    if (!planStore.checkQuota("workspace", get().workspaces.length)) {
       planStore.showQuotaAlert("workspace");
       return undefined as unknown as Workspace;
     }
@@ -489,7 +489,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   createCollection: (workspaceId, name, icon) => {
     const planStore = usePlanStore.getState();
     planStore.ensureFresh();
-    if (!planStore.checkQuota("collection")) {
+    const activeCollections = get().collections.filter(c => !c.deletedAt && !c.archivedAt).length;
+    if (!planStore.checkQuota("collection", activeCollections)) {
       planStore.showQuotaAlert("collection");
       return { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection;
     }
@@ -565,7 +566,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   createTag: (name, color) => {
     const planStore = usePlanStore.getState();
     planStore.ensureFresh();
-    if (!planStore.checkQuota("tag")) {
+    if (!planStore.checkQuota("tag", get().tags.length)) {
       planStore.showQuotaAlert("tag");
       return { id: "", name, color, seq: 0 } as Tag;
     }

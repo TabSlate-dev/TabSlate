@@ -84,7 +84,7 @@ TabSlate/
 │   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态；含 mergeFromServer（同步合并）
 │   ├── workspace-store.ts  # 工作区/集合/标签配置；含 localSeq、mergeFromServer、setLocalSeq
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
-│   ├── plan-store.ts       # 套餐配额状态；fetchPlan (GET /api/plan)，5 分钟 TTL；checkQuota/showQuotaAlert/incrementUsage/decrementUsage；不持久化
+│   ├── plan-store.ts       # 套餐配额状态；fetchPlan (GET /api/plan)，5 分钟 TTL；checkQuota(resource, localCount)/showQuotaAlert/incrementUsage/decrementUsage；持久化到 chrome.storage.local (key "tabslate-plan")
 │   ├── settings-store.ts   # 搜索引擎列表（启用状态、顺序、自定义引擎）；持久化到 IDB kv["searchEngines"]；pullFromServer 从服务端拉取偏好
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
@@ -294,13 +294,16 @@ SyncEngine
 
 ```
 StoreGate → AuthGate → SyncProvider（render-prop）
-                         ├── new SyncEngine(getCredentials, getLocalSeq, onPullSuccess, ...)
+                         ├── new SyncEngine(getCredentials, getLocalSeq, onPullSuccess, onPushSuccess, onStatusChange)
                          ├── syncStatus: "idle" | "syncing" | "error" | "offline"
+                         ├── syncErrorMessage: string | null  (error 状态下的错误原因，传递给 SyncStatusIndicator tooltip)
                          └── onForceSync → syncEngine.forceSync()
 ```
 
 `SyncProvider` deps `[accessToken, serverUrl]`：token 刷新或 server URL 变更时销毁旧引擎再创建新引擎。  
-cleanup 函数调用 `engine.forceSync()` 后再 `destroySyncEngine()`，确保登出前推送最后一次变更。
+cleanup 函数调用 `engine.forceSync()` 后再 `destroySyncEngine()`，确保登出前推送最后一次变更。  
+`onPushSuccess` 处理 `quota_exceeded` 拒绝：调用 `showQuotaAlert(type)` 展示配额提示，并触发 `fetchPlan()` 刷新用量。  
+`SyncStatusIndicator` 在 error 状态下悬停时通过 Tooltip 展示 `syncErrorMessage`。
 
 ### 冲突解决（LWW）
 

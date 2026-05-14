@@ -18,7 +18,7 @@ export function QuotaAlert() {
   if (!alert) { return null; }
 
   return (
-    <Alert className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-auto shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap">
+    <Alert variant="info" className="fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap">
       <AlertCircle className="h-4 w-4" />
       <AlertDescription>{quotaAlertMessage(alert.resource, alert.limit)}</AlertDescription>
     </Alert>

@@ -143,6 +143,7 @@ export interface SyncEntities {
 export interface SyncRejected {
   id: string;
   reason: "stale" | "quota_exceeded";
+  type?: string; // "collection" | "saved_group" when reason is "quota_exceeded"
 }
 
 export interface SyncPushResponse {

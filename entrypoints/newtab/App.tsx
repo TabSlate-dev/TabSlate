@@ -21,7 +21,7 @@ import { useAuthStore } from "@/store/auth-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useTabsStore } from "@/store/tabs-store";
 import { useSettingsStore } from "@/store/settings-store";
-import { usePlanStore } from "@/store/plan-store";
+import { usePlanStore, type QuotaResource } from "@/store/plan-store";
 import { QuotaAlert } from "@/components/ui/quota-alert";
 import type { ExtensionMessage } from "@/lib/messages";
 import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine } from "@/lib/sync-engine";
@@ -31,11 +31,13 @@ import { Loader2 } from "lucide-react";
 function Layout({
   title,
   syncStatus,
+  syncErrorMessage,
   onForceSync,
   children,
 }: {
   title?: string;
   syncStatus: SyncStatus;
+  syncErrorMessage?: string | null;
   onForceSync: () => void;
   children: React.ReactNode;
 }) {
@@ -54,7 +56,7 @@ function Layout({
         <SidebarProvider
           style={{ "--sidebar-offset": "3.25rem" } as React.CSSProperties}
         >
-          <BookmarksSidebar syncStatus={syncStatus} onForceSync={onForceSync} />
+          <BookmarksSidebar syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync} />
 
           {/* Content area: use h-svh directly so height is always definite */}
           <div className="flex flex-1 h-svh overflow-hidden lg:p-2 lg:gap-2 min-w-0">
@@ -150,11 +152,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 }
 
 /** Instantiates and manages the SyncEngine lifecycle after auth hydration.
- *  Uses render props to expose syncStatus and onForceSync to children. */
+ *  Uses render props to expose syncStatus, onForceSync, and syncErrorMessage to children. */
 function SyncProvider({
   children,
 }: {
-  children: (syncStatus: SyncStatus, onForceSync: () => void) => React.ReactNode;
+  children: (syncStatus: SyncStatus, onForceSync: () => void, syncErrorMessage: string | null) => React.ReactNode;
 }) {
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const accessToken = useAuthStore((s) => s.accessToken);
@@ -165,6 +167,7 @@ function SyncProvider({
   const setLocalSeq = useWorkspaceStore((s) => s.setLocalSeq);
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
+  const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
 
   // Keep refs stable so the engine closure always reads the latest values
   // without needing to be recreated on each localSeq change.
@@ -210,8 +213,25 @@ function SyncProvider({
           useGroupsStore.getState().sweepUnsynced();
         }
       },
-      (_pushResp) => { /* seq updates happen inside mergeFromServer */ },
-      setSyncStatus,
+      (pushResp) => {
+        for (const rejected of pushResp.rejected) {
+          if (rejected.reason === "quota_exceeded") {
+            const resourceMap: Record<string, QuotaResource> = {
+              collection: "collection",
+              saved_group: "saved_group",
+            };
+            const resource = rejected.type ? resourceMap[rejected.type] : undefined;
+            if (resource) { usePlanStore.getState().showQuotaAlert(resource); }
+          }
+        }
+        if (pushResp.rejected.some((r) => r.reason === "quota_exceeded")) {
+          void usePlanStore.getState().fetchPlan();
+        }
+      },
+      (status, errorMessage) => {
+        setSyncStatus(status);
+        setSyncErrorMessage(status === "error" ? (errorMessage ?? null) : null);
+      },
     );
 
     initSyncEngine(engine);
@@ -226,7 +246,7 @@ function SyncProvider({
     syncEngine?.forceSync().catch(() => {});
   }, []);
 
-  return <>{children(syncStatus, handleForceSync)}</>;
+  return <>{children(syncStatus, handleForceSync, syncErrorMessage)}</>;
 }
 
 export default function App() {
@@ -258,14 +278,14 @@ export default function App() {
         <AuthGate>
           <QuotaAlert />
           <SyncProvider>
-            {(syncStatus, onForceSync) => (
+            {(syncStatus, onForceSync, syncErrorMessage) => (
               <HashRouter>
                 <TabsDndProvider>
                   <Routes>
                     <Route
                       path="/"
                       element={
-                        <Layout syncStatus={syncStatus} onForceSync={onForceSync}>
+                        <Layout syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
                           <BookmarksContent />
                         </Layout>
                       }
@@ -273,7 +293,7 @@ export default function App() {
                     <Route
                       path="/favorites"
                       element={
-                        <Layout title="Favorites" syncStatus={syncStatus} onForceSync={onForceSync}>
+                        <Layout title="Favorites" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
                           <FavoritesContent />
                         </Layout>
                       }
@@ -281,7 +301,7 @@ export default function App() {
                     <Route
                       path="/archive"
                       element={
-                        <Layout title="Archive" syncStatus={syncStatus} onForceSync={onForceSync}>
+                        <Layout title="Archive" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
                           <ArchiveContent />
                         </Layout>
                       }
@@ -289,7 +309,7 @@ export default function App() {
                     <Route
                       path="/trash"
                       element={
-                        <Layout title="Trash" syncStatus={syncStatus} onForceSync={onForceSync}>
+                        <Layout title="Trash" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
                           <TrashContent />
                         </Layout>
                       }
@@ -297,7 +317,7 @@ export default function App() {
                     <Route
                       path="/tabs"
                       element={
-                        <Layout title="Open Tabs" syncStatus={syncStatus} onForceSync={onForceSync}>
+                        <Layout title="Open Tabs" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
                           <TabsPanel />
                         </Layout>
                       }
@@ -305,7 +325,7 @@ export default function App() {
                     <Route
                       path="/groups/:groupId"
                       element={
-                        <Layout title="Groups" syncStatus={syncStatus} onForceSync={onForceSync}>
+                        <Layout title="Groups" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
                           <GroupDetail />
                         </Layout>
                       }

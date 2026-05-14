@@ -105,7 +105,8 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   createGroup: (name, color, isCompact, workspaceId) => {
     const planStore = usePlanStore.getState();
     planStore.ensureFresh();
-    if (!planStore.checkQuota("saved_group")) {
+    const activeGroupCount = get().groups.filter(g => !g.deletedAt).length;
+    if (!planStore.checkQuota("saved_group", activeGroupCount)) {
       planStore.showQuotaAlert("saved_group");
       return "";
     }
