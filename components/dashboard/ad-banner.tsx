@@ -1,6 +1,5 @@
 import * as React from "react";
 import { ArrowRight, Sparkles, Cloud, Bot, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const ADS = [
@@ -88,11 +87,28 @@ const ADS = [
 
 function AdCard({ ad, compact }: { ad: typeof ADS[0]; compact: boolean }) {
   const Icon = ad.icon;
+  
+  const handleClick = () => {
+    // Handle ad click action here
+    console.log(`Ad clicked: ${ad.title} - ${ad.action}`);
+  };
+  
   return (
-    <div className={cn(
-      "relative z-0 h-full rounded-2xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg group flex flex-col",
-      compact ? "p-5" : "p-6 md:p-8"
-    )}>
+    <div 
+      className={cn(
+        "relative z-0 h-full rounded-2xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg hover:scale-[1.02] group flex flex-col cursor-pointer",
+        compact ? "p-4" : "p-4 md:p-5"
+      )}
+      onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
+    >
       {/* Outer Glow Effect (Restored and tightened) */}
       <div className={cn("absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md z-[-1] rounded-2xl pointer-events-none", ad.gradient)} />
       
@@ -115,32 +131,34 @@ function AdCard({ ad, compact }: { ad: typeof ADS[0]; compact: boolean }) {
 
       <div className="relative z-10 flex flex-col h-full">
         {/* Title and Icon inline */}
-        <div className="flex items-start gap-3.5 mb-3 pr-16">
+        <div className="flex items-start gap-2.5 mb-3 pr-12">
           <div className={cn(
-            "shrink-0 rounded-xl flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:shadow-md",
+            "shrink-0 rounded-lg flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:shadow-md",
             ad.gradient,
-            "size-12"
+            "size-10"
           )}>
-            <Icon className={cn(ad.iconColor, "size-6")} />
+            <Icon className={cn(ad.iconColor, "size-5")} />
           </div>
-          <h3 className="text-base md:text-lg font-semibold tracking-tight text-foreground leading-tight mt-1.5 drop-shadow-sm">
+          <h3 className="text-sm md:text-base font-semibold tracking-tight text-foreground leading-tight mt-1 drop-shadow-sm truncate">
             {ad.title}
           </h3>
         </div>
 
         {/* Content */}
-        <div className="flex-1 mb-5">
-          <p className="text-sm text-foreground/70 leading-relaxed line-clamp-2">
+        <div className="flex-1 mb-4">
+          <p className="text-xs text-foreground/70 leading-relaxed line-clamp-2">
             {ad.description}
           </p>
         </div>
 
-        {/* Action */}
-        <div className="mt-auto pt-2">
-          <Button size="sm" variant="secondary" className="w-full rounded-xl shadow-sm hover:shadow group/btn hover:bg-primary hover:text-primary-foreground transition-all duration-300">
-            <span>{ad.action}</span>
-            <ArrowRight className="ml-2 size-4 transition-transform duration-300 group-hover/btn:translate-x-1" />
-          </Button>
+        {/* Action hint - Fixed at bottom */}
+        <div className="flex items-center justify-between mt-auto pt-2 pb-0.5">
+          <span className="text-[11px] font-semibold text-primary/90 group-hover:text-primary transition-colors truncate">
+            {ad.action}
+          </span>
+          <div className="flex items-center justify-center w-4 h-4 shrink-0 ml-2">
+            <ArrowRight className="size-3 text-primary/70 group-hover:text-primary group-hover:scale-110 transition-all duration-300" />
+          </div>
         </div>
       </div>
     </div>
@@ -219,7 +237,7 @@ export function AdBanner() {
 
   return (
     <div 
-      className="w-full max-w-[1400px] mt-8 relative"
+      className="w-full max-w-[1400px] mt-4 relative"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -243,10 +261,10 @@ export function AdBanner() {
           <div 
             key={`${ad.id}-${idx}`} 
             className={cn(
-              "shrink-0 h-auto transition-all",
+              "shrink-0 transition-all",
               !isCarousel 
-                ? "w-full max-w-3xl mx-auto" 
-                : "w-[calc(100vw-2.5rem)] sm:w-[340px] md:w-[420px]"
+                ? "w-full max-w-3xl mx-auto h-44" 
+                : "w-[calc(100vw-2.5rem)] sm:w-[300px] md:w-[360px] h-40"
             )}
           >
             <AdCard ad={ad} compact={isCarousel} />

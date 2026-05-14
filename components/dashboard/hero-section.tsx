@@ -149,7 +149,7 @@ export function HeroSection() {
   const formattedDate = time.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
 
   return (
-    <div className="flex flex-col items-center justify-center py-10 md:py-16 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="flex flex-col items-center justify-center pt-8 md:pt-12 pb-2 md:pb-4 space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       <div className="text-center space-y-2">
         <h1 className="text-6xl md:text-8xl font-bold tracking-tighter text-foreground">
           {formattedTime}
