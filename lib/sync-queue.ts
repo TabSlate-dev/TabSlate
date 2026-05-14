@@ -1,5 +1,7 @@
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { SyncPushPayload, SyncPushResponse } from "@/lib/api";
+import { bufferSyncRecoverySnapshot, takeSyncRecoverySnapshot } from "@/lib/sync-recovery";
+import { useAuthStore } from "@/store/auth-store";
 
 interface QueuedEntities {
   workspaces: Map<string, object>;
@@ -34,7 +36,13 @@ export class SyncQueue {
     private readonly getCredentials: () => { baseUrl: string; accessToken: string } | null,
     private readonly onSuccess: OnPushSuccess,
     private readonly onError: OnPushError,
-  ) {}
+  ) {
+    const recoverySnapshot = takeSyncRecoverySnapshot();
+    if (recoverySnapshot) {
+      this.requeueSnapshot(recoverySnapshot);
+      this.schedulePush(0);
+    }
+  }
 
   enqueue(entities: Partial<{ workspaces: object[]; collections: object[]; bookmarks: object[]; tags: object[]; groups: object[] }>) {
     const set = <T extends { id: string }>(map: Map<string, object>, items?: T[]) => {
@@ -100,12 +108,14 @@ export class SyncQueue {
       this.retryDelay = 2000;
       this.onSuccess(resp);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        bufferSyncRecoverySnapshot(snapshot);
+        void useAuthStore.getState().silentRefresh();
+        return;
+      }
+
       // Re-enqueue snapshot so changes are not lost on failure.
-      snapshot.entities.workspaces.forEach(e => this.queue.workspaces.set((e as { id: string }).id, e));
-      snapshot.entities.collections.forEach(e => this.queue.collections.set((e as { id: string }).id, e));
-      snapshot.entities.bookmarks.forEach(e => this.queue.bookmarks.set((e as { id: string }).id, e));
-      snapshot.entities.tags.forEach(e => this.queue.tags.set((e as { id: string }).id, e));
-      snapshot.entities.groups.forEach(e => this.queue.groups.set((e as { id: string }).id, e));
+      this.requeueSnapshot(snapshot);
 
       this.onError(err instanceof Error ? err : new Error(String(err)));
       if (this.retryTimer) clearTimeout(this.retryTimer);
@@ -120,5 +130,13 @@ export class SyncQueue {
   destroy() {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     if (this.retryTimer) clearTimeout(this.retryTimer);
+  }
+
+  private requeueSnapshot(snapshot: SyncPushPayload) {
+    snapshot.entities.workspaces.forEach(e => this.queue.workspaces.set((e as { id: string }).id, e));
+    snapshot.entities.collections.forEach(e => this.queue.collections.set((e as { id: string }).id, e));
+    snapshot.entities.bookmarks.forEach(e => this.queue.bookmarks.set((e as { id: string }).id, e));
+    snapshot.entities.tags.forEach(e => this.queue.tags.set((e as { id: string }).id, e));
+    snapshot.entities.groups.forEach(e => this.queue.groups.set((e as { id: string }).id, e));
   }
 }

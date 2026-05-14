@@ -9,4 +9,4 @@ export type ExtensionMessage =
   | { type: "GET_OPEN_TABS" }
   | { type: "FOCUS_TAB"; tabId: number; windowId: number }
   | { type: "OPEN_TAB"; url: string }
-  | { type: "SEARCH_BOOKMARKS"; query: string; accessToken: string; serverUrl: string };
+  | { type: "SEARCH_BOOKMARKS"; query: string };

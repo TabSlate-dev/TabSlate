@@ -86,7 +86,8 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   const settingsHydrated = useSettingsStore((s) => s._hydrated);
   const searchEngines = useSettingsStore((s) => s.searchEngines);
   const accessToken = useAuthStore((s) => s.accessToken);
-  const prevAccessTokenRef = useRef<string | null>(null);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const prevHadSessionRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     void Promise.all([
@@ -98,18 +99,25 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reset all data stores to empty when the user logs out, so a subsequent
-  // login never sees another user's in-memory data.
+  // Reset all data stores when a previously authenticated session becomes
+  // fully absent, including cold-start refresh failures.
   useEffect(() => {
-    if (prevAccessTokenRef.current !== null && accessToken === null) {
+    const hasSession = accessToken !== null || refreshToken !== null;
+
+    if (prevHadSessionRef.current === null) {
+      prevHadSessionRef.current = hasSession;
+      return;
+    }
+
+    if (prevHadSessionRef.current && !hasSession) {
       useWorkspaceStore.getState().reset();
       useBookmarksStore.getState().reset();
       useGroupsStore.getState().reset();
       useSettingsStore.getState().reset();
       usePlanStore.getState().clear();
     }
-    prevAccessTokenRef.current = accessToken;
-  }, [accessToken]);
+    prevHadSessionRef.current = hasSession;
+  }, [accessToken, refreshToken]);
 
   // Keep chrome.storage.local in sync so search-overlay (content script) can read user engines.
   useEffect(() => {
@@ -134,6 +142,7 @@ function StoreGate({ children }: { children: React.ReactNode }) {
  *  screen instead of the dashboard — prevents entering without verifying. */
 function AuthGate({ children }: { children: React.ReactNode }) {
   const accessToken = useAuthStore((s) => s.accessToken);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
   const user = useAuthStore((s) => s.user);
 
   useEffect(() => {
@@ -142,7 +151,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }, [accessToken, user?.is_verified]);
 
-  if (!accessToken) {
+  if (!accessToken && !refreshToken) {
     return <AuthPage />;
   }
   if (user && !user.is_verified) {

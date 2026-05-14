@@ -99,7 +99,9 @@ TabSlate/
 │   ├── sse-client.ts       # SSEClient：leader election via chrome.storage + EventSource 自动重连（1s→30s）
 │   ├── utils.ts            # cn() 等工具函数
 │   ├── storage.ts          # popup 用的轻量 chrome.storage 读写工具
-│   ├── chrome-storage-adapter.ts  # Zustand persist 的 chrome.storage 适配器
+│   ├── auth-storage-adapter.ts    # Zustand persist 适配器：accessToken → session storage，其余 → local storage；含旧版迁移路径
+│   ├── sync-recovery.ts           # 401 时保存同步快照的内存缓冲区；SyncQueue 构造时自动消费
+│   ├── chrome-storage-adapter.ts  # 通用 Zustand persist 的 chrome.storage 适配器（非 auth 用）
 │   ├── id.ts               # generateId()
 │   ├── bookmark-utils.ts   # findDuplicateBookmark()
 │   └── chrome/
@@ -121,7 +123,8 @@ TabSlate/
 所有 store 使用 Zustand。持久化分为两层：
 
 ```
-useAuthStore       ──Zustand persist──▶  chrome.storage.local  "tabslate-auth"
+useAuthStore       ──Zustand persist──▶  chrome.storage.session  "tabslate-auth-token"  (accessToken)
+                                    ──▶  chrome.storage.local   "tabslate-auth"  (user, refreshToken, serverUrl, otpSentAt)
 useBookmarksStore  ──手动 idbPut/Get──▶  IndexedDB  bookmarks / archived-bookmarks / trashed-bookmarks
 useWorkspaceStore  ──手动 idbPut/Get──▶  IndexedDB  workspaces / collections / tags / kv
 useGroupsStore     ──手动 idbPut/Get──▶  IndexedDB  groups / group-tabs
@@ -138,7 +141,7 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 
 | Store | 持久化后端 | 职责 |
 |---|---|---|
-| `useAuthStore` | chrome.storage.local | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
+| `useAuthStore` | chrome.storage.session（accessToken）+ chrome.storage.local（其余） | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout/silentRefresh；`silentRefresh` 在 rehydrate 时自动触发（refreshToken 存在但 accessToken 缺失），支持指数退避重试（2s→60s），仅在确切 401/403 时清除 token |
 | `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时立即从所有 bucket 删除 |
 | `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并；`permanentlyDeleteCollection` 先推 `isDeleted:2` 再清理本地；`is_deleted===2` 时从 state+IDB 删除 |
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 先推 `isDeleted:2` 再清理本地；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |

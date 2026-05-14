@@ -31,30 +31,6 @@ export function SearchOverlay({ onClose }: Props) {
   const engine = React.useMemo(() => engines.find(e => e.enabled) ?? engines[0], [engines]);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  // Read auth from chrome.storage.local directly — Zustand's async persist
-  // rehydration is unreliable in content script context (separate JS context).
-  const [accessToken, setAccessToken] = React.useState<string | null>(null);
-  const [serverUrl, setServerUrl] = React.useState<string>(
-    (import.meta.env.VITE_API_URL as string | undefined) ?? "",
-  );
-
-  React.useEffect(() => {
-    chrome.storage.local.get("tabslate-auth", (result) => {
-      // chromeStorageAdapter stores via JSON.stringify, so value is a string
-      const raw = result["tabslate-auth"];
-      if (typeof raw !== "string") { return; }
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const parsed = JSON.parse(raw) as any;
-        const state = parsed?.state;
-        if (state?.accessToken) {
-          setAccessToken(state.accessToken as string);
-          if (state.serverUrl) { setServerUrl(state.serverUrl as string); }
-        }
-      } catch { /* ignore malformed data */ }
-    });
-  }, []);
-
   // Load user's search engines from chrome.storage.local (written by newtab StoreGate)
   React.useEffect(() => {
     chrome.storage.local.get("tabslate-search-engines", (result: Record<string, unknown>) => {
@@ -86,23 +62,28 @@ export function SearchOverlay({ onClose }: Props) {
 
   // Debounced bookmark search — proxied through background to avoid CORS
   React.useEffect(() => {
-    if (query.length < 2 || !accessToken) {
+    if (query.length < 2) {
       setBookmarkResults([]);
       return;
     }
     let cancelled = false;
     const timer = setTimeout(() => {
       chrome.runtime.sendMessage(
-        { type: "SEARCH_BOOKMARKS", query, accessToken, serverUrl },
-        (response: { ok: boolean; bookmarks: SearchBookmark[] }) => {
-          if (!cancelled && response?.ok) {
-            setBookmarkResults(response.bookmarks);
+        { type: "SEARCH_BOOKMARKS", query },
+        (response: { ok: boolean; bookmarks: SearchBookmark[] } | undefined) => {
+          if (cancelled) {
+            return;
           }
+          if (response?.ok) {
+            setBookmarkResults(response.bookmarks);
+            return;
+          }
+          setBookmarkResults([]);
         },
       );
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [query, accessToken, serverUrl]);
+  }, [query]);
 
   React.useEffect(() => { setActiveIndex(0); }, [bookmarkResults.length, filteredTabs.length]);
 

@@ -94,8 +94,8 @@ function StripAdCard({ ad, vertical }: { ad: typeof STRIP_ADS[0]; vertical?: boo
 }
 
 export function TabsAdStrip({ vertical }: { vertical?: boolean }) {
-  // Limit to first 2 ads to avoid overwhelming the user interface
-  const adsToShow = vertical ? STRIP_ADS.slice(0, 2) : STRIP_ADS.slice(0, 3);
+  // Limit to first 3 ads to avoid overwhelming the user interface
+  const adsToShow = vertical ? STRIP_ADS.slice(0, 3) : STRIP_ADS.slice(0, 4);
   
   return (
     <div className={cn(vertical ? "flex flex-col gap-2" : "grid grid-cols-3 gap-3")}>
