@@ -194,6 +194,7 @@ export function buildChromeImportPlan(
   const bookmarks: Omit<Bookmark, "seq">[] = [];
   const rejectedUrls: string[] = [];
   const createdAt = new Date().toISOString();
+  const seenUrls = new Set(existingBookmarkUrls);
   let duplicatesSkipped = 0;
   let position = 0;
 
@@ -221,11 +222,12 @@ export function buildChromeImportPlan(
         continue;
       }
 
-      if (skipDuplicates && existingBookmarkUrls.has(url)) {
+      if (skipDuplicates && seenUrls.has(url)) {
         duplicatesSkipped++;
         continue;
       }
 
+      seenUrls.add(url);
       bookmarks.push({
         id: generateId(),
         title: (item.title || url).slice(0, MAX_TITLE_LENGTH),

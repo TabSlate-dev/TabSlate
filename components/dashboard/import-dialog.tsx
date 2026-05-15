@@ -220,16 +220,18 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     setResult(null);
   }, []);
 
+  const wasOpenRef = React.useRef(false);
+
   React.useEffect(() => {
     if (!open) {
+      wasOpenRef.current = false;
       resetState();
       return;
     }
 
-    if (activeWorkspaceId) {
-      setWorkspaceId(activeWorkspaceId);
-    } else {
-      setWorkspaceId("");
+    if (!wasOpenRef.current) {
+      wasOpenRef.current = true;
+      setWorkspaceId(activeWorkspaceId ?? "");
     }
   }, [activeWorkspaceId, open, resetState]);
 
@@ -447,35 +449,38 @@ export function ImportDialog({ open, onOpenChange }: Props) {
 
     setIsImporting(true);
 
-    try {
-      const imported = importFromPlan(importPlan);
-      if (!imported) {
+    // Yield to browser so the spinner renders before the synchronous import runs.
+    setTimeout(() => {
+      try {
+        const imported = importFromPlan(importPlan);
+        if (!imported) {
+          setResult({
+            status: "error",
+            message: "Import could not start because the current quota no longer allows it.",
+          });
+          setStep(3);
+          return;
+        }
+
         setResult({
-          status: "error",
-          message: "Import could not start because the current quota no longer allows it.",
+          status: "success",
+          collectionsCreated: importPlan.collections.length,
+          bookmarksImported: importPlan.bookmarks.length,
+          tagsCreated: importPlan.tags.length,
+          duplicatesSkipped: importPlan.duplicatesSkipped,
+          rejectedUrls: importPlan.rejectedUrls,
         });
         setStep(3);
-        return;
+      } catch {
+        setResult({
+          status: "error",
+          message: "Import failed unexpectedly. Try again with the same file.",
+        });
+        setStep(3);
+      } finally {
+        setIsImporting(false);
       }
-
-      setResult({
-        status: "success",
-        collectionsCreated: importPlan.collections.length,
-        bookmarksImported: importPlan.bookmarks.length,
-        tagsCreated: importPlan.tags.length,
-        duplicatesSkipped: importPlan.duplicatesSkipped,
-        rejectedUrls: importPlan.rejectedUrls,
-      });
-      setStep(3);
-    } catch {
-      setResult({
-        status: "error",
-        message: "Import failed unexpectedly. Try again with the same file.",
-      });
-      setStep(3);
-    } finally {
-      setIsImporting(false);
-    }
+    }, 0);
   }, [canImport, importFromPlan, importPlan]);
 
   const handleRetry = React.useCallback(() => {
