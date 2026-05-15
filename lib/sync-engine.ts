@@ -59,6 +59,7 @@ export class SyncEngine {
             this.ensurePeriodicPull();
           }
         } else {
+          this.cancelPeriodicPull();
           if (this.status === "offline") this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
         }
       },
@@ -141,6 +142,13 @@ export class SyncEngine {
   private ensurePeriodicPull() {
     if (this.periodicTimer) return;
     this.periodicTimer = setInterval(() => this.pull(), PERIODIC_INTERVAL_MS);
+  }
+
+  private cancelPeriodicPull() {
+    if (this.periodicTimer) {
+      clearInterval(this.periodicTimer);
+      this.periodicTimer = null;
+    }
   }
 
   private setStatus(s: SyncStatus, errorMessage?: string) {
