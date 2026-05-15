@@ -92,9 +92,20 @@ export class SyncEngine {
           resp.entities.tags.length +
           (resp.entities.groups?.length ?? 0);
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      // TypeError = network failure (connection refused / offline)
+      if (err instanceof TypeError) {
+        this.setStatus("offline");
+      } else {
+        this.setStatus("error", err instanceof Error ? err.message : "Sync failed");
+      }
+      return { pushed: 1, pulled };
+    }
 
-    this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
+    // Only reset if no error was already set by the push path (onError callback).
+    if (this.status === "syncing") {
+      this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
+    }
     return { pushed: 1, pulled };
   }
 
