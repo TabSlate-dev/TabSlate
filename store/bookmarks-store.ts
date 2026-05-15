@@ -333,6 +333,9 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       mergeFromServer: (resp) => {
         if (resp.entities.bookmarks.length === 0) return;
+        
+        const touchedIds = new Set(resp.entities.bookmarks.map((b) => b.id));
+        
         // Fire-and-forget IDB deletes for state=2 (permanent deletion) records
         for (const sb of resp.entities.bookmarks) {
           if (sb.is_trashed === 2) {
@@ -394,10 +397,16 @@ export const useBookmarksStore = create<BookmarksState>()(
           return { bookmarks, archivedBookmarks, trashedBookmarks };
         });
         // Sync IDB after Zustand state update (fire-and-forget)
-        const { bookmarks, archivedBookmarks, trashedBookmarks } = get();
-        for (const b of bookmarks) { idbPut("bookmarks", b); }
-        for (const b of archivedBookmarks) { idbPut("archived-bookmarks", b); }
-        for (const b of trashedBookmarks) { idbPut("trashed-bookmarks", b); }
+        const { bookmarks: currentBookmarks, archivedBookmarks: currentArchived, trashedBookmarks: currentTrashed } = get();
+        for (const b of currentBookmarks) {
+          if (touchedIds.has(b.id)) idbPut("bookmarks", b);
+        }
+        for (const b of currentArchived) {
+          if (touchedIds.has(b.id)) idbPut("archived-bookmarks", b);
+        }
+        for (const b of currentTrashed) {
+          if (touchedIds.has(b.id)) idbPut("trashed-bookmarks", b);
+        }
         for (const sb of resp.entities.bookmarks) {
           if (sb.deleted_at) {
             idbDelete("bookmarks", sb.id);

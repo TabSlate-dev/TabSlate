@@ -167,7 +167,20 @@ function AdCard({ ad, compact }: { ad: typeof ADS[0]; compact: boolean }) {
 
 export function AdBanner() {
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = React.useState(false);
+  const [isVisible, setIsVisible] = React.useState(true);
+
+  React.useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => setIsVisible(entries[0].isIntersecting),
+      { threshold: 0 }
+    );
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+    return () => observer.disconnect();
+  }, []);
 
   const originalItems = ADS;
   const isCarousel = originalItems.length > 1;
@@ -205,13 +218,19 @@ export function AdBanner() {
 
   // Smooth continuous auto-scroll
   React.useEffect(() => {
-    if (!isCarousel || isHovered) return;
+    if (!isCarousel || isHovered || !isVisible) return;
     
     let animationFrameId: number;
     let lastTimestamp: number = 0;
     const speedPixelsPerMs = 0.05; // Adjust this to control scroll speed
 
     const animate = (timestamp: number) => {
+      if (document.hidden) {
+        lastTimestamp = timestamp;
+        animationFrameId = requestAnimationFrame(animate);
+        return;
+      }
+      
       if (!lastTimestamp) lastTimestamp = timestamp;
       const deltaTime = timestamp - lastTimestamp;
       
@@ -237,6 +256,7 @@ export function AdBanner() {
 
   return (
     <div 
+      ref={containerRef}
       className="w-full max-w-[1400px] mt-4 relative"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
