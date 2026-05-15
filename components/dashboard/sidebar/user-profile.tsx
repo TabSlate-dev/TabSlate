@@ -53,6 +53,7 @@ export function UserProfile() {
                 "hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 text-left backdrop-blur-md",
               )}
             >
+              {/* Animated background glow */}
               <div className="absolute -right-4 -top-4 size-24 rounded-full bg-primary/10 blur-2xl transition-all duration-700 group-hover:bg-primary/20 group-hover:scale-125" />
               <div className="absolute -left-4 -bottom-4 size-16 rounded-full bg-blue-500/5 blur-xl transition-all duration-700 group-hover:bg-blue-500/10 group-hover:scale-110" />
 
