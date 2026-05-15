@@ -24,6 +24,29 @@ export interface MeResponse {
   };
 }
 
+export interface PlanLimits {
+  max_workspaces: number;
+  max_bookmarks: number;
+  max_collections: number;
+  max_tags: number;
+  max_saved_groups: number;
+  trash_grace_days: number;
+}
+
+export interface PlanUsage {
+  workspaces: number;
+  bookmarks: number;
+  collections: number;
+  tags: number;
+  saved_groups: number;
+}
+
+export interface PlanResponse {
+  subscription: { plan: string; status: string; expires_at: number | null };
+  limits: PlanLimits;
+  usage: PlanUsage;
+}
+
 export interface LoginCaptchaStatusResponse {
   captcha_required: boolean;
 }
@@ -120,6 +143,7 @@ export interface SyncEntities {
 export interface SyncRejected {
   id: string;
   reason: "stale" | "quota_exceeded";
+  type?: string; // "collection" | "saved_group" when reason is "quota_exceeded"
 }
 
 export interface SyncPushResponse {
@@ -258,6 +282,13 @@ export const api = {
 
   me(baseUrl: string, accessToken: string): Promise<MeResponse> {
     return request<MeResponse>(baseUrl, "/auth/me", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+  },
+
+  getPlan(baseUrl: string, accessToken: string): Promise<PlanResponse> {
+    return request<PlanResponse>(baseUrl, "/api/plan", {
       method: "GET",
       headers: { Authorization: `Bearer ${accessToken}` },
     });

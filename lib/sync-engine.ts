@@ -9,7 +9,7 @@ type GetCredentials = () => Credentials | null;
 type GetLocalSeq = () => number;
 type OnPullSuccess = (resp: SyncPullResponse) => void;
 type OnPushSuccess = (resp: SyncPushResponse) => void;
-type OnStatusChange = (status: SyncStatus) => void;
+type OnStatusChange = (status: SyncStatus, errorMessage?: string) => void;
 
 const PERIODIC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const SSE_FAILURE_THRESHOLD = 3;
@@ -23,6 +23,7 @@ export class SyncEngine {
   private sseClient: SSEClient;
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private status: SyncStatus = "idle";
+  private lastErrorMessage: string | null = null;
   private isPulling = false;
 
   constructor(
@@ -41,7 +42,7 @@ export class SyncEngine {
         }
         this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
       },
-      (_err) => this.setStatus("error"),
+      (err) => this.setStatus("error", err instanceof Error ? err.message : "Push failed"),
     );
 
     this.sseClient = new SSEClient(
@@ -91,9 +92,20 @@ export class SyncEngine {
           resp.entities.tags.length +
           (resp.entities.groups?.length ?? 0);
       }
-    } catch { /* ignore */ }
+    } catch (err) {
+      // TypeError = network failure (connection refused / offline)
+      if (err instanceof TypeError) {
+        this.setStatus("offline");
+      } else {
+        this.setStatus("error", err instanceof Error ? err.message : "Sync failed");
+      }
+      return { pushed: 1, pulled };
+    }
 
-    this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
+    // Only reset if no error was already set by the push path (onError callback).
+    if (this.status === "syncing") {
+      this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
+    }
     return { pushed: 1, pulled };
   }
 
@@ -107,8 +119,8 @@ export class SyncEngine {
       const resp = await this.doPull();
       if (resp) this.onPullSuccess(resp);
       this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
-    } catch {
-      this.setStatus("error");
+    } catch (err) {
+      this.setStatus("error", err instanceof Error ? err.message : "Pull failed");
     } finally {
       this.isPulling = false;
     }
@@ -131,14 +143,18 @@ export class SyncEngine {
     this.periodicTimer = setInterval(() => this.pull(), PERIODIC_INTERVAL_MS);
   }
 
-  private setStatus(s: SyncStatus) {
+  private setStatus(s: SyncStatus, errorMessage?: string) {
+    this.lastErrorMessage = s === "error" ? (errorMessage ?? null) : null;
     if (this.status !== s) {
       this.status = s;
-      this.onStatusChange(s);
+      this.onStatusChange(s, this.lastErrorMessage ?? undefined);
+    } else if (s === "error" && errorMessage !== undefined) {
+      this.onStatusChange(s, errorMessage);
     }
   }
 
   get currentStatus(): SyncStatus { return this.status; }
+  get currentErrorMessage(): string | null { return this.lastErrorMessage; }
 
   destroy() {
     this.queue.destroy();

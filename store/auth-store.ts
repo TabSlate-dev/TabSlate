@@ -1,9 +1,39 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
-import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
-import { api } from "@/lib/api";
+import { authStorageAdapter } from "@/lib/auth-storage-adapter";
+import { api, ApiError } from "@/lib/api";
 import type { ApiUser } from "@/lib/api";
 import { clearDB } from "@/lib/idb";
+import { clearSyncRecoverySnapshot } from "@/lib/sync-recovery";
+
+let _refreshPromise: Promise<boolean> | null = null;
+let _refreshRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let _refreshRetryDelay = 2000;
+let _authSessionGeneration = 0;
+const MAX_REFRESH_RETRY_DELAY = 60_000;
+
+function clearRefreshRetry() {
+  if (_refreshRetryTimer) {
+    clearTimeout(_refreshRetryTimer);
+    _refreshRetryTimer = null;
+  }
+  _refreshRetryDelay = 2000;
+}
+
+function invalidateRefreshWork() {
+  _authSessionGeneration += 1;
+  _refreshPromise = null;
+  clearRefreshRetry();
+}
+
+function scheduleRefreshRetry() {
+  if (_refreshRetryTimer) { return; }
+  _refreshRetryTimer = setTimeout(() => {
+    _refreshRetryTimer = null;
+    _refreshRetryDelay = Math.min(_refreshRetryDelay * 2, MAX_REFRESH_RETRY_DELAY);
+    void useAuthStore.getState().silentRefresh();
+  }, _refreshRetryDelay);
+}
 
 interface AuthState {
   user: ApiUser | null;
@@ -20,6 +50,7 @@ interface AuthState {
   setHydrated: () => void;
 
   setServerUrl: (url: string) => void;
+  silentRefresh: () => Promise<boolean>;
   login: (
     email: string,
     password: string,
@@ -52,7 +83,62 @@ export const useAuthStore = create<AuthState>()(
 
       setServerUrl: (url) => set({ serverUrl: url }),
 
+      silentRefresh: async () => {
+        if (_refreshPromise) {
+          return _refreshPromise;
+        }
+
+        const { serverUrl, refreshToken } = get();
+        if (!refreshToken) {
+          return false;
+        }
+
+        const refreshGeneration = _authSessionGeneration;
+        let refreshPromise: Promise<boolean> | null = null;
+        refreshPromise = (async () => {
+          try {
+            const resp = await api.refresh(serverUrl, refreshToken);
+            if (refreshGeneration !== _authSessionGeneration) {
+              return false;
+            }
+            clearRefreshRetry();
+            set({
+              accessToken: resp.access_token,
+              refreshToken: resp.refresh_token,
+              user: resp.user,
+            });
+            return true;
+          } catch (err) {
+            if (refreshGeneration !== _authSessionGeneration) {
+              return false;
+            }
+            if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+              clearRefreshRetry();
+              clearSyncRecoverySnapshot();
+              set({
+                user: null,
+                accessToken: null,
+                refreshToken: null,
+                otpSentAt: null,
+              });
+              return false;
+            }
+
+            scheduleRefreshRetry();
+            return false;
+          } finally {
+            if (_refreshPromise === refreshPromise) {
+              _refreshPromise = null;
+            }
+          }
+        })();
+        _refreshPromise = refreshPromise;
+
+        return refreshPromise;
+      },
+
       login: async (email, password, captchaToken) => {
+        invalidateRefreshWork();
         const { serverUrl, otpSentAt } = get();
         const resp = await api.login(serverUrl, email, password, captchaToken);
         // If the user is unverified, the server auto-sends an OTP when the
@@ -74,6 +160,7 @@ export const useAuthStore = create<AuthState>()(
       },
 
       register: async (name, email, password, captchaToken) => {
+        invalidateRefreshWork();
         const { serverUrl } = get();
         const resp = await api.register(
           serverUrl,
@@ -118,6 +205,8 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         const { serverUrl, accessToken, refreshToken } = get();
+        invalidateRefreshWork();
+        clearSyncRecoverySnapshot();
         if (accessToken && refreshToken) {
           try {
             await api.logout(serverUrl, accessToken, refreshToken);
@@ -132,15 +221,21 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: "tabslate-auth",
-      storage: createJSONStorage(() => chromeStorageAdapter),
+      storage: createJSONStorage(() => authStorageAdapter),
       onRehydrateStorage: () => (state) => {
-        if (state) {
-          // If no serverUrl was persisted, fall back to the build-time env var.
-          if (!state.serverUrl) {
-            state.serverUrl =
-              (import.meta.env.VITE_API_URL as string | undefined) ?? "";
-          }
-          state.setHydrated();
+        if (!state) {
+          return;
+        }
+
+        if (!state.serverUrl) {
+          state.serverUrl =
+            (import.meta.env.VITE_API_URL as string | undefined) ?? "";
+        }
+
+        state.setHydrated();
+
+        if (state.refreshToken && !state.accessToken) {
+          void state.silentRefresh();
         }
       },
       // Only persist tokens and user — not actions or _hydrated

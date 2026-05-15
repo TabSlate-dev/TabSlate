@@ -5,6 +5,7 @@ import { generateId } from "@/lib/id";
 import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
+import { usePlanStore } from "@/store/plan-store";
 
 export interface GroupTab {
   id: string;
@@ -102,11 +103,19 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   },
 
   createGroup: (name, color, isCompact, workspaceId) => {
+    const planStore = usePlanStore.getState();
+    planStore.ensureFresh();
+    const activeGroupCount = get().groups.filter(g => !g.deletedAt).length;
+    if (!planStore.checkQuota("saved_group", activeGroupCount)) {
+      planStore.showQuotaAlert("saved_group");
+      return "";
+    }
     const id = generateId();
     const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0, workspaceId };
     syncEngine?.enqueue({ groups: [toServerGroup(group, [])] });
     set((state) => ({ groups: [...state.groups, group] }));
     idbPut("groups", group);
+    planStore.incrementUsage("saved_group");
     return id;
   },
 
@@ -160,6 +169,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     set((state) => ({
       groups: state.groups.map(g => g.id === id ? deletedGroup : g),
     }));
+    usePlanStore.getState().decrementUsage("saved_group");
   },
 
   restoreGroup: (id) => {
@@ -170,6 +180,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     syncEngine?.enqueue({ groups: [toServerGroup(restored, tabs)] });
     idbPut("groups", restored);
     set((state) => ({ groups: state.groups.map(g => g.id === id ? restored : g) }));
+    usePlanStore.getState().incrementUsage("saved_group");
   },
 
   permanentlyDeleteGroup: (id) => {
@@ -192,6 +203,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   },
 
   addTabToGroup: (groupId, tab) => {
+    if (!groupId) { return; }
     const { groupTabs, groups } = get();
     const existing = groupTabs.find(t => t.groupId === groupId && t.url === tab.url);
     if (existing) { return; }

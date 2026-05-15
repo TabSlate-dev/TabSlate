@@ -5,6 +5,11 @@ import { searchBookmarks } from "@/lib/api";
 import type { ExtensionMessage } from "@/lib/messages";
 
 export default defineBackground(() => {
+  // Restrict session storage so content scripts cannot read it (Chrome 112+)
+  chrome.storage.session.setAccessLevel({
+    accessLevel: (chrome.storage.AccessLevel?.TRUSTED_CONTEXTS ?? "TRUSTED_CONTEXTS"),
+  });
+
   // -------------------------------------------------------------------------
   // Dynamic Content Script Registration for Search Overlay
   // -------------------------------------------------------------------------
@@ -144,9 +149,99 @@ export default defineBackground(() => {
     }
     if (message.type === "SEARCH_BOOKMARKS") {
       // Content scripts can't make cross-origin fetch calls; proxy through background.
-      searchBookmarks(message.serverUrl, message.accessToken, message.query)
-        .then(result => sendResponse({ ok: true, bookmarks: result.bookmarks }))
-        .catch(() => sendResponse({ ok: false, bookmarks: [] }));
+      interface SessionAuthBlob {
+        accessToken?: string | null;
+      }
+
+      interface LocalAuthBlob {
+        state?: {
+          accessToken?: string | null;
+          refreshToken?: string | null;
+          serverUrl?: string;
+          user?: object | null;
+        };
+        version?: number;
+      }
+
+      const handleSearch = async () => {
+        const [sessionResult, localResult] = await Promise.all([
+          chrome.storage.session.get("tabslate-auth-token"),
+          chrome.storage.local.get("tabslate-auth"),
+        ]);
+
+        const sessionRaw = sessionResult["tabslate-auth-token"];
+        const localRaw = localResult["tabslate-auth"];
+        if (typeof localRaw !== "string") {
+          sendResponse({ ok: false, bookmarks: [] });
+          return;
+        }
+
+        let localBlob: LocalAuthBlob;
+        try {
+          localBlob = JSON.parse(localRaw) as LocalAuthBlob;
+        } catch {
+          sendResponse({ ok: false, bookmarks: [] });
+          return;
+        }
+
+        const serverUrl = localBlob.state?.serverUrl ?? null;
+        if (!serverUrl) {
+          sendResponse({ ok: false, bookmarks: [] });
+          return;
+        }
+
+        let accessToken: string | null = null;
+
+        if (typeof sessionRaw === "string") {
+          try {
+            const sessionBlob = JSON.parse(sessionRaw) as SessionAuthBlob;
+            accessToken = sessionBlob.accessToken ?? null;
+          } catch {
+            accessToken = null;
+          }
+        }
+
+        if (!accessToken) {
+          const legacyAccessToken =
+            typeof localBlob.state?.accessToken === "string"
+              ? localBlob.state.accessToken
+              : null;
+
+          if (legacyAccessToken) {
+            accessToken = legacyAccessToken;
+
+            if (localBlob.state) {
+              delete localBlob.state.accessToken;
+            }
+
+            await Promise.all([
+              chrome.storage.session.set({
+                "tabslate-auth-token": JSON.stringify({ accessToken: legacyAccessToken }),
+              }),
+              chrome.storage.local.set({
+                "tabslate-auth": JSON.stringify(localBlob),
+              }),
+            ]);
+          }
+        }
+
+        if (!accessToken) {
+          // No session token available — the newtab auth store's silentRefresh
+          // will rehydrate the session shortly. Return empty results so the
+          // overlay degrades gracefully rather than racing on the refresh token.
+          sendResponse({ ok: false, bookmarks: [] });
+          return;
+        }
+
+        try {
+          const result = await searchBookmarks(serverUrl, accessToken, message.query);
+          sendResponse({ ok: true, bookmarks: result.bookmarks });
+        } catch {
+          sendResponse({ ok: false, bookmarks: [] });
+        }
+      };
+
+      void handleSearch().catch(() => sendResponse({ ok: false, bookmarks: [] }));
       return true; // keep channel open for async response
     }
   });

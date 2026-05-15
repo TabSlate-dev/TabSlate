@@ -43,7 +43,8 @@ TabSlate/
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
 │   │   ├── favicon-image.tsx   # 带 fallback 的 favicon 图片
-│   │   └── input-otp.tsx       # 6 格 OTP 输入框（基于 input-otp 包）
+│   │   ├── input-otp.tsx       # 6 格 OTP 输入框（基于 input-otp 包）
+│   │   └── quota-alert.tsx     # 配额上限浮动通知（fixed 定位，订阅 usePlanStore.quotaAlert，3s 自动消失）
 │   └── dashboard/
 │       ├── sidebar/            # 左侧书签导航栏
 │       │   ├── index.tsx       # BookmarksSidebar（主组件，接收 syncStatus + onForceSync）
@@ -83,6 +84,7 @@ TabSlate/
 │   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态；含 mergeFromServer（同步合并）
 │   ├── workspace-store.ts  # 工作区/集合/标签配置；含 localSeq、mergeFromServer、setLocalSeq
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
+│   ├── plan-store.ts       # 套餐配额状态；fetchPlan (GET /api/plan)，5 分钟 TTL；checkQuota(resource, localCount)/showQuotaAlert/incrementUsage/decrementUsage；持久化到 chrome.storage.local (key "tabslate-plan")
 │   ├── settings-store.ts   # 搜索引擎列表（启用状态、顺序、自定义引擎）；持久化到 IDB kv["searchEngines"]；pullFromServer 从服务端拉取偏好
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
@@ -97,7 +99,9 @@ TabSlate/
 │   ├── sse-client.ts       # SSEClient：leader election via chrome.storage + EventSource 自动重连（1s→30s）
 │   ├── utils.ts            # cn() 等工具函数
 │   ├── storage.ts          # popup 用的轻量 chrome.storage 读写工具
-│   ├── chrome-storage-adapter.ts  # Zustand persist 的 chrome.storage 适配器
+│   ├── auth-storage-adapter.ts    # Zustand persist 适配器：accessToken → session storage，其余 → local storage；含旧版迁移路径
+│   ├── sync-recovery.ts           # 401 时保存同步快照的内存缓冲区；SyncQueue 构造时自动消费
+│   ├── chrome-storage-adapter.ts  # 通用 Zustand persist 的 chrome.storage 适配器（非 auth 用）
 │   ├── id.ts               # generateId()
 │   ├── bookmark-utils.ts   # findDuplicateBookmark()
 │   └── chrome/
@@ -119,10 +123,12 @@ TabSlate/
 所有 store 使用 Zustand。持久化分为两层：
 
 ```
-useAuthStore       ──Zustand persist──▶  chrome.storage.local  "tabslate-auth"
+useAuthStore       ──Zustand persist──▶  chrome.storage.session  "tabslate-auth-token"  (accessToken)
+                                    ──▶  chrome.storage.local   "tabslate-auth"  (user, refreshToken, serverUrl, otpSentAt)
 useBookmarksStore  ──手动 idbPut/Get──▶  IndexedDB  bookmarks / archived-bookmarks / trashed-bookmarks
 useWorkspaceStore  ──手动 idbPut/Get──▶  IndexedDB  workspaces / collections / tags / kv
 useGroupsStore     ──手动 idbPut/Get──▶  IndexedDB  groups / group-tabs
+usePlanStore       (不持久化，GET /api/plan 内存缓存，5 分钟 TTL)
 useSettingsStore   ──手动 idbPut/Get──▶  IndexedDB  kv["searchEngines"]
                    ──StoreGate 镜像──▶  chrome.storage.local  "tabslate-search-engines"（供 content script 读取）
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
@@ -135,10 +141,11 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 
 | Store | 持久化后端 | 职责 |
 |---|---|---|
-| `useAuthStore` | chrome.storage.local | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout |
+| `useAuthStore` | chrome.storage.session（accessToken）+ chrome.storage.local（其余） | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout/silentRefresh；`silentRefresh` 在 rehydrate 时自动触发（refreshToken 存在但 accessToken 缺失），支持指数退避重试（2s→60s），仅在确切 401/403 时清除 token |
 | `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时立即从所有 bucket 删除 |
 | `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并；`permanentlyDeleteCollection` 先推 `isDeleted:2` 再清理本地；`is_deleted===2` 时从 state+IDB 删除 |
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 先推 `isDeleted:2` 再清理本地；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
+| `usePlanStore` | 不持久化（内存） | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 在 create/delete action 中维护本地计数；`clear` 在登出时调用 |
 | `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
 | `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
@@ -290,13 +297,16 @@ SyncEngine
 
 ```
 StoreGate → AuthGate → SyncProvider（render-prop）
-                         ├── new SyncEngine(getCredentials, getLocalSeq, onPullSuccess, ...)
+                         ├── new SyncEngine(getCredentials, getLocalSeq, onPullSuccess, onPushSuccess, onStatusChange)
                          ├── syncStatus: "idle" | "syncing" | "error" | "offline"
+                         ├── syncErrorMessage: string | null  (error 状态下的错误原因，传递给 SyncStatusIndicator tooltip)
                          └── onForceSync → syncEngine.forceSync()
 ```
 
 `SyncProvider` deps `[accessToken, serverUrl]`：token 刷新或 server URL 变更时销毁旧引擎再创建新引擎。  
-cleanup 函数调用 `engine.forceSync()` 后再 `destroySyncEngine()`，确保登出前推送最后一次变更。
+cleanup 函数调用 `engine.forceSync()` 后再 `destroySyncEngine()`，确保登出前推送最后一次变更。  
+`onPushSuccess` 处理 `quota_exceeded` 拒绝：调用 `showQuotaAlert(type)` 展示配额提示，并触发 `fetchPlan()` 刷新用量。  
+`SyncStatusIndicator` 在 error 状态下悬停时通过 Tooltip 展示 `syncErrorMessage`。
 
 ### 冲突解决（LWW）
 

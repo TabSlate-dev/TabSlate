@@ -166,10 +166,11 @@ function AddItemButton({ label, onClick }: { label: string; onClick: () => void 
 // ---------------------------------------------------------------------------
 interface BookmarksSidebarProps extends React.ComponentProps<typeof Sidebar> {
   syncStatus: SyncStatus;
+  syncErrorMessage?: string | null;
   onForceSync: () => void;
 }
 
-export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: BookmarksSidebarProps) {
+export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ...props }: BookmarksSidebarProps) {
   const { pathname } = useLocation();
   const [collectionsOpen, setCollectionsOpen] = React.useState(true);
   const [groupsOpen, setGroupsOpen] = React.useState(true);
@@ -490,7 +491,7 @@ export function BookmarksSidebar({ syncStatus, onForceSync, ...props }: Bookmark
         </SidebarContent>
 
         <SidebarFooter className="px-4 pb-4">
-          <SyncStatusIndicator status={syncStatus} onForceSync={onForceSync} />
+          <SyncStatusIndicator status={syncStatus} errorMessage={syncErrorMessage} onForceSync={onForceSync} />
         </SidebarFooter>
       </Sidebar>
 

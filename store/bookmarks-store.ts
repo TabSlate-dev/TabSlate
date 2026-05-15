@@ -4,6 +4,7 @@ import { generateId } from "@/lib/id";
 import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
+import { usePlanStore } from "@/store/plan-store";
 
 export type { Bookmark };
 
@@ -175,6 +176,12 @@ export const useBookmarksStore = create<BookmarksState>()(
       setFilterType: (filter) => set({ filterType: filter }),
 
       addBookmark: (input) => {
+        const planStore = usePlanStore.getState();
+        planStore.ensureFresh();
+        if (!planStore.checkQuota("bookmark", get().bookmarks.length)) {
+          planStore.showQuotaAlert("bookmark");
+          return { id: "", createdAt: "", isFavorite: false, ...input } as Bookmark;
+        }
         const bookmark: Bookmark = {
           id: generateId(),
           createdAt: new Date().toISOString(),
@@ -184,15 +191,23 @@ export const useBookmarksStore = create<BookmarksState>()(
         set((s) => ({ bookmarks: [bookmark, ...s.bookmarks] }));
         idbPut("bookmarks", bookmark);
         syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
+        planStore.incrementUsage("bookmark");
         return bookmark;
       },
 
       addBookmarks: (newBookmarks) => {
+        const planStore = usePlanStore.getState();
+        planStore.ensureFresh();
+        if (!planStore.checkQuota("bookmark", get().bookmarks.length)) {
+          planStore.showQuotaAlert("bookmark");
+          return;
+        }
         set((s) => ({ bookmarks: [...newBookmarks, ...s.bookmarks] }));
         for (const b of newBookmarks) { idbPut("bookmarks", b); }
         if (newBookmarks.length > 0) {
           syncEngine?.enqueue({ bookmarks: newBookmarks.map(b => toServerBookmark(b)) });
         }
+        planStore.incrementUsage("bookmark", newBookmarks.length);
       },
 
       updateBookmark: (id, patch) => {
@@ -421,6 +436,7 @@ export const useBookmarksStore = create<BookmarksState>()(
           archivedBookmarks: s.archivedBookmarks.filter(b => b.collectionId !== collectionId),
           trashedBookmarks: [...s.trashedBookmarks, ...all],
         }));
+        usePlanStore.getState().decrementUsage("bookmark", all.length);
       },
 
       restoreCollectionBookmarks: (collectionId) => {

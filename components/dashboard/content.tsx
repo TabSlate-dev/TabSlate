@@ -134,6 +134,7 @@ export function BookmarksContent() {
       {/* Notification Toast */}
       {notification && (
         <Alert
+          variant={notification.type === "duplicate" ? "default" : "info"}
           className={cn(
             "fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap",
             notification.type === "duplicate" && "border-amber-500/50 text-amber-600 bg-amber-50/90 dark:bg-amber-950/20"

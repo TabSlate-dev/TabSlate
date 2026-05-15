@@ -93,6 +93,8 @@ export class SSEClient {
       const resp = await api.issueSSEToken(creds.baseUrl, creds.accessToken);
       token = resp.token;
     } catch {
+      this.failures++;
+      this.onStatusChange(false);
       this.scheduleReconnect();
       return;
     }
