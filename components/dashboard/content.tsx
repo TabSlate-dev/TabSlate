@@ -19,16 +19,20 @@ import { useTabsStore } from "@/store/tabs-store";
 import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-dialog";
 import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
 
+function colsFromWidth(width: number) {
+  if (width >= 1280) return 4;
+  if (width >= 1024) return 3;
+  if (width >= 640) return 2;
+  return 1;
+}
+
 function useContainerColumns(ref: React.RefObject<HTMLElement | null>) {
   const [cols, setCols] = React.useState(1);
   React.useEffect(() => {
     if (!ref.current) return;
+    setCols(colsFromWidth(ref.current.getBoundingClientRect().width));
     const observer = new ResizeObserver((entries) => {
-      const width = entries[0].contentRect.width;
-      if (width >= 1280) setCols(4); // xl
-      else if (width >= 1024) setCols(3); // lg
-      else if (width >= 640) setCols(2); // sm
-      else setCols(1);
+      setCols(colsFromWidth(entries[0].contentRect.width));
     });
     observer.observe(ref.current);
     return () => observer.disconnect();
@@ -44,7 +48,7 @@ interface DraggableBookmarkCardProps {
   onAddTags?: (bookmark: BookmarkType) => void;
 }
 
-function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted, onEdit, onAddTags }: DraggableBookmarkCardProps) {
+const DraggableBookmarkCard = React.memo(function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted, onEdit, onAddTags }: DraggableBookmarkCardProps) {
   const dragData: BookmarkDragData = {
     type: "bookmark",
     bookmarkId: bookmark.id,
@@ -75,7 +79,7 @@ function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted, onEd
       )}
     </div>
   );
-}
+});
 
 export function BookmarksContent() {
   const openTabs = useTabsStore(s => s.openTabs);
@@ -113,25 +117,16 @@ export function BookmarksContent() {
   const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, dropZoneProps } =
     useTabDragDrop();
 
-  // Scroll highlighted bookmark into view
   const parentRef = React.useRef<HTMLDivElement>(null);
   const gridCols = useContainerColumns(parentRef);
-
-  React.useEffect(() => {
-    if (!highlightedBookmarkId) { return; }
-    const timer = setTimeout(() => {
-      document
-        .querySelector(`[data-bookmark-id="${highlightedBookmarkId}"]`)
-        ?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [highlightedBookmarkId]);
 
   const workspaceCollectionIds = React.useMemo(
     () => new Set(collections.filter((c) => c.workspaceId === activeWorkspaceId).map((c) => c.id)),
     [collections, activeWorkspaceId]
   );
 
+  // getFilteredBookmarks reads internal store state via get(); the deps below are the
+  // reactive inputs it actually observes — the function reference itself is stable.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const filteredBookmarks = React.useMemo(
     () => getFilteredBookmarks(workspaceCollectionIds),
@@ -156,9 +151,20 @@ export function BookmarksContent() {
   const virtualizer = useVirtualizer({
     count: rowCount + 1,
     getScrollElement: () => parentRef.current,
-    estimateSize: (i) => i === 0 ? 200 : (viewMode === "grid" ? 156 : 80),
+    estimateSize: (i) => {
+      if (i !== 0) return viewMode === "grid" ? 156 : 80;
+      return (selectedCollection === "all" && !hasActiveFilters) ? 500 : 130;
+    },
     overscan: 5,
   });
+
+  React.useEffect(() => {
+    if (!highlightedBookmarkId) { return; }
+    const bookmarkIndex = filteredBookmarks.findIndex(b => b.id === highlightedBookmarkId);
+    if (bookmarkIndex === -1) { return; }
+    const rowIndex = Math.floor(bookmarkIndex / actualCols);
+    virtualizer.scrollToIndex(rowIndex + 1, { align: "center" });
+  }, [highlightedBookmarkId, filteredBookmarks, actualCols, virtualizer]);
 
   return (
     <div ref={parentRef} className="flex-1 w-full overflow-auto relative" {...dropZoneProps}>
@@ -293,12 +299,9 @@ export function BookmarksContent() {
                 left: 0,
                 width: '100%',
                 transform: `translateY(${virtualRow.start}px)`,
+                ...(viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : {}),
               }}
-              className={
-                viewMode === "grid"
-                  ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 px-4 md:px-6 pb-4"
-                  : "flex flex-col gap-2 px-4 md:px-6 pb-4"
-              }
+              className={viewMode === "grid" ? "grid gap-4 px-4 md:px-6 pb-4" : "flex flex-col gap-2 px-4 md:px-6 pb-4"}
             >
               {rowItems.map((bookmark) => (
                 <DraggableBookmarkCard

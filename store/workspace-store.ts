@@ -203,11 +203,20 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       collections.push(...newCols);
     }
 
+    let activeWorkspaceId = activeWsKv?.value ?? "";
+    if (!activeWorkspaceId && workspaces.length > 0) {
+      const first = [...workspaces].sort((a, b) => a.position - b.position)[0];
+      if (first) {
+        activeWorkspaceId = first.id;
+        idbPut("kv", { key: "activeWorkspaceId", value: activeWorkspaceId });
+      }
+    }
+
     set({
       workspaces,
       collections,
       tags,
-      activeWorkspaceId: activeWsKv?.value ?? "",
+      activeWorkspaceId,
       compactGroupTitles: compactKv?.value ?? true,
       localSeq: localSeqKv?.value ?? 0,
       _hydrated: true,
@@ -269,6 +278,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       if (!s.activeWorkspaceId && s.workspaces.length > 0) {
         const first = [...s.workspaces].sort((a, b) => a.position - b.position)[0];
         set({ activeWorkspaceId: first.id });
+        idbPut("kv", { key: "activeWorkspaceId", value: first.id });
       }
       return;
     }
@@ -383,6 +393,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
     // Sync IDB after Zustand state update (fire-and-forget)
     const state = get();
+    idbPut("kv", { key: "activeWorkspaceId", value: state.activeWorkspaceId });
     for (const w of state.workspaces) { idbPut("workspaces", w); }
     for (const c of state.collections) { idbPut("collections", c); }
     for (const t of state.tags) { idbPut("tags", t); }

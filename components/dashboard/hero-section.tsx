@@ -36,7 +36,7 @@ function Clock() {
   }, []);
 
   const formattedTime = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-  const formattedDate = time.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
+  const formattedDate = time.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
 
   return (
     <div className="text-center space-y-2">

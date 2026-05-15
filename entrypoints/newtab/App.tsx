@@ -24,7 +24,7 @@ import { useSettingsStore } from "@/store/settings-store";
 import { usePlanStore, type QuotaResource } from "@/store/plan-store";
 import { QuotaAlert } from "@/components/ui/quota-alert";
 import type { ExtensionMessage } from "@/lib/messages";
-import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine } from "@/lib/sync-engine";
+import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine, releaseSyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
@@ -247,7 +247,13 @@ function SyncProvider({
     engine.start();
 
     return () => {
-      engine.forceSync().catch(() => {}).finally(() => destroySyncEngine());
+      // Capture the engine reference before async work begins.
+      // destroySyncEngine() must NOT be used here — by the time .finally() fires,
+      // the global syncEngine already points to the new engine and would destroy it.
+      // Instead, destroy this specific engine instance directly.
+      void engine.forceSync().catch(() => {});
+      engine.destroy();
+      releaseSyncEngine(engine);
     };
   }, [accessToken, serverUrl]);
 

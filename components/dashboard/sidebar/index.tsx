@@ -47,7 +47,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useBookmarksStore } from "@/store/bookmarks-store";
-import { useShallow } from "zustand/react/shallow";
 import { useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
@@ -186,7 +185,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const selectedTags = useBookmarksStore(s => s.selectedTags);
   const toggleTag = useBookmarksStore(s => s.toggleTag);
   const clearTags = useBookmarksStore(s => s.clearTags);
-  const bookmarkCollectionIds = useBookmarksStore(useShallow(s => s.bookmarks.map(b => b.collectionId)));
+  const bookmarks = useBookmarksStore(s => s.bookmarks);
 
   const allGroups = useGroupsStore(s => s.groups);
   const deleteGroup = useGroupsStore(s => s.deleteGroup);
@@ -221,7 +220,8 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const bookmarkCounts = React.useMemo(() => {
     const wsIds = new Set(workspaceCollections.map((c) => c.id));
     const counts: Record<string, number> = { all: 0 };
-    for (const colId of bookmarkCollectionIds) {
+    for (const b of bookmarks) {
+      const colId = b.collectionId;
       if (wsIds.has(colId) || colId === "") {
         counts.all = (counts.all ?? 0) + 1;
         if (colId !== "") {
@@ -230,7 +230,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
       }
     }
     return counts;
-  }, [bookmarkCollectionIds, workspaceCollections]);
+  }, [bookmarks, workspaceCollections]);
 
   const handleToggleCollections = React.useCallback(() => setCollectionsOpen(v => !v), []);
   const handleToggleGroups = React.useCallback(() => setGroupsOpen(v => !v), []);

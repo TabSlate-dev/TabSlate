@@ -5,6 +5,7 @@ import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { usePlanStore } from "@/store/plan-store";
+import { normalizeFavicon } from "@/lib/bookmark-utils";
 
 export type { Bookmark };
 
@@ -145,7 +146,22 @@ export const useBookmarksStore = create<BookmarksState>()(
           idbGetAll<Bookmark>("archived-bookmarks"),
           idbGetAll<Bookmark>("trashed-bookmarks"),
         ]);
-        set({ bookmarks, archivedBookmarks, trashedBookmarks, _hydrated: true });
+        // One-time migration: data: favicon URLs from chrome.tabs.favIconUrl are large
+        // base64 blobs. Replace with lightweight domain-derived URLs and persist to IDB
+        // so future loads are already clean (no-op for already-normalized bookmarks).
+        const migrate = (store: "bookmarks" | "archived-bookmarks" | "trashed-bookmarks") =>
+          (b: Bookmark): Bookmark => {
+            if (!b.favicon.startsWith("data:")) { return b; }
+            const fixed = { ...b, favicon: normalizeFavicon(b.favicon, b.url) };
+            idbPut(store, fixed);
+            return fixed;
+          };
+        set({
+          bookmarks: bookmarks.map(migrate("bookmarks")),
+          archivedBookmarks: archivedBookmarks.map(migrate("archived-bookmarks")),
+          trashedBookmarks: trashedBookmarks.map(migrate("trashed-bookmarks")),
+          _hydrated: true,
+        });
       },
 
       reset: () => {
@@ -188,6 +204,7 @@ export const useBookmarksStore = create<BookmarksState>()(
           createdAt: new Date().toISOString(),
           isFavorite: false,
           ...input,
+          favicon: normalizeFavicon(input.favicon, input.url),
         };
         set((s) => ({ bookmarks: [bookmark, ...s.bookmarks] }));
         idbPut("bookmarks", bookmark);
@@ -203,45 +220,46 @@ export const useBookmarksStore = create<BookmarksState>()(
           planStore.showQuotaAlert("bookmark");
           return;
         }
-        set((s) => ({ bookmarks: [...newBookmarks, ...s.bookmarks] }));
-        for (const b of newBookmarks) { idbPut("bookmarks", b); }
-        if (newBookmarks.length > 0) {
-          syncEngine?.enqueue({ bookmarks: newBookmarks.map(b => toServerBookmark(b)) });
+        const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
+        set((s) => ({ bookmarks: [...normalized, ...s.bookmarks] }));
+        for (const b of normalized) { idbPut("bookmarks", b); }
+        if (normalized.length > 0) {
+          syncEngine?.enqueue({ bookmarks: normalized.map(b => toServerBookmark(b)) });
         }
-        planStore.incrementUsage("bookmark", newBookmarks.length);
+        planStore.incrementUsage("bookmark", normalized.length);
       },
 
       _bulkAddBookmarks: (newBookmarks) => {
         if (newBookmarks.length === 0) { return; }
-        set((s) => ({ bookmarks: [...newBookmarks, ...s.bookmarks] }));
-        for (const b of newBookmarks) { idbPut("bookmarks", b); }
-        syncEngine?.enqueue({ bookmarks: newBookmarks.map(b => toServerBookmark(b)) });
+        const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
+        set((s) => ({ bookmarks: [...normalized, ...s.bookmarks] }));
+        for (const b of normalized) { idbPut("bookmarks", b); }
+        syncEngine?.enqueue({ bookmarks: normalized.map(b => toServerBookmark(b)) });
       },
 
       updateBookmark: (id, patch) => {
-        set((s) => ({
-          bookmarks: s.bookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)),
-          archivedBookmarks: s.archivedBookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)),
-          trashedBookmarks: s.trashedBookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+        const s = get();
+        const inActive = s.bookmarks.some((b) => b.id === id);
+        const inArchived = !inActive && s.archivedBookmarks.some((b) => b.id === id);
+        const inTrashed = !inActive && !inArchived && s.trashedBookmarks.some((b) => b.id === id);
+        if (!inActive && !inArchived && !inTrashed) { return; }
+
+        set((state) => ({
+          ...(inActive && { bookmarks: state.bookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)) }),
+          ...(inArchived && { archivedBookmarks: state.archivedBookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)) }),
+          ...(inTrashed && { trashedBookmarks: state.trashedBookmarks.map((b) => (b.id === id ? { ...b, ...patch } : b)) }),
         }));
 
-        const s = get();
-        const b = s.bookmarks.find((x) => x.id === id);
-        if (b) {
-          idbPut("bookmarks", b);
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark(b)] });
-          return;
-        }
-        const ab = s.archivedBookmarks.find((x) => x.id === id);
-        if (ab) {
-          idbPut("archived-bookmarks", ab);
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark(ab, { isArchived: true })] });
-          return;
-        }
-        const tb = s.trashedBookmarks.find((x) => x.id === id);
-        if (tb) {
-          idbPut("trashed-bookmarks", tb);
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark(tb, { isTrashed: 1 })] });
+        const after = get();
+        if (inActive) {
+          const b = after.bookmarks.find((x) => x.id === id);
+          if (b) { idbPut("bookmarks", b); syncEngine?.enqueue({ bookmarks: [toServerBookmark(b)] }); }
+        } else if (inArchived) {
+          const ab = after.archivedBookmarks.find((x) => x.id === id);
+          if (ab) { idbPut("archived-bookmarks", ab); syncEngine?.enqueue({ bookmarks: [toServerBookmark(ab, { isArchived: true })] }); }
+        } else {
+          const tb = after.trashedBookmarks.find((x) => x.id === id);
+          if (tb) { idbPut("trashed-bookmarks", tb); syncEngine?.enqueue({ bookmarks: [toServerBookmark(tb, { isTrashed: 1 })] }); }
         }
       },
 
@@ -333,86 +351,87 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       mergeFromServer: (resp) => {
         if (resp.entities.bookmarks.length === 0) return;
-        
+
         const touchedIds = new Set(resp.entities.bookmarks.map((b) => b.id));
-        
-        // Fire-and-forget IDB deletes for state=2 (permanent deletion) records
+
+        // IDB cleanup for permanently deleted and soft-deleted records (fire-and-forget)
         for (const sb of resp.entities.bookmarks) {
-          if (sb.is_trashed === 2) {
+          if (sb.is_trashed === 2 || sb.deleted_at) {
             idbDelete("bookmarks", sb.id);
             idbDelete("archived-bookmarks", sb.id);
             idbDelete("trashed-bookmarks", sb.id);
           }
         }
+
         set((state) => {
-          let bookmarks = [...state.bookmarks];
-          let archivedBookmarks = [...state.archivedBookmarks];
-          let trashedBookmarks = [...state.trashedBookmarks];
+          // Build a Map of existing touched items for O(1) lookup (avoids O(n×m) find per item).
+          const existingById = new Map<string, Bookmark>();
+          for (const b of state.bookmarks) {
+            if (touchedIds.has(b.id)) existingById.set(b.id, b);
+          }
+          for (const b of state.archivedBookmarks) {
+            if (touchedIds.has(b.id)) existingById.set(b.id, b);
+          }
+          for (const b of state.trashedBookmarks) {
+            if (touchedIds.has(b.id)) existingById.set(b.id, b);
+          }
+
+          // Classify incoming items into destination buckets
+          const toActive: Bookmark[] = [];
+          const toArchived: Bookmark[] = [];
+          const toTrashed: Bookmark[] = [];
 
           for (const sb of resp.entities.bookmarks) {
-            if (sb.is_trashed === 2) {
-              // Permanently deleted on server — remove from all local state, never store locally
-              bookmarks = bookmarks.filter(b => b.id !== sb.id);
-              archivedBookmarks = archivedBookmarks.filter(b => b.id !== sb.id);
-              trashedBookmarks = trashedBookmarks.filter(b => b.id !== sb.id);
-              continue;
-            }
-            if (sb.deleted_at) {
-              bookmarks = bookmarks.filter(b => b.id !== sb.id);
-              archivedBookmarks = archivedBookmarks.filter(b => b.id !== sb.id);
-              trashedBookmarks = trashedBookmarks.filter(b => b.id !== sb.id);
+            if (sb.is_trashed === 2 || sb.deleted_at) continue;
+            const existing = existingById.get(sb.id);
+            const merged: Bookmark = {
+              id: sb.id,
+              title: sb.title,
+              url: sb.url,
+              description: sb.description ?? existing?.description ?? "",
+              favicon: sb.favicon_url ?? existing?.favicon ?? "",
+              collectionId: sb.collection_id ?? existing?.collectionId ?? "",
+              tags: sb.tag_ids ?? existing?.tags ?? [],
+              createdAt: existing?.createdAt ?? String(sb.created_at),
+              isFavorite: sb.is_favorite,
+              seq: sb.seq,
+            };
+            if (sb.is_trashed) {
+              toTrashed.push(merged);
+            } else if (sb.is_archived) {
+              toArchived.push(merged);
             } else {
-              const existing =
-                bookmarks.find(b => b.id === sb.id) ||
-                archivedBookmarks.find(b => b.id === sb.id) ||
-                trashedBookmarks.find(b => b.id === sb.id);
-
-              bookmarks = bookmarks.filter(b => b.id !== sb.id);
-              archivedBookmarks = archivedBookmarks.filter(b => b.id !== sb.id);
-              trashedBookmarks = trashedBookmarks.filter(b => b.id !== sb.id);
-
-              const merged: Bookmark = {
-                id: sb.id,
-                title: sb.title,
-                url: sb.url,
-                description: sb.description ?? existing?.description ?? "",
-                favicon: sb.favicon_url ?? existing?.favicon ?? "",
-                collectionId: sb.collection_id ?? existing?.collectionId ?? "",
-                tags: sb.tag_ids ?? existing?.tags ?? [],
-                createdAt: existing?.createdAt ?? String(sb.created_at),
-                isFavorite: sb.is_favorite,
-                seq: sb.seq,
-              };
-
-              if (sb.is_trashed) {
-                trashedBookmarks.push(merged);
-              } else if (sb.is_archived) {
-                archivedBookmarks.push(merged);
-              } else {
-                bookmarks.push(merged);
-              }
+              toActive.push(merged);
             }
           }
 
-          return { bookmarks, archivedBookmarks, trashedBookmarks };
+          // Single filter pass per bucket (O(n) total) then append new items
+          return {
+            bookmarks: [
+              ...state.bookmarks.filter((b) => !touchedIds.has(b.id)),
+              ...toActive,
+            ],
+            archivedBookmarks: [
+              ...state.archivedBookmarks.filter((b) => !touchedIds.has(b.id)),
+              ...toArchived,
+            ],
+            trashedBookmarks: [
+              ...state.trashedBookmarks.filter((b) => !touchedIds.has(b.id)),
+              ...toTrashed,
+            ],
+          };
         });
-        // Sync IDB after Zustand state update (fire-and-forget)
-        const { bookmarks: currentBookmarks, archivedBookmarks: currentArchived, trashedBookmarks: currentTrashed } = get();
-        for (const b of currentBookmarks) {
+
+        // IDB writes for updated items (fire-and-forget)
+        const { bookmarks: cur, archivedBookmarks: curArchived, trashedBookmarks: curTrashed } = get();
+        for (const b of cur) {
           if (touchedIds.has(b.id)) idbPut("bookmarks", b);
         }
-        for (const b of currentArchived) {
+        for (const b of curArchived) {
           if (touchedIds.has(b.id)) idbPut("archived-bookmarks", b);
         }
-        for (const b of currentTrashed) {
+        for (const b of curTrashed) {
           if (touchedIds.has(b.id)) idbPut("trashed-bookmarks", b);
-        }
-        for (const sb of resp.entities.bookmarks) {
-          if (sb.deleted_at) {
-            idbDelete("bookmarks", sb.id);
-            idbDelete("archived-bookmarks", sb.id);
-            idbDelete("trashed-bookmarks", sb.id);
-          }
         }
       },
 

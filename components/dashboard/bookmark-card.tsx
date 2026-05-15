@@ -59,16 +59,16 @@ export const BookmarkCard = React.memo(function BookmarkCard({
   const [copied, setCopied] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
 
-  const handleCopyUrl = () => {
+  const handleCopyUrl = React.useCallback(() => {
     navigator.clipboard.writeText(bookmark.url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  };
-  const handleSmartOpen = () => smartOpenUrl(bookmark.url);
-  const handleNewTabOpen = () => window.open(bookmark.url, "_blank");
+  }, [bookmark.url]);
+  const handleSmartOpen = React.useCallback(() => smartOpenUrl(bookmark.url), [bookmark.url]);
+  const handleNewTabOpen = React.useCallback(() => window.open(bookmark.url, "_blank"), [bookmark.url]);
 
   // Shared dropdown content for both variants
-  const actionsMenu = (
+  const actionsMenu = React.useMemo(() => (
     <DropdownMenuContent align="end">
       <DropdownMenuItem onClick={handleSmartOpen}>
         <ExternalLink className="size-4 mr-2" />
@@ -99,7 +99,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
         Delete
       </DropdownMenuItem>
     </DropdownMenuContent>
-  );
+  ), [handleSmartOpen, handleNewTabOpen, onEdit, onAddTags, archiveBookmark, trashBookmark, bookmark]);
 
   // ── List variant ────────────────────────────────────────────────────────
   if (variant === "list") {

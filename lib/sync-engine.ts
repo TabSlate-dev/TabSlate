@@ -180,3 +180,7 @@ export function destroySyncEngine() {
   syncEngine?.destroy();
   syncEngine = null;
 }
+/** Clears the global syncEngine ref only if it still points to `engine`. */
+export function releaseSyncEngine(engine: SyncEngine) {
+  if (syncEngine === engine) { syncEngine = null; }
+}

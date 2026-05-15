@@ -103,7 +103,7 @@ TabSlate/
 │   ├── sync-recovery.ts           # 401 时保存同步快照的内存缓冲区；SyncQueue 构造时自动消费
 │   ├── chrome-storage-adapter.ts  # 通用 Zustand persist 的 chrome.storage 适配器（非 auth 用）
 │   ├── id.ts               # generateId()
-│   ├── bookmark-utils.ts   # findDuplicateBookmark()
+│   ├── bookmark-utils.ts   # normalizeFavicon()、findDuplicateBookmark()、normalizeUrl()、getNormalizedUrlSet()
 │   └── chrome/
 │       ├── tabs.ts         # Chrome tabs API 封装
 │       └── tab-groups.ts   # Chrome tabGroups API 封装 + 颜色常量
@@ -304,7 +304,7 @@ StoreGate → AuthGate → SyncProvider（render-prop）
 ```
 
 `SyncProvider` deps `[accessToken, serverUrl]`：token 刷新或 server URL 变更时销毁旧引擎再创建新引擎。  
-cleanup 函数调用 `engine.forceSync()` 后再 `destroySyncEngine()`，确保登出前推送最后一次变更。  
+cleanup 函数依次调用 `engine.forceSync()`（fire-and-forget）、`engine.destroy()`、`releaseSyncEngine(engine)` 确保登出前推送最后一次变更，且不会误销毁已重建的新引擎。  
 `onPushSuccess` 处理 `quota_exceeded` 拒绝：调用 `showQuotaAlert(type)` 展示配额提示，并触发 `fetchPlan()` 刷新用量。  
 `SyncStatusIndicator` 在 error 状态下悬停时通过 Tooltip 展示 `syncErrorMessage`。
 

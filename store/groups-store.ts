@@ -6,6 +6,7 @@ import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { usePlanStore } from "@/store/plan-store";
+import { normalizeFavicon } from "@/lib/bookmark-utils";
 
 export interface GroupTab {
   id: string;
@@ -95,7 +96,13 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       }
       return true;
     });
-    set({ groups, groupTabs, _hydrated: true });
+    const migratedTabs = groupTabs.map((t): GroupTab => {
+      if (!t.favicon.startsWith("data:")) { return t; }
+      const fixed = { ...t, favicon: normalizeFavicon(t.favicon, t.url) };
+      idbPut("group-tabs", fixed);
+      return fixed;
+    });
+    set({ groups, groupTabs: migratedTabs, _hydrated: true });
   },
 
   reset: () => {
