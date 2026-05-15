@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ImportDialog } from "@/components/dashboard/import-dialog";
 import { useSettingsStore, SearchEngine } from "@/store/settings-store";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -111,6 +112,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     updateSearchEngines(searchEngines.filter((e) => e.id !== id));
   };
 
+  const [importDialogOpen, setImportDialogOpen] = React.useState(false);
   const [showForm, setShowForm] = React.useState(false);
   const [newName, setNewName] = React.useState("");
   const [newUrl, setNewUrl] = React.useState("");
@@ -178,6 +180,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   };
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md max-h-[85vh] flex flex-col">
         <DialogHeader>
@@ -274,6 +277,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 </Button>
               )}
             </div>
+
+            <div className="space-y-2 pt-2">
+              <h3 className="text-sm font-medium">Data Import</h3>
+              <p className="text-xs text-muted-foreground">
+                Import your saved tabs from other extensions.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)}>
+                Import Bookmarks
+              </Button>
+            </div>
           </div>
         </div>
         <div className="pt-4 border-t mt-auto flex justify-end">
@@ -281,5 +294,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
       </DialogContent>
     </Dialog>
+    <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+    </>
   );
 }

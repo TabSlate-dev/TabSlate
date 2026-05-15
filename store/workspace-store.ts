@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Workspace, Collection, Tag } from "@/lib/types";
+import type { ImportPlan } from "@/lib/import-types";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
@@ -149,6 +150,7 @@ interface WorkspaceState {
   createTag: (name: string, color: string) => Tag;
   updateTag: (id: string, patch: Partial<Pick<Tag, "name" | "color">>) => void;
   deleteTag: (id: string) => void;
+  importFromPlan: (plan: ImportPlan) => boolean;
 
   // Computed
   getWorkspaceCollections: (workspaceId?: string) => Collection[];
@@ -595,6 +597,56 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     idbDelete("tags", id);
     set((s) => ({ tags: s.tags.filter((t) => t.id !== id) }));
     usePlanStore.getState().decrementUsage("tag");
+  },
+
+  importFromPlan: (plan) => {
+    const planStore = usePlanStore.getState();
+    planStore.ensureFresh();
+
+    const bookmarkCount = useBookmarksStore.getState().bookmarks.length;
+    const activeCollectionCount = get().collections.filter(
+      (c) => !c.deletedAt && !c.archivedAt,
+    ).length;
+
+    if (
+      plan.bookmarks.length > 0 &&
+      !planStore.checkQuota("bookmark", bookmarkCount + plan.bookmarks.length - 1)
+    ) {
+      planStore.showQuotaAlert("bookmark");
+      return false;
+    }
+
+    if (
+      plan.collections.length > 0 &&
+      !planStore.checkQuota("collection", activeCollectionCount + plan.collections.length - 1)
+    ) {
+      planStore.showQuotaAlert("collection");
+      return false;
+    }
+
+    const newTags: Tag[] = plan.tags.map((t) => ({ ...t, seq: 0 as const }));
+    if (newTags.length > 0) {
+      set((s) => ({ tags: [...s.tags, ...newTags] }));
+      for (const tag of newTags) { idbPut("tags", tag); }
+      syncEngine?.enqueue({ tags: newTags.map(toServerTag) });
+      planStore.incrementUsage("tag", newTags.length);
+    }
+
+    const newCollections: Collection[] = plan.collections.map((c) => ({ ...c, seq: 0 as const }));
+    if (newCollections.length > 0) {
+      set((s) => ({ collections: [...s.collections, ...newCollections] }));
+      for (const collection of newCollections) { idbPut("collections", collection); }
+      syncEngine?.enqueue({ collections: newCollections.map((c) => toServerCollection(c)) });
+      planStore.incrementUsage("collection", newCollections.length);
+    }
+
+    const newBookmarks = plan.bookmarks.map((b) => ({ ...b, seq: 0 as const }));
+    if (newBookmarks.length > 0) {
+      useBookmarksStore.getState()._bulkAddBookmarks(newBookmarks);
+      planStore.incrementUsage("bookmark", newBookmarks.length);
+    }
+
+    return true;
   },
 
   sweepUnsynced: () => {

@@ -98,6 +98,7 @@ interface BookmarksState {
 
   addBookmark: (input: Omit<Bookmark, "id" | "createdAt" | "isFavorite">) => Bookmark;
   addBookmarks: (bookmarks: Bookmark[]) => void;
+  _bulkAddBookmarks: (bookmarks: Bookmark[]) => void;
   updateBookmark: (id: string, patch: Partial<Omit<Bookmark, "id" | "createdAt">>) => void;
   toggleFavorite: (bookmarkId: string) => void;
   archiveBookmark: (bookmarkId: string) => void;
@@ -208,6 +209,13 @@ export const useBookmarksStore = create<BookmarksState>()(
           syncEngine?.enqueue({ bookmarks: newBookmarks.map(b => toServerBookmark(b)) });
         }
         planStore.incrementUsage("bookmark", newBookmarks.length);
+      },
+
+      _bulkAddBookmarks: (newBookmarks) => {
+        if (newBookmarks.length === 0) { return; }
+        set((s) => ({ bookmarks: [...newBookmarks, ...s.bookmarks] }));
+        for (const b of newBookmarks) { idbPut("bookmarks", b); }
+        syncEngine?.enqueue({ bookmarks: newBookmarks.map(b => toServerBookmark(b)) });
       },
 
       updateBookmark: (id, patch) => {
