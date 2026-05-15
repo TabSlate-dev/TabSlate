@@ -37,6 +37,7 @@ export function UserProfile() {
   const renewsLabel =
     subscription &&
     subscription.plan !== "free" &&
+    subscription.status === "ACTIVE" &&
     subscription.expires_at != null
       ? `Renews ${formatRenewsDate(subscription.expires_at)}`
       : null;
