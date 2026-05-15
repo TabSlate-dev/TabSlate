@@ -1,6 +1,7 @@
 import * as React from "react";
 import { LogOut, ShieldCheck, ChevronRight } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
+import { usePlanStore } from "@/store/plan-store";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -12,9 +13,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+function formatRenewsDate(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function UserProfile() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const subscription = usePlanStore((s) => s.subscription);
 
   if (!user) return null;
 
@@ -23,6 +33,13 @@ export function UserProfile() {
     .map((n) => n[0])
     .join("")
     .toUpperCase();
+
+  const renewsLabel =
+    subscription &&
+    subscription.plan !== "free" &&
+    subscription.expires_at != null
+      ? `Renews ${formatRenewsDate(subscription.expires_at)}`
+      : null;
 
   return (
     <div className="px-3 py-4">
@@ -35,7 +52,6 @@ export function UserProfile() {
                 "hover:border-primary/40 hover:shadow-xl hover:shadow-primary/5 text-left backdrop-blur-md",
               )}
             >
-              {/* Animated background glow */}
               <div className="absolute -right-4 -top-4 size-24 rounded-full bg-primary/10 blur-2xl transition-all duration-700 group-hover:bg-primary/20 group-hover:scale-125" />
               <div className="absolute -left-4 -bottom-4 size-16 rounded-full bg-blue-500/5 blur-xl transition-all duration-700 group-hover:bg-blue-500/10 group-hover:scale-110" />
 
@@ -59,6 +75,11 @@ export function UserProfile() {
                   <span className="text-[11px] text-muted-foreground truncate mt-1 leading-none">
                     {user.email}
                   </span>
+                  {renewsLabel && (
+                    <span className="text-[11px] text-muted-foreground/70 truncate mt-0.5 leading-none">
+                      {renewsLabel}
+                    </span>
+                  )}
                 </div>
 
                 <ChevronRight className="size-4 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground/60" />
