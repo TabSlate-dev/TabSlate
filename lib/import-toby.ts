@@ -163,6 +163,7 @@ export function buildTobyImportPlan(
   existingBookmarkUrls: Set<string>,
   existingTags: Pick<Tag, "id" | "name">[],
   skipDuplicates: boolean,
+  startPosition = 0,
 ): ImportPlan {
   if (!toby) {
     return {
@@ -191,7 +192,7 @@ export function buildTobyImportPlan(
   const seenUrls = new Set(existingBookmarkUrls);
   const createdAt = new Date().toISOString();
   let duplicatesSkipped = 0;
-  let position = 0;
+  let position = startPosition;
 
   for (const list of toby.lists) {
     const cards = list.cards ?? [];

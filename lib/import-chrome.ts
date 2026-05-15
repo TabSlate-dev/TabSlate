@@ -184,19 +184,19 @@ export async function validateChromeFile(file: File): Promise<ValidationResult> 
 }
 
 export function buildChromeImportPlan(
-  html: string,
+  parsed: ParsedCollection[],
   workspaceId: string,
   existingBookmarkUrls: Set<string>,
   skipDuplicates: boolean,
+  startPosition = 0,
 ): ImportPlan {
-  const parsed = parseChromeHTML(html);
   const collections: Omit<Collection, "seq">[] = [];
   const bookmarks: Omit<Bookmark, "seq">[] = [];
   const rejectedUrls: string[] = [];
   const createdAt = new Date().toISOString();
   const seenUrls = new Set(existingBookmarkUrls);
   let duplicatesSkipped = 0;
-  let position = 0;
+  let position = startPosition;
 
   for (const parsedCollection of parsed) {
     if (parsedCollection.items.length === 0) {

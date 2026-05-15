@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
-import { buildChromeImportPlan, validateChromeFile } from "@/lib/import-chrome";
+import { buildChromeImportPlan, parseChromeHTML, validateChromeFile } from "@/lib/import-chrome";
 import { buildTobyImportPlan, parseTobyJSON, validateTobyFile } from "@/lib/import-toby";
 import type { ImportPlan, ValidationResult } from "@/lib/import-types";
 import { cn } from "@/lib/utils";
@@ -96,6 +96,17 @@ function getStepDescription(step: ImportStep, source: ImportSource | null): stri
   }
 
   return "Review the import outcome and any skipped entries.";
+}
+
+function getDialogTitle(
+  step: ImportStep,
+  source: ImportSource | null,
+  resultStatus: "success" | "error" | null,
+): string {
+  if (step === 0) { return "Import Bookmarks"; }
+  if (step === 1) { return source ? `Import from ${SOURCE_LABEL[source]}` : "Import Bookmarks"; }
+  if (step === 2) { return "Configure Import"; }
+  return resultStatus === "error" ? "Import Failed" : "Import Complete";
 }
 
 function SourceCard({
@@ -235,6 +246,11 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     }
   }, [activeWorkspaceId, open, resetState]);
 
+  const startPosition = React.useMemo(() => {
+    const wsCollections = activeCollections.filter((c) => c.workspaceId === workspaceId);
+    return wsCollections.reduce((max, c) => Math.max(max, c.position), -1) + 1;
+  }, [activeCollections, workspaceId]);
+
   const importPlan = React.useMemo(() => {
     if (!source || !workspaceId || !validation?.valid || rawContent.length === 0) {
       return EMPTY_IMPORT_PLAN;
@@ -248,19 +264,27 @@ export function ImportDialog({ open, onOpenChange }: Props) {
           existingBookmarkUrls,
           existingTagsForPlan,
           skipDuplicates,
+          startPosition,
         );
       } catch {
         return EMPTY_IMPORT_PLAN;
       }
     }
 
-    return buildChromeImportPlan(rawContent, workspaceId, existingBookmarkUrls, skipDuplicates);
+    return buildChromeImportPlan(
+      parseChromeHTML(rawContent),
+      workspaceId,
+      existingBookmarkUrls,
+      skipDuplicates,
+      startPosition,
+    );
   }, [
     existingBookmarkUrls,
     existingTagsForPlan,
     rawContent,
     skipDuplicates,
     source,
+    startPosition,
     validation?.valid,
     workspaceId,
   ]);
@@ -320,6 +344,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
   const canProceedFromUpload = validation?.valid === true && rawContent.length > 0;
   const canImport = !isImporting && importBlockedMessage === null;
   const stepDescription = getStepDescription(step, source);
+  const dialogTitle = getDialogTitle(step, source, result?.status ?? null);
 
   const handleSourceSelect = React.useCallback((nextSource: ImportSource) => {
     setSource(nextSource);
@@ -496,7 +521,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Import Bookmarks</DialogTitle>
+          <DialogTitle>{dialogTitle}</DialogTitle>
           <DialogDescription>
             <span className="mr-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Step {step + 1} of 4
