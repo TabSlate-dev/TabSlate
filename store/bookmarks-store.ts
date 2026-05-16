@@ -539,10 +539,27 @@ export const useBookmarksStore = create<BookmarksState>()(
         if (resp.entities.bookmarks.length === 0) { return; }
 
         const touchedIds = new Set(resp.entities.bookmarks.map((bookmark) => bookmark.id));
+        const touchedIdArray = Array.from(touchedIds);
         const state = get();
+
+        // For unloaded stores we only need the specific bookmarks referenced in
+        // this sync delta — not the entire store. Full idbGetAll would load all
+        // archived/trashed records into memory on every pull, causing repeated
+        // memory spikes at startup that defeat the lazy-load optimization.
+        const readTouched = async (store: BookmarkStoreName): Promise<Bookmark[]> => {
+          const results = await Promise.all(touchedIdArray.map(id => idbGet<Bookmark>(store, id)));
+          return results
+            .filter((b): b is Bookmark => !!b)
+            .map(b => migrateBookmarkForStore(store, b));
+        };
+
         const [archivedSource, trashedSource] = await Promise.all([
-          state._archivedLoaded ? state.archivedBookmarks : readBookmarkStore("archived-bookmarks"),
-          state._trashedLoaded ? state.trashedBookmarks : readBookmarkStore("trashed-bookmarks"),
+          state._archivedLoaded
+            ? state.archivedBookmarks.filter(b => touchedIds.has(b.id))
+            : readTouched("archived-bookmarks"),
+          state._trashedLoaded
+            ? state.trashedBookmarks.filter(b => touchedIds.has(b.id))
+            : readTouched("trashed-bookmarks"),
         ]);
 
         const existingById = new Map<string, Bookmark>();
@@ -666,19 +683,26 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       sweepUnsynced: () => {
         void (async () => {
-          const state = get();
-          const [archivedBookmarks, trashedBookmarks] = await Promise.all([
-            state._archivedLoaded ? state.archivedBookmarks : readBookmarkStore("archived-bookmarks"),
-            state._trashedLoaded ? state.trashedBookmarks : readBookmarkStore("trashed-bookmarks"),
+          const s = get();
+          // Load unloaded buckets via the canonical loaders so the data lands in
+          // state (with favicon migration and trash expiry applied). After this,
+          // mergeFromServer and route views use state instead of re-reading IDB.
+          await Promise.all([
+            s._archivedLoaded ? Promise.resolve() : get().loadArchivedBookmarks(),
+            s._trashedLoaded  ? Promise.resolve() : get().loadTrashedBookmarks(),
           ]);
+
+          const current = get();
           const unsynced = [
-            ...state.bookmarks.filter((bookmark) => bookmark.seq === 0).map((bookmark) => toServerBookmark(bookmark)),
-            ...archivedBookmarks
-              .filter((bookmark) => bookmark.seq === 0)
-              .map((bookmark) => toServerBookmark(bookmark, { isArchived: true })),
-            ...trashedBookmarks
-              .filter((bookmark) => bookmark.seq === 0)
-              .map((bookmark) => toServerBookmark(bookmark, { isTrashed: 1 })),
+            ...current.bookmarks
+              .filter(b => b.seq === 0)
+              .map(b => toServerBookmark(b)),
+            ...current.archivedBookmarks
+              .filter(b => b.seq === 0)
+              .map(b => toServerBookmark(b, { isArchived: true })),
+            ...current.trashedBookmarks
+              .filter(b => b.seq === 0)
+              .map(b => toServerBookmark(b, { isTrashed: 1 })),
           ];
           if (unsynced.length > 0) {
             syncEngine?.enqueue({ bookmarks: unsynced });
