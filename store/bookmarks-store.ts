@@ -361,6 +361,7 @@ export const useBookmarksStore = create<BookmarksState>()(
         set((state) => {
           // Build a Map of existing touched items for O(1) lookup (avoids O(n×m) find per item).
           const existingById = new Map<string, Bookmark>();
+          const pendingLocalTrashIds = new Set<string>();
           for (const b of state.bookmarks) {
             if (touchedIds.has(b.id)) existingById.set(b.id, b);
           }
@@ -368,7 +369,12 @@ export const useBookmarksStore = create<BookmarksState>()(
             if (touchedIds.has(b.id)) existingById.set(b.id, b);
           }
           for (const b of state.trashedBookmarks) {
-            if (touchedIds.has(b.id)) existingById.set(b.id, b);
+            if (touchedIds.has(b.id)) {
+              existingById.set(b.id, b);
+              if (b.seq === 0) {
+                pendingLocalTrashIds.add(b.id);
+              }
+            }
           }
 
           // Classify incoming items into destination buckets
@@ -379,7 +385,8 @@ export const useBookmarksStore = create<BookmarksState>()(
           for (const sb of resp.entities.bookmarks) {
             if (sb.is_trashed === 2 || sb.deleted_at) continue;
             const existing = existingById.get(sb.id);
-            const localDeletedAt = sb.is_trashed
+            const keepLocallyTrashed = pendingLocalTrashIds.has(sb.id) && !sb.is_trashed;
+            const localDeletedAt = sb.is_trashed || keepLocallyTrashed
               ? existing?.deletedAt ?? Date.now()
               : undefined;
             const merged: Bookmark = {
@@ -392,10 +399,10 @@ export const useBookmarksStore = create<BookmarksState>()(
               tags: sb.tag_ids ?? existing?.tags ?? [],
               createdAt: existing?.createdAt ?? String(sb.created_at),
               isFavorite: sb.is_favorite,
-              seq: sb.seq,
+              seq: keepLocallyTrashed ? (existing?.seq ?? 0) : sb.seq,
               deletedAt: localDeletedAt,
             };
-            if (sb.is_trashed) {
+            if (sb.is_trashed || keepLocallyTrashed) {
               toTrashed.push(merged);
             } else if (sb.is_archived) {
               toArchived.push(merged);
