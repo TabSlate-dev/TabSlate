@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from "zustand/middleware";
 import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
 import { api, type PlanLimits, type PlanUsage } from "@/lib/api";
 import { useAuthStore } from "@/store/auth-store";
+import { useBookmarksStore } from "@/store/bookmarks-store";
 
 export type QuotaResource = "bookmark" | "collection" | "tag" | "workspace" | "saved_group";
 
@@ -72,6 +73,11 @@ export const usePlanStore = create<PlanState>()(
             fetchedAt: Date.now(),
             isFetching: false,
           });
+          // Prune expired trash entries now that we have an authoritative grace period.
+          const bmStore = useBookmarksStore.getState();
+          if (bmStore._trashedLoaded && data.limits.trash_grace_days > 0) {
+            bmStore.pruneExpiredTrash(data.limits.trash_grace_days);
+          }
         } catch {
           set({ isFetching: false });
         }

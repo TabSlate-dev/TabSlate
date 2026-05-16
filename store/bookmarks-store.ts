@@ -208,14 +208,35 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       loadTrashedBookmarks: async () => {
         if (get()._trashedLoaded) { return; }
-        const migrated = await readBookmarkStore("trashed-bookmarks");
-        // Grace-period expiry runs here (see Task 8 for the body).
-        // For now just set state — Task 8 adds pruning.
-        set({ trashedBookmarks: migrated, _trashedLoaded: true });
+        const all = await readBookmarkStore("trashed-bookmarks");
+
+        const graceDays = usePlanStore.getState().limits?.trash_grace_days ?? 30;
+        const cutoff = Date.now() - graceDays * 86_400_000;
+        const fresh = all.filter(b => !b.deletedAt || b.deletedAt > cutoff);
+        const expired = all.filter(b => !!b.deletedAt && b.deletedAt <= cutoff);
+
+        for (const b of expired) {
+          void idbDelete("trashed-bookmarks", b.id);
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark(b, { isTrashed: 2 })] });
+        }
+
+        set({ trashedBookmarks: fresh, _trashedLoaded: true });
       },
 
-      pruneExpiredTrash: (_graceDays: number) => {
-        // Body filled in Task 8.
+      pruneExpiredTrash: (graceDays: number) => {
+        const cutoff = Date.now() - graceDays * 86_400_000;
+        const { trashedBookmarks } = get();
+        const expired = trashedBookmarks.filter(b => !!b.deletedAt && b.deletedAt <= cutoff);
+        if (expired.length === 0) { return; }
+        for (const b of expired) {
+          void idbDelete("trashed-bookmarks", b.id);
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark(b, { isTrashed: 2 })] });
+        }
+        set(s => ({
+          trashedBookmarks: s.trashedBookmarks.filter(
+            b => !b.deletedAt || b.deletedAt > cutoff,
+          ),
+        }));
       },
 
       reset: () => {
