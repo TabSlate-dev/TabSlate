@@ -51,6 +51,16 @@ function toServerGroup(g: SavedGroup, tabs: GroupTab[], opts?: { isDeleted?: num
   };
 }
 
+function buildTabsByGroup(groupTabs: GroupTab[]): Map<string, GroupTab[]> {
+  const map = new Map<string, GroupTab[]>();
+  for (const t of groupTabs) {
+    const bucket = map.get(t.groupId) ?? [];
+    bucket.push(t);
+    map.set(t.groupId, bucket);
+  }
+  return map;
+}
+
 interface GroupsState {
   groups: SavedGroup[];
   groupTabs: GroupTab[];
@@ -412,16 +422,18 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     const { groups, groupTabs } = get();
     const unsynced = groups.filter(g => g.seq === 0);
     if (unsynced.length === 0) { return; }
+    const tabsByGroup = buildTabsByGroup(groupTabs);
     syncEngine?.enqueue({
-      groups: unsynced.map(g => toServerGroup(g, groupTabs.filter(t => t.groupId === g.id))),
+      groups: unsynced.map(g => toServerGroup(g, tabsByGroup.get(g.id) ?? [])),
     });
   },
 
   enqueueAllToSync: () => {
     const { groups, groupTabs } = get();
     if (groups.length === 0) { return; }
+    const tabsByGroup = buildTabsByGroup(groupTabs);
     syncEngine?.enqueue({
-      groups: groups.map(g => toServerGroup(g, groupTabs.filter(t => t.groupId === g.id))),
+      groups: groups.map(g => toServerGroup(g, tabsByGroup.get(g.id) ?? [])),
     });
   },
 }));
