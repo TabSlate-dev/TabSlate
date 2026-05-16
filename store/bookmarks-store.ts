@@ -215,22 +215,27 @@ export const useBookmarksStore = create<BookmarksState>()(
         const fresh = all.filter(b => !b.deletedAt || b.deletedAt > cutoff);
         const expired = all.filter(b => !!b.deletedAt && b.deletedAt <= cutoff);
 
-        for (const b of expired) {
-          void idbDelete("trashed-bookmarks", b.id);
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark(b, { isTrashed: 2 })] });
+        // Only purge if the sync engine is live — deleting from IDB without
+        // enqueuing the isTrashed:2 tombstone would let the server push items back.
+        if (syncEngine && expired.length > 0) {
+          for (const b of expired) {
+            void idbDelete("trashed-bookmarks", b.id);
+            syncEngine.enqueue({ bookmarks: [toServerBookmark(b, { isTrashed: 2 })] });
+          }
         }
 
         set({ trashedBookmarks: fresh, _trashedLoaded: true });
       },
 
       pruneExpiredTrash: (graceDays: number) => {
+        if (!syncEngine) { return; }
         const cutoff = Date.now() - graceDays * 86_400_000;
         const { trashedBookmarks } = get();
         const expired = trashedBookmarks.filter(b => !!b.deletedAt && b.deletedAt <= cutoff);
         if (expired.length === 0) { return; }
         for (const b of expired) {
           void idbDelete("trashed-bookmarks", b.id);
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark(b, { isTrashed: 2 })] });
+          syncEngine.enqueue({ bookmarks: [toServerBookmark(b, { isTrashed: 2 })] });
         }
         set(s => ({
           trashedBookmarks: s.trashedBookmarks.filter(
@@ -269,8 +274,9 @@ export const useBookmarksStore = create<BookmarksState>()(
       setSortBy: (sort) => set({ sortBy: sort }),
       setFilterType: (filter) => set({ filterType: filter }),
 
-      addBookmark: (input) =>
-        guardQuota("bookmark", get().bookmarks.length, { id: "", createdAt: "", isFavorite: false, ...input } as Bookmark, () => {
+      addBookmark: (input) => {
+        const fallback: Bookmark = { id: "", createdAt: "", isFavorite: false, ...input };
+        return guardQuota("bookmark", get().bookmarks.length, fallback, () => {
           const bookmark: Bookmark = {
             id: generateId(),
             createdAt: new Date().toISOString(),
@@ -283,7 +289,8 @@ export const useBookmarksStore = create<BookmarksState>()(
           syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
           usePlanStore.getState().incrementUsage("bookmark");
           return bookmark;
-        }),
+        });
+      },
 
       addBookmarks: (newBookmarks) =>
         guardQuota("bookmark", get().bookmarks.length + newBookmarks.length - 1, undefined, () => {

@@ -154,7 +154,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
         const { tabGroups, fullTitles, updateGroup: updateChromeGroup } = useTabsStore.getState();
         const chromeGroup = tabGroups.find(g => (fullTitles[g.id] || g.title) === oldName);
         if (chromeGroup) {
-          const chromePatch: any = {};
+          const chromePatch: { title?: string; color?: TabGroupColor } = {};
           if (patch.name !== undefined && (fullTitles[chromeGroup.id] || chromeGroup.title) !== patch.name) {
             chromePatch.title = patch.name;
           }
