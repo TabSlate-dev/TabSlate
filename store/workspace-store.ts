@@ -185,22 +185,18 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       idbGet<{ key: string; value: number }>("kv", "localSeq"),
     ]);
 
-    // Ensure every workspace has a default collection (preserved from onRehydrateStorage)
-    const missingDefaults = workspaces.filter(
-      (ws) => !collections.some((c) => c.workspaceId === ws.id && c.isDefault),
-    );
-    if (missingDefaults.length > 0) {
-      const newCols: Collection[] = missingDefaults.map((ws) => ({
-        id: generateId(),
-        workspaceId: ws.id,
-        name: "Default",
-        icon: "inbox",
-        position: 0,
-        isDefault: true,
-        seq: 0,
-      }));
-      for (const col of newCols) { idbPut("collections", col); }
-      collections.push(...newCols);
+    // Offline fallback: if a workspace has no isDefault collection in local IDB data,
+    // flag the lowest-position active one temporarily. This is overwritten on the next
+    // pull once the server confirms the real is_default value.
+    for (const ws of workspaces) {
+      const wsCols = collections.filter(
+        c => c.workspaceId === ws.id && !c.deletedAt && !c.archivedAt,
+      );
+      if (!wsCols.some(c => c.isDefault) && wsCols.length > 0) {
+        const first = [...wsCols].sort((a, b) => a.position - b.position)[0];
+        const idx = collections.findIndex(c => c.id === first.id);
+        if (idx !== -1) { collections[idx] = { ...collections[idx], isDefault: true }; }
+      }
     }
 
     let activeWorkspaceId = activeWsKv?.value ?? "";
@@ -319,6 +315,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               icon: sc.icon ?? "folder",
               position: sc.position,
               seq: sc.seq,
+              isDefault: false,   // trashed collections are never the default
               deletedAt: sc.deleted_at,
             });
           } else {
@@ -334,6 +331,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               icon: sc.icon ?? "folder",
               position: sc.position,
               seq: sc.seq,
+              isDefault: sc.is_default ?? false,
               archivedAt: sc.archived_at ?? undefined,
             });
           } else {
@@ -350,25 +348,12 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               position: sc.position,
               seq: sc.seq,
               workspaceId: sc.workspace_id ?? local.workspaceId,
+              isDefault: sc.is_default ?? local.isDefault,
               archivedAt: sc.archived_at ?? undefined,
             };
           }
         }
       }
-
-      // Restore isDefault: for each workspace that has no default collection,
-      // mark the lowest-position collection as default (mirrors createWorkspace logic).
-      // Exclude archived and trashed collections from candidacy.
-      const workspaceIds = new Set(workspaces.map(w => w.id));
-      workspaceIds.forEach(wsId => {
-        const wsCols = collections.filter(c => c.workspaceId === wsId && !c.deletedAt && !c.archivedAt);
-        const hasDefault = wsCols.some(c => c.isDefault);
-        if (!hasDefault && wsCols.length > 0) {
-          const firstCol = [...wsCols].sort((a, b) => a.position - b.position)[0];
-          const idx = collections.findIndex(c => c.id === firstCol.id);
-          if (idx !== -1) { collections[idx] = { ...collections[idx], isDefault: true }; }
-        }
-      });
 
       for (const st of resp.entities.tags) {
         if (st.deleted_at) {
