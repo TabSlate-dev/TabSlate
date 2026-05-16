@@ -412,19 +412,34 @@ export const useBookmarksStore = create<BookmarksState>()(
           }
 
           // Single filter pass per bucket (O(n) total) then append new items
+          const newActive = [
+            ...state.bookmarks.filter((b) => !touchedIds.has(b.id)),
+            ...toActive,
+          ];
+          const activeChanged =
+            newActive.length !== state.bookmarks.length ||
+            newActive.some((b, i) => b !== state.bookmarks[i]);
+
+          const newArchived = [
+            ...state.archivedBookmarks.filter((b) => !touchedIds.has(b.id)),
+            ...toArchived,
+          ];
+          const archivedChanged =
+            newArchived.length !== state.archivedBookmarks.length ||
+            newArchived.some((b, i) => b !== state.archivedBookmarks[i]);
+
+          const newTrashed = [
+            ...state.trashedBookmarks.filter((b) => !touchedIds.has(b.id)),
+            ...toTrashed,
+          ];
+          const trashedChanged =
+            newTrashed.length !== state.trashedBookmarks.length ||
+            newTrashed.some((b, i) => b !== state.trashedBookmarks[i]);
+
           return {
-            bookmarks: [
-              ...state.bookmarks.filter((b) => !touchedIds.has(b.id)),
-              ...toActive,
-            ],
-            archivedBookmarks: [
-              ...state.archivedBookmarks.filter((b) => !touchedIds.has(b.id)),
-              ...toArchived,
-            ],
-            trashedBookmarks: [
-              ...state.trashedBookmarks.filter((b) => !touchedIds.has(b.id)),
-              ...toTrashed,
-            ],
+            bookmarks: activeChanged ? newActive : state.bookmarks,
+            archivedBookmarks: archivedChanged ? newArchived : state.archivedBookmarks,
+            trashedBookmarks: trashedChanged ? newTrashed : state.trashedBookmarks,
           };
         });
 
