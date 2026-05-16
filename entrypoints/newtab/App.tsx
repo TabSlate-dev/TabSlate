@@ -201,11 +201,11 @@ function SyncProvider({
     const engine = new SyncEngine(
       () => (accessToken && serverUrl ? { baseUrl: serverUrl, accessToken } : null),
       () => localSeqRef.current,
-      (resp: SyncPullResponse) => {
+      async (resp: SyncPullResponse) => {
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
         mergeWorkspacesRef.current(resp);
-        mergeBookmarksRef.current(resp);
         mergeGroupsRef.current(resp);
+        await mergeBookmarksRef.current(resp);
         localSeqRef.current = resp.server_seq;
         setLocalSeqRef.current(resp.server_seq);
         if (needsInitialPush) {
