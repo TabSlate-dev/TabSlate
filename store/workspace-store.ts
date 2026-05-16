@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import type { Workspace, Collection, Tag } from "@/lib/types";
+import type { ImportPlan } from "@/lib/import-types";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
-import { usePlanStore } from "@/store/plan-store";
+import { usePlanStore, guardQuota } from "@/store/plan-store";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -149,6 +150,7 @@ interface WorkspaceState {
   createTag: (name: string, color: string) => Tag;
   updateTag: (id: string, patch: Partial<Pick<Tag, "name" | "color">>) => void;
   deleteTag: (id: string) => void;
+  importFromPlan: (plan: ImportPlan) => boolean;
 
   // Computed
   getWorkspaceCollections: (workspaceId?: string) => Collection[];
@@ -183,29 +185,34 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       idbGet<{ key: string; value: number }>("kv", "localSeq"),
     ]);
 
-    // Ensure every workspace has a default collection (preserved from onRehydrateStorage)
-    const missingDefaults = workspaces.filter(
-      (ws) => !collections.some((c) => c.workspaceId === ws.id && c.isDefault),
-    );
-    if (missingDefaults.length > 0) {
-      const newCols: Collection[] = missingDefaults.map((ws) => ({
-        id: generateId(),
-        workspaceId: ws.id,
-        name: "Default",
-        icon: "inbox",
-        position: 0,
-        isDefault: true,
-        seq: 0,
-      }));
-      for (const col of newCols) { idbPut("collections", col); }
-      collections.push(...newCols);
+    // Offline fallback: if a workspace has no isDefault collection in local IDB data,
+    // flag the lowest-position active one temporarily. This is overwritten on the next
+    // pull once the server confirms the real is_default value.
+    for (const ws of workspaces) {
+      const wsCols = collections.filter(
+        c => c.workspaceId === ws.id && !c.deletedAt && !c.archivedAt,
+      );
+      if (!wsCols.some(c => c.isDefault) && wsCols.length > 0) {
+        const first = [...wsCols].sort((a, b) => a.position - b.position)[0];
+        const idx = collections.findIndex(c => c.id === first.id);
+        if (idx !== -1) { collections[idx] = { ...collections[idx], isDefault: true }; }
+      }
+    }
+
+    let activeWorkspaceId = activeWsKv?.value ?? "";
+    if (!activeWorkspaceId && workspaces.length > 0) {
+      const first = [...workspaces].sort((a, b) => a.position - b.position)[0];
+      if (first) {
+        activeWorkspaceId = first.id;
+        idbPut("kv", { key: "activeWorkspaceId", value: activeWorkspaceId });
+      }
     }
 
     set({
       workspaces,
       collections,
       tags,
-      activeWorkspaceId: activeWsKv?.value ?? "",
+      activeWorkspaceId,
       compactGroupTitles: compactKv?.value ?? true,
       localSeq: localSeqKv?.value ?? 0,
       _hydrated: true,
@@ -267,6 +274,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       if (!s.activeWorkspaceId && s.workspaces.length > 0) {
         const first = [...s.workspaces].sort((a, b) => a.position - b.position)[0];
         set({ activeWorkspaceId: first.id });
+        idbPut("kv", { key: "activeWorkspaceId", value: first.id });
       }
       return;
     }
@@ -307,6 +315,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               icon: sc.icon ?? "folder",
               position: sc.position,
               seq: sc.seq,
+              isDefault: false,   // trashed collections are never the default
               deletedAt: sc.deleted_at,
             });
           } else {
@@ -322,6 +331,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               icon: sc.icon ?? "folder",
               position: sc.position,
               seq: sc.seq,
+              isDefault: sc.is_default ?? false,
               archivedAt: sc.archived_at ?? undefined,
             });
           } else {
@@ -338,25 +348,12 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
               position: sc.position,
               seq: sc.seq,
               workspaceId: sc.workspace_id ?? local.workspaceId,
+              isDefault: sc.is_default ?? local.isDefault,
               archivedAt: sc.archived_at ?? undefined,
             };
           }
         }
       }
-
-      // Restore isDefault: for each workspace that has no default collection,
-      // mark the lowest-position collection as default (mirrors createWorkspace logic).
-      // Exclude archived and trashed collections from candidacy.
-      const workspaceIds = new Set(workspaces.map(w => w.id));
-      workspaceIds.forEach(wsId => {
-        const wsCols = collections.filter(c => c.workspaceId === wsId && !c.deletedAt && !c.archivedAt);
-        const hasDefault = wsCols.some(c => c.isDefault);
-        if (!hasDefault && wsCols.length > 0) {
-          const firstCol = [...wsCols].sort((a, b) => a.position - b.position)[0];
-          const idx = collections.findIndex(c => c.id === firstCol.id);
-          if (idx !== -1) { collections[idx] = { ...collections[idx], isDefault: true }; }
-        }
-      });
 
       for (const st of resp.entities.tags) {
         if (st.deleted_at) {
@@ -381,6 +378,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
     // Sync IDB after Zustand state update (fire-and-forget)
     const state = get();
+    idbPut("kv", { key: "activeWorkspaceId", value: state.activeWorkspaceId });
     for (const w of state.workspaces) { idbPut("workspaces", w); }
     for (const c of state.collections) { idbPut("collections", c); }
     for (const t of state.tags) { idbPut("tags", t); }
@@ -396,46 +394,43 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Workspaces ────────────────────────────────────────────────────────
-  createWorkspace: (name, color) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
-    if (!planStore.checkQuota("workspace", get().workspaces.length)) {
-      planStore.showQuotaAlert("workspace");
-      return undefined as unknown as Workspace;
-    }
-    const state = get();
-    const ws: Workspace = {
-      id: generateId(),
-      name,
-      color,
-      position: state.workspaces.length,
-      seq: 0,
-    };
-    const defaultCol: Collection = {
-      id: generateId(),
-      workspaceId: ws.id,
-      name: "Default",
-      icon: "inbox",
-      position: 0,
-      isDefault: true,
-      seq: 0,
-    };
-    const nextActiveId = state.workspaces.length === 0 ? ws.id : state.activeWorkspaceId;
-    set({
-      workspaces: [...state.workspaces, ws],
-      collections: [...state.collections, defaultCol],
-      activeWorkspaceId: nextActiveId,
-    });
-    idbPut("workspaces", ws);
-    idbPut("collections", defaultCol);
-    if (state.workspaces.length === 0) {
-      idbPut("kv", { key: "activeWorkspaceId", value: ws.id });
-    }
-    syncEngine?.enqueue({ workspaces: [toServerWorkspace(ws)], collections: [toServerCollection(defaultCol)] });
-    planStore.incrementUsage("workspace");
-    planStore.incrementUsage("collection"); // default collection created alongside
-    return ws;
-  },
+  createWorkspace: (name, color) =>
+    // Quota-blocked creation returns an empty-id sentinel rather than using
+    // an unsafe assertion. Current callers ignore the return value.
+    guardQuota("workspace", get().workspaces.length, { id: "", name, color, position: get().workspaces.length, seq: 0 }, () => {
+      const state = get();
+      const ws: Workspace = {
+        id: generateId(),
+        name,
+        color,
+        position: state.workspaces.length,
+        seq: 0,
+      };
+      const defaultCol: Collection = {
+        id: generateId(),
+        workspaceId: ws.id,
+        name: "Default",
+        icon: "inbox",
+        position: 0,
+        isDefault: true,
+        seq: 0,
+      };
+      const nextActiveId = state.workspaces.length === 0 ? ws.id : state.activeWorkspaceId;
+      set({
+        workspaces: [...state.workspaces, ws],
+        collections: [...state.collections, defaultCol],
+        activeWorkspaceId: nextActiveId,
+      });
+      idbPut("workspaces", ws);
+      idbPut("collections", defaultCol);
+      if (state.workspaces.length === 0) {
+        idbPut("kv", { key: "activeWorkspaceId", value: ws.id });
+      }
+      syncEngine?.enqueue({ workspaces: [toServerWorkspace(ws)], collections: [toServerCollection(defaultCol)] });
+      usePlanStore.getState().incrementUsage("workspace");
+      usePlanStore.getState().incrementUsage("collection");
+      return ws;
+    }),
 
   updateWorkspace: (id, patch) => {
     set((s) => ({
@@ -486,29 +481,28 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Collections ───────────────────────────────────────────────────────
-  createCollection: (workspaceId, name, icon) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
-    const activeCollections = get().collections.filter(c => !c.deletedAt && !c.archivedAt).length;
-    if (!planStore.checkQuota("collection", activeCollections)) {
-      planStore.showQuotaAlert("collection");
-      return { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection;
-    }
-    const existingInWs = get().collections.filter(c => c.workspaceId === workspaceId);
-    const col: Collection = {
-      id: generateId(),
-      workspaceId,
-      name,
-      icon,
-      position: existingInWs.length,
-      seq: 0,
-    };
-    set((s) => ({ collections: [...s.collections, col] }));
-    idbPut("collections", col);
-    syncEngine?.enqueue({ collections: [toServerCollection(col)] });
-    planStore.incrementUsage("collection");
-    return col;
-  },
+  createCollection: (workspaceId, name, icon) =>
+    guardQuota(
+      "collection",
+      get().collections.filter((c) => !c.deletedAt && !c.archivedAt).length,
+      { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection,
+      () => {
+        const existingInWs = get().collections.filter((c) => c.workspaceId === workspaceId);
+        const col: Collection = {
+          id: generateId(),
+          workspaceId,
+          name,
+          icon,
+          position: existingInWs.length,
+          seq: 0,
+        };
+        set((s) => ({ collections: [...s.collections, col] }));
+        idbPut("collections", col);
+        syncEngine?.enqueue({ collections: [toServerCollection(col)] });
+        usePlanStore.getState().incrementUsage("collection");
+        return col;
+      },
+    ),
 
   updateCollection: (id, patch) => {
     set((s) => ({
@@ -563,20 +557,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Tags ──────────────────────────────────────────────────────────────
-  createTag: (name, color) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
-    if (!planStore.checkQuota("tag", get().tags.length)) {
-      planStore.showQuotaAlert("tag");
-      return { id: "", name, color, seq: 0 } as Tag;
-    }
-    const tag: Tag = { id: generateId(), name, color, seq: 0 };
-    set((s) => ({ tags: [...s.tags, tag] }));
-    idbPut("tags", tag);
-    syncEngine?.enqueue({ tags: [toServerTag(tag)] });
-    planStore.incrementUsage("tag");
-    return tag;
-  },
+  createTag: (name, color) =>
+    guardQuota("tag", get().tags.length, { id: "", name, color, seq: 0 } as Tag, () => {
+      const tag: Tag = { id: generateId(), name, color, seq: 0 };
+      set((s) => ({ tags: [...s.tags, tag] }));
+      idbPut("tags", tag);
+      syncEngine?.enqueue({ tags: [toServerTag(tag)] });
+      usePlanStore.getState().incrementUsage("tag");
+      return tag;
+    }),
 
   updateTag: (id, patch) => {
     set((s) => ({
@@ -595,6 +584,56 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     idbDelete("tags", id);
     set((s) => ({ tags: s.tags.filter((t) => t.id !== id) }));
     usePlanStore.getState().decrementUsage("tag");
+  },
+
+  importFromPlan: (plan) => {
+    const planStore = usePlanStore.getState();
+    planStore.ensureFresh();
+
+    const bookmarkCount = useBookmarksStore.getState().bookmarks.length;
+    const activeCollectionCount = get().collections.filter(
+      (c) => !c.deletedAt && !c.archivedAt,
+    ).length;
+
+    if (
+      plan.bookmarks.length > 0 &&
+      !planStore.checkQuota("bookmark", bookmarkCount + plan.bookmarks.length - 1)
+    ) {
+      planStore.showQuotaAlert("bookmark");
+      return false;
+    }
+
+    if (
+      plan.collections.length > 0 &&
+      !planStore.checkQuota("collection", activeCollectionCount + plan.collections.length - 1)
+    ) {
+      planStore.showQuotaAlert("collection");
+      return false;
+    }
+
+    const newTags: Tag[] = plan.tags.map((t) => ({ ...t, seq: 0 as const }));
+    if (newTags.length > 0) {
+      set((s) => ({ tags: [...s.tags, ...newTags] }));
+      for (const tag of newTags) { idbPut("tags", tag); }
+      syncEngine?.enqueue({ tags: newTags.map(toServerTag) });
+      planStore.incrementUsage("tag", newTags.length);
+    }
+
+    const newCollections: Collection[] = plan.collections.map((c) => ({ ...c, seq: 0 as const }));
+    if (newCollections.length > 0) {
+      set((s) => ({ collections: [...s.collections, ...newCollections] }));
+      for (const collection of newCollections) { idbPut("collections", collection); }
+      syncEngine?.enqueue({ collections: newCollections.map((c) => toServerCollection(c)) });
+      planStore.incrementUsage("collection", newCollections.length);
+    }
+
+    const newBookmarks = plan.bookmarks.map((b) => ({ ...b, seq: 0 as const }));
+    if (newBookmarks.length > 0) {
+      useBookmarksStore.getState()._bulkAddBookmarks(newBookmarks);
+      planStore.incrementUsage("bookmark", newBookmarks.length);
+    }
+
+    return true;
   },
 
   sweepUnsynced: () => {

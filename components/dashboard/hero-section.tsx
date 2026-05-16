@@ -27,11 +27,33 @@ function getEngineIconSrc(engine: { iconUrl?: string; siteUrl: string }): string
   }
 }
 
+function Clock() {
+  const [time, setTime] = React.useState(new Date());
+
+  React.useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formattedTime = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  const formattedDate = time.toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
+
+  return (
+    <div className="text-center space-y-2">
+      <h1 className="text-6xl md:text-8xl font-bold tracking-tighter text-foreground">
+        {formattedTime}
+      </h1>
+      <p className="text-sm md:text-base font-medium text-muted-foreground tracking-widest">
+        {formattedDate}
+      </p>
+    </div>
+  );
+}
+
 export function HeroSection() {
   const allEngines = useSettingsStore(s => s.searchEngines);
   const searchEngines = React.useMemo(() => allEngines.filter(e => e.enabled), [allEngines]);
   
-  const [time, setTime] = React.useState(new Date());
   const [query, setQuery] = React.useState("");
   const [engine, setEngine] = React.useState(searchEngines[0] || allEngines[0]);
   const [bookmarkResults, setBookmarkResults] = React.useState<SearchBookmark[]>([]);
@@ -51,11 +73,6 @@ export function HeroSection() {
     };
     window.addEventListener("tabslate-focus-search", handler);
     return () => window.removeEventListener("tabslate-focus-search", handler);
-  }, []);
-
-  React.useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(timer);
   }, []);
 
   const filteredTabs = React.useMemo(() => {
@@ -145,19 +162,9 @@ export function HeroSection() {
   const isActive = (idx: number) => idx === activeIndex;
   const engineIndex = bookmarkResults.length + filteredTabs.length;
 
-  const formattedTime = time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
-  const formattedDate = time.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
-
   return (
     <div className="flex flex-col items-center justify-center pt-8 md:pt-12 pb-2 md:pb-4 space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="text-center space-y-2">
-        <h1 className="text-6xl md:text-8xl font-bold tracking-tighter text-foreground">
-          {formattedTime}
-        </h1>
-        <p className="text-sm md:text-base font-medium text-muted-foreground tracking-widest">
-          {formattedDate}
-        </p>
-      </div>
+      <Clock />
 
       <div ref={wrapperRef} className="w-full max-w-3xl px-4 relative">
         <form onSubmit={handleSearch} className="relative flex items-center w-full group">
@@ -206,7 +213,10 @@ export function HeroSection() {
 
         {/* Search results dropdown */}
         {showDropdown && (
-          <div className="absolute top-full left-4 right-4 mt-2 z-50 rounded-xl border bg-popover shadow-lg overflow-hidden">
+          <div
+            className="absolute top-full left-4 right-4 mt-2 z-50 rounded-xl border bg-popover shadow-lg overflow-y-auto max-h-96"
+            onWheel={(e) => e.stopPropagation()}
+          >
             {bookmarkResults.length > 0 && (
               <section>
                 <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5 border-b">

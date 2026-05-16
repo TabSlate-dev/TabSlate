@@ -1,15 +1,3 @@
-import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { FaviconImage } from "@/components/ui/favicon-image";
-import { TagList } from "@/components/ui/tag-list";
-import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-dialog";
-import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
 import * as React from "react";
 import {
   Heart,
@@ -29,6 +17,17 @@ import { useWorkspaceStore } from "@/store/workspace-store";
 import { smartOpenUrl } from "@/lib/chrome/tabs";
 import type { Bookmark } from "@/lib/types";
 
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { FaviconImage } from "@/components/ui/favicon-image";
+import { TagList } from "@/components/ui/tag-list";
+
 interface BookmarkCardProps {
   bookmark: Bookmark;
   variant?: "grid" | "list";
@@ -36,33 +35,40 @@ interface BookmarkCardProps {
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement> & {
     "data-drag-handle"?: boolean;
   };
+  onEdit?: (bookmark: Bookmark) => void;
+  onAddTags?: (bookmark: Bookmark) => void;
 }
 
-export function BookmarkCard({
+export const BookmarkCard = React.memo(function BookmarkCard({
   bookmark,
   variant = "grid",
   isHighlighted = false,
   dragHandleProps,
+  onEdit,
+  onAddTags,
 }: BookmarkCardProps) {
-  const { toggleFavorite, archiveBookmark, trashBookmark } =
-    useBookmarksStore();
-  const { tags } = useWorkspaceStore();
-  const bookmarkTags = tags.filter((tag) => bookmark.tags.includes(tag.id));
+  const toggleFavorite = useBookmarksStore((s) => s.toggleFavorite);
+  const archiveBookmark = useBookmarksStore((s) => s.archiveBookmark);
+  const trashBookmark = useBookmarksStore((s) => s.trashBookmark);
+  
+  const tags = useWorkspaceStore((s) => s.tags);
+  const bookmarkTags = React.useMemo(
+    () => tags.filter((tag) => bookmark.tags.includes(tag.id)),
+    [tags, bookmark.tags]
+  );
   const [copied, setCopied] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
-  const [editOpen, setEditOpen] = React.useState(false);
-  const [tagsOpen, setTagsOpen] = React.useState(false);
 
-  const handleCopyUrl = () => {
+  const handleCopyUrl = React.useCallback(() => {
     navigator.clipboard.writeText(bookmark.url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
-  };
-  const handleSmartOpen = () => smartOpenUrl(bookmark.url);
-  const handleNewTabOpen = () => window.open(bookmark.url, "_blank");
+  }, [bookmark.url]);
+  const handleSmartOpen = React.useCallback(() => smartOpenUrl(bookmark.url), [bookmark.url]);
+  const handleNewTabOpen = React.useCallback(() => window.open(bookmark.url, "_blank"), [bookmark.url]);
 
   // Shared dropdown content for both variants
-  const actionsMenu = (
+  const actionsMenu = React.useMemo(() => (
     <DropdownMenuContent align="end">
       <DropdownMenuItem onClick={handleSmartOpen}>
         <ExternalLink className="size-4 mr-2" />
@@ -72,11 +78,11 @@ export function BookmarkCard({
         <ExternalLink className="size-4 mr-2" />
         Open in new tab
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => setEditOpen(true)}>
+      <DropdownMenuItem onClick={() => { setMenuOpen(false); onEdit?.(bookmark); }}>
         <Pencil className="size-4 mr-2" />
         Edit
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={() => setTagsOpen(true)}>
+      <DropdownMenuItem onClick={() => { setMenuOpen(false); onAddTags?.(bookmark); }}>
         <Tag className="size-4 mr-2" />
         Add Tags
       </DropdownMenuItem>
@@ -93,7 +99,7 @@ export function BookmarkCard({
         Delete
       </DropdownMenuItem>
     </DropdownMenuContent>
-  );
+  ), [handleSmartOpen, handleNewTabOpen, onEdit, onAddTags, archiveBookmark, trashBookmark, bookmark]);
 
   // ── List variant ────────────────────────────────────────────────────────
   if (variant === "list") {
@@ -165,16 +171,6 @@ export function BookmarkCard({
             </DropdownMenu>
           </div>
         </div>
-        <EditBookmarkDialog
-          bookmark={bookmark}
-          open={editOpen}
-          onOpenChange={setEditOpen}
-        />
-        <BookmarkTagsDialog
-          bookmark={bookmark}
-          open={tagsOpen}
-          onOpenChange={setTagsOpen}
-        />
       </>
     );
   }
@@ -290,17 +286,6 @@ export function BookmarkCard({
           </div>
         )}
       </div>
-
-      <EditBookmarkDialog
-        bookmark={bookmark}
-        open={editOpen}
-        onOpenChange={setEditOpen}
-      />
-      <BookmarkTagsDialog
-        bookmark={bookmark}
-        open={tagsOpen}
-        onOpenChange={setTagsOpen}
-      />
     </>
   );
-}
+});

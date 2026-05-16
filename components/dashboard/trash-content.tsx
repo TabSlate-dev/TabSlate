@@ -45,6 +45,7 @@ import {
   Layers,
 } from "lucide-react";
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
+import { usePlanStore } from "@/store/plan-store";
 
 // ---------------------------------------------------------------------------
 // Icon map (mirrors sidebar)
@@ -427,6 +428,10 @@ function TrashedGroupCard({
 }
 
 export function TrashContent() {
+  React.useEffect(() => {
+    void useBookmarksStore.getState().loadTrashedBookmarks();
+  }, []);
+
   const trashedBookmarks = useBookmarksStore(s => s.trashedBookmarks);
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDeleteBookmark = useBookmarksStore(s => s.permanentlyDelete);
@@ -434,6 +439,7 @@ export function TrashContent() {
   const collections = useWorkspaceStore(s => s.collections);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
+  const trashGraceDays = usePlanStore(s => s.limits?.trash_grace_days ?? 30);
   const permanentlyDeleteCollection = useWorkspaceStore(s => s.permanentlyDeleteCollection);
 
   const allGroups = useGroupsStore(s => s.groups);
@@ -743,7 +749,7 @@ export function TrashContent() {
           {totalCount > 0 && selectedCount === 0 && (
             <div className="flex items-center gap-4">
               <p className="text-xs text-muted-foreground hidden md:block mr-2">
-                Items in trash will be permanently deleted after 30 days
+                Items in trash will be permanently deleted after {trashGraceDays} days
               </p>
               <Button variant="destructive" size="sm" onClick={() => requestConfirm(
                 "Empty Trash?",

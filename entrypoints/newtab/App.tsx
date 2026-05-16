@@ -24,7 +24,7 @@ import { useSettingsStore } from "@/store/settings-store";
 import { usePlanStore, type QuotaResource } from "@/store/plan-store";
 import { QuotaAlert } from "@/components/ui/quota-alert";
 import type { ExtensionMessage } from "@/lib/messages";
-import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine } from "@/lib/sync-engine";
+import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine, releaseSyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
@@ -201,11 +201,11 @@ function SyncProvider({
     const engine = new SyncEngine(
       () => (accessToken && serverUrl ? { baseUrl: serverUrl, accessToken } : null),
       () => localSeqRef.current,
-      (resp: SyncPullResponse) => {
+      async (resp: SyncPullResponse) => {
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
         mergeWorkspacesRef.current(resp);
-        mergeBookmarksRef.current(resp);
         mergeGroupsRef.current(resp);
+        await mergeBookmarksRef.current(resp);
         localSeqRef.current = resp.server_seq;
         setLocalSeqRef.current(resp.server_seq);
         if (needsInitialPush) {
@@ -247,7 +247,13 @@ function SyncProvider({
     engine.start();
 
     return () => {
-      engine.forceSync().catch(() => {}).finally(() => destroySyncEngine());
+      // Capture the engine reference before async work begins.
+      // destroySyncEngine() must NOT be used here — by the time .finally() fires,
+      // the global syncEngine already points to the new engine and would destroy it.
+      // Instead, destroy this specific engine instance directly.
+      void engine.forceSync().catch(() => {});
+      engine.destroy();
+      releaseSyncEngine(engine);
     };
   }, [accessToken, serverUrl]);
 
@@ -265,7 +271,7 @@ export default function App() {
         useBookmarksStore.getState().addBookmark(message.data);
       }
       if (message.type === "BOOKMARKS_CHANGED") {
-        useBookmarksStore.getState().hydrate();
+        void useBookmarksStore.getState().reloadActive();
       }
       if (message.type === "WORKSPACE_CHANGED") {
         useWorkspaceStore.getState().hydrate();

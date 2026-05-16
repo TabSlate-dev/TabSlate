@@ -1,5 +1,5 @@
 const DB_NAME = "tabslate-db";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export type StoreName =
   | "bookmarks"
@@ -46,7 +46,8 @@ export function getDB(): Promise<IDBDatabase> {
           bs.createIndex("isFavorite", "isFavorite");
           const abs = db.createObjectStore("archived-bookmarks", { keyPath: "id" });
           abs.createIndex("collectionId", "collectionId");
-          db.createObjectStore("trashed-bookmarks", { keyPath: "id" });
+          const tbs = db.createObjectStore("trashed-bookmarks", { keyPath: "id" });
+          tbs.createIndex("collectionId", "collectionId");
           const ws = db.createObjectStore("workspaces", { keyPath: "id" });
           ws.createIndex("position", "position");
           const cs = db.createObjectStore("collections", { keyPath: "id" });
@@ -58,6 +59,12 @@ export function getDB(): Promise<IDBDatabase> {
           gt.createIndex("groupId", "groupId");
           db.createObjectStore("tab-group-titles", { keyPath: "groupId" });
           db.createObjectStore("kv", { keyPath: "key" });
+        }
+        if (event.oldVersion >= 1 && event.oldVersion < 2) {
+          // Add collectionId index to trashed-bookmarks (enables indexed queries, avoids full-store scans).
+          // Fresh installs (oldVersion < 1) already have this index from the block above.
+          const tbs = (event.target as IDBOpenDBRequest).transaction!.objectStore("trashed-bookmarks");
+          tbs.createIndex("collectionId", "collectionId");
         }
       };
       req.onsuccess = () => {
@@ -122,6 +129,29 @@ export async function idbCount(store: StoreName): Promise<number> {
   });
 }
 
+/**
+ * Fetches multiple keys from the same store in a single IDB transaction.
+ * Dramatically more efficient than Promise.all(keys.map(idbGet)) which creates
+ * one transaction per key — this creates exactly one transaction with N requests.
+ */
+export async function idbGetMany<T>(store: StoreName, keys: IDBValidKey[]): Promise<(T | undefined)[]> {
+  if (keys.length === 0) return [];
+  const db = await getDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const os = tx.objectStore(store);
+    const results: (T | undefined)[] = new Array(keys.length).fill(undefined);
+    tx.oncomplete = () => resolve(results);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+    for (let i = 0; i < keys.length; i++) {
+      const req = os.get(keys[i]);
+      const idx = i;
+      req.onsuccess = () => { results[idx] = req.result as T | undefined; };
+    }
+  });
+}
+
 export async function idbGetByIndex<T>(
   store: StoreName,
   index: string,
@@ -160,3 +190,27 @@ export function idbTransaction(
   );
 }
 
+export type BulkWriteOp =
+  | { type: "delete"; store: StoreName; key: IDBValidKey }
+  | { type: "put"; store: StoreName; value: object };
+
+/**
+ * Executes multiple delete/put operations across one or more stores in a
+ * single IDB transaction. All ops are issued synchronously inside the
+ * transaction callback — no awaits permitted inside the callback.
+ */
+export function idbBulkWrite(ops: BulkWriteOp[]): Promise<void> {
+  if (ops.length === 0) {
+    return Promise.resolve();
+  }
+  const stores = [...new Set(ops.map(op => op.store))] as StoreName[];
+  return idbTransaction(stores, "readwrite", (tx) => {
+    for (const op of ops) {
+      if (op.type === "delete") {
+        tx.objectStore(op.store).delete(op.key);
+      } else {
+        tx.objectStore(op.store).put(op.value);
+      }
+    }
+  });
+}

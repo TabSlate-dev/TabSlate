@@ -73,6 +73,7 @@ export interface ServerCollection {
   position: number;
   seq: number;
   is_deleted: number;
+  is_default?: boolean;    // computed by server: true for the lowest-position active collection per workspace
   deleted_at?: number;
   archived_at?: number;
   created_at: number;

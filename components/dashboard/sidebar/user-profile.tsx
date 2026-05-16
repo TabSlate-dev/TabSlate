@@ -77,11 +77,14 @@ export function UserProfile() {
                   <span className="text-[11px] text-muted-foreground truncate mt-1 leading-none">
                     {user.email}
                   </span>
-                  {renewsLabel && (
-                    <span className="text-[11px] text-muted-foreground/70 truncate mt-0.5 leading-none">
-                      {renewsLabel}
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      "text-[11px] text-muted-foreground/70 truncate mt-0.5 leading-none",
+                      !renewsLabel && "invisible"
+                    )}
+                  >
+                    {renewsLabel ?? " "}
+                  </span>
                 </div>
 
                 <ChevronRight className="size-4 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground/60" />

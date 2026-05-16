@@ -85,6 +85,9 @@ const ADS = [
   }
 ];
 
+// Tripled once at module level for seamless infinite carousel — never re-allocated.
+const CAROUSEL_ITEMS = [...ADS, ...ADS, ...ADS];
+
 function AdCard({ ad, compact }: { ad: typeof ADS[0]; compact: boolean }) {
   const Icon = ad.icon;
   
@@ -167,12 +170,22 @@ function AdCard({ ad, compact }: { ad: typeof ADS[0]; compact: boolean }) {
 
 export function AdBanner() {
   const scrollRef = React.useRef<HTMLDivElement>(null);
+  const containerRef = React.useRef<HTMLDivElement>(null);
   const [isHovered, setIsHovered] = React.useState(false);
+  const [isVisible, setIsVisible] = React.useState(true);
 
-  const originalItems = ADS;
-  const isCarousel = originalItems.length > 1;
-  // Triplicate the items so we can create a seamless infinite scroll effect
-  const items = isCarousel ? [...originalItems, ...originalItems, ...originalItems] : originalItems;
+  React.useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => setIsVisible(entries[0].isIntersecting),
+      { threshold: 0 }
+    );
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+    return () => observer.disconnect();
+  }, []);
+
+  const isCarousel = ADS.length > 1;
 
   // Initialize scroll position to the start of the middle set
   React.useEffect(() => {
@@ -180,17 +193,17 @@ export function AdBanner() {
     const timer = setTimeout(() => {
       if (scrollRef.current) {
         const itemWidth = scrollRef.current.children[0].clientWidth + 16; // 16px gap
-        const setWidth = itemWidth * originalItems.length;
+        const setWidth = itemWidth * ADS.length;
         scrollRef.current.scrollTo({ left: setWidth, behavior: "auto" });
       }
     }, 100);
     return () => clearTimeout(timer);
-  }, [isCarousel, originalItems.length]);
+  }, [isCarousel, ADS.length]);
 
   const handleScroll = React.useCallback(() => {
     if (!scrollRef.current || !isCarousel) return;
     const itemWidth = scrollRef.current.children[0].clientWidth + 16;
-    const setWidth = itemWidth * originalItems.length;
+    const setWidth = itemWidth * ADS.length;
     const scrollLeft = scrollRef.current.scrollLeft;
 
     // If we've scrolled fully into the 3rd set, jump back to the 2nd set instantly
@@ -201,42 +214,54 @@ export function AdBanner() {
     else if (scrollLeft <= 0) {
       scrollRef.current.scrollTo({ left: scrollLeft + setWidth, behavior: "auto" });
     }
-  }, [isCarousel, originalItems.length]);
+  }, [isCarousel, ADS.length]);
 
   // Smooth continuous auto-scroll
   React.useEffect(() => {
-    if (!isCarousel || isHovered) return;
-    
+    if (!isCarousel || isHovered || !isVisible) return;
+
     let animationFrameId: number;
     let lastTimestamp: number = 0;
-    const speedPixelsPerMs = 0.05; // Adjust this to control scroll speed
+    let paused = document.hidden;
+    const speedPixelsPerMs = 0.05;
+
+    const onVisibilityChange = () => { paused = document.hidden; };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const animate = (timestamp: number) => {
+      if (paused) {
+        lastTimestamp = timestamp;
+        animationFrameId = requestAnimationFrame(animate);
+        return;
+      }
+
       if (!lastTimestamp) lastTimestamp = timestamp;
       const deltaTime = timestamp - lastTimestamp;
-      
+
       if (scrollRef.current && deltaTime > 0) {
-        // Move by fraction based on time elapsed
         scrollRef.current.scrollLeft += speedPixelsPerMs * deltaTime;
-        
-        // Let handleScroll deal with the wrapping, or do it here
+
         const itemWidth = scrollRef.current.children[0].clientWidth + 16;
-        const setWidth = itemWidth * originalItems.length;
+        const setWidth = itemWidth * ADS.length;
         if (scrollRef.current.scrollLeft >= setWidth * 2) {
           scrollRef.current.scrollLeft -= setWidth;
         }
       }
-      
+
       lastTimestamp = timestamp;
       animationFrameId = requestAnimationFrame(animate);
     };
 
     animationFrameId = requestAnimationFrame(animate);
-    return () => cancelAnimationFrame(animationFrameId);
-  }, [isCarousel, isHovered, originalItems.length]);
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [isCarousel, isHovered, isVisible, ADS.length]);
 
   return (
     <div 
+      ref={containerRef}
       className="w-full max-w-[1400px] mt-4 relative"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
@@ -257,7 +282,7 @@ export function AdBanner() {
         className="flex overflow-x-auto gap-4 pb-4 px-4 md:px-8 [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {items.map((ad, idx) => (
+        {CAROUSEL_ITEMS.map((ad, idx) => (
           <div 
             key={`${ad.id}-${idx}`} 
             className={cn(

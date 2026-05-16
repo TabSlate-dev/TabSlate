@@ -26,11 +26,11 @@ export function SyncStatusIndicator({ status, errorMessage, onForceSync }: SyncS
 
   const statusLabel = (
     <div
-      className="flex items-center gap-1.5 text-xs text-muted-foreground"
+      className="flex items-center gap-1.5 text-xs text-muted-foreground w-24 shrink-0"
       aria-label={`Sync status: ${label[status]}`}
     >
       <span className={`w-2 h-2 rounded-full shrink-0 ${dot[status]}`} aria-hidden="true" />
-      <span>{label[status]}</span>
+      <span className="truncate">{label[status]}</span>
     </div>
   );
 

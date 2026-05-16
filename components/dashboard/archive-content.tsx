@@ -286,6 +286,10 @@ function ArchivedBookmarkCard({
 }
 
 export function ArchiveContent() {
+  React.useEffect(() => {
+    void useBookmarksStore.getState().loadArchivedBookmarks();
+  }, []);
+
   const archivedBookmarks = useBookmarksStore(s => s.archivedBookmarks);
   const restoreFromArchive = useBookmarksStore(s => s.restoreFromArchive);
   const trashBookmark = useBookmarksStore(s => s.trashBookmark);

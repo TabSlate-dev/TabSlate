@@ -221,9 +221,12 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
     const wsIds = new Set(workspaceCollections.map((c) => c.id));
     const counts: Record<string, number> = { all: 0 };
     for (const b of bookmarks) {
-      if (wsIds.has(b.collectionId)) {
+      const colId = b.collectionId;
+      if (wsIds.has(colId) || colId === "") {
         counts.all = (counts.all ?? 0) + 1;
-        counts[b.collectionId] = (counts[b.collectionId] ?? 0) + 1;
+        if (colId !== "") {
+          counts[colId] = (counts[colId] ?? 0) + 1;
+        }
       }
     }
     return counts;

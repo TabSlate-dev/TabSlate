@@ -5,7 +5,8 @@ import { generateId } from "@/lib/id";
 import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
-import { usePlanStore } from "@/store/plan-store";
+import { usePlanStore, guardQuota } from "@/store/plan-store";
+import { normalizeFavicon } from "@/lib/bookmark-utils";
 
 export interface GroupTab {
   id: string;
@@ -48,6 +49,16 @@ function toServerGroup(g: SavedGroup, tabs: GroupTab[], opts?: { isDeleted?: num
       position: t.position,
     })),
   };
+}
+
+function buildTabsByGroup(groupTabs: GroupTab[]): Map<string, GroupTab[]> {
+  const map = new Map<string, GroupTab[]>();
+  for (const t of groupTabs) {
+    const bucket = map.get(t.groupId) ?? [];
+    bucket.push(t);
+    map.set(t.groupId, bucket);
+  }
+  return map;
 }
 
 interface GroupsState {
@@ -95,29 +106,29 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       }
       return true;
     });
-    set({ groups, groupTabs, _hydrated: true });
+    const migratedTabs = groupTabs.map((t): GroupTab => {
+      if (!t.favicon.startsWith("data:")) { return t; }
+      const fixed = { ...t, favicon: normalizeFavicon(t.favicon, t.url) };
+      idbPut("group-tabs", fixed);
+      return fixed;
+    });
+    set({ groups, groupTabs: migratedTabs, _hydrated: true });
   },
 
   reset: () => {
     set({ groups: [], groupTabs: [], _hydrated: true });
   },
 
-  createGroup: (name, color, isCompact, workspaceId) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
-    const activeGroupCount = get().groups.filter(g => !g.deletedAt).length;
-    if (!planStore.checkQuota("saved_group", activeGroupCount)) {
-      planStore.showQuotaAlert("saved_group");
-      return "";
-    }
-    const id = generateId();
-    const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0, workspaceId };
-    syncEngine?.enqueue({ groups: [toServerGroup(group, [])] });
-    set((state) => ({ groups: [...state.groups, group] }));
-    idbPut("groups", group);
-    planStore.incrementUsage("saved_group");
-    return id;
-  },
+  createGroup: (name, color, isCompact, workspaceId) =>
+    guardQuota("saved_group", get().groups.filter((g) => !g.deletedAt).length, "", () => {
+      const id = generateId();
+      const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0, workspaceId };
+      syncEngine?.enqueue({ groups: [toServerGroup(group, [])] });
+      set((state) => ({ groups: [...state.groups, group] }));
+      idbPut("groups", group);
+      usePlanStore.getState().incrementUsage("saved_group");
+      return id;
+    }),
 
   updateGroup: (id, patch) => {
     const oldGroup = get().groups.find(g => g.id === id);
@@ -143,7 +154,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
         const { tabGroups, fullTitles, updateGroup: updateChromeGroup } = useTabsStore.getState();
         const chromeGroup = tabGroups.find(g => (fullTitles[g.id] || g.title) === oldName);
         if (chromeGroup) {
-          const chromePatch: any = {};
+          const chromePatch: { title?: string; color?: TabGroupColor } = {};
           if (patch.name !== undefined && (fullTitles[chromeGroup.id] || chromeGroup.title) !== patch.name) {
             chromePatch.title = patch.name;
           }
@@ -411,16 +422,18 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     const { groups, groupTabs } = get();
     const unsynced = groups.filter(g => g.seq === 0);
     if (unsynced.length === 0) { return; }
+    const tabsByGroup = buildTabsByGroup(groupTabs);
     syncEngine?.enqueue({
-      groups: unsynced.map(g => toServerGroup(g, groupTabs.filter(t => t.groupId === g.id))),
+      groups: unsynced.map(g => toServerGroup(g, tabsByGroup.get(g.id) ?? [])),
     });
   },
 
   enqueueAllToSync: () => {
     const { groups, groupTabs } = get();
     if (groups.length === 0) { return; }
+    const tabsByGroup = buildTabsByGroup(groupTabs);
     syncEngine?.enqueue({
-      groups: groups.map(g => toServerGroup(g, groupTabs.filter(t => t.groupId === g.id))),
+      groups: groups.map(g => toServerGroup(g, tabsByGroup.get(g.id) ?? [])),
     });
   },
 }));
