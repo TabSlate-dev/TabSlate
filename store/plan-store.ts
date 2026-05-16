@@ -148,3 +148,23 @@ export const usePlanStore = create<PlanState>()(
     },
   ),
 );
+
+/**
+ * Standard quota gate for create actions. Calls ensureFresh, checks quota,
+ * shows alert on breach, and returns fallback. Returns action() otherwise.
+ * Pure helper — does not touch store internals.
+ */
+export function guardQuota<T>(
+  resource: QuotaResource,
+  currentCount: number,
+  fallback: T,
+  action: () => T,
+): T {
+  const store = usePlanStore.getState();
+  store.ensureFresh();
+  if (!store.checkQuota(resource, currentCount)) {
+    store.showQuotaAlert(resource);
+    return fallback;
+  }
+  return action();
+}
