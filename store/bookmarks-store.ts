@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Bookmark } from "@/lib/types";
 import { generateId } from "@/lib/id";
-import { idbGet, idbGetAll, idbGetByIndex, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
+import { idbGet, idbGetAll, idbGetByIndex, idbGetMany, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
@@ -99,10 +99,8 @@ async function readBookmarkById(store: BookmarkStoreName, id: string): Promise<B
 }
 
 async function readTrashedBookmarksForCollection(collectionId: string): Promise<Bookmark[]> {
-  const bookmarks = await idbGetAll<Bookmark>("trashed-bookmarks");
-  return bookmarks
-    .filter((bookmark) => bookmark.collectionId === collectionId)
-    .map((bookmark) => migrateBookmarkForStore("trashed-bookmarks", bookmark));
+  const bookmarks = await idbGetByIndex<Bookmark>("trashed-bookmarks", "collectionId", collectionId);
+  return bookmarks.map((bookmark) => migrateBookmarkForStore("trashed-bookmarks", bookmark));
 }
 
 // ---------------------------------------------------------------------------
@@ -521,15 +519,16 @@ export const useBookmarksStore = create<BookmarksState>()(
       enqueueAllToSync: () => {
         void (async () => {
           const state = get();
-          const [archivedBookmarks, trashedBookmarks] = await Promise.all([
-            state._archivedLoaded ? state.archivedBookmarks : readBookmarkStore("archived-bookmarks"),
-            state._trashedLoaded ? state.trashedBookmarks : readBookmarkStore("trashed-bookmarks"),
+          await Promise.all([
+            state._archivedLoaded ? Promise.resolve() : get().loadArchivedBookmarks(),
+            state._trashedLoaded ? Promise.resolve() : get().loadTrashedBookmarks(),
           ]);
+          const current = get();
           syncEngine?.enqueue({
             bookmarks: [
-              ...state.bookmarks.map((bookmark) => toServerBookmark(bookmark)),
-              ...archivedBookmarks.map((bookmark) => toServerBookmark(bookmark, { isArchived: true })),
-              ...trashedBookmarks.map((bookmark) => toServerBookmark(bookmark, { isTrashed: 1 })),
+              ...current.bookmarks.map((bookmark) => toServerBookmark(bookmark)),
+              ...current.archivedBookmarks.map((bookmark) => toServerBookmark(bookmark, { isArchived: true })),
+              ...current.trashedBookmarks.map((bookmark) => toServerBookmark(bookmark, { isTrashed: 1 })),
             ],
           });
         })();
@@ -543,13 +542,13 @@ export const useBookmarksStore = create<BookmarksState>()(
         const state = get();
 
         // For unloaded stores we only need the specific bookmarks referenced in
-        // this sync delta — not the entire store. Full idbGetAll would load all
-        // archived/trashed records into memory on every pull, causing repeated
-        // memory spikes at startup that defeat the lazy-load optimization.
+        // this sync delta — not the entire store. idbGetMany issues all N reads
+        // inside a single IDB transaction, avoiding the N-transaction spike that
+        // Promise.all(N × idbGet) would cause on the initial pull.
         const readTouched = async (store: BookmarkStoreName): Promise<Bookmark[]> => {
-          const results = await Promise.all(touchedIdArray.map(id => idbGet<Bookmark>(store, id)));
-          return results
-            .filter((b): b is Bookmark => !!b)
+          const rawResults = await idbGetMany<Bookmark>(store, touchedIdArray);
+          return rawResults
+            .filter((b): b is Bookmark => b !== undefined)
             .map(b => migrateBookmarkForStore(store, b));
         };
 

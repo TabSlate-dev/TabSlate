@@ -135,7 +135,13 @@ useTabsStore       (不持久化，运行时从 Chrome API 加载)
 SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  （30s TTL）
 ```
 
-`lib/idb.ts` 封装 `indexedDB.open("tabslate-db", 1)`，暴露 `idbGet/idbPut/idbDelete/idbGetAll/idbGetByIndex/idbTransaction`。各 store 的 `hydrate()` 在挂载时调用 `idbGetAll` 批量读取，写操作直接 `idbPut`（同步触发，无需等待）。
+`lib/idb.ts` 封装 `indexedDB.open("tabslate-db", 2)`，暴露：
+- `idbGet/idbPut/idbDelete/idbGetAll/idbGetByIndex` — 基础单键操作
+- `idbGetMany(store, keys)` — **批量读取**，在单个 IDB 事务内并发发起 N 个 `get` 请求，性能远优于 `Promise.all(keys.map(idbGet))`（后者会创建 N 个独立事务）
+- `idbBulkWrite(ops)` — **跨 store 原子写**，在单个 readwrite 事务中执行若干 `put` / `delete`，用于 `mergeFromServer` 同步落盘
+- `idbTransaction` — 底层事务包装，供需要自定义逻辑的场景使用
+
+各 store 的 `hydrate()` 在挂载时调用 `idbGetAll` 批量读取；`archived-bookmarks` 和 `trashed-bookmarks` 延迟加载（仅在进入对应路由时触发），以减少启动内存峰值。
 
 ### Store 职责
 
