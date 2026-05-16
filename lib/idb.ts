@@ -160,3 +160,25 @@ export function idbTransaction(
   );
 }
 
+export type BulkWriteOp =
+  | { type: "delete"; store: StoreName; key: IDBValidKey }
+  | { type: "put"; store: StoreName; value: object };
+
+/**
+ * Executes multiple delete/put operations across one or more stores in a
+ * single IDB transaction. All ops are issued synchronously inside the
+ * transaction callback — no awaits permitted inside fn.
+ */
+export function idbBulkWrite(ops: BulkWriteOp[]): Promise<void> {
+  if (ops.length === 0) return Promise.resolve();
+  const stores = [...new Set(ops.map(op => op.store))] as StoreName[];
+  return idbTransaction(stores, "readwrite", (tx) => {
+    for (const op of ops) {
+      if (op.type === "delete") {
+        tx.objectStore(op.store).delete(op.key);
+      } else {
+        tx.objectStore(op.store).put(op.value);
+      }
+    }
+  });
+}
