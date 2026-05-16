@@ -89,7 +89,13 @@ interface BookmarksState {
 
   // Hydration flag
   _hydrated: boolean;
+  _archivedLoaded: boolean;
+  _trashedLoaded: boolean;
   hydrate: () => Promise<void>;
+  reloadActive: () => Promise<void>;
+  loadArchivedBookmarks: () => Promise<void>;
+  loadTrashedBookmarks: () => Promise<void>;
+  pruneExpiredTrash: (graceDays: number) => void;
   reset: () => void;
 
   // Actions
@@ -144,28 +150,56 @@ export const useBookmarksStore = create<BookmarksState>()(
       filterType: "all",
 
       _hydrated: false,
+      _archivedLoaded: false,
+      _trashedLoaded: false,
       hydrate: async () => {
-        const [bookmarks, archivedBookmarks, trashedBookmarks] = await Promise.all([
-          idbGetAll<Bookmark>("bookmarks"),
-          idbGetAll<Bookmark>("archived-bookmarks"),
-          idbGetAll<Bookmark>("trashed-bookmarks"),
-        ]);
-        // One-time migration: data: favicon URLs from chrome.tabs.favIconUrl are large
-        // base64 blobs. Replace with lightweight domain-derived URLs and persist to IDB
-        // so future loads are already clean (no-op for already-normalized bookmarks).
-        const migrate = (store: "bookmarks" | "archived-bookmarks" | "trashed-bookmarks") =>
-          (b: Bookmark): Bookmark => {
-            if (!b.favicon.startsWith("data:")) { return b; }
-            const fixed = { ...b, favicon: normalizeFavicon(b.favicon, b.url) };
-            idbPut(store, fixed);
-            return fixed;
-          };
+        const bookmarks = await idbGetAll<Bookmark>("bookmarks");
+        const migrate = (b: Bookmark): Bookmark => {
+          if (!b.favicon.startsWith("data:")) { return b; }
+          const fixed = { ...b, favicon: normalizeFavicon(b.favicon, b.url) };
+          idbPut("bookmarks", fixed);
+          return fixed;
+        };
         set({
-          bookmarks: bookmarks.map(migrate("bookmarks")),
-          archivedBookmarks: archivedBookmarks.map(migrate("archived-bookmarks")),
-          trashedBookmarks: trashedBookmarks.map(migrate("trashed-bookmarks")),
+          bookmarks: bookmarks.map(migrate),
           _hydrated: true,
         });
+      },
+
+      reloadActive: async () => {
+        const bookmarks = await idbGetAll<Bookmark>("bookmarks");
+        set({ bookmarks });
+      },
+
+      loadArchivedBookmarks: async () => {
+        if (get()._archivedLoaded) { return; }
+        const archived = await idbGetAll<Bookmark>("archived-bookmarks");
+        const migrate = (b: Bookmark): Bookmark => {
+          if (!b.favicon.startsWith("data:")) { return b; }
+          const fixed = { ...b, favicon: normalizeFavicon(b.favicon, b.url) };
+          idbPut("archived-bookmarks", fixed);
+          return fixed;
+        };
+        set({ archivedBookmarks: archived.map(migrate), _archivedLoaded: true });
+      },
+
+      loadTrashedBookmarks: async () => {
+        if (get()._trashedLoaded) { return; }
+        const all = await idbGetAll<Bookmark>("trashed-bookmarks");
+        const migrate = (b: Bookmark): Bookmark => {
+          if (!b.favicon.startsWith("data:")) { return b; }
+          const fixed = { ...b, favicon: normalizeFavicon(b.favicon, b.url) };
+          idbPut("trashed-bookmarks", fixed);
+          return fixed;
+        };
+        const migrated = all.map(migrate);
+        // Grace-period expiry runs here (see Task 8 for the body).
+        // For now just set state — Task 8 adds pruning.
+        set({ trashedBookmarks: migrated, _trashedLoaded: true });
+      },
+
+      pruneExpiredTrash: (_graceDays: number) => {
+        // Body filled in Task 8.
       },
 
       reset: () => {
@@ -177,6 +211,8 @@ export const useBookmarksStore = create<BookmarksState>()(
           selectedTags: [],
           searchQuery: "",
           _hydrated: true,
+          _archivedLoaded: false,
+          _trashedLoaded: false,
         });
       },
 
@@ -438,8 +474,12 @@ export const useBookmarksStore = create<BookmarksState>()(
 
           return {
             bookmarks: activeChanged ? newActive : state.bookmarks,
-            archivedBookmarks: archivedChanged ? newArchived : state.archivedBookmarks,
-            trashedBookmarks: trashedChanged ? newTrashed : state.trashedBookmarks,
+            archivedBookmarks: state._archivedLoaded
+              ? (archivedChanged ? newArchived : state.archivedBookmarks)
+              : state.archivedBookmarks,
+            trashedBookmarks: state._trashedLoaded
+              ? (trashedChanged ? newTrashed : state.trashedBookmarks)
+              : state.trashedBookmarks,
           };
         });
 
