@@ -427,6 +427,10 @@ function TrashedGroupCard({
 }
 
 export function TrashContent() {
+  React.useEffect(() => {
+    void useBookmarksStore.getState().loadTrashedBookmarks();
+  }, []);
+
   const trashedBookmarks = useBookmarksStore(s => s.trashedBookmarks);
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDeleteBookmark = useBookmarksStore(s => s.permanentlyDelete);

@@ -271,7 +271,7 @@ export default function App() {
         useBookmarksStore.getState().addBookmark(message.data);
       }
       if (message.type === "BOOKMARKS_CHANGED") {
-        useBookmarksStore.getState().hydrate();
+        void useBookmarksStore.getState().reloadActive();
       }
       if (message.type === "WORKSPACE_CHANGED") {
         useWorkspaceStore.getState().hydrate();
