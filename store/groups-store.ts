@@ -5,7 +5,7 @@ import { generateId } from "@/lib/id";
 import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
-import { usePlanStore } from "@/store/plan-store";
+import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 
 export interface GroupTab {
@@ -109,22 +109,16 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     set({ groups: [], groupTabs: [], _hydrated: true });
   },
 
-  createGroup: (name, color, isCompact, workspaceId) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
-    const activeGroupCount = get().groups.filter(g => !g.deletedAt).length;
-    if (!planStore.checkQuota("saved_group", activeGroupCount)) {
-      planStore.showQuotaAlert("saved_group");
-      return "";
-    }
-    const id = generateId();
-    const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0, workspaceId };
-    syncEngine?.enqueue({ groups: [toServerGroup(group, [])] });
-    set((state) => ({ groups: [...state.groups, group] }));
-    idbPut("groups", group);
-    planStore.incrementUsage("saved_group");
-    return id;
-  },
+  createGroup: (name, color, isCompact, workspaceId) =>
+    guardQuota("saved_group", get().groups.filter((g) => !g.deletedAt).length, "", () => {
+      const id = generateId();
+      const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0, workspaceId };
+      syncEngine?.enqueue({ groups: [toServerGroup(group, [])] });
+      set((state) => ({ groups: [...state.groups, group] }));
+      idbPut("groups", group);
+      usePlanStore.getState().incrementUsage("saved_group");
+      return id;
+    }),
 
   updateGroup: (id, patch) => {
     const oldGroup = get().groups.find(g => g.id === id);

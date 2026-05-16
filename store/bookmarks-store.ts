@@ -4,7 +4,7 @@ import { generateId } from "@/lib/id";
 import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
-import { usePlanStore } from "@/store/plan-store";
+import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 
 export type { Bookmark };
@@ -192,42 +192,32 @@ export const useBookmarksStore = create<BookmarksState>()(
       setSortBy: (sort) => set({ sortBy: sort }),
       setFilterType: (filter) => set({ filterType: filter }),
 
-      addBookmark: (input) => {
-        const planStore = usePlanStore.getState();
-        planStore.ensureFresh();
-        if (!planStore.checkQuota("bookmark", get().bookmarks.length)) {
-          planStore.showQuotaAlert("bookmark");
-          return { id: "", createdAt: "", isFavorite: false, ...input } as Bookmark;
-        }
-        const bookmark: Bookmark = {
-          id: generateId(),
-          createdAt: new Date().toISOString(),
-          isFavorite: false,
-          ...input,
-          favicon: normalizeFavicon(input.favicon, input.url),
-        };
-        set((s) => ({ bookmarks: [bookmark, ...s.bookmarks] }));
-        idbPut("bookmarks", bookmark);
-        syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
-        planStore.incrementUsage("bookmark");
-        return bookmark;
-      },
+      addBookmark: (input) =>
+        guardQuota("bookmark", get().bookmarks.length, { id: "", createdAt: "", isFavorite: false, ...input } as Bookmark, () => {
+          const bookmark: Bookmark = {
+            id: generateId(),
+            createdAt: new Date().toISOString(),
+            isFavorite: false,
+            ...input,
+            favicon: normalizeFavicon(input.favicon, input.url),
+          };
+          set((s) => ({ bookmarks: [bookmark, ...s.bookmarks] }));
+          idbPut("bookmarks", bookmark);
+          syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
+          usePlanStore.getState().incrementUsage("bookmark");
+          return bookmark;
+        }),
 
-      addBookmarks: (newBookmarks) => {
-        const planStore = usePlanStore.getState();
-        planStore.ensureFresh();
-        if (!planStore.checkQuota("bookmark", get().bookmarks.length)) {
-          planStore.showQuotaAlert("bookmark");
-          return;
-        }
-        const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
-        set((s) => ({ bookmarks: [...normalized, ...s.bookmarks] }));
-        for (const b of normalized) { idbPut("bookmarks", b); }
-        if (normalized.length > 0) {
-          syncEngine?.enqueue({ bookmarks: normalized.map(b => toServerBookmark(b)) });
-        }
-        planStore.incrementUsage("bookmark", normalized.length);
-      },
+      addBookmarks: (newBookmarks) =>
+        guardQuota("bookmark", get().bookmarks.length, undefined, () => {
+          const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
+          set((s) => ({ bookmarks: [...normalized, ...s.bookmarks] }));
+          for (const b of normalized) { idbPut("bookmarks", b); }
+          if (normalized.length > 0) {
+            syncEngine?.enqueue({ bookmarks: normalized.map((b) => toServerBookmark(b)) });
+          }
+          usePlanStore.getState().incrementUsage("bookmark", normalized.length);
+        }),
 
       _bulkAddBookmarks: (newBookmarks) => {
         if (newBookmarks.length === 0) { return; }

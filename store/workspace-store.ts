@@ -7,7 +7,7 @@ import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
-import { usePlanStore } from "@/store/plan-store";
+import { usePlanStore, guardQuota } from "@/store/plan-store";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -409,46 +409,41 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Workspaces ────────────────────────────────────────────────────────
-  createWorkspace: (name, color) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
-    if (!planStore.checkQuota("workspace", get().workspaces.length)) {
-      planStore.showQuotaAlert("workspace");
-      return undefined as unknown as Workspace;
-    }
-    const state = get();
-    const ws: Workspace = {
-      id: generateId(),
-      name,
-      color,
-      position: state.workspaces.length,
-      seq: 0,
-    };
-    const defaultCol: Collection = {
-      id: generateId(),
-      workspaceId: ws.id,
-      name: "Default",
-      icon: "inbox",
-      position: 0,
-      isDefault: true,
-      seq: 0,
-    };
-    const nextActiveId = state.workspaces.length === 0 ? ws.id : state.activeWorkspaceId;
-    set({
-      workspaces: [...state.workspaces, ws],
-      collections: [...state.collections, defaultCol],
-      activeWorkspaceId: nextActiveId,
-    });
-    idbPut("workspaces", ws);
-    idbPut("collections", defaultCol);
-    if (state.workspaces.length === 0) {
-      idbPut("kv", { key: "activeWorkspaceId", value: ws.id });
-    }
-    syncEngine?.enqueue({ workspaces: [toServerWorkspace(ws)], collections: [toServerCollection(defaultCol)] });
-    planStore.incrementUsage("workspace");
-    planStore.incrementUsage("collection"); // default collection created alongside
-    return ws;
-  },
+  createWorkspace: (name, color) =>
+    guardQuota("workspace", get().workspaces.length, { id: "", name, color, position: get().workspaces.length, seq: 0 }, () => {
+      const state = get();
+      const ws: Workspace = {
+        id: generateId(),
+        name,
+        color,
+        position: state.workspaces.length,
+        seq: 0,
+      };
+      const defaultCol: Collection = {
+        id: generateId(),
+        workspaceId: ws.id,
+        name: "Default",
+        icon: "inbox",
+        position: 0,
+        isDefault: true,
+        seq: 0,
+      };
+      const nextActiveId = state.workspaces.length === 0 ? ws.id : state.activeWorkspaceId;
+      set({
+        workspaces: [...state.workspaces, ws],
+        collections: [...state.collections, defaultCol],
+        activeWorkspaceId: nextActiveId,
+      });
+      idbPut("workspaces", ws);
+      idbPut("collections", defaultCol);
+      if (state.workspaces.length === 0) {
+        idbPut("kv", { key: "activeWorkspaceId", value: ws.id });
+      }
+      syncEngine?.enqueue({ workspaces: [toServerWorkspace(ws)], collections: [toServerCollection(defaultCol)] });
+      usePlanStore.getState().incrementUsage("workspace");
+      usePlanStore.getState().incrementUsage("collection");
+      return ws;
+    }),
 
   updateWorkspace: (id, patch) => {
     set((s) => ({
@@ -499,29 +494,28 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Collections ───────────────────────────────────────────────────────
-  createCollection: (workspaceId, name, icon) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
-    const activeCollections = get().collections.filter(c => !c.deletedAt && !c.archivedAt).length;
-    if (!planStore.checkQuota("collection", activeCollections)) {
-      planStore.showQuotaAlert("collection");
-      return { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection;
-    }
-    const existingInWs = get().collections.filter(c => c.workspaceId === workspaceId);
-    const col: Collection = {
-      id: generateId(),
-      workspaceId,
-      name,
-      icon,
-      position: existingInWs.length,
-      seq: 0,
-    };
-    set((s) => ({ collections: [...s.collections, col] }));
-    idbPut("collections", col);
-    syncEngine?.enqueue({ collections: [toServerCollection(col)] });
-    planStore.incrementUsage("collection");
-    return col;
-  },
+  createCollection: (workspaceId, name, icon) =>
+    guardQuota(
+      "collection",
+      get().collections.filter((c) => !c.deletedAt && !c.archivedAt).length,
+      { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection,
+      () => {
+        const existingInWs = get().collections.filter((c) => c.workspaceId === workspaceId);
+        const col: Collection = {
+          id: generateId(),
+          workspaceId,
+          name,
+          icon,
+          position: existingInWs.length,
+          seq: 0,
+        };
+        set((s) => ({ collections: [...s.collections, col] }));
+        idbPut("collections", col);
+        syncEngine?.enqueue({ collections: [toServerCollection(col)] });
+        usePlanStore.getState().incrementUsage("collection");
+        return col;
+      },
+    ),
 
   updateCollection: (id, patch) => {
     set((s) => ({
@@ -576,20 +570,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Tags ──────────────────────────────────────────────────────────────
-  createTag: (name, color) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
-    if (!planStore.checkQuota("tag", get().tags.length)) {
-      planStore.showQuotaAlert("tag");
-      return { id: "", name, color, seq: 0 } as Tag;
-    }
-    const tag: Tag = { id: generateId(), name, color, seq: 0 };
-    set((s) => ({ tags: [...s.tags, tag] }));
-    idbPut("tags", tag);
-    syncEngine?.enqueue({ tags: [toServerTag(tag)] });
-    planStore.incrementUsage("tag");
-    return tag;
-  },
+  createTag: (name, color) =>
+    guardQuota("tag", get().tags.length, { id: "", name, color, seq: 0 } as Tag, () => {
+      const tag: Tag = { id: generateId(), name, color, seq: 0 };
+      set((s) => ({ tags: [...s.tags, tag] }));
+      idbPut("tags", tag);
+      syncEngine?.enqueue({ tags: [toServerTag(tag)] });
+      usePlanStore.getState().incrementUsage("tag");
+      return tag;
+    }),
 
   updateTag: (id, patch) => {
     set((s) => ({
