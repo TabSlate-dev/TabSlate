@@ -213,7 +213,10 @@ export function HeroSection() {
 
         {/* Search results dropdown */}
         {showDropdown && (
-          <div className="absolute top-full left-4 right-4 mt-2 z-50 rounded-xl border bg-popover shadow-lg overflow-hidden">
+          <div
+            className="absolute top-full left-4 right-4 mt-2 z-50 rounded-xl border bg-popover shadow-lg overflow-y-auto max-h-96"
+            onWheel={(e) => e.stopPropagation()}
+          >
             {bookmarkResults.length > 0 && (
               <section>
                 <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5 border-b">

@@ -214,6 +214,7 @@ export function BookmarksContent() {
                   left: 0,
                   width: '100%',
                   transform: `translateY(${virtualRow.start}px)`,
+                  zIndex: 10,
                 }}
               >
                 <div className="p-4 md:p-6 space-y-6 pb-4">
