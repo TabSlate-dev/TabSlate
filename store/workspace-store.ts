@@ -410,6 +410,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
   // ── Workspaces ────────────────────────────────────────────────────────
   createWorkspace: (name, color) =>
+    // Quota-blocked creation returns an empty-id sentinel rather than using
+    // an unsafe assertion. Current callers ignore the return value.
     guardQuota("workspace", get().workspaces.length, { id: "", name, color, position: get().workspaces.length, seq: 0 }, () => {
       const state = get();
       const ws: Workspace = {
