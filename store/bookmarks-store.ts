@@ -311,8 +311,8 @@ export const useBookmarksStore = create<BookmarksState>()(
         const bookmark = get().trashedBookmarks.find(b => b.id === bookmarkId);
         if (!bookmark) { return; }
         const restored = collectionIdOverride !== undefined
-          ? { ...bookmark, collectionId: collectionIdOverride }
-          : bookmark;
+          ? { ...bookmark, collectionId: collectionIdOverride, deletedAt: undefined }
+          : { ...bookmark, deletedAt: undefined };
         idbDelete("trashed-bookmarks", bookmarkId);
         idbPut("bookmarks", restored);
         syncEngine?.enqueue({ bookmarks: [toServerBookmark(restored)] });
@@ -379,6 +379,9 @@ export const useBookmarksStore = create<BookmarksState>()(
           for (const sb of resp.entities.bookmarks) {
             if (sb.is_trashed === 2 || sb.deleted_at) continue;
             const existing = existingById.get(sb.id);
+            const localDeletedAt = sb.is_trashed
+              ? existing?.deletedAt ?? Date.now()
+              : undefined;
             const merged: Bookmark = {
               id: sb.id,
               title: sb.title,
@@ -390,6 +393,7 @@ export const useBookmarksStore = create<BookmarksState>()(
               createdAt: existing?.createdAt ?? String(sb.created_at),
               isFavorite: sb.is_favorite,
               seq: sb.seq,
+              deletedAt: localDeletedAt,
             };
             if (sb.is_trashed) {
               toTrashed.push(merged);
@@ -480,7 +484,8 @@ export const useBookmarksStore = create<BookmarksState>()(
       restoreCollectionBookmarks: (collectionId) => {
         const fromArchive = get().archivedBookmarks.filter((b) => b.collectionId === collectionId);
         const fromTrash = get().trashedBookmarks.filter((b) => b.collectionId === collectionId);
-        const all = [...fromArchive, ...fromTrash];
+        const restoredFromTrash = fromTrash.map((b) => ({ ...b, deletedAt: undefined }));
+        const all = [...fromArchive, ...restoredFromTrash];
         if (all.length === 0) { return; }
         const ops: BulkWriteOp[] = [
           ...fromArchive.map((b) => ({ type: "delete" as const, store: "archived-bookmarks" as const, key: b.id })),
