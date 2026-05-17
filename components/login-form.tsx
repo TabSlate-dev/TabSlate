@@ -60,6 +60,15 @@ export function LoginForm({
   // Controlled OTP value for the reset-password screen
   const [resetCode, setResetCode] = React.useState("");
 
+  // Resend cooldown for the reset-password screen (seconds remaining)
+  const [resetCooldown, setResetCooldown] = React.useState(0);
+
+  React.useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const id = setInterval(() => setResetCooldown((n) => Math.max(0, n - 1)), 1000);
+    return () => clearInterval(id);
+  }, [resetCooldown]);
+
   // Theme detection for captcha iframe
   const [theme, setTheme] = React.useState<"light" | "dark">(() =>
     window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
@@ -148,6 +157,7 @@ export function LoginForm({
               try {
                 await forgotPassword(email, forgotCaptchaToken || undefined);
                 setPendingEmail(email);
+                setResetCooldown(60);
                 switchMode("reset-password");
               } catch (err) {
                 if (err instanceof ApiError) {
@@ -305,16 +315,18 @@ export function LoginForm({
             Didn&apos;t receive it?{" "}
             <button
               type="button"
-              className="underline underline-offset-4 hover:text-primary"
+              disabled={resetCooldown > 0}
+              className="underline underline-offset-4 hover:text-primary disabled:no-underline disabled:opacity-50 disabled:cursor-default"
               onClick={async () => {
                 try {
                   await forgotPassword(pendingEmail);
+                  setResetCooldown(60);
                 } catch {
                   // best-effort
                 }
               }}
             >
-              Resend code
+              {resetCooldown > 0 ? `Resend in ${resetCooldown}s` : "Resend code"}
             </button>
           </FieldDescription>
 
