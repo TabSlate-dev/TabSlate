@@ -99,7 +99,7 @@ function AdCard({ ad, compact }: { ad: typeof ADS[0]; compact: boolean }) {
   return (
     <div 
       className={cn(
-        "relative z-0 h-full rounded-2xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg hover:scale-[1.02] group flex flex-col cursor-pointer",
+        "relative z-0 hover:z-10 h-full rounded-2xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg hover:scale-[1.02] group flex flex-col cursor-pointer",
         compact ? "p-4" : "p-4 md:p-5"
       )}
       onClick={handleClick}
@@ -279,7 +279,7 @@ export function AdBanner() {
       <div 
         ref={scrollRef}
         onScroll={handleScroll}
-        className="flex overflow-x-auto gap-4 pb-4 px-4 md:px-8 [&::-webkit-scrollbar]:hidden"
+        className="flex overflow-x-auto gap-4 pt-4 pb-4 px-4 md:px-8 [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {CAROUSEL_ITEMS.map((ad, idx) => (
