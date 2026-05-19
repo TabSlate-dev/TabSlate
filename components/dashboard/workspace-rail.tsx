@@ -153,9 +153,21 @@ export function WorkspaceRail() {
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [settingsTab, setSettingsTab] = React.useState<"general" | "engines" | "plan">("general");
   const [editWorkspace, setEditWorkspace] = React.useState<Workspace | null>(
     null
   );
+
+  React.useEffect(() => {
+    const handleOpenSettings = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tab?: "general" | "engines" | "plan" }>;
+      const tab = customEvent.detail?.tab || "general";
+      setSettingsTab(tab);
+      setSettingsOpen(true);
+    };
+    window.addEventListener("tabslate-open-settings", handleOpenSettings as any);
+    return () => window.removeEventListener("tabslate-open-settings", handleOpenSettings as any);
+  }, []);
 
   const sorted = React.useMemo(
     () => [...workspaces].sort((a, b) => a.position - b.position),
@@ -247,7 +259,10 @@ export function WorkspaceRail() {
         <Tooltip>
           <TooltipTrigger asChild>
             <button 
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                setSettingsTab("general");
+                setSettingsOpen(true);
+              }}
               className="size-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <Settings className="size-4" />
@@ -281,7 +296,7 @@ export function WorkspaceRail() {
         />
       )}
       
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} initialTab={settingsTab} />
     </TooltipProvider>
   );
 }
