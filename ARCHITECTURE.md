@@ -44,7 +44,8 @@ TabSlate/
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
 │   │   ├── favicon-image.tsx   # 带 fallback 的 favicon 图片
 │   │   ├── input-otp.tsx       # 6 格 OTP 输入框（基于 input-otp 包）
-│   │   └── quota-alert.tsx     # 配额上限浮动通知（fixed 定位，订阅 usePlanStore.quotaAlert，3s 自动消失）
+│   │   ├── quota-alert.tsx     # 配额上限浮动通知（fixed 定位，订阅 usePlanStore.quotaAlert，3s 自动消失）
+│   │   └── select.tsx          # 标准 shadcn Select（基于 @radix-ui/react-select）
 │   └── dashboard/
 │       ├── sidebar/            # 左侧书签导航栏
 │       │   ├── index.tsx       # BookmarksSidebar（主组件，接收 syncStatus + onForceSync）
