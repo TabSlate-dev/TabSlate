@@ -278,6 +278,12 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }
       return;
     }
+
+    // Collect permanently-deleted collection IDs before set() to keep the updater pure.
+    const permDeletedCollectionIds = new Set(
+      resp.entities.collections.filter(c => c.is_deleted === 2).map(c => c.id)
+    );
+
     set((state) => {
       let workspaces = [...state.workspaces];
       let collections = [...state.collections];
@@ -297,9 +303,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }
 
       for (const sc of resp.entities.collections) {
-        if (sc.is_deleted === 2) {
-          // Permanently deleted on server — remove from IDB and skip adding to state
-          idbDelete("collections", sc.id);
+        if (permDeletedCollectionIds.has(sc.id)) {
+          // Permanently deleted on server — skip; IDB deletion happens after set() returns.
           collections = collections.filter(c => c.id !== sc.id);
           continue;
         }
@@ -385,9 +390,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     for (const sw of resp.entities.workspaces) {
       if (sw.deleted_at) { idbDelete("workspaces", sw.id); }
     }
-    // Note: deleted collections are kept in IDB with deletedAt set (not hard-deleted)
-    // so TrashContent can display them after a page reload. permanentlyDeleteCollection
-    // is the only path that calls idbDelete("collections", id).
+    // is_deleted=2: hard-delete from IDB (state already filtered above).
+    // is_deleted=1 (soft-deleted): kept in IDB with deletedAt so TrashContent
+    // can display the collection card after a page reload.
+    for (const id of permDeletedCollectionIds) { idbDelete("collections", id); }
     for (const st of resp.entities.tags) {
       if (st.deleted_at) { idbDelete("tags", st.id); }
     }
