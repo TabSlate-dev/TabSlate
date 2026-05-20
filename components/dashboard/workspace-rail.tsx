@@ -33,6 +33,7 @@ import {
 } from "@/store/workspace-store";
 import type { Workspace } from "@/lib/types";
 import { SettingsDialog } from "@/components/dashboard/settings-dialog";
+import { ImportDialog } from "@/components/dashboard/import-dialog";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -153,9 +154,29 @@ export function WorkspaceRail() {
 
   const [createOpen, setCreateOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+  const [importDialogOpen, setImportDialogOpen] = React.useState(false);
+  const [settingsTab, setSettingsTab] = React.useState<"general" | "engines" | "plan">("general");
   const [editWorkspace, setEditWorkspace] = React.useState<Workspace | null>(
     null
   );
+
+  React.useEffect(() => {
+    const handleOpenSettings = (e: Event) => {
+      const customEvent = e as CustomEvent<{ tab?: "general" | "engines" | "plan" }>;
+      const tab = customEvent.detail?.tab || "general";
+      setSettingsTab(tab);
+      setSettingsOpen(true);
+    };
+    const handleOpenImport = () => {
+      setImportDialogOpen(true);
+    };
+    window.addEventListener("tabslate-open-settings", handleOpenSettings as any);
+    window.addEventListener("tabslate-open-import", handleOpenImport);
+    return () => {
+      window.removeEventListener("tabslate-open-settings", handleOpenSettings as any);
+      window.removeEventListener("tabslate-open-import", handleOpenImport);
+    };
+  }, []);
 
   const sorted = React.useMemo(
     () => [...workspaces].sort((a, b) => a.position - b.position),
@@ -247,7 +268,10 @@ export function WorkspaceRail() {
         <Tooltip>
           <TooltipTrigger asChild>
             <button 
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                setSettingsTab("general");
+                setSettingsOpen(true);
+              }}
               className="size-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             >
               <Settings className="size-4" />
@@ -281,7 +305,8 @@ export function WorkspaceRail() {
         />
       )}
       
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} initialTab={settingsTab} />
+      <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
     </TooltipProvider>
   );
 }

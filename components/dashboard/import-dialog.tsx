@@ -19,6 +19,13 @@ import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { usePlanStore } from "@/store/plan-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type ImportStep = 0 | 1 | 2 | 3;
 type ImportSource = "toby" | "chrome";
@@ -676,21 +683,18 @@ export function ImportDialog({ open, onOpenChange }: Props) {
           <div className="space-y-4">
             <Field>
               <FieldLabel htmlFor="import-workspace">Workspace</FieldLabel>
-              <select
-                id="import-workspace"
-                value={workspaceId}
-                onChange={(event) => setWorkspaceId(event.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                <option value="" disabled>
-                  Select a workspace
-                </option>
-                {activeWorkspaces.map((workspace) => (
-                  <option key={workspace.id} value={workspace.id}>
-                    {workspace.name}
-                  </option>
-                ))}
-              </select>
+              <Select value={workspaceId} onValueChange={setWorkspaceId}>
+                <SelectTrigger id="import-workspace">
+                  <SelectValue placeholder="Select a workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeWorkspaces.map((workspace) => (
+                    <SelectItem key={workspace.id} value={workspace.id}>
+                      {workspace.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FieldDescription>
                 Imported items will be created inside the selected workspace.
               </FieldDescription>

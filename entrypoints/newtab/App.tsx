@@ -228,6 +228,7 @@ function SyncProvider({
             const resourceMap: Record<string, QuotaResource> = {
               collection: "collection",
               saved_group: "saved_group",
+              workspace: "workspace",
             };
             const resource = rejected.type ? resourceMap[rejected.type] : undefined;
             if (resource) { usePlanStore.getState().showQuotaAlert(resource); }

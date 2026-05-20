@@ -66,7 +66,7 @@ export function BookmarkCardAd({
   return (
     <div
       className={cn(
-        "relative z-0 flex flex-col rounded-xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg group h-full",
+        "relative z-0 hover:z-10 flex flex-col rounded-xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg group h-full",
         className
       )}
     >

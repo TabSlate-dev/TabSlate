@@ -214,96 +214,112 @@ export function HeroSection() {
         {/* Search results dropdown */}
         {showDropdown && (
           <div
-            className="absolute top-full left-4 right-4 mt-2 z-50 rounded-xl border bg-popover shadow-lg overflow-y-auto max-h-96"
+            className="absolute top-full left-4 right-4 mt-3 z-50 rounded-2xl border border-muted-foreground/30 dark:border-zinc-700/80 bg-background/95 dark:bg-zinc-950/95 backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.25),0_0_30px_rgba(0,0,0,0.05)] dark:shadow-[0_30px_70px_rgba(0,0,0,0.95),0_0_35px_rgba(99,102,241,0.18),0_0_55px_rgba(168,85,247,0.12)] p-1.5 ring-1 ring-black/10 dark:ring-white/15 overflow-hidden flex flex-col"
             onWheel={(e) => e.stopPropagation()}
           >
-            {bookmarkResults.length > 0 && (
-              <section>
-                <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5 border-b">
-                  <BookmarkIcon className="size-3" />
-                  Bookmarks ({bookmarkResults.length})
-                </div>
-                <div className="px-2 py-1 flex flex-col gap-0.5">
-                  {bookmarkResults.map((bm, i) => (
-                    <button
-                      key={bm.id}
-                      type="button"
-                      className={cn(
-                        "w-full flex items-start gap-2.5 px-3 py-2 rounded-xl text-left transition-colors",
-                        isActive(i) ? "bg-accent" : "hover:bg-accent/60",
-                      )}
-                      onMouseEnter={() => setActiveIndex(i)}
-                      onClick={() => handleSelect(i)}
-                    >
-                      <FaviconImage
-                        src={(() => { try { return `https://www.google.com/s2/favicons?domain=${new URL(bm.url).hostname}&sz=16`; } catch { return ""; } })()}
-                        className="size-4 mt-0.5 shrink-0"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-medium truncate">{bm.title}</span>
-                          {bm.isArchived && (
-                            <span className="shrink-0 flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded border text-muted-foreground">
-                              <Archive className="size-2.5" />
-                              Archived
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-xs text-muted-foreground truncate">{bm.url}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {filteredTabs.length > 0 && (
-              <section>
-                <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5 border-b">
-                  <Globe className="size-3" />
-                  Open Tabs ({filteredTabs.length})
-                </div>
-                <div className="px-2 py-1 flex flex-col gap-0.5">
-                  {filteredTabs.map((tab, i) => {
-                    const flatIdx = bookmarkResults.length + i;
-                    return (
+            <div
+              className="overflow-y-auto max-h-96 w-full flex flex-col gap-1 pr-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-muted-foreground/25 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 transition-all"
+            >
+              {bookmarkResults.length > 0 && (
+                <section className="flex flex-col gap-1">
+                  <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground/75 uppercase tracking-widest flex items-center gap-1.5 border-b border-muted/20 bg-muted/5 rounded-t-xl">
+                    <BookmarkIcon className="size-3 text-primary/80" />
+                    Bookmarks ({bookmarkResults.length})
+                  </div>
+                  <div className="px-1.5 py-1 flex flex-col gap-1">
+                    {bookmarkResults.map((bm, i) => (
                       <button
-                        key={tab.id}
+                        key={bm.id}
                         type="button"
                         className={cn(
-                          "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors",
-                          isActive(flatIdx) ? "bg-accent" : "hover:bg-accent/60",
+                          "w-full flex items-start gap-3 px-3 py-2 rounded-xl text-left transition-all duration-200 border border-transparent cursor-pointer",
+                          isActive(i)
+                            ? "bg-primary/5 border-primary/10 dark:bg-primary/10 font-medium"
+                            : "hover:bg-muted/40 hover:border-muted/30",
                         )}
-                        onMouseEnter={() => setActiveIndex(flatIdx)}
-                        onClick={() => handleSelect(flatIdx)}
+                        onMouseEnter={() => setActiveIndex(i)}
+                        onClick={() => handleSelect(i)}
                       >
-                        <FaviconImage src={tab.favIconUrl} className="size-4 shrink-0" />
+                        <div className="size-6 rounded-md bg-background/85 shadow-xs border border-muted/40 flex items-center justify-center shrink-0 mt-0.5">
+                          <FaviconImage
+                            src={(() => { try { return `https://www.google.com/s2/favicons?domain=${new URL(bm.url).hostname}&sz=16`; } catch { return ""; } })()}
+                            className="size-3.5"
+                          />
+                        </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate">{tab.title}</div>
-                          <div className="text-xs text-muted-foreground truncate">{tab.url}</div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-sm font-medium truncate text-foreground">{bm.title}</span>
+                            {bm.isArchived && (
+                              <span className="shrink-0 flex items-center gap-0.5 text-[9px] px-1 py-px rounded border border-muted/50 bg-muted/30 text-muted-foreground font-semibold">
+                                <Archive className="size-2.5" />
+                                Archived
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground/60 truncate mt-0.5">{bm.url}</div>
                         </div>
                       </button>
-                    );
-                  })}
-                </div>
-              </section>
-            )}
+                    ))}
+                  </div>
+                </section>
+              )}
 
-            <div className="border-t px-2 py-1">
-              <button
-                type="button"
-                className={cn(
-                  "w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left transition-colors",
-                  isActive(engineIndex) ? "bg-accent" : "hover:bg-accent/60",
-                )}
-                onMouseEnter={() => setActiveIndex(engineIndex)}
-                onClick={() => handleSelect(engineIndex)}
-              >
-                <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
-                <span className="text-sm">
-                  Search <span className="font-medium">"{query}"</span> with {engine.name}
-                </span>
-              </button>
+              {filteredTabs.length > 0 && (
+                <section className="flex flex-col gap-1">
+                  <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground/75 uppercase tracking-widest flex items-center gap-1.5 border-b border-muted/20 bg-muted/5 rounded-t-xl">
+                    <Globe className="size-3 text-primary/80" />
+                    Open Tabs ({filteredTabs.length})
+                  </div>
+                  <div className="px-1.5 py-1 flex flex-col gap-1">
+                    {filteredTabs.map((tab, i) => {
+                      const flatIdx = bookmarkResults.length + i;
+                      return (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          className={cn(
+                            "w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-all duration-200 border border-transparent cursor-pointer",
+                            isActive(flatIdx)
+                              ? "bg-primary/5 border-primary/10 dark:bg-primary/10 font-medium"
+                              : "hover:bg-muted/40 hover:border-muted/30",
+                          )}
+                          onMouseEnter={() => setActiveIndex(flatIdx)}
+                          onClick={() => handleSelect(flatIdx)}
+                        >
+                          <div className="size-6 rounded-md bg-background/85 shadow-xs border border-muted/40 flex items-center justify-center shrink-0">
+                            <FaviconImage src={tab.favIconUrl} className="size-3.5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium truncate text-foreground">{tab.title}</div>
+                            <div className="text-xs text-muted-foreground/60 truncate mt-0.5">{tab.url}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
+              <div className="border-t border-muted/20 px-1.5 py-1.5 mt-1 bg-muted/5">
+                <button
+                  type="button"
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all duration-200 border border-transparent cursor-pointer",
+                    isActive(engineIndex)
+                      ? "bg-primary/5 border-primary/10 dark:bg-primary/10 font-medium"
+                      : "hover:bg-muted/40 hover:border-muted/30",
+                  )}
+                  onMouseEnter={() => setActiveIndex(engineIndex)}
+                  onClick={() => handleSelect(engineIndex)}
+                >
+                  <div className="size-6 rounded-md bg-background/85 shadow-xs border border-muted/40 flex items-center justify-center shrink-0">
+                    <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-3.5 rounded-xs" />
+                  </div>
+                  <span className="text-sm text-foreground">
+                    Search <span className="font-semibold text-primary">"{query}"</span> with {engine.name}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         )}
