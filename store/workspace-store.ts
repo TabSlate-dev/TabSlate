@@ -487,7 +487,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   createCollection: (workspaceId, name, icon) =>
     guardQuota(
       "collection",
-      get().collections.filter((c) => !c.deletedAt && !c.archivedAt).length,
+      get().collections.filter((c) => !c.deletedAt).length,
       { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection,
       () => {
         const existingInWs = get().collections.filter((c) => c.workspaceId === workspaceId);
@@ -594,9 +594,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     planStore.ensureFresh();
 
     const bookmarkCount = useBookmarksStore.getState().bookmarks.length;
-    const activeCollectionCount = get().collections.filter(
-      (c) => !c.deletedAt && !c.archivedAt,
-    ).length;
+    // Backend counts collections where is_deleted = 0, which includes archived ones.
+    const activeCollectionCount = get().collections.filter((c) => !c.deletedAt).length;
 
     if (
       plan.bookmarks.length > 0 &&
