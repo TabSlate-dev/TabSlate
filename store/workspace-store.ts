@@ -554,13 +554,26 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   permanentlyDeleteCollection: (id) => {
-    const col = get().collections.find(c => c.id === id && !!c.deletedAt);
-    if (!col) { return; }
-    syncEngine?.enqueue({ collections: [toServerCollection(col, { isDeleted: 2 })] });
-    idbDelete("collections", id);
-    set((s) => ({ collections: s.collections.filter(c => c.id !== id) }));
-    useBookmarksStore.getState().permanentlyDeleteCollectionBookmarks(id);
-    usePlanStore.getState().decrementUsage("collection");
+    void (async () => {
+      const col = get().collections.find(c => c.id === id && !!c.deletedAt);
+      if (!col) { return; }
+      // Optimistic UI — remove from state immediately; IDB cleanup waits for server.
+      set((s) => ({ collections: s.collections.filter(c => c.id !== id) }));
+      if (syncEngine) {
+        try {
+          await syncEngine.forcePush({ collections: [toServerCollection(col, { isDeleted: 2 })] });
+        } catch {
+          // Push failed — roll back so the collection reappears in trash.
+          set((s) => ({ collections: [...s.collections, col] }));
+          return;
+        }
+      }
+      // Server confirmed — safe to delete from IDB.
+      idbDelete("collections", id);
+      usePlanStore.getState().decrementUsage("collection");
+      // Push bookmarks tombstones (is_trashed:2) and clean up locally.
+      useBookmarksStore.getState().permanentlyDeleteCollectionBookmarks(id);
+    })();
   },
 
   // ── Tags ──────────────────────────────────────────────────────────────

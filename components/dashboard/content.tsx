@@ -109,10 +109,13 @@ export function BookmarksContent() {
   const [editingBookmark, setEditingBookmark] = React.useState<BookmarkType | null>(null);
   const [taggingBookmark, setTaggingBookmark] = React.useState<BookmarkType | null>(null);
 
+  const prevWorkspaceIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    setSelectedCollection("all");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId]);
+    if (prevWorkspaceIdRef.current !== null && prevWorkspaceIdRef.current !== activeWorkspaceId) {
+      setSelectedCollection("all");
+    }
+    prevWorkspaceIdRef.current = activeWorkspaceId;
+  }, [activeWorkspaceId, setSelectedCollection]);
 
   const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, dropZoneProps } =
     useTabDragDrop();

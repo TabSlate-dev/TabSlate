@@ -221,6 +221,8 @@ function SyncProvider({
           useBookmarksStore.getState().sweepUnsynced();
           useGroupsStore.getState().sweepUnsynced();
         }
+        // Refresh displayed usage after each pull (5-min TTL, no-op when cache is fresh).
+        usePlanStore.getState().ensureFresh();
       },
       (pushResp) => {
         for (const rejected of pushResp.rejected) {

@@ -274,7 +274,7 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       addBookmark: (input) => {
         const fallback: Bookmark = { id: "", createdAt: "", isFavorite: false, ...input };
-        return guardQuota("bookmark", get().bookmarks.length, fallback, () => {
+        return guardQuota("bookmark", undefined, fallback, () => {
           const bookmark: Bookmark = {
             id: generateId(),
             createdAt: new Date().toISOString(),
@@ -291,7 +291,7 @@ export const useBookmarksStore = create<BookmarksState>()(
       },
 
       addBookmarks: (newBookmarks) =>
-        guardQuota("bookmark", get().bookmarks.length + newBookmarks.length - 1, undefined, () => {
+        guardQuota("bookmark", undefined, undefined, () => {
           const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
           set((s) => ({ bookmarks: [...normalized, ...s.bookmarks] }));
           for (const b of normalized) { idbPut("bookmarks", b); }
@@ -488,31 +488,28 @@ export const useBookmarksStore = create<BookmarksState>()(
       },
 
       permanentlyDelete: (bookmarkId) => {
-        const state = get();
-        const bookmark = state._trashedLoaded
-          ? state.trashedBookmarks.find((candidate) => candidate.id === bookmarkId)
-          : undefined;
-        if (bookmark) {
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark, { isTrashed: 2 })] });
-          idbDelete("trashed-bookmarks", bookmarkId);
+        void (async () => {
+          const state = get();
+          const bookmark = state._trashedLoaded
+            ? state.trashedBookmarks.find((candidate) => candidate.id === bookmarkId)
+            : await readBookmarkById("trashed-bookmarks", bookmarkId);
+          if (!bookmark) { return; }
+          // Optimistic UI removal — item stays in IDB until server confirms.
           set((current) => ({
             trashedBookmarks: current.trashedBookmarks.filter((candidate) => candidate.id !== bookmarkId),
           }));
-          return;
-        }
-
-        void (async () => {
-          const trashed = state._trashedLoaded ? undefined : await readBookmarkById("trashed-bookmarks", bookmarkId);
-          if (!trashed) {
-            return;
+          if (syncEngine) {
+            try {
+              await syncEngine.forcePush({ bookmarks: [toServerBookmark(bookmark, { isTrashed: 2 })] });
+            } catch {
+              // Push failed — roll back UI so item is visible again and user can retry.
+              set((current) => ({ trashedBookmarks: [...current.trashedBookmarks, bookmark] }));
+              return;
+            }
           }
-          syncEngine?.enqueue({ bookmarks: [toServerBookmark(trashed, { isTrashed: 2 })] });
+          // Server confirmed — safe to delete from IDB.
           await idbDelete("trashed-bookmarks", bookmarkId);
-          set((current) => ({
-            trashedBookmarks: current._trashedLoaded
-              ? current.trashedBookmarks.filter((candidate) => candidate.id !== bookmarkId)
-              : current.trashedBookmarks,
-          }));
+          usePlanStore.getState().decrementUsage("bookmark");
         })();
       },
 
@@ -751,7 +748,6 @@ export const useBookmarksStore = create<BookmarksState>()(
               ? [...current.trashedBookmarks.filter((bookmark) => bookmark.collectionId !== collectionId), ...trashed]
               : current.trashedBookmarks,
           }));
-          usePlanStore.getState().decrementUsage("bookmark", all.length);
         })();
       },
 
@@ -783,7 +779,6 @@ export const useBookmarksStore = create<BookmarksState>()(
               : current.trashedBookmarks,
             bookmarks: [...current.bookmarks, ...all],
           }));
-          usePlanStore.getState().incrementUsage("bookmark", all.length);
         })();
       },
 
@@ -798,7 +793,13 @@ export const useBookmarksStore = create<BookmarksState>()(
             : await readArchivedBookmarksForCollection(collectionId);
           const all = [...trashed, ...archived];
           if (all.length === 0) { return; }
-          syncEngine?.enqueue({ bookmarks: all.map((bookmark) => toServerBookmark(bookmark, { isTrashed: 2 })) });
+          if (syncEngine) {
+            try {
+              await syncEngine.forcePush({ bookmarks: all.map((bookmark) => toServerBookmark(bookmark, { isTrashed: 2 })) });
+            } catch {
+              return; // Push failed — leave IDB intact; caller (permanentlyDeleteCollection) handles rollback.
+            }
+          }
           const ops: BulkWriteOp[] = [
             ...trashed.map((bookmark) => ({ type: "delete" as const, store: "trashed-bookmarks" as const, key: bookmark.id })),
             ...archived.map((bookmark) => ({ type: "delete" as const, store: "archived-bookmarks" as const, key: bookmark.id })),
@@ -812,6 +813,7 @@ export const useBookmarksStore = create<BookmarksState>()(
               ? current.archivedBookmarks.filter((bookmark) => bookmark.collectionId !== collectionId)
               : current.archivedBookmarks,
           }));
+          usePlanStore.getState().decrementUsage("bookmark", all.length);
         })();
       },
 

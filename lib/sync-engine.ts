@@ -1,4 +1,4 @@
-import { api, SyncPullResponse, SyncPushResponse } from "@/lib/api";
+import { api, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
 import { SyncQueue } from "@/lib/sync-queue";
 import { SSEClient } from "@/lib/sse-client";
 
@@ -75,6 +75,27 @@ export class SyncEngine {
   enqueue(entities: Parameters<SyncQueue["enqueue"]>[0]) {
     this.setStatus("syncing");
     this.queue.enqueue(entities);
+  }
+
+  /**
+   * Push a payload directly to the server, bypassing the debounce queue.
+   * Used for permanent-delete operations: the server must confirm before local
+   * IDB cleanup, so that a page refresh mid-operation leaves the item in IDB
+   * (still visible in trash) rather than creating a server-side orphan.
+   */
+  async forcePush(entities: Partial<{ workspaces: object[]; collections: object[]; bookmarks: object[]; tags: object[]; groups: object[] }>): Promise<void> {
+    const creds = this.getCredentials();
+    if (!creds) { throw new Error("not authenticated"); }
+    const payload: SyncPushPayload = {
+      entities: {
+        workspaces: entities.workspaces ?? [],
+        collections: entities.collections ?? [],
+        bookmarks: entities.bookmarks ?? [],
+        tags: entities.tags ?? [],
+        groups: entities.groups ?? [],
+      },
+    };
+    await api.syncPush(creds.baseUrl, creds.accessToken, payload);
   }
 
   async forceSync(): Promise<{ pushed: number; pulled: number }> {
