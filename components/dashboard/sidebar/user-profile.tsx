@@ -9,6 +9,7 @@ import {
   Tag,
   Monitor,
   Sparkles,
+  Upload,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
 import { usePlanStore } from "@/store/plan-store";
@@ -289,6 +290,17 @@ export function UserProfile() {
           >
             <Award className={cn("size-4", cardStyles.badgeColor)} />
             <span>Plan & Quotas</span>
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            className="cursor-pointer flex items-center gap-2"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("tabslate-open-import"));
+            }}
+          >
+            <Upload className="size-4" />
+            <span>Import Bookmarks</span>
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
