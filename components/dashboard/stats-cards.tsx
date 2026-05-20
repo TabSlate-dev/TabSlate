@@ -39,19 +39,28 @@ export function StatsCards() {
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
   const values = useMemo(() => {
-    const wsCollectionIds = new Set(
+    // Collections: count all non-permanently-deleted collections in this workspace.
+    // Backend uses WHERE is_deleted = 0, which includes active, archived, and
+    // soft-deleted (trashed) collections. permanentlyDeleteCollection is the only
+    // action that removes a collection from the local array, so filtering by
+    // workspaceId alone matches the server count exactly.
+    const wsCollections = collections.filter((c) => c.workspaceId === activeWorkspaceId);
+
+    // For bookmark counts we only care about bookmarks in active (visible) collections.
+    const wsActiveCollectionIds = new Set(
       collections
         .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
         .map((c) => c.id)
     );
-    const wsBookmarks = bookmarks.filter((b) => wsCollectionIds.has(b.collectionId));
+    const wsBookmarks = bookmarks.filter((b) => wsActiveCollectionIds.has(b.collectionId));
     return {
       bookmarks: wsBookmarks.length,
       favorites: wsBookmarks.filter((b) => b.isFavorite).length,
-      collections: wsCollectionIds.size,
-      tags: tags.filter((t) => !t.deletedAt).length,
+      collections: wsCollections.length,
+      tags: tags.length,  // deleteTag removes immediately from state, no soft-delete residue
     };
   }, [bookmarks, collections, tags, activeWorkspaceId]);
+
 
   return (
     <div className="grid grid-cols-2 gap-2 px-3 py-2">
