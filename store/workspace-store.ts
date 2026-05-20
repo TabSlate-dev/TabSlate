@@ -659,7 +659,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const wsId = workspaceId ?? state.activeWorkspaceId;
     return state.collections
       .filter((c) => c.workspaceId === wsId && !c.deletedAt && !c.archivedAt)
-      .sort((a, b) => a.position - b.position);
+      .sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return b.position - a.position;
+      });
   },
 
   getArchivedCollections: () =>

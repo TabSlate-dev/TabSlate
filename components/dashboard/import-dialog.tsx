@@ -180,7 +180,11 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     () =>
       collections
         .filter((collection) => !collection.deletedAt && !collection.archivedAt)
-        .sort((left, right) => left.position - right.position),
+        .sort((left, right) => {
+          if (left.isDefault) return -1;
+          if (right.isDefault) return 1;
+          return right.position - left.position;
+        }),
     [collections],
   );
 
