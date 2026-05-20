@@ -487,7 +487,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   createCollection: (workspaceId, name, icon) =>
     guardQuota(
       "collection",
-      get().collections.filter((c) => !c.deletedAt).length,
+      // Backend counts all collections where is_deleted=0, which includes soft-deleted
+      // (trashed) ones — they stay is_deleted=0 until permanently deleted (is_deleted=2).
+      // Permanently deleted collections are removed from the local array entirely,
+      // so collections.length always matches the backend's count.
+      get().collections.length,
       { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection,
       () => {
         const existingInWs = get().collections.filter((c) => c.workspaceId === workspaceId);
@@ -594,8 +598,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     planStore.ensureFresh();
 
     const bookmarkCount = useBookmarksStore.getState().bookmarks.length;
-    // Backend counts collections where is_deleted = 0, which includes archived ones.
-    const activeCollectionCount = get().collections.filter((c) => !c.deletedAt).length;
+    // Backend counts collections where is_deleted = 0, which includes soft-deleted (trashed)
+    // and archived ones. Only permanentlyDeleteCollection sends is_deleted:2 and removes
+    // the entry from the local array, so collections.length mirrors the server count.
+    const activeCollectionCount = get().collections.length;
 
     if (
       plan.bookmarks.length > 0 &&
