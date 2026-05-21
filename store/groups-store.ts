@@ -195,17 +195,30 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   },
 
   permanentlyDeleteGroup: (id) => {
-    const group = get().groups.find(g => g.id === id);
-    const tabs = get().groupTabs.filter(t => t.groupId === id);
-    if (group) {
-      syncEngine?.enqueue({ groups: [toServerGroup(group, tabs, { isDeleted: 2 })] });
-    }
-    for (const t of tabs) { idbDelete("group-tabs", t.id); }
-    idbDelete("groups", id);
-    set((state) => ({
-      groups: state.groups.filter(g => g.id !== id),
-      groupTabs: state.groupTabs.filter(t => t.groupId !== id),
-    }));
+    void (async () => {
+      const group = get().groups.find(g => g.id === id);
+      const tabs = get().groupTabs.filter(t => t.groupId === id);
+      // Optimistic UI — remove from state immediately; IDB cleanup waits for server.
+      set((state) => ({
+        groups: state.groups.filter(g => g.id !== id),
+        groupTabs: state.groupTabs.filter(t => t.groupId !== id),
+      }));
+      if (group && syncEngine) {
+        try {
+          await syncEngine.forcePush({ groups: [toServerGroup(group, tabs, { isDeleted: 2 })] });
+        } catch {
+          // Push failed — roll back so the group reappears in trash.
+          set((state) => ({
+            groups: [...state.groups, group],
+            groupTabs: [...state.groupTabs, ...tabs],
+          }));
+          return;
+        }
+      }
+      // Server confirmed — safe to delete from IDB.
+      for (const t of tabs) { idbDelete("group-tabs", t.id); }
+      idbDelete("groups", id);
+    })();
   },
 
   deleteTabFromTrash: (tabId) => {

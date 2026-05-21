@@ -151,10 +151,10 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | Store | 持久化后端 | 职责 |
 |---|---|---|
 | `useAuthStore` | chrome.storage.session（accessToken）+ chrome.storage.local（其余） | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout/silentRefresh；`silentRefresh` 在 rehydrate 时自动触发（refreshToken 存在但 accessToken 缺失），支持指数退避重试（2s→60s），仅在确切 401/403 时清除 token |
-| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时立即从所有 bucket 删除 |
-| `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并；`permanentlyDeleteCollection` 先推 `isDeleted:2` 再清理本地；`is_deleted===2` 时从 state+IDB 删除 |
-| `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 先推 `isDeleted:2` 再清理本地；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
-| `usePlanStore` | 不持久化（内存） | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 在 create/delete action 中维护本地计数；`clear` 在登出时调用 |
+| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时从所有 bucket 清除；`permanentlyDelete` / `permanentlyDeleteCollectionBookmarks` 采用 push-first 模式（`forcePush` → `idbDelete` → `decrementUsage`），失败时回滚乐观 UI |
+| `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并；`permanentlyDeleteCollection` 采用 push-first 模式（`forcePush` → `idbDelete` → `decrementUsage`），失败时回滚；`is_deleted===2` 时从 state+IDB 删除 |
+| `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 采用 push-first 模式（`forcePush` → `idbDelete`），失败时回滚；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
+| `usePlanStore` | chrome.storage.local | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；书签配额以 `is_trashed < 2` 计（active + trashed），仅 `permanentlyDelete` 时 `decrementUsage`；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 维护本地计数；`clear` 在登出时调用 |
 | `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
 | `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
 
@@ -294,7 +294,7 @@ SyncEngine
 3. 响应中的 workspaces/collections/tags 经 `mergeFromServer`（workspace-store）LWW 合并；`sc.is_deleted===2` 的 collection 记录直接从 state+IDB 删除，不参与 LWW
 4. bookmarks 经 `mergeFromServer`（bookmarks-store）LWW 合并（含 `tag_ids`）；`sb.is_trashed===2` 的记录从 active/archived/trashed 三个 bucket 全部清除
 5. groups 经 `mergeFromServer`（groups-store）LWW 合并；`sg.is_deleted===2` 的 group 及其 tabs 从 state+IDB 删除；软删除组 update+keep（供回收站过滤），活跃组整体替换 tab 快照
-6. App.tsx 的 `onPullSuccess` 回调更新 `localSeq`；若非首次推送，调用 `sweepUnsynced()` 将所有 `seq=0` 实体补推（处理 popup/background 在 newtab 关闭时直接写 storage 的情况）
+6. App.tsx 的 `onPullSuccess` 回调更新 `localSeq`；若非首次推送，调用 `sweepUnsynced()` 将所有 `seq=0` 实体补推；末尾调用 `usePlanStore.getState().ensureFresh()` 刷新用量展示（TTL 内 no-op）
 
 **SSE 连接（实时通知）：**
 - `POST /auth/sse-token` 获取 30s 单次使用令牌（EventSource 无法携带 Authorization header）
@@ -315,7 +315,8 @@ StoreGate → AuthGate → SyncProvider（render-prop）
 `SyncProvider` deps `[accessToken, serverUrl]`：token 刷新或 server URL 变更时销毁旧引擎再创建新引擎。  
 cleanup 函数依次调用 `engine.forceSync()`（fire-and-forget）、`engine.destroy()`、`releaseSyncEngine(engine)` 确保登出前推送最后一次变更，且不会误销毁已重建的新引擎。  
 `onPushSuccess` 处理 `quota_exceeded` 拒绝：调用 `showQuotaAlert(type)` 展示配额提示，并触发 `fetchPlan()` 刷新用量。  
-`SyncStatusIndicator` 在 error 状态下悬停时通过 Tooltip 展示 `syncErrorMessage`。
+`SyncStatusIndicator` 在 error 状态下悬停时通过 Tooltip 展示 `syncErrorMessage`。  
+`SyncEngine.forcePush(entities)` — 直接、非防抖的单次推送，供 `permanentlyDeleteCollection` / `permanentlyDeleteGroup` / `permanentlyDelete`（书签）在确认服务端落库后再清理本地 IDB 使用；push 失败时调用方回滚乐观 UI。
 
 ### 冲突解决（LWW）
 

@@ -278,6 +278,12 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }
       return;
     }
+
+    // Collect permanently-deleted collection IDs before set() to keep the updater pure.
+    const permDeletedCollectionIds = new Set(
+      resp.entities.collections.filter(c => c.is_deleted === 2).map(c => c.id)
+    );
+
     set((state) => {
       let workspaces = [...state.workspaces];
       let collections = [...state.collections];
@@ -297,9 +303,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }
 
       for (const sc of resp.entities.collections) {
-        if (sc.is_deleted === 2) {
-          // Permanently deleted on server — remove from IDB and skip adding to state
-          idbDelete("collections", sc.id);
+        if (permDeletedCollectionIds.has(sc.id)) {
+          // Permanently deleted on server — skip; IDB deletion happens after set() returns.
           collections = collections.filter(c => c.id !== sc.id);
           continue;
         }
@@ -385,9 +390,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     for (const sw of resp.entities.workspaces) {
       if (sw.deleted_at) { idbDelete("workspaces", sw.id); }
     }
-    // Note: deleted collections are kept in IDB with deletedAt set (not hard-deleted)
-    // so TrashContent can display them after a page reload. permanentlyDeleteCollection
-    // is the only path that calls idbDelete("collections", id).
+    // is_deleted=2: hard-delete from IDB (state already filtered above).
+    // is_deleted=1 (soft-deleted): kept in IDB with deletedAt so TrashContent
+    // can display the collection card after a page reload.
+    for (const id of permDeletedCollectionIds) { idbDelete("collections", id); }
     for (const st of resp.entities.tags) {
       if (st.deleted_at) { idbDelete("tags", st.id); }
     }
@@ -487,7 +493,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   createCollection: (workspaceId, name, icon) =>
     guardQuota(
       "collection",
-      get().collections.filter((c) => !c.deletedAt && !c.archivedAt).length,
+      // Backend counts all collections where is_deleted=0, which includes soft-deleted
+      // (trashed) ones — they stay is_deleted=0 until permanently deleted (is_deleted=2).
+      // Permanently deleted collections are removed from the local array entirely,
+      // so collections.length always matches the backend's count.
+      get().collections.length,
       { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection,
       () => {
         const existingInWs = get().collections.filter((c) => c.workspaceId === workspaceId);
@@ -550,13 +560,26 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   permanentlyDeleteCollection: (id) => {
-    const col = get().collections.find(c => c.id === id && !!c.deletedAt);
-    if (!col) { return; }
-    syncEngine?.enqueue({ collections: [toServerCollection(col, { isDeleted: 2 })] });
-    idbDelete("collections", id);
-    set((s) => ({ collections: s.collections.filter(c => c.id !== id) }));
-    useBookmarksStore.getState().permanentlyDeleteCollectionBookmarks(id);
-    usePlanStore.getState().decrementUsage("collection");
+    void (async () => {
+      const col = get().collections.find(c => c.id === id && !!c.deletedAt);
+      if (!col) { return; }
+      // Optimistic UI — remove from state immediately; IDB cleanup waits for server.
+      set((s) => ({ collections: s.collections.filter(c => c.id !== id) }));
+      if (syncEngine) {
+        try {
+          await syncEngine.forcePush({ collections: [toServerCollection(col, { isDeleted: 2 })] });
+        } catch {
+          // Push failed — roll back so the collection reappears in trash.
+          set((s) => ({ collections: [...s.collections, col] }));
+          return;
+        }
+      }
+      // Server confirmed — safe to delete from IDB.
+      idbDelete("collections", id);
+      usePlanStore.getState().decrementUsage("collection");
+      // Push bookmarks tombstones (is_trashed:2) and clean up locally.
+      useBookmarksStore.getState().permanentlyDeleteCollectionBookmarks(id);
+    })();
   },
 
   // ── Tags ──────────────────────────────────────────────────────────────
@@ -594,9 +617,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     planStore.ensureFresh();
 
     const bookmarkCount = useBookmarksStore.getState().bookmarks.length;
-    const activeCollectionCount = get().collections.filter(
-      (c) => !c.deletedAt && !c.archivedAt,
-    ).length;
+    // Backend counts collections where is_deleted = 0, which includes soft-deleted (trashed)
+    // and archived ones. Only permanentlyDeleteCollection sends is_deleted:2 and removes
+    // the entry from the local array, so collections.length mirrors the server count.
+    const activeCollectionCount = get().collections.length;
 
     if (
       plan.bookmarks.length > 0 &&
@@ -659,7 +683,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const wsId = workspaceId ?? state.activeWorkspaceId;
     return state.collections
       .filter((c) => c.workspaceId === wsId && !c.deletedAt && !c.archivedAt)
-      .sort((a, b) => a.position - b.position);
+      .sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return b.position - a.position;
+      });
   },
 
   getArchivedCollections: () =>

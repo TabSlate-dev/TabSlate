@@ -69,7 +69,11 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
   const activeCollections = React.useMemo(() => {
     return collections
       .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-      .sort((a, b) => a.position - b.position);
+      .sort((a, b) => {
+        if (a.isDefault) return -1;
+        if (b.isDefault) return 1;
+        return b.position - a.position;
+      });
   }, [collections, activeWorkspaceId]);
 
   const saveEdit = React.useCallback(() => {

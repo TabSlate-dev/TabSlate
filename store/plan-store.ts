@@ -162,7 +162,7 @@ export const usePlanStore = create<PlanState>()(
  */
 export function guardQuota<T>(
   resource: QuotaResource,
-  currentCount: number,
+  currentCount: number | undefined,
   fallback: T,
   action: () => T,
 ): T {
