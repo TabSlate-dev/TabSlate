@@ -27,8 +27,6 @@ export function QuotaCard() {
     return () => clearTimeout(timer);
   }, [ensureFresh]);
 
-  if (!limits || !usage) return null;
-
   const plan = subscription?.plan ?? "free";
   const AmbientIcon = plan === "free" ? Bookmark : plan === "pro" ? Zap : Sparkles;
   const iconColor = plan === "free" ? "text-muted-foreground" : plan === "pro" ? "text-primary" : "text-foreground";
@@ -67,6 +65,8 @@ export function QuotaCard() {
       iconColorClass: "text-amber-600 dark:text-amber-400",
     };
   }, [plan]);
+
+  if (!limits || !usage) return null;
 
   const handleOpenPlan = () => {
     window.dispatchEvent(
