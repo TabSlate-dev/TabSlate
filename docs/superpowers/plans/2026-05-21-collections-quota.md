@@ -22,7 +22,7 @@
 | `internal/handler/collections.go` | TabSlate-server | Quota COUNT `is_deleted = 0` → `is_deleted < 2` |
 | `internal/handler/sync.go` | TabSlate-server | 2 quota sites: `is_deleted = 0` → `is_deleted < 2` |
 | `internal/handler/billing.go` | TabSlate-server | Usage COUNT `is_deleted = 0` → `is_deleted < 2` |
-| `store/workspace-store.ts` | TabSlate | Fix `toServerCollection` + `createCollection` currentCount |
+| `store/workspace-store.ts` | TabSlate | Fix `toServerCollection` (`is_deleted=1` for trashed) + update stale comments |
 
 ---
 
@@ -381,81 +381,68 @@ all four quota-check and usage-count queries consistently."
 
 ---
 
-## Task 4 — Frontend: fix `toServerCollection` and `createCollection` currentCount
+## Task 4 — Frontend: fix `toServerCollection`
 
 **Repo:** TabSlate  
 **Files:**
 - Modify: `store/workspace-store.ts`
 
-**Context:**  
-1. `toServerCollection` currently sends `is_deleted: 0` for all non-permanently-deleted collections, including trashed ones (those with `c.deletedAt` set). The server model expects `is_deleted = 1` for trashed — this bug prevents the cleanup goroutine from finding trashed collections. Fix: derive `is_deleted` from `c.deletedAt`.  
-2. `createCollection` passes `filter(c => !c.deletedAt && !c.archivedAt).length` as `currentCount` to `guardQuota` — it only counts active collections, but the server counts active + archived + trashed (`is_deleted < 2`). Fix: use `get().collections.length` (permanently deleted collections are already removed from state by `mergeFromServer`, so the array length equals the server's `is_deleted < 2` count).
+**Context:**
+- `createCollection` currentCount and import quota check are **already using `get().collections.length`** (merged). No change needed there.
+- `toServerCollection` still sends `is_deleted: 0` for all non-permanently-deleted collections, including trashed ones (`c.deletedAt` set). The server model expects `is_deleted = 1` for trashed — this bug prevents the cleanup goroutine (`WHERE is_deleted = 1`) from finding trashed collections to auto-expire. Fix: derive from `c.deletedAt`.
+- Two comments in the file reference the old `is_deleted = 0` semantics and need updating after the fix.
 
 - [ ] **Step 1: Fix `toServerCollection` — send `is_deleted = 1` for trashed collections**
 
-In `store/workspace-store.ts`, in the `toServerCollection` function (around line 71), change the `is_deleted` line:
+In `store/workspace-store.ts`, `toServerCollection` function (line ~82), change the `is_deleted` line:
 
 ```ts
-// Before
-function toServerCollection(c: Collection, opts?: { isDeleted?: number }): object {
-  return {
-    id: c.id,
-    workspace_id: c.workspaceId !== "" ? c.workspaceId : null,
-    name: c.name,
-    icon: c.icon,
-    position: c.position,
-    seq: c.seq,
-    deleted_at: c.deletedAt ?? null,
-    archived_at: c.archivedAt ?? null,
-    updated_at: Date.now(),
+// Before (line 82)
     is_deleted: opts?.isDeleted ?? 0,
-  };
-}
 
 // After
-function toServerCollection(c: Collection, opts?: { isDeleted?: number }): object {
-  return {
-    id: c.id,
-    workspace_id: c.workspaceId !== "" ? c.workspaceId : null,
-    name: c.name,
-    icon: c.icon,
-    position: c.position,
-    seq: c.seq,
-    deleted_at: c.deletedAt ?? null,
-    archived_at: c.archivedAt ?? null,
-    updated_at: Date.now(),
     is_deleted: opts?.isDeleted ?? (c.deletedAt ? 1 : 0),
-  };
-}
 ```
 
-Explanation:
-- Active collections (`deletedAt` undefined): `is_deleted = 0` ✅
-- Archived collections (`archivedAt` set, `deletedAt` undefined): `is_deleted = 0` ✅ (archived is NOT a deletion state)
-- Trashed collections (`deletedAt` set): `is_deleted = 1` ✅ (fixed)
-- Permanently deleted (`opts.isDeleted = 2`): `is_deleted = 2` ✅ (unchanged, opts takes precedence)
+Semantics after the change:
+- Active (`deletedAt` undefined): `is_deleted = 0` ✅
+- Archived (`archivedAt` set, `deletedAt` undefined): `is_deleted = 0` ✅ (archived is not a deletion state)
+- Trashed (`deletedAt` set): `is_deleted = 1` ✅ (fixed — cleanup goroutine now finds these)
+- Permanently deleted (`opts.isDeleted = 2`): `is_deleted = 2` ✅ (opts takes precedence)
 
-- [ ] **Step 2: Fix `createCollection` `currentCount`**
+- [ ] **Step 2: Update stale comments**
 
-In `store/workspace-store.ts`, in the `createCollection` action (around line 488), change the `currentCount` argument to `guardQuota`:
+The two comments that describe old `is_deleted = 0` behavior need updating.
+
+Around line 496 (inside `createCollection`), replace the comment block:
 
 ```ts
-// Before
-  createCollection: (workspaceId, name, icon) =>
-    guardQuota(
-      "collection",
-      get().collections.filter((c) => !c.deletedAt && !c.archivedAt).length,
-      { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection,
+      // Before
+      // Backend counts all collections where is_deleted=0, which includes soft-deleted
+      // (trashed) ones — they stay is_deleted=0 until permanently deleted (is_deleted=2).
+      // Permanently deleted collections are removed from the local array entirely,
+      // so collections.length always matches the backend's count.
 
-// After
-  createCollection: (workspaceId, name, icon) =>
-    guardQuota(
-      "collection",
-      get().collections.length,
-      { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection,
+      // After
+      // Backend counts collections where is_deleted < 2 — active (0), archived (0 + archived_at),
+      // and trashed (1). Only permanently deleted (is_deleted=2) are excluded.
+      // mergeFromServer removes is_deleted=2 entries from the local array,
+      // so collections.length matches the server count.
 ```
 
-`get().collections` contains all non-permanently-deleted collections (active + archived + trashed). `mergeFromServer` removes `is_deleted = 2` records from the array, so `.length` matches the server's `is_deleted < 2` count.
+Around line 620 (inside the import/checkImportQuota block), replace:
+
+```ts
+      // Before
+      // Backend counts collections where is_deleted = 0, which includes soft-deleted (trashed)
+      // and archived ones. Only permanentlyDeleteCollection sends is_deleted:2 and removes
+      // the entry from the local array, so collections.length mirrors the server count.
+
+      // After
+      // Backend counts collections where is_deleted < 2 — active (0), archived (0), trashed (1).
+      // Only permanentlyDeleteCollection sends is_deleted=2 and removes the entry from the local
+      // array, so collections.length mirrors the server count.
+```
 
 - [ ] **Step 3: Type-check**
 
@@ -482,10 +469,8 @@ git commit -m "fix: toServerCollection sends is_deleted=1 for trashed collection
 
 Previously always sent 0, which meant the cleanup goroutine's
 WHERE is_deleted=1 query never found collections to auto-expire.
-Also aligns createCollection currentCount with server quota semantics
-(is_deleted < 2) by using collections.length instead of filtering
-to active-only — permanently deleted collections are already absent
-from the array after mergeFromServer."
+Also updates stale comments that described the old is_deleted=0
+inclusive semantics — now correctly describes is_deleted<2."
 ```
 
 ---
@@ -504,7 +489,7 @@ from the array after mergeFromServer."
 | `sync.go` COUNT SQL `is_deleted < 2` | Task 3 Step 3 |
 | `billing.go` usage COUNT `is_deleted < 2` | Task 3 Step 4 |
 | `toServerCollection` `is_deleted = 1` for trashed | Task 4 Step 1 |
-| `createCollection` currentCount `collections.length` | Task 4 Step 2 |
+| `createCollection` currentCount `collections.length` | **Already done** (in recent merge) |
 
 All spec requirements covered. Pull query `is_default` / `min_pos` CTE correctly excluded from changes (spec: "no change").
 
