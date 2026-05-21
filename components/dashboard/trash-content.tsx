@@ -437,6 +437,7 @@ export function TrashContent() {
   const permanentlyDeleteBookmark = useBookmarksStore(s => s.permanentlyDelete);
   
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const trashGraceDays = usePlanStore(s => s.limits?.trash_grace_days ?? 30);
@@ -468,9 +469,16 @@ export function TrashContent() {
     [collections, activeWorkspaceId]
   );
 
+  const workspaceIds = React.useMemo(
+    () => new Set(workspaces.map(w => w.id)),
+    [workspaces]
+  );
+
   const trashedCollections = React.useMemo(
-    () => collections.filter(c => !!c.deletedAt && c.workspaceId === activeWorkspaceId),
-    [collections, activeWorkspaceId]
+    () => collections.filter(
+      c => !!c.deletedAt && (c.workspaceId === activeWorkspaceId || !workspaceIds.has(c.workspaceId))
+    ),
+    [collections, activeWorkspaceId, workspaceIds]
   );
 
   const individualTrashedBookmarks = React.useMemo(() => {

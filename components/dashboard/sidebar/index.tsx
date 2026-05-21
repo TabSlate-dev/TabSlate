@@ -56,6 +56,7 @@ import { TagDialog } from "./tag-dialog";
 import { GroupDialog } from "./group-dialog";
 import { SyncStatusIndicator } from "./sync-status";
 import type { SyncStatus } from "@/lib/sync-engine";
+import { QuotaCard } from "./quota-card";
 import { UserProfile } from "./user-profile";
 
 // ---------------------------------------------------------------------------
@@ -247,7 +248,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
         </SidebarHeader>
 
 
-        <SidebarContent className="px-3 pt-3">
+        <SidebarContent className="px-3 pt-3 pb-72">
           {/* Collections */}
           <SidebarGroup className="p-0">
             <SectionHeader
@@ -492,9 +493,15 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
 
         </SidebarContent>
 
-        <SidebarFooter className="px-4 pb-4">
-          <SyncStatusIndicator status={syncStatus} errorMessage={syncErrorMessage} onForceSync={onForceSync} />
-        </SidebarFooter>
+        {/* Floating Quota Card & Sync Status Indicator Overlay */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-[var(--sidebar)] via-[var(--sidebar)]/98 to-transparent pt-16 pb-4 z-20 pointer-events-none flex flex-col gap-3.5">
+          <div className="pointer-events-auto">
+            <QuotaCard />
+          </div>
+          <div className="pointer-events-auto px-2">
+            <SyncStatusIndicator status={syncStatus} errorMessage={syncErrorMessage} onForceSync={onForceSync} />
+          </div>
+        </div>
       </Sidebar>
 
       {/* Dialogs (rendered outside Sidebar to avoid z-index issues) */}

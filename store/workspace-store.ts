@@ -79,7 +79,7 @@ function toServerCollection(c: Collection, opts?: { isDeleted?: number }): objec
     deleted_at: c.deletedAt ?? null,
     archived_at: c.archivedAt ?? null,
     updated_at: Date.now(),
-    is_deleted: opts?.isDeleted ?? 0,
+    is_deleted: opts?.isDeleted ?? (c.deletedAt ? 1 : 0),
   };
 }
 
@@ -466,16 +466,22 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const allWorkspaceCols = collections.filter(c => c.workspaceId === id);
     // Only non-tombstoned collections need a new deletedAt + bookmark move;
     // already-deleted collections keep their original tombstone intact.
-    const colsToTombstone = allWorkspaceCols.filter(c => !c.deletedAt);
+    const deletedAt = Date.now();
+    const colsToTombstone = allWorkspaceCols
+      .filter(c => !c.deletedAt)
+      .map((c) => ({ ...c, deletedAt }));
     if (ws) {
       syncEngine?.enqueue({
-        workspaces: [toServerWorkspace({ ...ws, deletedAt: Date.now() })],
-        collections: colsToTombstone.map(c => toServerCollection({ ...c, deletedAt: Date.now() })),
+        workspaces: [toServerWorkspace({ ...ws, deletedAt })],
+        collections: colsToTombstone.map(c => toServerCollection(c)),
       });
     }
-    for (const c of colsToTombstone) { useBookmarksStore.getState().trashCollectionBookmarks(c.id); }
+    const tombstonedCollections = new Map(colsToTombstone.map(c => [c.id, c]));
+    for (const c of colsToTombstone) {
+      idbPut("collections", c);
+      useBookmarksStore.getState().trashCollectionBookmarks(c.id);
+    }
     idbDelete("workspaces", id);
-    for (const c of allWorkspaceCols) { idbDelete("collections", c.id); }
     const remaining = workspaces.filter(w => w.id !== id);
     const newActiveId = activeWorkspaceId === id ? (remaining[0]?.id ?? "") : activeWorkspaceId;
     if (activeWorkspaceId === id) {
@@ -483,7 +489,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     }
     set({
       workspaces: remaining,
-      collections: collections.filter(c => c.workspaceId !== id),
+      collections: collections.map(c => tombstonedCollections.get(c.id) ?? c),
       activeWorkspaceId: newActiveId,
     });
     usePlanStore.getState().decrementUsage("workspace");
@@ -493,10 +499,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   createCollection: (workspaceId, name, icon) =>
     guardQuota(
       "collection",
-      // Backend counts all collections where is_deleted=0, which includes soft-deleted
-      // (trashed) ones — they stay is_deleted=0 until permanently deleted (is_deleted=2).
-      // Permanently deleted collections are removed from the local array entirely,
-      // so collections.length always matches the backend's count.
+      // Backend counts all collections where is_deleted < 2, so active, archived,
+      // and trashed entries all count toward quota. Permanently deleted entries
+      // are removed from the local array entirely, so collections.length always
+      // matches the backend's count.
       get().collections.length,
       { id: "", workspaceId, name: name ?? "", icon: icon ?? "", position: 0, seq: 0 } as Collection,
       () => {
@@ -553,7 +559,17 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   restoreCollection: (id) => {
     const col = get().collections.find(c => c.id === id);
     if (!col) { return; }
-    const restored = { ...col, deletedAt: undefined, archivedAt: undefined };
+    const { workspaces, activeWorkspaceId } = get();
+    const workspaceExists = workspaces.some(w => w.id === col.workspaceId);
+    const restoredWorkspaceId = workspaceExists
+      ? col.workspaceId
+      : (activeWorkspaceId || workspaces[0]?.id || col.workspaceId);
+    const restored = {
+      ...col,
+      workspaceId: restoredWorkspaceId,
+      deletedAt: undefined,
+      archivedAt: undefined,
+    };
     idbPut("collections", restored);
     syncEngine?.enqueue({ collections: [toServerCollection(restored)] });
     set((s) => ({ collections: s.collections.map(c => c.id === id ? restored : c) }));
@@ -617,9 +633,10 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     planStore.ensureFresh();
 
     const bookmarkCount = useBookmarksStore.getState().bookmarks.length;
-    // Backend counts collections where is_deleted = 0, which includes soft-deleted (trashed)
-    // and archived ones. Only permanentlyDeleteCollection sends is_deleted:2 and removes
-    // the entry from the local array, so collections.length mirrors the server count.
+    // Backend counts collections where is_deleted < 2, so active, archived,
+    // and trashed entries all count. Only permanentlyDeleteCollection sends
+    // is_deleted:2 and removes the entry from the local array, so
+    // collections.length mirrors the server count.
     const activeCollectionCount = get().collections.length;
 
     if (

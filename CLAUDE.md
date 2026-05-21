@@ -126,7 +126,8 @@ const tabs = React.useMemo(
 - **Alert** (`components/ui/alert.tsx`) — 标准 shadcn Alert，用于内联提示和浮动通知（duplicate tab 检测等）
 - **InputOTP** (`components/ui/input-otp.tsx`) — 6 格 OTP 输入框（基于 `input-otp` 包），用于邮箱验证和密码重置
 - **QuotaAlert** (`components/ui/quota-alert.tsx`) — 配额上限通知，fixed 定位，订阅 `usePlanStore.quotaAlert`，3 秒自动消失；已挂载于 `App.tsx` 根部，无需在各调用方处理
-- **SearchPanel** (`components/search/search-panel.tsx`) — 统一搜索组件，同时用于 BookmarksContent 内联和 search popup；Props：`openTabs`、`onClose?`、`autoFocus?`、`smartOpen?`；fallback 搜索使用 `useSettingsStore` 中第一个 enabled 引擎（非硬编码 Google）
+- **SearchBox** (`components/dashboard/search-box.tsx`) — 新标签页英雄区和集合内联搜索栏，合并了原 `HeroSection` 内联搜索与已删除的 `CollectionSearch`；Props：`collectionId?: string`（传入时按集合过滤书签结果，`undefined` 则搜全部；空字符串 `""` 代表未分类集合，同样会过滤，用 `collectionId !== undefined` 判断而非 `collectionId ?`）、`size?: "sm" | "lg"`、`className?: string`；下拉结果顺序：open tabs → bookmarks → search engine fallback；`getEngineIconSrc(engine)` 已导出供复用
+- **SearchPanel** (`components/search/search-panel.tsx`) — 全页内联搜索浮层，用于 BookmarksContent 顶部（smartOpen 模式，Ctrl+K 唤起）和 search popup；Props：`openTabs`、`onClose?`、`autoFocus?`、`smartOpen?`；fallback 搜索使用 `useSettingsStore` 中第一个 enabled 引擎（非硬编码 Google）
 - **Select** (`components/ui/select.tsx`) — 标准 shadcn Select（基于 `@radix-ui/react-select`），用于 ImportDialog 等表单
 - **shadcn/ui** (`components/ui/`) — Button、Input、Dialog 等基础组件
 
