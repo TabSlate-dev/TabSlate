@@ -70,7 +70,9 @@ TabSlate/
 │       ├── tabs-dnd-provider.tsx # 全局 DnD context（tab → collection/saved-group）
 │       ├── tab-row.tsx         # 单行 tab 组件（React.memo）
 │       ├── stats-cards.tsx     # 书签统计卡片
-│       ├── content.tsx         # / 路由：书签网格/列表；顶部嵌入 SearchPanel（smartOpen 模式）
+│       ├── search-box.tsx      # 统一搜索栏（新标签页英雄区 + 集合内联）；open tabs / 书签 / 引擎三段下拉；size="sm|lg"；collectionId 过滤
+│       ├── hero-section.tsx    # 新标签页英雄区：时钟 + SearchBox（lg）+ AdBanner
+│       ├── content.tsx         # / 路由：书签网格/列表；集合视图内嵌 SearchBox（sm）；顶部嵌入 SearchPanel（smartOpen 模式）
 │       ├── header.tsx          # 顶部搜索/过滤栏
 │       ├── workspace-rail.tsx  # 最左侧工作区切换轨道
 │       ├── tabs-rail.tsx       # 最右侧标签页快速预览轨道

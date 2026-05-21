@@ -36,7 +36,7 @@ import { HeroSection } from "./hero-section";
 import { useTabsStore } from "@/store/tabs-store";
 import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-dialog";
 import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
-import { CollectionSearch } from "./collection-search";
+import { SearchBox } from "./search-box";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   folder: Folder,
@@ -212,10 +212,13 @@ export function BookmarksContent() {
   const [taggingBookmark, setTaggingBookmark] = React.useState<BookmarkType | null>(null);
   const [expandedCollectionIds, setExpandedCollectionIds] = React.useState<Record<string, boolean>>({});
 
+  const prevWorkspaceIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
-    setSelectedCollection("all");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeWorkspaceId]);
+    if (prevWorkspaceIdRef.current !== null && prevWorkspaceIdRef.current !== activeWorkspaceId) {
+      setSelectedCollection("all");
+    }
+    prevWorkspaceIdRef.current = activeWorkspaceId;
+  }, [activeWorkspaceId, setSelectedCollection]);
 
   const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, dropZoneProps } =
     useTabDragDrop();
@@ -496,7 +499,7 @@ export function BookmarksContent() {
                           </p>
                         </div>
                         {selectedCollection !== "all" && (
-                          <CollectionSearch collectionId={selectedCollection} />
+                          <SearchBox size="sm" collectionId={selectedCollection} className="w-full sm:w-72 md:w-80" />
                         )}
                       </div>
 
