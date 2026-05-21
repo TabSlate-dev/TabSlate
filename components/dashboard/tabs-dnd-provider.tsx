@@ -98,7 +98,9 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
       collectionDropId: string,
       tabsToDrop: { id: number; title: string; url: string; favIconUrl: string }[]
     ) => {
-      const collectionId = collectionDropId.replace("sidebar-collection-", "");
+      const collectionId = collectionDropId.startsWith("sidebar-collection-")
+        ? collectionDropId.replace("sidebar-collection-", "")
+        : collectionDropId.replace("content-collection-", "");
       let targetCollectionId = collectionId;
       if (collectionId === "all") {
         const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
@@ -161,7 +163,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         if (!isNaN(groupId)) {
           useTabsStore.getState().moveTabsToGroup([dragData.tabId], groupId);
         }
-      } else if (dropId.startsWith("sidebar-collection-")) {
+      } else if (dropId.startsWith("sidebar-collection-") || dropId.startsWith("content-collection-")) {
         handleDropToCollection(dropId, [
           {
             id: dragData.tabId,
@@ -174,8 +176,10 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (dragData.type === "bookmark") {
-      if (dropId.startsWith("sidebar-collection-")) {
-        const rawId = dropId.replace("sidebar-collection-", "");
+      if (dropId.startsWith("sidebar-collection-") || dropId.startsWith("content-collection-")) {
+        const rawId = dropId.startsWith("sidebar-collection-")
+          ? dropId.replace("sidebar-collection-", "")
+          : dropId.replace("content-collection-", "");
         let targetCollectionId = rawId;
         if (rawId === "all") {
           const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
@@ -212,7 +216,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
             favicon: tab.favIconUrl || "",
           });
         });
-      } else if (dropId.startsWith("sidebar-collection-")) {
+      } else if (dropId.startsWith("sidebar-collection-") || dropId.startsWith("content-collection-")) {
         handleDropToCollection(
           dropId,
           dragData.tabs.map((t) => ({

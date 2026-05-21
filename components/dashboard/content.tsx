@@ -1,5 +1,6 @@
 import * as React from "react";
-import { useDraggable } from "@dnd-kit/core";
+import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { useTabsDndContext } from "./tabs-dnd-provider";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useTabDragDrop } from "@/hooks/use-tab-drag-drop";
@@ -10,7 +11,24 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
-import { X, BookmarkPlus, Bookmark, AlertCircle } from "lucide-react";
+import {
+  X,
+  BookmarkPlus,
+  Bookmark,
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Folder,
+  Code,
+  Palette,
+  Wrench,
+  BookOpen,
+  Sparkles,
+  Star,
+  Heart,
+  Globe,
+  Inbox,
+} from "lucide-react";
 import type { BookmarkDragData } from "./tabs-dnd-provider";
 import type { Bookmark as BookmarkType } from "@/lib/types";
 
@@ -18,6 +36,84 @@ import { HeroSection } from "./hero-section";
 import { useTabsStore } from "@/store/tabs-store";
 import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-dialog";
 import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
+import { CollectionSearch } from "./collection-search";
+
+const ICON_MAP: Record<string, React.ElementType> = {
+  folder: Folder,
+  bookmark: Bookmark,
+  code: Code,
+  palette: Palette,
+  wrench: Wrench,
+  "book-open": BookOpen,
+  sparkles: Sparkles,
+  star: Star,
+  heart: Heart,
+  globe: Globe,
+  inbox: Inbox,
+};
+
+function CollectionIcon({ icon }: { icon: string }) {
+  const Icon = ICON_MAP[icon] ?? Folder;
+  return <Icon className="size-4" />;
+}
+
+interface DroppableCollectionHeaderProps {
+  rowData: {
+    collectionId: string;
+    collectionName: string;
+    count: number;
+    icon: string;
+    isDefault: boolean;
+  };
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+function DroppableCollectionHeader({ rowData, isExpanded, onToggle }: DroppableCollectionHeaderProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `content-collection-${rowData.collectionId}`,
+  });
+  const { activeData } = useTabsDndContext();
+
+  const isAccepting = React.useMemo(() => {
+    if (!activeData) return false;
+    return ["tab", "tab-group", "bookmark"].includes(activeData.type);
+  }, [activeData]);
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={onToggle}
+      className={cn(
+        "group flex items-center justify-between p-3 rounded-xl border transition-all duration-300 cursor-pointer select-none",
+        isExpanded
+          ? "bg-primary/[0.03] border-primary/20 dark:bg-primary/[0.02] shadow-sm"
+          : "bg-card/25 border-muted/20 hover:bg-accent/40 hover:border-primary/20 hover:shadow-md",
+        isOver && isAccepting && "border-primary bg-primary/10 ring-1 ring-primary/30 shadow-lg dark:bg-primary/5 scale-[1.01]"
+      )}
+    >
+      <div className="flex items-center gap-3">
+        <ChevronDown
+          className={cn(
+            "size-4 text-muted-foreground group-hover:text-primary transition-all duration-300",
+            !isExpanded && "-rotate-90 text-muted-foreground/60"
+          )}
+        />
+        <div className="size-8 rounded-lg bg-primary/5 text-primary flex items-center justify-center border border-primary/10 group-hover:scale-105 transition-transform duration-300">
+          <CollectionIcon icon={rowData.icon} />
+        </div>
+        <span className="font-semibold text-sm tracking-tight text-foreground/90 group-hover:text-primary transition-colors duration-300">
+          {rowData.collectionName}
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/10">
+          {rowData.count}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function colsFromWidth(width: number) {
   if (width >= 1280) return 4;
@@ -81,6 +177,12 @@ const DraggableBookmarkCard = React.memo(function DraggableBookmarkCard({ bookma
   );
 });
 
+type VirtualItem =
+  | { type: "hero_and_title" }
+  | { type: "collection_header"; collectionId: string; collectionName: string; count: number; icon: string; isDefault: boolean }
+  | { type: "bookmarks_row"; collectionId: string; bookmarks: BookmarkType[]; rowIndex: number }
+  | { type: "empty_state"; title: string; description: string };
+
 export function BookmarksContent() {
   const openTabs = useTabsStore(s => s.openTabs);
   const loadTabs = useTabsStore(s => s.loadTabs);
@@ -108,6 +210,7 @@ export function BookmarksContent() {
 
   const [editingBookmark, setEditingBookmark] = React.useState<BookmarkType | null>(null);
   const [taggingBookmark, setTaggingBookmark] = React.useState<BookmarkType | null>(null);
+  const [expandedCollectionIds, setExpandedCollectionIds] = React.useState<Record<string, boolean>>({});
 
   React.useEffect(() => {
     setSelectedCollection("all");
@@ -125,9 +228,6 @@ export function BookmarksContent() {
     [collections, activeWorkspaceId]
   );
 
-  // getFilteredBookmarks reads internal store state via get(); the deps below are the
-  // reactive inputs it actually observes — the function reference itself is stable.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const filteredBookmarks = React.useMemo(
     () => getFilteredBookmarks(workspaceCollectionIds),
     [bookmarks, selectedCollection, selectedTags, filterType, searchQuery, sortBy, workspaceCollectionIds]
@@ -146,25 +246,184 @@ export function BookmarksContent() {
     selectedTags.length > 0 || filterType !== "all" || sortBy !== "date-newest";
 
   const actualCols = viewMode === "grid" ? gridCols : 1;
-  const rowCount = Math.ceil(filteredBookmarks.length / actualCols);
+
+  const virtualRows = React.useMemo<VirtualItem[]>(() => {
+    const rows: VirtualItem[] = [];
+
+    // 1. Header (contains hero section + category title + filters info)
+    rows.push({ type: "hero_and_title" });
+
+    if (filteredBookmarks.length === 0) {
+      rows.push({
+        type: "empty_state",
+        title: "No bookmarks found",
+        description: "Save bookmarks via the popup or drag tabs here to get started.",
+      });
+      return rows;
+    }
+
+    if (selectedCollection !== "all") {
+      // Flat view for specific collection
+      const colCols = viewMode === "grid" ? gridCols : 1;
+      const totalRows = Math.ceil(filteredBookmarks.length / colCols);
+      for (let r = 0; r < totalRows; r++) {
+        const startIndex = r * colCols;
+        const rowItems = filteredBookmarks.slice(startIndex, startIndex + colCols);
+        rows.push({
+          type: "bookmarks_row",
+          collectionId: selectedCollection,
+          bookmarks: rowItems,
+          rowIndex: r,
+        });
+      }
+    } else {
+      // Group by Collection view under "All Bookmarks"
+      const groups: Record<string, BookmarkType[]> = {};
+
+      const activeCols = collections
+        .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
+        .sort((a, b) => a.position - b.position);
+
+      activeCols.forEach((c) => {
+        groups[c.id] = [];
+      });
+      groups["uncategorized"] = [];
+
+      filteredBookmarks.forEach((b) => {
+        const colId = b.collectionId || "uncategorized";
+        if (groups[colId]) {
+          groups[colId].push(b);
+        } else {
+          groups["uncategorized"].push(b);
+        }
+      });
+
+      // Render active collections
+      activeCols.forEach((col) => {
+        const colBookmarks = groups[col.id] || [];
+
+        rows.push({
+          type: "collection_header",
+          collectionId: col.id,
+          collectionName: col.name,
+          count: colBookmarks.length,
+          icon: col.icon,
+          isDefault: col.isDefault ?? false,
+        });
+
+        const isExpanded = expandedCollectionIds[col.id] ?? col.isDefault;
+        if (isExpanded && colBookmarks.length > 0) {
+          const colCols = viewMode === "grid" ? gridCols : 1;
+          const totalColRows = Math.ceil(colBookmarks.length / colCols);
+          for (let r = 0; r < totalColRows; r++) {
+            const startIndex = r * colCols;
+            const rowItems = colBookmarks.slice(startIndex, startIndex + colCols);
+            rows.push({
+              type: "bookmarks_row",
+              collectionId: col.id,
+              bookmarks: rowItems,
+              rowIndex: r,
+            });
+          }
+        }
+      });
+
+      // Render Uncategorized bookmarks if any
+      const uncategorizedBookmarks = groups["uncategorized"] || [];
+      if (uncategorizedBookmarks.length > 0) {
+        rows.push({
+          type: "collection_header",
+          collectionId: "uncategorized",
+          collectionName: "Uncategorized",
+          count: uncategorizedBookmarks.length,
+          icon: "bookmark",
+          isDefault: false,
+        });
+
+        const isExpanded = expandedCollectionIds["uncategorized"] ?? false;
+        if (isExpanded) {
+          const colCols = viewMode === "grid" ? gridCols : 1;
+          const totalColRows = Math.ceil(uncategorizedBookmarks.length / colCols);
+          for (let r = 0; r < totalColRows; r++) {
+            const startIndex = r * colCols;
+            const rowItems = uncategorizedBookmarks.slice(startIndex, startIndex + colCols);
+            rows.push({
+              type: "bookmarks_row",
+              collectionId: "uncategorized",
+              bookmarks: rowItems,
+              rowIndex: r,
+            });
+          }
+        }
+      }
+    }
+
+    return rows;
+  }, [
+    selectedCollection,
+    filteredBookmarks,
+    collections,
+    activeWorkspaceId,
+    expandedCollectionIds,
+    viewMode,
+    gridCols,
+  ]);
 
   const virtualizer = useVirtualizer({
-    count: rowCount + 1,
+    count: virtualRows.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (i) => {
-      if (i !== 0) return viewMode === "grid" ? 156 : 80;
-      return (selectedCollection === "all" && !hasActiveFilters) ? 500 : 130;
+    estimateSize: (index) => {
+      const row = virtualRows[index];
+      if (!row) return 50;
+      if (row.type === "hero_and_title") {
+        return (selectedCollection === "all" && !hasActiveFilters) ? 500 : 130;
+      }
+      if (row.type === "collection_header") {
+        return 58;
+      }
+      if (row.type === "empty_state") {
+        return 200;
+      }
+      return viewMode === "grid" ? 156 : 80;
     },
+    getItemKey: React.useCallback(
+      (index: number) => {
+        const row = virtualRows[index];
+        if (!row) return index;
+        if (row.type === "hero_and_title") {
+          return `hero-and-title-${selectedCollection === "all" && !hasActiveFilters ? "full" : "compact"}`;
+        }
+        if (row.type === "empty_state") return "empty-state";
+        if (row.type === "collection_header") {
+          return `col-header-${row.collectionId}`;
+        }
+        const ids = row.bookmarks.map((b) => b.id).join("_");
+        return `bookmarks-row-${viewMode}-${row.collectionId}-${row.rowIndex}-${ids}`;
+      },
+      [virtualRows, selectedCollection, hasActiveFilters, viewMode]
+    ),
     overscan: 5,
   });
 
   React.useEffect(() => {
     if (!highlightedBookmarkId) { return; }
-    const bookmarkIndex = filteredBookmarks.findIndex(b => b.id === highlightedBookmarkId);
-    if (bookmarkIndex === -1) { return; }
-    const rowIndex = Math.floor(bookmarkIndex / actualCols);
-    virtualizer.scrollToIndex(rowIndex + 1, { align: "center" });
-  }, [highlightedBookmarkId, filteredBookmarks, actualCols, virtualizer]);
+    const rowIndex = virtualRows.findIndex(
+      (row) =>
+        row.type === "bookmarks_row" &&
+        row.bookmarks.some((b) => b.id === highlightedBookmarkId)
+    );
+    if (rowIndex === -1) {
+      const targetBookmark = filteredBookmarks.find((b) => b.id === highlightedBookmarkId);
+      if (targetBookmark && targetBookmark.collectionId) {
+        setExpandedCollectionIds((prev) => ({
+          ...prev,
+          [targetBookmark.collectionId]: true,
+        }));
+      }
+      return;
+    }
+    virtualizer.scrollToIndex(rowIndex, { align: "center" });
+  }, [highlightedBookmarkId, virtualRows, virtualizer, filteredBookmarks]);
 
   return (
     <div ref={parentRef} className="flex-1 w-full overflow-auto relative" {...dropZoneProps}>
@@ -202,12 +461,15 @@ export function BookmarksContent() {
         }}
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
-          if (virtualRow.index === 0) {
+          const rowData = virtualRows[virtualRow.index];
+          if (!rowData) return null;
+
+          if (rowData.type === "hero_and_title") {
             return (
               <div
-                key="header"
+                key={virtualRow.key}
                 ref={virtualizer.measureElement}
-                data-index={0}
+                data-index={virtualRow.index}
                 style={{
                   position: 'absolute',
                   top: 0,
@@ -221,16 +483,21 @@ export function BookmarksContent() {
                   {selectedCollection === "all" && !hasActiveFilters && <HeroSection />}
 
                   <div className="space-y-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div>
-                        <h2 className="text-lg font-semibold">
-                          {currentCollection?.name || "All Bookmarks"}
-                        </h2>
-                        <p className="text-sm text-muted-foreground">
-                          {filteredBookmarks.length} bookmark
-                          {filteredBookmarks.length !== 1 ? "s" : ""}
-                          {hasActiveFilters && " (filtered)"}
-                        </p>
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div>
+                          <h2 className="text-lg font-semibold">
+                            {currentCollection?.name || "All Bookmarks"}
+                          </h2>
+                          <p className="text-sm text-muted-foreground">
+                            {filteredBookmarks.length} bookmark
+                            {filteredBookmarks.length !== 1 ? "s" : ""}
+                            {hasActiveFilters && " (filtered)"}
+                          </p>
+                        </div>
+                        {selectedCollection !== "all" && (
+                          <CollectionSearch collectionId={selectedCollection} />
+                        )}
                       </div>
 
                       {(activeTagsData.length > 0 || filterType !== "all") && (
@@ -265,57 +532,104 @@ export function BookmarksContent() {
                         </div>
                       )}
                     </div>
-                    {filteredBookmarks.length === 0 && (
-                      <EmptyState
-                        icon={Bookmark}
-                        title="No bookmarks found"
-                        description="Save bookmarks via the popup or drag tabs here to get started."
-                        action={
-                          hasActiveFilters ? (
-                            <Button variant="outline" size="sm" onClick={() => setFilterType("all")}>
-                              Clear filters
-                            </Button>
-                          ) : undefined
-                        }
-                      />
-                    )}
                   </div>
                 </div>
               </div>
             );
           }
 
-          const rowIndex = virtualRow.index - 1;
-          const startIndex = rowIndex * actualCols;
-          const rowItems = filteredBookmarks.slice(startIndex, startIndex + actualCols);
-
-          return (
-            <div
-              key={virtualRow.key}
-              data-index={virtualRow.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${virtualRow.start}px)`,
-                ...(viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : {}),
-              }}
-              className={viewMode === "grid" ? "grid gap-4 px-4 md:px-6 pb-4" : "flex flex-col gap-2 px-4 md:px-6 pb-4"}
-            >
-              {rowItems.map((bookmark) => (
-                <DraggableBookmarkCard
-                  key={bookmark.id}
-                  bookmark={bookmark}
-                  variant={viewMode}
-                  isHighlighted={bookmark.id === highlightedBookmarkId}
-                  onEdit={setEditingBookmark}
-                  onAddTags={setTaggingBookmark}
+          if (rowData.type === "empty_state") {
+            return (
+              <div
+                key={virtualRow.key}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className="px-4 md:px-6 py-8"
+              >
+                <EmptyState
+                  icon={Bookmark}
+                  title={rowData.title}
+                  description={rowData.description}
+                  action={
+                    hasActiveFilters ? (
+                      <Button variant="outline" size="sm" onClick={() => setFilterType("all")}>
+                        Clear filters
+                      </Button>
+                    ) : undefined
+                  }
                 />
-              ))}
-            </div>
-          );
+              </div>
+            );
+          }
+
+          if (rowData.type === "collection_header") {
+            const isExpanded = expandedCollectionIds[rowData.collectionId] ?? rowData.isDefault;
+            return (
+              <div
+                key={virtualRow.key}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+                className="px-4 md:px-6 py-1.5"
+              >
+                <DroppableCollectionHeader
+                  rowData={rowData}
+                  isExpanded={isExpanded}
+                  onToggle={() => {
+                    setExpandedCollectionIds((prev) => ({
+                      ...prev,
+                      [rowData.collectionId]: !isExpanded,
+                    }));
+                  }}
+                />
+              </div>
+            );
+          }
+
+          if (rowData.type === "bookmarks_row") {
+            return (
+              <div
+                key={virtualRow.key}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  transform: `translateY(${virtualRow.start}px)`,
+                  ...(viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : {}),
+                }}
+                className={viewMode === "grid" ? "grid gap-4 px-4 md:px-6 pb-4" : "flex flex-col gap-2 px-4 md:px-6 pb-4"}
+              >
+                {rowData.bookmarks.map((bookmark) => (
+                  <DraggableBookmarkCard
+                    key={bookmark.id}
+                    bookmark={bookmark}
+                    variant={viewMode}
+                    isHighlighted={bookmark.id === highlightedBookmarkId}
+                    onEdit={setEditingBookmark}
+                    onAddTags={setTaggingBookmark}
+                  />
+                ))}
+              </div>
+            );
+          }
+
+          return null;
         })}
       </div>
 
