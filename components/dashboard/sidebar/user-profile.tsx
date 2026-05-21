@@ -4,12 +4,9 @@ import {
   ShieldCheck,
   ChevronRight,
   Award,
-  Bookmark,
-  Folder,
-  Tag,
-  Monitor,
-  Sparkles,
   Upload,
+  Sparkles,
+  Zap,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
 import { usePlanStore } from "@/store/plan-store";
@@ -24,20 +21,10 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
-function formatRenewsDate(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 export function UserProfile() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const subscription = usePlanStore((s) => s.subscription);
-  const limits = usePlanStore((s) => s.limits);
-  const usage = usePlanStore((s) => s.usage);
 
   if (!user) return null;
 
@@ -47,217 +34,100 @@ export function UserProfile() {
     .join("")
     .toUpperCase();
 
-  const renewsLabel =
-    subscription &&
-    subscription.plan !== "free" &&
-    subscription.status === "ACTIVE" &&
-    subscription.expires_at != null
-      ? `Renews ${formatRenewsDate(subscription.expires_at)}`
-      : null;
+  const plan = subscription?.plan ?? "free";
 
-  const cardStyles = React.useMemo(() => {
-    const plan = subscription?.plan ?? "free";
+  const glowStyles = React.useMemo(() => {
     if (plan === "free") {
       return {
-        className:
-          "border-muted-foreground/20 bg-card shadow-md shadow-black/5 hover:border-primary/45 hover:shadow-lg hover:shadow-primary/5",
-        glow1: "bg-primary/10 group-hover:bg-primary/20",
-        glow2: "bg-blue-500/5 group-hover:bg-blue-500/10",
-        badgeColor: "text-slate-500 dark:text-zinc-400",
-        bannerClass:
-          "bg-slate-500/5 dark:bg-zinc-800/40 border-slate-500/10 dark:border-zinc-700/30",
-        bannerText: "text-slate-500 dark:text-zinc-400",
-        labelText: "Free Plan",
+        bg: "bg-gradient-to-br from-slate-100/90 via-slate-50/90 to-slate-200/90 dark:from-zinc-800/90 dark:via-zinc-900/90 dark:to-black/90",
+        glow: "from-slate-400/30 via-slate-300/20 to-zinc-400/20 dark:from-slate-500/20 dark:via-slate-500/10 dark:to-zinc-500/10",
+        border: "border-slate-200 dark:border-zinc-800/80",
+        borderHover: "hover:border-slate-300 dark:hover:border-zinc-700",
+        iconColorClass: "text-slate-500 dark:text-zinc-400",
+        fallbackBg: "bg-slate-200/50 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300",
       };
     }
     if (plan === "pro") {
       return {
-        className:
-          "border-violet-500/35 bg-gradient-to-br from-violet-500/[0.04] via-card to-violet-500/[0.09] shadow-md shadow-violet-500/5 hover:border-violet-500/50 hover:shadow-lg hover:shadow-violet-500/10",
-        glow1: "bg-violet-500/15 group-hover:bg-violet-500/25",
-        glow2: "bg-fuchsia-500/5 group-hover:bg-fuchsia-500/10",
-        badgeColor: "text-violet-500",
-        bannerClass:
-          "bg-violet-500/10 dark:bg-violet-950/30 border-violet-500/20",
-        bannerText: "text-violet-600 dark:text-violet-300 font-bold",
-        labelText: "Pro Member",
+        bg: "bg-gradient-to-br from-indigo-100/90 via-purple-50/90 to-blue-100/90 dark:from-indigo-500/20 dark:via-purple-500/10 dark:to-blue-500/20",
+        glow: "from-indigo-500/30 via-purple-500/20 to-blue-500/30 dark:from-indigo-500/25 dark:via-purple-500/15 dark:to-blue-500/25",
+        border: "border-indigo-200/60 dark:border-indigo-900/40",
+        borderHover: "hover:border-indigo-300 dark:hover:border-indigo-800",
+        iconColorClass: "text-indigo-600 dark:text-indigo-400",
+        fallbackBg: "bg-indigo-100/60 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300",
       };
     }
     // Premium plan
     return {
-      className:
-        "border-amber-500/35 bg-gradient-to-br from-amber-500/[0.04] via-card to-amber-500/[0.09] shadow-md shadow-amber-500/5 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/10",
-      glow1: "bg-amber-500/15 group-hover:bg-amber-500/25",
-      glow2: "bg-orange-500/5 group-hover:bg-orange-500/10",
-      badgeColor: "text-amber-500",
-      bannerClass: "bg-amber-500/10 dark:bg-amber-950/30 border-amber-500/20",
-      bannerText: "text-amber-600 dark:text-amber-350 font-bold",
-      labelText: "Premium Plan",
+      bg: "bg-gradient-to-br from-amber-100/90 via-orange-50/90 to-rose-100/90 dark:from-amber-500/20 dark:via-orange-500/10 dark:to-rose-500/20",
+      glow: "from-amber-500/30 via-orange-500/20 to-rose-500/30 dark:from-amber-500/25 dark:via-orange-500/15 dark:to-rose-500/25",
+      border: "border-amber-200/60 dark:border-amber-900/40",
+      borderHover: "hover:border-amber-300 dark:hover:border-amber-800",
+      iconColorClass: "text-amber-600 dark:text-amber-400",
+      fallbackBg: "bg-amber-100/60 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
     };
-  }, [subscription]);
+  }, [plan]);
 
-  const renderResourceQuota = (
-    label: string,
-    Icon: React.ComponentType<any>,
-    usageVal: number,
-    limitVal: number,
-  ) => {
-    const isUnlimited = limitVal === -1;
-    const percentage = isUnlimited
-      ? 100
-      : Math.min(100, (usageVal / limitVal) * 100);
-
-    return (
-      <div className="space-y-1">
-        <div className="flex items-center justify-between text-[10px] text-muted-foreground leading-none font-medium">
-          <span className="flex items-center gap-1.5">
-            <Icon className="size-3 text-muted-foreground/60 shrink-0" />
-            <span className="truncate">{label}</span>
-          </span>
-          <span className="text-[10px] font-semibold text-foreground/80 shrink-0 ml-1">
-            {isUnlimited ? `${usageVal}/∞` : `${usageVal}/${limitVal}`}
-          </span>
-        </div>
-        <div className="h-0.5 w-full bg-muted/40 rounded-full overflow-hidden">
-          {isUnlimited ? (
-            <div
-              className={cn(
-                "h-full rounded-full animate-pulse bg-gradient-to-r from-sky-400/80 via-violet-400/80 to-fuchsia-400/80",
-                subscription?.plan === "premium" &&
-                  "from-amber-400/80 via-orange-400/80 to-yellow-400/80",
-              )}
-              style={{ width: "100%" }}
-            />
-          ) : (
-            <div
-              className={cn(
-                "h-full rounded-full transition-all duration-500",
-                subscription?.plan === "pro"
-                  ? "bg-gradient-to-r from-violet-500/80 to-fuchsia-500/80"
-                  : subscription?.plan === "premium"
-                    ? "bg-gradient-to-r from-amber-500/80 to-orange-500/80"
-                    : "bg-primary/80",
-              )}
-              style={{ width: `${percentage}%` }}
-            />
-          )}
-        </div>
-      </div>
-    );
-  };
+  const AmbientIcon = plan === "free" ? Award : plan === "pro" ? Zap : Sparkles;
 
   return (
     <div className="px-3 py-4">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="w-full group outline-none">
+          <button className="w-full group outline-none cursor-pointer relative block">
+            {/* Layer 1: Tight contour glow */}
             <div
               className={cn(
-                "relative overflow-hidden rounded-2xl border p-3.5 transition-all duration-500 text-left backdrop-blur-md",
-                cardStyles.className,
+                "absolute -inset-[1px] bg-gradient-to-r opacity-15 dark:opacity-10 group-hover:opacity-100 transition-all duration-500 blur-[3px] z-0 rounded-xl pointer-events-none",
+                glowStyles.glow
+              )}
+            />
+
+            {/* Layer 2: Soft ambient aura */}
+            <div
+              className={cn(
+                "absolute inset-0 bg-gradient-to-r opacity-20 dark:opacity-15 group-hover:opacity-80 transition-all duration-500 blur-xl z-0 rounded-xl pointer-events-none",
+                glowStyles.glow
+              )}
+            />
+
+            {/* Watermark silhouette mask */}
+            <div className="absolute inset-0 rounded-xl overflow-hidden pointer-events-none z-0">
+              <div className="absolute -bottom-6 -right-6 opacity-[0.05] dark:opacity-[0.08] group-hover:opacity-[0.09] dark:group-hover:opacity-[0.14] transition-opacity duration-500">
+                <AmbientIcon className={cn("w-20 h-20 -rotate-12", glowStyles.iconColorClass)} />
+              </div>
+            </div>
+
+            <div
+              className={cn(
+                "relative z-10 flex items-center gap-3 p-2.5 rounded-xl border backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-md hover:scale-[1.01] text-left",
+                glowStyles.bg,
+                glowStyles.border,
+                glowStyles.borderHover
               )}
             >
-              {/* Animated background glow */}
-              <div
-                className={cn(
-                  "absolute -right-4 -top-4 size-24 rounded-full blur-2xl transition-all duration-700 group-hover:scale-125",
-                  cardStyles.glow1,
-                )}
-              />
-              <div
-                className={cn(
-                  "absolute -left-4 -bottom-4 size-16 rounded-full blur-xl transition-all duration-700 group-hover:scale-110",
-                  cardStyles.glow2,
-                )}
-              />
+              <Avatar className="size-8.5 border border-muted/50 shadow-2xs transition-all duration-300 group-hover:scale-105 group-hover:border-primary/30">
+                <AvatarImage src="" />
+                <AvatarFallback className={cn("font-bold text-xs transition-colors duration-300", glowStyles.fallbackBg)}>
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
 
-              <div className="relative flex flex-col">
-                <div className="relative flex items-center gap-3">
-                  <Avatar className="size-10 border-2 border-background shadow-sm transition-transform group-hover:scale-105">
-                    <AvatarImage src="" />
-                    <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
-                      {initials}
-                    </AvatarFallback>
-                  </Avatar>
-
-                  <div className="flex flex-1 flex-col truncate">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-semibold truncate leading-none">
-                        {user.name}
-                      </span>
-                      {user.is_verified && (
-                        <ShieldCheck className="size-3.5 text-blue-500 fill-blue-500/10 shrink-0" />
-                      )}
-                    </div>
-                    <span className="text-[11px] text-muted-foreground truncate mt-1 leading-none">
-                      {user.email}
-                    </span>
-                  </div>
-
-                  <ChevronRight className="size-4 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground/60" />
-                </div>
-
-                {/* Explicit Premium Plan Status Pill */}
-                <div
-                  className={cn(
-                    "relative flex items-center gap-2 mt-3 px-2.5 py-1.5 rounded-xl border select-none transition-all duration-300",
-                    cardStyles.bannerClass,
-                  )}
-                >
-                  <Award
-                    className={cn("size-3.5 shrink-0", cardStyles.badgeColor)}
-                  />
-                  <span
-                    className={cn(
-                      "text-[9px] uppercase tracking-wider font-extrabold leading-none",
-                      cardStyles.bannerText,
-                    )}
-                  >
-                    {cardStyles.labelText}
+              <div className="flex flex-1 flex-col truncate">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm font-semibold truncate leading-none">
+                    {user.name}
                   </span>
-                  {renewsLabel && (
-                    <span className="text-[8px] text-muted-foreground/60 ml-auto font-medium leading-none">
-                      {renewsLabel}
-                    </span>
+                  {user.is_verified && (
+                    <ShieldCheck className="size-3.5 text-primary/80 dark:text-primary/90 shrink-0" />
                   )}
                 </div>
-
-                {/* Sleek, full resource quotas layout */}
-                {limits && usage && (
-                  <div className="relative mt-3.5 pt-3 border-t border-muted/50 space-y-2.5">
-                    {renderResourceQuota(
-                      "Bookmarks",
-                      Bookmark,
-                      usage.bookmarks,
-                      limits.max_bookmarks,
-                    )}
-                    {renderResourceQuota(
-                      "Collections",
-                      Folder,
-                      usage.collections,
-                      limits.max_collections,
-                    )}
-                    {renderResourceQuota(
-                      "Tags",
-                      Tag,
-                      usage.tags,
-                      limits.max_tags,
-                    )}
-                    {renderResourceQuota(
-                      "Workspaces",
-                      Monitor,
-                      usage.workspaces,
-                      limits.max_workspaces,
-                    )}
-                    {renderResourceQuota(
-                      "Saved Groups",
-                      Sparkles,
-                      usage.saved_groups,
-                      limits.max_saved_groups,
-                    )}
-                  </div>
-                )}
+                <span className="text-[11px] text-muted-foreground truncate mt-1 leading-none">
+                  {user.email}
+                </span>
               </div>
+
+              <ChevronRight className="size-4 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground/60" />
             </div>
           </button>
         </DropdownMenuTrigger>
@@ -288,7 +158,7 @@ export function UserProfile() {
               );
             }}
           >
-            <Award className={cn("size-4", cardStyles.badgeColor)} />
+            <Award className={cn("size-4", glowStyles.iconColorClass)} />
             <span>Plan & Quotas</span>
           </DropdownMenuItem>
 

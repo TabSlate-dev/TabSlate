@@ -218,7 +218,7 @@ export function HeroSection() {
             onWheel={(e) => e.stopPropagation()}
           >
             <div
-              className="overflow-y-auto max-h-96 w-full flex flex-col gap-1 pr-1.5 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-muted-foreground/25 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-muted-foreground/40 transition-all"
+              className="overflow-y-auto max-h-96 w-full flex flex-col gap-1 pr-1.5 transition-all"
             >
               {bookmarkResults.length > 0 && (
                 <section className="flex flex-col gap-1">
