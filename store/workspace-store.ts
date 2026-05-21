@@ -466,16 +466,22 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const allWorkspaceCols = collections.filter(c => c.workspaceId === id);
     // Only non-tombstoned collections need a new deletedAt + bookmark move;
     // already-deleted collections keep their original tombstone intact.
-    const colsToTombstone = allWorkspaceCols.filter(c => !c.deletedAt);
+    const deletedAt = Date.now();
+    const colsToTombstone = allWorkspaceCols
+      .filter(c => !c.deletedAt)
+      .map((c) => ({ ...c, deletedAt }));
     if (ws) {
       syncEngine?.enqueue({
-        workspaces: [toServerWorkspace({ ...ws, deletedAt: Date.now() })],
-        collections: colsToTombstone.map(c => toServerCollection({ ...c, deletedAt: Date.now() })),
+        workspaces: [toServerWorkspace({ ...ws, deletedAt })],
+        collections: colsToTombstone.map(c => toServerCollection(c)),
       });
     }
-    for (const c of colsToTombstone) { useBookmarksStore.getState().trashCollectionBookmarks(c.id); }
+    const tombstonedCollections = new Map(colsToTombstone.map(c => [c.id, c]));
+    for (const c of colsToTombstone) {
+      idbPut("collections", c);
+      useBookmarksStore.getState().trashCollectionBookmarks(c.id);
+    }
     idbDelete("workspaces", id);
-    for (const c of allWorkspaceCols) { idbDelete("collections", c.id); }
     const remaining = workspaces.filter(w => w.id !== id);
     const newActiveId = activeWorkspaceId === id ? (remaining[0]?.id ?? "") : activeWorkspaceId;
     if (activeWorkspaceId === id) {
@@ -483,7 +489,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     }
     set({
       workspaces: remaining,
-      collections: collections.filter(c => c.workspaceId !== id),
+      collections: collections.map(c => tombstonedCollections.get(c.id) ?? c),
       activeWorkspaceId: newActiveId,
     });
     usePlanStore.getState().decrementUsage("workspace");
