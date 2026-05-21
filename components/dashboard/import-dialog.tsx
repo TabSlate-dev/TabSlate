@@ -760,7 +760,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
           <div className="space-y-4">
             {result.status === "success" ? (
               <>
-                <Alert variant="info">
+                <Alert variant="success">
                   <CheckCircle2 />
                   <AlertTitle>Import complete</AlertTitle>
                   <AlertDescription>
