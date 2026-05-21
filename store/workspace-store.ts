@@ -559,7 +559,17 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   restoreCollection: (id) => {
     const col = get().collections.find(c => c.id === id);
     if (!col) { return; }
-    const restored = { ...col, deletedAt: undefined, archivedAt: undefined };
+    const { workspaces, activeWorkspaceId } = get();
+    const workspaceExists = workspaces.some(w => w.id === col.workspaceId);
+    const restoredWorkspaceId = workspaceExists
+      ? col.workspaceId
+      : (activeWorkspaceId || workspaces[0]?.id || col.workspaceId);
+    const restored = {
+      ...col,
+      workspaceId: restoredWorkspaceId,
+      deletedAt: undefined,
+      archivedAt: undefined,
+    };
     idbPut("collections", restored);
     syncEngine?.enqueue({ collections: [toServerCollection(restored)] });
     set((s) => ({ collections: s.collections.map(c => c.id === id ? restored : c) }));
