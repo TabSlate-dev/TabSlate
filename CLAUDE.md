@@ -27,6 +27,12 @@ bun run compile    # 仅 tsc 类型检查，不构建产物
 bun run zip        # 打包为 .zip 供 Chrome Web Store 上传
 ```
 
+在 Chrome 中加载扩展：
+1. `bun run dev` 或 `bun run build`
+2. 打开 `chrome://extensions/` → 开启右上角"开发者模式"
+3. 点击"加载已解压的扩展程序" → 选择 `.output/chrome-mv3-dev`（dev）或 `.output/chrome-mv3`（production build）
+4. 修改代码后 dev 模式会自动重载；build 模式需手动点击刷新按钮
+
 ## Dependencies and Upgrading
 
 - Use bun for all dependency management.
