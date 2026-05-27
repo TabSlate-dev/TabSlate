@@ -1,0 +1,1160 @@
+{
+  "extensionName": {
+    "message": "TabSlate (标签石板)"
+  },
+  "extensionDescription": {
+    "message": "一个简洁高效的标签页与书签管理工具"
+  },
+  "commandOpenSearch": {
+    "message": "打开 TabSlate 搜索"
+  },
+  "popup_nothingToSave": {
+    "message": "无法保存此页面"
+  },
+  "popup_navigateHint": {
+    "message": "请导航至普通网页以保存为书签。"
+  },
+  "popup_openTabSlate": {
+    "message": "打开 TabSlate"
+  },
+  "popup_saved": {
+    "message": "已保存！"
+  },
+  "popup_viewInTabSlate": {
+    "message": "在 TabSlate 中查看"
+  },
+  "popup_collection": {
+    "message": "收藏夹"
+  },
+  "popup_selectCollection": {
+    "message": "选择收藏夹"
+  },
+  "popup_saveTo": {
+    "message": "保存到"
+  },
+  "popup_note": {
+    "message": "备注"
+  },
+  "popup_optional": {
+    "message": "(可选)"
+  },
+  "popup_addNote": {
+    "message": "添加备注..."
+  },
+  "popup_saving": {
+    "message": "保存中..."
+  },
+  "popup_failedTryAgain": {
+    "message": "失败 — 请重试"
+  },
+  "popup_saveBookmark": {
+    "message": "保存书签"
+  },
+  "popup_somethingWentWrong": {
+    "message": "出现了一些问题。"
+  },
+  "popup_pressEnter": {
+    "message": "按 Enter 键快速保存"
+  },
+  "sidebar_navOpenTabs": {
+    "message": "打开的标签与组"
+  },
+  "sidebar_navFavorites": {
+    "message": "星标书签"
+  },
+  "sidebar_navArchive": {
+    "message": "归档"
+  },
+  "sidebar_navTrash": {
+    "message": "回收站"
+  },
+  "sidebar_collections": {
+    "message": "收藏夹"
+  },
+  "sidebar_allBookmarks": {
+    "message": "所有书签"
+  },
+  "sidebar_archiveCollection": {
+    "message": "归档"
+  },
+  "sidebar_deleteCollection": {
+    "message": "删除"
+  },
+  "sidebar_addCollection": {
+    "message": "添加收藏夹"
+  },
+  "sidebar_groups": {
+    "message": "标签组"
+  },
+  "sidebar_noSavedGroups": {
+    "message": "没有保存的标签组"
+  },
+  "sidebar_addGroup": {
+    "message": "添加组"
+  },
+  "sidebar_tags": {
+    "message": "标签"
+  },
+  "sidebar_clearTags": {
+    "message": "清除"
+  },
+  "sidebar_noTagsYet": {
+    "message": "暂无标签"
+  },
+  "auth_forgotPassword": {
+    "message": "忘记密码"
+  },
+  "auth_forgotPasswordDesc": {
+    "message": "输入您的邮箱，我们将发送一个6位数重置验证码。"
+  },
+  "auth_somethingWentWrong": {
+    "message": "出现了一些问题"
+  },
+  "auth_email": {
+    "message": "邮箱"
+  },
+  "auth_emailPlaceholder": {
+    "message": "you@example.com"
+  },
+  "auth_sending": {
+    "message": "发送中..."
+  },
+  "auth_sendResetCode": {
+    "message": "发送重置验证码"
+  },
+  "auth_backToLogin": {
+    "message": "返回登录"
+  },
+  "auth_resetPassword": {
+    "message": "重置密码"
+  },
+  "auth_resetPasswordDesc1": {
+    "message": "请输入发送至"
+  },
+  "auth_resetPasswordDesc2": {
+    "message": "的6位验证码，并设置新密码。"
+  },
+  "auth_newPassword": {
+    "message": "新密码"
+  },
+  "auth_passwordPlaceholder": {
+    "message": "••••••••••"
+  },
+  "auth_passwordRequirement": {
+    "message": "至少10个字符，需包含字母和数字。"
+  },
+  "auth_resetting": {
+    "message": "重置中..."
+  },
+  "auth_didntReceive": {
+    "message": "没收到？"
+  },
+  "auth_resendIn": {
+    "message": "$1 秒后重发"
+  },
+  "auth_resendCode": {
+    "message": "重新发送"
+  },
+  "auth_loginTitle": {
+    "message": "登录账号"
+  },
+  "auth_registerTitle": {
+    "message": "创建账号"
+  },
+  "auth_loginDesc": {
+    "message": "在下方输入邮箱以登录您的账号"
+  },
+  "auth_registerDesc": {
+    "message": "在下方填写信息以创建您的账号"
+  },
+  "auth_name": {
+    "message": "名字"
+  },
+  "auth_namePlaceholder": {
+    "message": "您的名字"
+  },
+  "auth_pleaseWait": {
+    "message": "请稍候..."
+  },
+  "auth_loginBtn": {
+    "message": "登录"
+  },
+  "auth_registerBtn": {
+    "message": "创建账号"
+  },
+  "auth_noAccount": {
+    "message": "没有账号？"
+  },
+  "auth_signUp": {
+    "message": "去注册"
+  },
+  "auth_hasAccount": {
+    "message": "已经有账号了？"
+  },
+  "auth_forgotPasswordLink": {
+    "message": "忘记密码？"
+  },
+  "auth_hideAdvanced": {
+    "message": "隐藏高级选项"
+  },
+  "auth_advanced": {
+    "message": "高级选项"
+  },
+  "auth_serverUrl": {
+    "message": "服务器地址"
+  },
+  "auth_serverUrlDesc": {
+    "message": "用于连接自托管的 TabSlate 服务器实例。"
+  },
+  "auth_password": {
+    "message": "密码"
+  },
+  "auth_checkEmail": {
+    "message": "检查您的邮箱"
+  },
+  "auth_checkEmailDesc1": {
+    "message": "我们已向"
+  },
+  "auth_checkEmailDesc2": {
+    "message": "发送了6位验证码，请在下方输入以验证账号。"
+  },
+  "auth_verifying": {
+    "message": "验证中..."
+  },
+  "auth_verifyEmailBtn": {
+    "message": "验证邮箱"
+  },
+  "auth_sent": {
+    "message": "— 已发送！"
+  },
+  "auth_useDifferentAccount": {
+    "message": "使用其他账号"
+  },
+  "auth_verifyHuman": {
+    "message": "人机验证"
+  },
+  "sidebar_userPlanQuotas": {
+    "message": "订阅计划与配额"
+  },
+  "sidebar_userImportBookmarks": {
+    "message": "导入书签"
+  },
+  "sidebar_userLogout": {
+    "message": "退出登录"
+  },
+  "quota_freePlan": {
+    "message": "免费版"
+  },
+  "quota_proPlan": {
+    "message": "专业版"
+  },
+  "quota_premiumPlan": {
+    "message": "高级版"
+  },
+  "quota_bookmarks": {
+    "message": "书签"
+  },
+  "quota_collections": {
+    "message": "收藏夹"
+  },
+  "quota_tags": {
+    "message": "标签"
+  },
+  "quota_workspaces": {
+    "message": "工作区"
+  },
+  "quota_savedGroups": {
+    "message": "标签组"
+  },
+  "quota_capacity": {
+    "message": "容量"
+  },
+  "quota_upgradeToPro": {
+    "message": "升级专业版解锁无限制"
+  },
+  "quota_managePlan": {
+    "message": "管理订阅与配额"
+  },
+  "sync_idle": {
+    "message": "已同步"
+  },
+  "sync_syncing": {
+    "message": "同步中..."
+  },
+  "sync_error": {
+    "message": "同步出错"
+  },
+  "sync_offline": {
+    "message": "离线"
+  },
+  "sync_syncNow": {
+    "message": "立即同步"
+  },
+  "header_sortDateNewest": {
+    "message": "添加日期（从新到旧）"
+  },
+  "header_sortDateOldest": {
+    "message": "添加日期（从旧到新）"
+  },
+  "header_sortAlphaAZ": {
+    "message": "字母顺序（A-Z）"
+  },
+  "header_sortAlphaZA": {
+    "message": "字母顺序（Z-A）"
+  },
+  "header_filterAll": {
+    "message": "所有书签"
+  },
+  "header_filterFavorites": {
+    "message": "仅看星标"
+  },
+  "header_filterWithTags": {
+    "message": "有标签"
+  },
+  "header_filterWithoutTags": {
+    "message": "无标签"
+  },
+  "header_titleBookmarks": {
+    "message": "书签"
+  },
+  "header_sortBy": {
+    "message": "排序方式"
+  },
+  "header_filterBy": {
+    "message": "筛选"
+  },
+  "header_filter": {
+    "message": "筛选"
+  },
+  "header_clearFilter": {
+    "message": "清除筛选"
+  },
+  "header_addBookmark": {
+    "message": "添加书签"
+  },
+  "search_placeholderCollection": {
+    "message": "在此收藏夹中搜索书签..."
+  },
+  "search_placeholderGlobal": {
+    "message": "搜索书签、标签页或使用 $1 搜索..."
+  },
+  "search_openTabs": {
+    "message": "打开的标签页"
+  },
+  "search_bookmarks": {
+    "message": "书签"
+  },
+  "search_archived": {
+    "message": "已归档"
+  },
+  "search_searchWith": {
+    "message": "使用 $2 搜索 \"$1\""
+  },
+  "tabsPanel_openTabs": {
+    "message": "打开的标签页"
+  },
+  "tabsPanel_loading": {
+    "message": "加载中..."
+  },
+  "tabsPanel_tabsAndGroups": {
+    "message": "$1 个标签页 · $2 个标签组$3"
+  },
+  "tabsPanel_saved": {
+    "message": "已保存 $1 个"
+  },
+  "tabsPanel_skipped": {
+    "message": "（跳过 $1 个）"
+  },
+  "tabsPanel_saveWindow": {
+    "message": "保存窗口"
+  },
+  "tabsPanel_noTabs": {
+    "message": "没有打开的标签页"
+  },
+  "tabsPanel_openSomeTabs": {
+    "message": "打开一些标签页，它们会显示在这里。"
+  },
+  "tabsPanel_groups": {
+    "message": "标签组"
+  },
+  "tabsPanel_joinTabGroup": {
+    "message": "加入标签组"
+  },
+  "tabsPanel_saveAsCollection": {
+    "message": "保存为收藏夹"
+  },
+  "tabsPanel_deduplicate": {
+    "message": "去重"
+  },
+  "tabsPanel_deduplicateDesc": {
+    "message": "跳过已保存在其他地方的标签页"
+  },
+  "tabsPanel_ungrouped": {
+    "message": "未分组"
+  },
+  "groupsPanel_openTabs": {
+    "message": "打开的标签页 ($1)"
+  },
+  "groupsPanel_dragTabsIntoGroup": {
+    "message": "将标签页拖入分组 →"
+  },
+  "groupsPanel_noOpenTabs": {
+    "message": "没有打开的标签页"
+  },
+  "groupsPanel_noGroupsYet": {
+    "message": "暂无分组"
+  },
+  "groupsPanel_createGroupDesc": {
+    "message": "创建一个分组并将标签页拖入其中"
+  },
+  "groupsPanel_newGroupName": {
+    "message": "新分组名称..."
+  },
+  "groupsPanel_create": {
+    "message": "创建"
+  },
+  "tabsPanel_joinTabGroupDesc": {
+    "message": "选择一个现有的标签组将选中的标签页移入其中。"
+  },
+  "tabsPanel_noExistingGroups": {
+    "message": "未找到现有的标签组。"
+  },
+  "tabsPanel_saveGroup": {
+    "message": "保存标签组"
+  },
+  "tabsPanel_closeAll": {
+    "message": "关闭所有"
+  },
+  "tabsPanel_ungroupAll": {
+    "message": "取消所有分组"
+  },
+  "groupsPanel_deleteGroup": {
+    "message": "删除标签组"
+  },
+  "groupsPanel_deleteAllTabs": {
+    "message": "删除所有标签页"
+  },
+  "groupsPanel_openInNewWindow": {
+    "message": "在新窗口中打开"
+  },
+  "groupsPanel_addToCollection": {
+    "message": "添加到收藏夹"
+  },
+  "tabsPanel_saveAsGroup": {
+    "message": "保存为标签组"
+  },
+  "tabsPanel_ungroupTabs": {
+    "message": "取消分组"
+  },
+  "tabsPanel_closeGroup": {
+    "message": "关闭标签组"
+  },
+  "tabsPanel_unnamedGroup": {
+    "message": "未命名分组"
+  },
+  "tabsPanel_clickToRename": {
+    "message": "点击重命名"
+  },
+  "groupsPanel_newGroup": {
+    "message": "新建标签组"
+  },
+  "groupsPanel_groupName": {
+    "message": "标签组名称"
+  },
+  "groupsPanel_cancel": {
+    "message": "取消"
+  },
+  "groupsPanel_renameGroup": {
+    "message": "重命名标签组"
+  },
+  "groupsPanel_saveToCollection": {
+    "message": "保存到收藏夹"
+  },
+  "groupsPanel_saved": {
+    "message": "已保存！"
+  },
+  "groupsPanel_newCollection": {
+    "message": "新收藏夹..."
+  },
+  "settings_title": {
+    "message": "设置"
+  },
+  "settings_desc": {
+    "message": "配置 TabSlate 设置"
+  },
+  "settings_tabGeneral": {
+    "message": "常规"
+  },
+  "settings_tabEngines": {
+    "message": "搜索引擎"
+  },
+  "settings_tabPlan": {
+    "message": "计划与配额"
+  },
+  "settings_generalOverlayTitle": {
+    "message": "全局搜索浮层"
+  },
+  "settings_generalOverlayDesc": {
+    "message": "在任意网站按 $1 搜索您的标签页和书签。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_generalImportTitle": {
+    "message": "数据导入"
+  },
+  "settings_generalImportDesc": {
+    "message": "从其他扩展导入保存的标签页和收藏夹，或从浏览器书签数据库同步。"
+  },
+  "settings_generalImportBtn": {
+    "message": "导入书签"
+  },
+  "settings_enginesTitle": {
+    "message": "搜索引擎"
+  },
+  "settings_enginesDesc": {
+    "message": "启用或禁用搜索引擎，拖动以重新排序。第一个启用的引擎为默认引擎。"
+  },
+  "settings_enginesPlaceholderName": {
+    "message": "名称"
+  },
+  "settings_enginesPlaceholderUrl": {
+    "message": "https://example.com/search?q=%s"
+  },
+  "settings_enginesUsePlaceholder": {
+    "message": "使用 $1 作为搜索词占位符",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_cancel": {
+    "message": "取消"
+  },
+  "settings_add": {
+    "message": "添加"
+  },
+  "settings_addEngine": {
+    "message": "添加引擎"
+  },
+  "settings_planFreeBadge": {
+    "message": "免费计划"
+  },
+  "settings_planProBadge": {
+    "message": "专业计划"
+  },
+  "settings_planPremiumBadge": {
+    "message": "高级计划"
+  },
+  "settings_planAccountTitle": {
+    "message": "$1 账户",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_planRenewsOn": {
+    "message": "续订于 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_planExpiresOn": {
+    "message": "到期于 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_planFreeDesc": {
+    "message": "获得无限工作区、无限书签、自定义分类和无缝高级云集成。"
+  },
+  "settings_planUpgradeBtn": {
+    "message": "升级计划"
+  },
+  "settings_planQuotasTitle": {
+    "message": "资源配额与使用量"
+  },
+  "settings_planWorkspaces": {
+    "message": "工作区"
+  },
+  "settings_planBookmarks": {
+    "message": "书签"
+  },
+  "settings_planCollections": {
+    "message": "收藏夹"
+  },
+  "settings_planTags": {
+    "message": "标签"
+  },
+  "settings_planSavedGroups": {
+    "message": "保存的标签组"
+  },
+  "settings_planTrashDesc": {
+    "message": "您的回收站保留策略会在自动永久删除之前安全地保留已删除项目 $1 天。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_done": {
+    "message": "完成"
+  },
+  "addBookmark_title": {
+    "message": "添加书签"
+  },
+  "addBookmark_desc": {
+    "message": "手动将书签添加到您的收藏夹。"
+  },
+  "addBookmark_fieldTitle": {
+    "message": "标题"
+  },
+  "addBookmark_placeholderTitle": {
+    "message": "我的网站"
+  },
+  "addBookmark_fieldUrl": {
+    "message": "网址"
+  },
+  "addBookmark_placeholderUrl": {
+    "message": "https://example.com"
+  },
+  "addBookmark_fieldDesc": {
+    "message": "描述"
+  },
+  "addBookmark_placeholderDesc": {
+    "message": "可选描述..."
+  },
+  "addBookmark_fieldCollection": {
+    "message": "收藏夹"
+  },
+  "addBookmark_selectCollection": {
+    "message": "选择收藏夹"
+  },
+  "addBookmark_fieldTags": {
+    "message": "标签"
+  },
+  "addBookmark_btnSubmit": {
+    "message": "添加书签"
+  },
+  "import_step0_desc": {
+    "message": "选择您要导入的导出源。"
+  },
+  "import_step1_desc": {
+    "message": "上传您的 $1 导出文件并确认其格式正确。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_step2_desc": {
+    "message": "选择目标工作区并查看导入摘要。"
+  },
+  "import_step3_desc": {
+    "message": "查看导入结果和任何跳过的项目。"
+  },
+  "import_title": {
+    "message": "导入书签"
+  },
+  "import_titleSource": {
+    "message": "从 $1 导入",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_titleConfig": {
+    "message": "配置导入"
+  },
+  "import_titleFailed": {
+    "message": "导入失败"
+  },
+  "import_titleComplete": {
+    "message": "导入完成"
+  },
+  "import_tobyDesc": {
+    "message": "从 Toby JSON 导出中导入列表、卡片和标签。"
+  },
+  "import_chromeDesc": {
+    "message": "从 Chrome HTML 导出中导入文件夹和书签。"
+  },
+  "import_tobyHint": {
+    "message": "上传 Toby JSON 导出文件。"
+  },
+  "import_chromeHint": {
+    "message": "上传 Chrome 书签 HTML 导出文件。"
+  },
+  "import_dragDrop": {
+    "message": "将文件拖放到此处"
+  },
+  "import_accepts": {
+    "message": "仅接受 $1 文件。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_chooseFile": {
+    "message": "选择文件"
+  },
+  "import_selectedFile": {
+    "message": "已选择文件："
+  },
+  "import_validating": {
+    "message": "正在验证文件"
+  },
+  "import_validatingDesc": {
+    "message": "正在检查文件格式并预览可导入的内容。"
+  },
+  "import_looksGood": {
+    "message": "文件格式正确"
+  },
+  "import_looksGoodDesc": {
+    "message": "$1 个书签（分布在 $2 个收藏夹中）已准备好供审阅。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "import_validationFailed": {
+    "message": "验证失败"
+  },
+  "import_switchTo": {
+    "message": "切换到 $1 导入",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_back": {
+    "message": "返回"
+  },
+  "import_next": {
+    "message": "下一步"
+  },
+  "import_workspace": {
+    "message": "工作区"
+  },
+  "import_selectWorkspace": {
+    "message": "选择一个工作区"
+  },
+  "import_workspaceDesc": {
+    "message": "导入的项目将在所选工作区中创建。"
+  },
+  "import_skipDuplicates": {
+    "message": "跳过重复网址"
+  },
+  "import_skipDuplicatesDesc": {
+    "message": "具有相同网址的现有书签将被跳过。"
+  },
+  "import_summary": {
+    "message": "导入摘要"
+  },
+  "import_statCollections": {
+    "message": "收藏夹"
+  },
+  "import_statBookmarks": {
+    "message": "书签"
+  },
+  "import_statTags": {
+    "message": "标签"
+  },
+  "import_statDuplicates": {
+    "message": "跳过的重复项"
+  },
+  "import_rejectedUrlsDesc": {
+    "message": "$1 个网址将被拒绝，因为它们使用不受支持或无效的格式。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_unavailable": {
+    "message": "无法导入"
+  },
+  "import_blockedWorkspace": {
+    "message": "在导入前选择一个工作区。"
+  },
+  "import_blockedValid": {
+    "message": "请先上传有效的导出文件。"
+  },
+  "import_blockedNew": {
+    "message": "此文件中没有要导入的新内容。"
+  },
+  "import_blockedCollectionQuota": {
+    "message": "此导入将超出您的收藏夹限制。"
+  },
+  "import_blockedBookmarkQuota": {
+    "message": "此导入将超出您的书签限制。"
+  },
+  "import_btnImport": {
+    "message": "导入"
+  },
+  "import_completeDesc": {
+    "message": "您的书签已添加并加入同步队列。"
+  },
+  "import_statCollectionsCreated": {
+    "message": "创建的收藏夹"
+  },
+  "import_statBookmarksImported": {
+    "message": "导入的书签"
+  },
+  "import_statTagsCreated": {
+    "message": "创建的标签"
+  },
+  "import_rejectedUrls": {
+    "message": "拒绝的网址"
+  },
+  "import_close": {
+    "message": "关闭"
+  },
+  "import_tryAgain": {
+    "message": "重试"
+  },
+  "bookmarkCard_openSmart": {
+    "message": "打开 (智能)"
+  },
+  "bookmarkCard_openNewTab": {
+    "message": "在新标签页中打开"
+  },
+  "bookmarkCard_edit": {
+    "message": "编辑"
+  },
+  "bookmarkCard_addTags": {
+    "message": "添加标签"
+  },
+  "bookmarkCard_archive": {
+    "message": "归档"
+  },
+  "bookmarkCard_delete": {
+    "message": "删除"
+  },
+  "bookmarkCard_copied": {
+    "message": "已复制！"
+  },
+  "bookmarksContent_allBookmarks": {
+    "message": "所有书签"
+  },
+  "bookmarksContent_uncategorized": {
+    "message": "未分类"
+  },
+  "bookmarksContent_emptyTitle": {
+    "message": "未找到书签"
+  },
+  "bookmarksContent_emptyDesc": {
+    "message": "通过弹出窗口保存书签，或将标签页拖到此处开始使用。"
+  },
+  "bookmarksContent_bookmarkCount_one": {
+    "message": "$1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarksContent_bookmarkCount_other": {
+    "message": "$1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarksContent_filtered": {
+    "message": " (已过滤)"
+  },
+  "bookmarksContent_favoritesOnly": {
+    "message": "仅看星标"
+  },
+  "bookmarksContent_withTags": {
+    "message": "带标签"
+  },
+  "bookmarksContent_withoutTags": {
+    "message": "无标签"
+  },
+  "bookmarksContent_clearFilters": {
+    "message": "清除过滤"
+  },
+  "favoritesContent_title": {
+    "message": "星标书签"
+  },
+  "favoritesContent_count_one": {
+    "message": "$1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "favoritesContent_count_other": {
+    "message": "$1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "favoritesContent_markedAsFavorite": {
+    "message": "已加星标"
+  },
+  "favoritesContent_emptyTitle": {
+    "message": "暂无星标书签"
+  },
+  "favoritesContent_emptyDesc": {
+    "message": "点击书签上的红心图标将其添加到星标书签中。"
+  },
+  "archiveContent_restore": {
+    "message": "还原"
+  },
+  "archiveContent_moveToTrash": {
+    "message": "移至回收站"
+  },
+  "archiveContent_openUrl": {
+    "message": "打开链接"
+  },
+  "archiveContent_title": {
+    "message": "归档"
+  },
+  "archiveContent_selectAll": {
+    "message": "全选"
+  },
+  "archiveContent_deselectAll": {
+    "message": "取消全选"
+  },
+  "archiveContent_cancel": {
+    "message": "取消"
+  },
+  "archiveContent_selectedCount": {
+    "message": "已选择 $1 个",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_collectionCount_one": {
+    "message": "$1 个收藏夹",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_collectionCount_other": {
+    "message": "$1 个收藏夹",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_bookmarkCount_one": {
+    "message": "$1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_bookmarkCount_other": {
+    "message": "$1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_emptyTitle": {
+    "message": "归档为空"
+  },
+  "archiveContent_emptyDesc": {
+    "message": "归档的书签和收藏夹将显示在此处。"
+  },
+  "trashContent_restore": {
+    "message": "还原"
+  },
+  "trashContent_deletePermanently": {
+    "message": "永久删除"
+  },
+  "trashContent_openUrl": {
+    "message": "打开链接"
+  },
+  "trashContent_title": {
+    "message": "回收站"
+  },
+  "trashContent_selectAll": {
+    "message": "全选"
+  },
+  "trashContent_deselectAll": {
+    "message": "取消全选"
+  },
+  "trashContent_cancel": {
+    "message": "取消"
+  },
+  "trashContent_delete": {
+    "message": "删除"
+  },
+  "trashContent_selectedCount": {
+    "message": "已选择 $1 个",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_collectionCount_one": {
+    "message": "$1 个收藏夹",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_collectionCount_other": {
+    "message": "$1 个收藏夹",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_groupCount_one": {
+    "message": "$1 个标签组",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_groupCount_other": {
+    "message": "$1 个标签组",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_tabCount_one": {
+    "message": "$1 个标签页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_tabCount_other": {
+    "message": "$1 个标签页",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_bookmarkCount_one": {
+    "message": "$1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_bookmarkCount_other": {
+    "message": "$1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_gracePeriod": {
+    "message": "回收站中的项目将在 $1 天后被永久删除",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_emptyConfirmTitle": {
+    "message": "清空回收站？"
+  },
+  "trashContent_emptyConfirmDesc": {
+    "message": "回收站中的所有项目都将被永久删除。此操作无法撤销。"
+  },
+  "trashContent_emptyTrash": {
+    "message": "清空回收站"
+  },
+  "trashContent_deleteConfirmTitle_one": {
+    "message": "永久删除 $1 个项目？",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_deleteConfirmTitle_other": {
+    "message": "永久删除 $1 个项目？",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_deleteConfirmDesc": {
+    "message": "这些项目将被永久删除且无法恢复。"
+  },
+  "bookmarkTagsDialog_title": {
+    "message": "管理标签"
+  },
+  "bookmarkTagsDialog_desc": {
+    "message": "为此书签选择标签。"
+  },
+  "bookmarkTagsDialog_noTags": {
+    "message": "没有可用标签。请先在侧边栏创建标签。"
+  },
+  "bookmarkTagsDialog_createTag": {
+    "message": "创建新标签"
+  },
+  "bookmarkTagsDialog_cancel": {
+    "message": "取消"
+  },
+  "bookmarkTagsDialog_save": {
+    "message": "保存"
+  },
+  "editBookmarkDialog_title": {
+    "message": "编辑书签"
+  },
+  "editBookmarkDialog_desc": {
+    "message": "编辑此书签的标题、网址和描述。"
+  },
+  "editBookmarkDialog_titleField": {
+    "message": "标题"
+  },
+  "editBookmarkDialog_urlField": {
+    "message": "网址"
+  },
+  "editBookmarkDialog_descField": {
+    "message": "描述"
+  },
+  "editBookmarkDialog_cancel": {
+    "message": "取消"
+  },
+  "editBookmarkDialog_save": {
+    "message": "保存更改"
+  }
+}

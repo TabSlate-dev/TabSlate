@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { TagList } from "@/components/ui/tag-list";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface BookmarkCardProps {
   bookmark: Bookmark;
@@ -47,6 +48,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
   onEdit,
   onAddTags,
 }: BookmarkCardProps) {
+  const { t } = useTranslation();
   const toggleFavorite = useBookmarksStore((s) => s.toggleFavorite);
   const archiveBookmark = useBookmarksStore((s) => s.archiveBookmark);
   const trashBookmark = useBookmarksStore((s) => s.trashBookmark);
@@ -72,34 +74,34 @@ export const BookmarkCard = React.memo(function BookmarkCard({
     <DropdownMenuContent align="end">
       <DropdownMenuItem onClick={handleSmartOpen}>
         <ExternalLink className="size-4 mr-2" />
-        Open (Smart)
+        {t("bookmarkCard_openSmart")}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={handleNewTabOpen}>
         <ExternalLink className="size-4 mr-2" />
-        Open in new tab
+        {t("bookmarkCard_openNewTab")}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => { setMenuOpen(false); onEdit?.(bookmark); }}>
         <Pencil className="size-4 mr-2" />
-        Edit
+        {t("bookmarkCard_edit")}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => { setMenuOpen(false); onAddTags?.(bookmark); }}>
         <Tag className="size-4 mr-2" />
-        Add Tags
+        {t("bookmarkCard_addTags")}
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={() => archiveBookmark(bookmark.id)}>
         <Archive className="size-4 mr-2" />
-        Archive
+        {t("bookmarkCard_archive")}
       </DropdownMenuItem>
       <DropdownMenuItem
         className="text-destructive"
         onClick={() => trashBookmark(bookmark.id)}
       >
         <Trash2 className="size-4 mr-2" />
-        Delete
+        {t("bookmarkCard_delete")}
       </DropdownMenuItem>
     </DropdownMenuContent>
-  ), [handleSmartOpen, handleNewTabOpen, onEdit, onAddTags, archiveBookmark, trashBookmark, bookmark]);
+  ), [handleSmartOpen, handleNewTabOpen, onEdit, onAddTags, archiveBookmark, trashBookmark, bookmark, t]);
 
   // ── List variant ────────────────────────────────────────────────────────
   if (variant === "list") {
@@ -224,7 +226,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
             {/* Copied popup — outside overflow-hidden so it's not clipped */}
             {copied && (
               <div className="absolute bottom-full right-0 mb-1 px-1.5 py-0.5 rounded text-xs font-medium bg-green-500 text-white whitespace-nowrap pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-150">
-                Copied!
+                {t("bookmarkCard_copied")}
               </div>
             )}
 

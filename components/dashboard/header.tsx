@@ -6,6 +6,8 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { LanguageSelector } from "@/components/language-selector";
+import { useTranslation } from "@/hooks/use-translation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,20 +36,21 @@ interface BookmarksHeaderProps {
 }
 
 const sortOptions = [
-  { value: "date-newest", label: "Date Added (Newest)" },
-  { value: "date-oldest", label: "Date Added (Oldest)" },
-  { value: "alpha-az", label: "Alphabetical (A-Z)" },
-  { value: "alpha-za", label: "Alphabetical (Z-A)" },
+  { value: "date-newest", labelKey: "header_sortDateNewest" },
+  { value: "date-oldest", labelKey: "header_sortDateOldest" },
+  { value: "alpha-az", labelKey: "header_sortAlphaAZ" },
+  { value: "alpha-za", labelKey: "header_sortAlphaZA" },
 ] as const;
 
 const filterOptions = [
-  { value: "all", label: "All Bookmarks" },
-  { value: "favorites", label: "Favorites Only" },
-  { value: "with-tags", label: "With Tags" },
-  { value: "without-tags", label: "Without Tags" },
+  { value: "all", labelKey: "header_filterAll" },
+  { value: "favorites", labelKey: "header_filterFavorites" },
+  { value: "with-tags", labelKey: "header_filterWithTags" },
+  { value: "without-tags", labelKey: "header_filterWithoutTags" },
 ] as const;
 
-export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
+export function BookmarksHeader({ title }: BookmarksHeaderProps) {
+  const { t } = useTranslation();
   const {
     viewMode,
     setViewMode,
@@ -63,6 +66,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
 
   const currentSort = sortOptions.find((opt) => opt.value === sortBy);
   const currentFilter = filterOptions.find((opt) => opt.value === filterType);
+  const displayTitle = title ?? t("header_titleBookmarks");
 
   return (
     <header className="w-full border-b">
@@ -70,7 +74,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
         <div className="flex items-center gap-3">
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-5" />
-          <h1 className="text-base font-semibold hidden sm:block">{title}</h1>
+          <h1 className="text-base font-semibold hidden sm:block">{displayTitle}</h1>
         </div>
 
         <div className="flex items-center gap-2">
@@ -109,12 +113,12 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="hidden sm:flex">
                 <ArrowUpDown className="size-4" />
-                <span className="hidden lg:inline">{currentSort?.label.split(" ")[0]}</span>
+                <span className="hidden lg:inline">{t(currentSort?.labelKey || "header_sortDateNewest").split(" ")[0]}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuLabel className="text-xs text-muted-foreground">
-                Sort by
+                {t("header_sortBy")}
               </DropdownMenuLabel>
               {sortOptions.map((option) => (
                 <DropdownMenuItem
@@ -122,7 +126,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
                   onClick={() => setSortBy(option.value)}
                   className="flex items-center justify-between"
                 >
-                  {option.label}
+                  {t(option.labelKey)}
                   {sortBy === option.value && <Check className="size-4" />}
                 </DropdownMenuItem>
               ))}
@@ -141,13 +145,13 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
               >
                 <SlidersHorizontal className="size-4" />
                 <span className="hidden lg:inline">
-                  {filterType !== "all" ? currentFilter?.label : "Filter"}
+                  {filterType !== "all" && currentFilter ? t(currentFilter.labelKey) : t("header_filter")}
                 </span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
               <DropdownMenuLabel className="text-xs text-muted-foreground">
-                Filter by
+                {t("header_filterBy")}
               </DropdownMenuLabel>
               {filterOptions.map((option) => (
                 <DropdownMenuItem
@@ -155,7 +159,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
                   onClick={() => setFilterType(option.value)}
                   className="flex items-center justify-between"
                 >
-                  {option.label}
+                  {t(option.labelKey)}
                   {filterType === option.value && <Check className="size-4" />}
                 </DropdownMenuItem>
               ))}
@@ -166,7 +170,7 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
                     onClick={() => setFilterType("all")}
                     className="text-muted-foreground"
                   >
-                    Clear filter
+                    {t("header_clearFilter")}
                   </DropdownMenuItem>
                 </>
               )}
@@ -175,12 +179,13 @@ export function BookmarksHeader({ title = "Bookmarks" }: BookmarksHeaderProps) {
 
           <Button size="sm" className="hidden sm:flex" onClick={() => setAddBookmarkOpen(true)}>
             <Plus className="size-4" />
-            Add Bookmark
+            {t("header_addBookmark")}
           </Button>
 
           <Separator orientation="vertical" className="h-5 hidden sm:block" />
 
           <ThemeToggle />
+          <LanguageSelector />
 
           <Button variant="ghost" size="icon" asChild>
             <a

@@ -10,6 +10,7 @@ import { useTabsStore } from "@/store/tabs-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { Bookmark, Monitor } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface JoinGroupDialogProps {
   tabIds: number[];
@@ -22,6 +23,7 @@ export function JoinGroupDialog({
   isOpen,
   onClose,
 }: JoinGroupDialogProps) {
+  const { t } = useTranslation();
   const tabGroups = useTabsStore((s) => s.tabGroups);
   const fullTitles = useTabsStore((s) => s.fullTitles);
   const moveTabsToGroup = useTabsStore((s) => s.moveTabsToGroup);
@@ -97,9 +99,9 @@ export function JoinGroupDialog({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Join Tab Group</DialogTitle>
+          <DialogTitle>{t("tabsPanel_joinTabGroup")}</DialogTitle>
           <DialogDescription>
-            Select an existing group to move the selected tab(s) into.
+            {t("tabsPanel_joinTabGroupDesc")}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-2 py-4 max-h-[300px] overflow-y-auto pr-1">
@@ -139,7 +141,7 @@ export function JoinGroupDialog({
           })}
           {mergedGroups.length === 0 && (
             <p className="text-sm text-center text-muted-foreground py-4">
-              No existing groups found.
+              {t("tabsPanel_noExistingGroups")}
             </p>
           )}
         </div>

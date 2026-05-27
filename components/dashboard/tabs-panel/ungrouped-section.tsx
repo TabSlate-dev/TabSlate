@@ -10,6 +10,7 @@ import { TabRow } from "@/components/dashboard/tab-row";
 import { DraggableTab } from "./draggable-tab";
 import type { BrowserTab } from "@/lib/chrome/tabs";
 import { TAB_GROUP_COLOR_KEYS, type TabGroupColor } from "@/lib/chrome/tab-groups";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface UngroupedSectionProps {
   tabs: BrowserTab[];
@@ -17,6 +18,7 @@ interface UngroupedSectionProps {
 }
 
 export function UngroupedSection({ tabs, onJoinRequest }: UngroupedSectionProps) {
+  const { t } = useTranslation();
   const createGroup = useTabsStore(s => s.createGroup);
   const ungroupSpecificTabs = useTabsStore(s => s.ungroupSpecificTabs);
 
@@ -57,7 +59,7 @@ export function UngroupedSection({ tabs, onJoinRequest }: UngroupedSectionProps)
     <div className="space-y-1">
       <div className="flex items-center justify-between px-1">
         <p className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
-          Ungrouped
+          {t("tabsPanel_ungrouped")}
         </p>
         <span className="text-[10px] font-semibold text-muted-foreground">
           {tabs.length}

@@ -11,8 +11,10 @@ import {
 } from "lucide-react";
 import { usePlanStore } from "@/store/plan-store";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function QuotaCard() {
+  const { t } = useTranslation();
   const subscription = usePlanStore((s) => s.subscription);
   const limits = usePlanStore((s) => s.limits);
   const usage = usePlanStore((s) => s.usage);
@@ -41,7 +43,7 @@ export function QuotaCard() {
         ),
         glow: "from-slate-400/30 via-slate-300/20 to-zinc-400/20 dark:from-slate-500/20 dark:via-slate-500/10 dark:to-zinc-500/10",
         badge: "bg-slate-200/50 text-slate-600 border-slate-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700",
-        badgeText: "Free Plan",
+        badgeText: t("quota_freePlan"),
         progressColor: "bg-slate-300 dark:bg-zinc-600",
         iconColorClass: "text-slate-500 dark:text-zinc-400",
       };
@@ -54,7 +56,7 @@ export function QuotaCard() {
         ),
         glow: "from-indigo-500/30 via-purple-500/20 to-blue-500/30 dark:from-indigo-500/25 dark:via-purple-500/15 dark:to-blue-500/25",
         badge: "bg-indigo-100/60 text-indigo-700 border-indigo-200/80 dark:bg-indigo-500/20 dark:text-indigo-300 dark:border-indigo-500/30",
-        badgeText: "Pro Plan",
+        badgeText: t("quota_proPlan"),
         progressColor: "bg-gradient-to-r from-indigo-400 to-blue-500",
         iconColorClass: "text-indigo-600 dark:text-indigo-400",
       };
@@ -67,7 +69,7 @@ export function QuotaCard() {
       ),
       glow: "from-amber-500/30 via-orange-500/20 to-rose-500/30 dark:from-amber-500/25 dark:via-orange-500/15 dark:to-rose-500/25",
       badge: "bg-amber-100/60 text-amber-700 border-amber-200/80 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30",
-      badgeText: "Premium Plan",
+      badgeText: t("quota_premiumPlan"),
       progressColor: "bg-gradient-to-r from-amber-400 to-orange-500",
       iconColorClass: "text-amber-600 dark:text-amber-400",
     };
@@ -130,11 +132,11 @@ export function QuotaCard() {
 
   const renderCompactStats = () => {
     const items = [
-      { label: "Bookmarks", Icon: Bookmark, usageVal: usage.bookmarks, limitVal: limits.max_bookmarks },
-      { label: "Collections", Icon: Folder, usageVal: usage.collections, limitVal: limits.max_collections },
-      { label: "Tags", Icon: Tag, usageVal: usage.tags, limitVal: limits.max_tags },
-      { label: "Workspaces", Icon: Monitor, usageVal: usage.workspaces, limitVal: limits.max_workspaces },
-      { label: "Saved Groups", Icon: Sparkles, usageVal: usage.saved_groups, limitVal: limits.max_saved_groups },
+      { label: t("quota_bookmarks"), Icon: Bookmark, usageVal: usage.bookmarks, limitVal: limits.max_bookmarks },
+      { label: t("quota_collections"), Icon: Folder, usageVal: usage.collections, limitVal: limits.max_collections },
+      { label: t("quota_tags"), Icon: Tag, usageVal: usage.tags, limitVal: limits.max_tags },
+      { label: t("quota_workspaces"), Icon: Monitor, usageVal: usage.workspaces, limitVal: limits.max_workspaces },
+      { label: t("quota_savedGroups"), Icon: Sparkles, usageVal: usage.saved_groups, limitVal: limits.max_saved_groups },
     ];
 
     return (
@@ -205,7 +207,7 @@ export function QuotaCard() {
         {/* Header with Title and Plan Badge */}
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-bold tracking-wider text-muted-foreground/80 uppercase">
-            Capacity
+            {t("quota_capacity")}
           </span>
           <div
             className={cn(
@@ -243,11 +245,11 @@ export function QuotaCard() {
         >
           <div className="overflow-hidden">
             <div className="pt-3 border-t border-muted/50 dark:border-zinc-800/40 space-y-3.5">
-              {renderQuotaRow("Bookmarks", Bookmark, usage.bookmarks, limits.max_bookmarks)}
-              {renderQuotaRow("Collections", Folder, usage.collections, limits.max_collections)}
-              {renderQuotaRow("Tags", Tag, usage.tags, limits.max_tags)}
-              {renderQuotaRow("Workspaces", Monitor, usage.workspaces, limits.max_workspaces)}
-              {renderQuotaRow("Saved Groups", Sparkles, usage.saved_groups, limits.max_saved_groups)}
+              {renderQuotaRow(t("quota_bookmarks"), Bookmark, usage.bookmarks, limits.max_bookmarks)}
+              {renderQuotaRow(t("quota_collections"), Folder, usage.collections, limits.max_collections)}
+              {renderQuotaRow(t("quota_tags"), Tag, usage.tags, limits.max_tags)}
+              {renderQuotaRow(t("quota_workspaces"), Monitor, usage.workspaces, limits.max_workspaces)}
+              {renderQuotaRow(t("quota_savedGroups"), Sparkles, usage.saved_groups, limits.max_saved_groups)}
 
               {/* CTA Upgrade Banner */}
               {plan === "free" ? (
@@ -255,14 +257,14 @@ export function QuotaCard() {
                   <span className="flex items-center gap-1.5">
                     <Zap className="size-3 text-amber-500 animate-bounce" style={{ animationDuration: '2s' }} />
                     <span className="bg-gradient-to-r from-blue-600 via-violet-600 to-fuchsia-600 dark:from-blue-400 dark:via-violet-400 dark:to-fuchsia-400 bg-clip-text text-transparent font-bold">
-                      Upgrade to Pro for Unlimited
+                      {t("quota_upgradeToPro")}
                     </span>
                   </span>
                   <ArrowUpRight className="size-3.5 text-violet-500 dark:text-violet-400 transition-transform duration-300 group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-0.5" />
                 </div>
               ) : (
                 <div className="mt-1 pt-3.5 border-t border-muted/50 dark:border-zinc-800/40 flex items-center justify-between text-[11px] text-muted-foreground font-medium group/cta hover:text-foreground transition-colors">
-                  <span>Manage Plan & Quotas</span>
+                  <span>{t("quota_managePlan")}</span>
                   <ArrowUpRight className="size-3.5 transition-transform duration-300 group-hover/cta:translate-x-0.5 group-hover/cta:-translate-y-0.5" />
                 </div>
               )}

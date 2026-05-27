@@ -35,6 +35,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
+import { useTranslation } from "@/hooks/use-translation";
 
 // ---------------------------------------------------------------------------
 // Icon map (mirrors sidebar)
@@ -73,6 +74,7 @@ function ArchivedCollectionCard({
   selectedBmIds?: Set<string>;
   onToggleBm?: (id: string) => void;
 }) {
+  const { t } = useTranslation();
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
   const [expanded, setExpanded] = React.useState(false);
@@ -106,7 +108,7 @@ function ArchivedCollectionCard({
             {expanded ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
           </div>
           <p className="text-sm text-muted-foreground">
-            {bookmarks.length} bookmark{bookmarks.length !== 1 ? "s" : ""}
+            {t(bookmarks.length === 1 ? "archiveContent_bookmarkCount_one" : "archiveContent_bookmarkCount_other", [bookmarks.length.toString()])}
           </p>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -122,7 +124,7 @@ function ArchivedCollectionCard({
             }}
           >
             <RotateCcw className="size-4 mr-1" />
-            Restore
+            {t("archiveContent_restore")}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -136,7 +138,7 @@ function ArchivedCollectionCard({
                 onClick={() => deleteCollection(collection.id)}
               >
                 <Trash2 className="size-4 mr-2" />
-                Move to Trash
+                {t("archiveContent_moveToTrash")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -170,6 +172,7 @@ function ArchivedBookmarkCard({
   selected?: boolean;
   onSelect?: () => void;
 }) {
+  const { t } = useTranslation();
   const restoreFromArchive = useBookmarksStore(s => s.restoreFromArchive);
   const trashBookmark = useBookmarksStore(s => s.trashBookmark);
   const tags = useWorkspaceStore(s => s.tags);
@@ -257,7 +260,7 @@ function ArchivedBookmarkCard({
       <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
         <Button variant="outline" size="sm" onClick={handleRestore}>
           <RotateCcw className="size-4 mr-1" />
-          Restore
+          {t("archiveContent_restore")}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -268,7 +271,7 @@ function ArchivedBookmarkCard({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => window.open(bookmark.url, "_blank")}>
               <ExternalLink className="size-4 mr-2" />
-              Open URL
+              {t("archiveContent_openUrl")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -276,7 +279,7 @@ function ArchivedBookmarkCard({
               onClick={handleMoveToTrash}
             >
               <Trash2 className="size-4 mr-2" />
-              Move to Trash
+              {t("archiveContent_moveToTrash")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -286,6 +289,7 @@ function ArchivedBookmarkCard({
 }
 
 export function ArchiveContent() {
+  const { t } = useTranslation();
   React.useEffect(() => {
     void useBookmarksStore.getState().loadArchivedBookmarks();
   }, []);
@@ -451,34 +455,34 @@ export function ArchiveContent() {
               <Archive className="size-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Archived</h2>
+              <h2 className="text-lg font-semibold">{t("archiveContent_title")}</h2>
               <p className="text-sm text-muted-foreground">
-                {archivedCollections.length > 0 && `${archivedCollections.length} collection${archivedCollections.length !== 1 ? "s" : ""}, `}
-                {individualArchivedBookmarks.length} bookmark{individualArchivedBookmarks.length !== 1 ? "s" : ""}
+                {archivedCollections.length > 0 && `${t(archivedCollections.length === 1 ? "archiveContent_collectionCount_one" : "archiveContent_collectionCount_other", [archivedCollections.length.toString()])}, `}
+                {t(individualArchivedBookmarks.length === 1 ? "archiveContent_bookmarkCount_one" : "archiveContent_bookmarkCount_other", [individualArchivedBookmarks.length.toString()])}
               </p>
             </div>
           </div>
 
           {totalCount > 0 && selectedCount === 0 && (
             <Button variant="outline" size="sm" onClick={handleSelectAll}>
-              Select All
+              {t("archiveContent_selectAll")}
             </Button>
           )}
 
           {selectedCount > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium mr-2 hidden sm:inline-block">{selectedCount} selected</span>
+              <span className="text-sm font-medium mr-2 hidden sm:inline-block">{t("archiveContent_selectedCount", [selectedCount.toString()])}</span>
               <Button variant="outline" size="sm" onClick={() => { setSelectedColIds(new Set()); setSelectedBmIds(new Set()); }}>
-                Cancel
+                {t("archiveContent_cancel")}
               </Button>
               <Button variant="outline" size="sm" onClick={handleSelectAll}>
-                {selectedCount === totalCount ? "Deselect All" : "Select All"}
+                {selectedCount === totalCount ? t("archiveContent_deselectAll") : t("archiveContent_selectAll")}
               </Button>
               <Button size="sm" onClick={handleBatchRestore}>
-                <RotateCcw className="size-4 mr-1" /> Restore
+                <RotateCcw className="size-4 mr-1" /> {t("archiveContent_restore")}
               </Button>
               <Button size="sm" variant="destructive" onClick={handleBatchDelete}>
-                <Trash2 className="size-4 mr-1" /> Move to Trash
+                <Trash2 className="size-4 mr-1" /> {t("archiveContent_moveToTrash")}
               </Button>
             </div>
           )}
@@ -514,8 +518,8 @@ export function ArchiveContent() {
         {totalCount === 0 && (
           <EmptyState
             icon={Archive}
-            title="Archive is empty"
-            description="Archived bookmarks and collections will appear here."
+            title={t("archiveContent_emptyTitle")}
+            description={t("archiveContent_emptyDesc")}
           />
         )}
       </div>

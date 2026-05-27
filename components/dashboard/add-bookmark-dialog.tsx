@@ -22,6 +22,7 @@ import { ChevronDown, FolderPlus } from "lucide-react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface AddBookmarkDialogProps {
   open: boolean;
@@ -29,6 +30,7 @@ interface AddBookmarkDialogProps {
 }
 
 export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps) {
+  const { t } = useTranslation();
   const addBookmark = useBookmarksStore(s => s.addBookmark);
   const collections = useWorkspaceStore(s => s.collections);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
@@ -65,8 +67,8 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
   }, [open, defaultCollectionId]);
 
   const selectedCollectionName = React.useMemo(
-    () => activeCollections.find(c => c.id === collectionId)?.name ?? "Select collection",
-    [activeCollections, collectionId]
+    () => activeCollections.find(c => c.id === collectionId)?.name ?? t("addBookmark_selectCollection"),
+    [activeCollections, collectionId, t]
   );
 
   const toggleTag = (tagId: string) => {
@@ -113,41 +115,41 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Add Bookmark</DialogTitle>
+            <DialogTitle>{t("addBookmark_title")}</DialogTitle>
             <DialogDescription>
-              Manually add a bookmark to your collection.
+              {t("addBookmark_desc")}
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4 pt-1" onSubmit={handleSubmit}>
             <Field>
-              <FieldLabel htmlFor="bm-title">Title</FieldLabel>
+              <FieldLabel htmlFor="bm-title">{t("addBookmark_fieldTitle")}</FieldLabel>
               <Input
                 id="bm-title"
                 name="title"
-                placeholder="My Website"
+                placeholder={t("addBookmark_placeholderTitle")}
                 autoFocus
                 required
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="bm-url">URL</FieldLabel>
+              <FieldLabel htmlFor="bm-url">{t("addBookmark_fieldUrl")}</FieldLabel>
               <Input
                 id="bm-url"
                 name="url"
-                placeholder="https://example.com"
+                placeholder={t("addBookmark_placeholderUrl")}
                 required
               />
             </Field>
             <Field>
-              <FieldLabel htmlFor="bm-description">Description</FieldLabel>
+              <FieldLabel htmlFor="bm-description">{t("addBookmark_fieldDesc")}</FieldLabel>
               <Input
                 id="bm-description"
                 name="description"
-                placeholder="Optional description..."
+                placeholder={t("addBookmark_placeholderDesc")}
               />
             </Field>
             <Field>
-              <FieldLabel>Collection</FieldLabel>
+              <FieldLabel>{t("addBookmark_fieldCollection")}</FieldLabel>
               <div className="flex items-center gap-2">
                 <DropdownMenu open={collectionMenuOpen} onOpenChange={setCollectionMenuOpen}>
                   <DropdownMenuTrigger asChild>
@@ -180,7 +182,7 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
                       }}
                     >
                       <FolderPlus className="size-3.5 mr-2" />
-                      New Collection...
+                      {t("groupsPanel_newCollection")}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -188,7 +190,7 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
             </Field>
             {tags.length > 0 && (
               <Field>
-                <FieldLabel>Tags</FieldLabel>
+                <FieldLabel>{t("addBookmark_fieldTags")}</FieldLabel>
                 <div className="flex flex-wrap gap-1.5">
                   {tags.map((tag) => {
                     const isActive = selectedTags.includes(tag.id);
@@ -215,10 +217,10 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
             )}
             <DialogFooter>
               <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-                Cancel
+                {t("settings_cancel")}
               </Button>
               <Button type="submit" size="sm">
-                Add Bookmark
+                {t("addBookmark_btnSubmit")}
               </Button>
             </DialogFooter>
           </form>

@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Collection } from "@/lib/types";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface TabInfo {
   title: string;
@@ -31,6 +32,7 @@ interface TabInfo {
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 function PopupContent() {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<TabInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [saveableCollections, setSaveableCollections] = useState<Collection[]>([]);
@@ -149,13 +151,13 @@ function PopupContent() {
             <Bookmark className="size-5 text-muted-foreground" />
           </div>
           <div>
-            <p className="font-medium text-sm">Nothing to save here</p>
+            <p className="font-medium text-sm">{t("popup_nothingToSave")}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Navigate to a webpage to save it as a bookmark.
+              {t("popup_navigateHint")}
             </p>
           </div>
           <Button size="sm" onClick={openTabSlate}>
-            Open TabSlate
+            {t("popup_openTabSlate")}
           </Button>
         </div>
       ) : saveState === "saved" ? (
@@ -165,13 +167,13 @@ function PopupContent() {
             <Check className="size-6 text-green-500" />
           </div>
           <div>
-            <p className="font-medium text-sm">Saved!</p>
+            <p className="font-medium text-sm">{t("popup_saved")}</p>
             <p className="text-xs text-muted-foreground mt-1 max-w-[200px] truncate">
               {tab?.title}
             </p>
           </div>
           <Button size="sm" variant="outline" onClick={openTabSlate}>
-            View in TabSlate
+            {t("popup_viewInTabSlate")}
           </Button>
         </div>
       ) : (
@@ -206,7 +208,7 @@ function PopupContent() {
           {/* Collection selector */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">
-              Collection
+              {t("popup_collection")}
             </label>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -216,14 +218,14 @@ function PopupContent() {
                 >
                   <div className="flex items-center gap-2">
                     <Folder className="size-4 text-muted-foreground" />
-                    {selectedCollection?.name ?? "Select collection"}
+                    {selectedCollection?.name ?? t("popup_selectCollection")}
                   </div>
                   <ChevronDown className="size-4 text-muted-foreground" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-[--radix-dropdown-menu-trigger-width]">
                 <DropdownMenuLabel className="text-xs text-muted-foreground">
-                  Save to
+                  {t("popup_saveTo")}
                 </DropdownMenuLabel>
                 {saveableCollections.map((col) => (
                   <DropdownMenuItem
@@ -244,13 +246,13 @@ function PopupContent() {
           {/* Note field */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">
-              Note{" "}
+              {t("popup_note")}{" "}
               <span className="text-muted-foreground/60 font-normal">
-                (optional)
+                {t("popup_optional")}
               </span>
             </label>
             <Input
-              placeholder="Add a note..."
+              placeholder={t("popup_addNote")}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleSave()}
@@ -267,14 +269,14 @@ function PopupContent() {
             {saveState === "saving" ? (
               <>
                 <Loader2 className="size-4 animate-spin mr-2" />
-                Saving...
+                {t("popup_saving")}
               </>
             ) : saveState === "error" ? (
-              "Failed — try again"
+              t("popup_failedTryAgain")
             ) : (
               <>
                 <Bookmark className="size-4 mr-2" />
-                Save Bookmark
+                {t("popup_saveBookmark")}
               </>
             )}
           </Button>
@@ -286,8 +288,8 @@ function PopupContent() {
             )}
           >
             {saveState === "error"
-              ? "Something went wrong."
-              : "Press Enter to save quickly"}
+              ? t("popup_somethingWentWrong")
+              : t("popup_pressEnter")}
           </p>
         </div>
       )}
