@@ -57,6 +57,11 @@ export class SyncEngine {
           if (this.sseClient.failureCount >= SSE_FAILURE_THRESHOLD) {
             this.setStatus("offline");
             this.ensurePeriodicPull();
+          } else {
+            // Before the threshold: probe connectivity immediately via pull().
+            // If the backend is truly down, pull() will detect TypeError → "offline".
+            // If pull is already in progress the isPulling guard makes this a no-op.
+            this.pull();
           }
         } else {
           this.cancelPeriodicPull();
@@ -142,7 +147,13 @@ export class SyncEngine {
       if (resp) this.onPullSuccess(resp);
       this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
     } catch (err) {
-      this.setStatus("error", err instanceof Error ? err.message : "Pull failed");
+      // TypeError = network failure (connection refused / offline) — mirror forceSync() logic.
+      if (err instanceof TypeError) {
+        this.setStatus("offline");
+        this.ensurePeriodicPull(); // keep retrying while offline
+      } else {
+        this.setStatus("error", err instanceof Error ? err.message : "Pull failed");
+      }
     } finally {
       this.isPulling = false;
     }

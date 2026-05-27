@@ -151,7 +151,7 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | Store | 持久化后端 | 职责 |
 |---|---|---|
 | `useAuthStore` | chrome.storage.session（accessToken）+ chrome.storage.local（其余） | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout/silentRefresh；`silentRefresh` 在 rehydrate 时自动触发（refreshToken 存在但 accessToken 缺失），支持指数退避重试（2s→60s），仅在确切 401/403 时清除 token |
-| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时从所有 bucket 清除；`permanentlyDelete` / `permanentlyDeleteCollectionBookmarks` 采用 push-first 模式（`forcePush` → `idbDelete` → `decrementUsage`），失败时回滚乐观 UI |
+| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时从所有 bucket 清除；`permanentlyDelete`（单条）/ `permanentlyDeleteBatch`（批量，≤900/请求）采用 push-first 模式（`forcePush` → `idbBulkWrite` → `decrementUsage`），失败时回滚乐观 UI；`permanentlyDeleteCollectionBookmarks` 不再 forcePush（服务端 cascade 已处理），仅执行本地 IDB 清理 |
 | `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并；`permanentlyDeleteCollection` 采用 push-first 模式（`forcePush` → `idbDelete` → `decrementUsage`），失败时回滚；`is_deleted===2` 时从 state+IDB 删除；书签 tombstone 同步由服务端级联兜底（集合 `is_deleted=2` 被接受时，服务端将其书签自动升级为 `is_trashed=2`） |
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 采用 push-first 模式（`forcePush` → `idbDelete`），失败时回滚；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
 | `usePlanStore` | chrome.storage.local | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；书签配额以 `is_trashed < 2` 计（active + trashed），仅 `permanentlyDelete` 时 `decrementUsage`；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 维护本地计数；`clear` 在登出时调用 |
@@ -285,7 +285,7 @@ SyncEngine
 **推送（本地变更 → 服务器）：**
 1. 任意 store action 调用 `syncEngine?.enqueue({ bookmarks: [...] })` 等
 2. `SyncQueue` 以实体 ID 为 key 去重合并，等待 2s 防抖窗口
-3. `POST /sync/push` 发送 snapshot；服务端在单事务内 LWW upsert 所有实体，`incrementSeq` 并广播新 seq 到 Hub
+3. `POST /sync/push` 发送 snapshot；大负载（>900 实体）由 `splitPayload` 自动切成多个顺序请求（非书签在前保证 FK，书签在后），每个请求服务端在单事务内 LWW upsert，`incrementSeq` 并广播新 seq 到 Hub
 4. 失败时将 snapshot 重新入队，指数退避重试（2s → 4s → … → 60s）
 
 **拉取（服务器变更 → 本地）：**
@@ -316,7 +316,7 @@ StoreGate → AuthGate → SyncProvider（render-prop）
 cleanup 函数依次调用 `engine.forceSync()`（fire-and-forget）、`engine.destroy()`、`releaseSyncEngine(engine)` 确保登出前推送最后一次变更，且不会误销毁已重建的新引擎。  
 `onPushSuccess` 处理 `quota_exceeded` 拒绝：调用 `showQuotaAlert(type)` 展示配额提示，并触发 `fetchPlan()` 刷新用量。  
 `SyncStatusIndicator` 在 error 状态下悬停时通过 Tooltip 展示 `syncErrorMessage`。  
-`SyncEngine.forcePush(entities)` — 直接、非防抖的单次推送，供 `permanentlyDeleteCollection` / `permanentlyDeleteGroup` / `permanentlyDelete`（书签）在确认服务端落库后再清理本地 IDB 使用；push 失败时调用方回滚乐观 UI。
+`SyncEngine.forcePush(entities)` — 直接、非防抖的单次推送，供 `permanentlyDeleteCollection` / `permanentlyDeleteGroup` / `permanentlyDelete`（单条书签）/ `permanentlyDeleteBatch`（批量书签，≤900 条/请求）在确认服务端落库后再清理本地 IDB 使用；push 失败时调用方回滚乐观 UI。
 
 ### 冲突解决（LWW）
 

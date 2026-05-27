@@ -3,6 +3,11 @@ import type { SyncPushPayload, SyncPushResponse } from "@/lib/api";
 import { bufferSyncRecoverySnapshot, takeSyncRecoverySnapshot } from "@/lib/sync-recovery";
 import { useAuthStore } from "@/store/auth-store";
 
+// Stay well under the server's hard limit of 1000 entities per push.
+// Non-bookmark entities (workspaces, collections, tags, groups) are always
+// pushed first so that collection FK targets exist before bookmarks arrive.
+const MAX_PER_PUSH = 900;
+
 interface QueuedEntities {
   workspaces: Map<string, object>;
   collections: Map<string, object>;
@@ -18,6 +23,8 @@ type OnPushError = (err: Error) => void;
  * Batches local changes and pushes them to the server with a 2-second debounce.
  * Retries with exponential backoff (2s → 4s → 8s … max 60s) on network failure.
  * Updates for the same entity ID collapse to the latest value.
+ * Large payloads (>MAX_PER_PUSH entities) are automatically split into ordered
+ * sequential chunks: non-bookmarks first, then bookmarks.
  */
 export class SyncQueue {
   private queue: QueuedEntities = {
@@ -92,7 +99,7 @@ export class SyncQueue {
 
     // Snapshot and clear the queue before the request so new changes
     // that arrive during the in-flight request are not lost.
-    const snapshot: SyncPushPayload = {
+    const full: SyncPushPayload = {
       entities: {
         workspaces: Array.from(this.queue.workspaces.values()),
         collections: Array.from(this.queue.collections.values()),
@@ -103,28 +110,44 @@ export class SyncQueue {
     };
     this.queue = { workspaces: new Map(), collections: new Map(), bookmarks: new Map(), tags: new Map(), groups: new Map() };
 
-    try {
-      const resp = await api.syncPush(creds.baseUrl, creds.accessToken, snapshot);
-      this.retryDelay = 2000;
-      this.onSuccess(resp);
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 401) {
-        bufferSyncRecoverySnapshot(snapshot);
-        void useAuthStore.getState().silentRefresh();
+    const chunks = this.splitPayload(full);
+    let finalServerSeq = 0;
+    const allRejected: SyncPushResponse["rejected"] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      try {
+        const resp = await api.syncPush(creds.baseUrl, creds.accessToken, chunks[i]);
+        finalServerSeq = resp.server_seq;
+        allRejected.push(...resp.rejected);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          // Buffer the first unsent chunk for recovery; re-enqueue the rest.
+          bufferSyncRecoverySnapshot(chunks[i]);
+          for (let j = i + 1; j < chunks.length; j++) {
+            this.requeueSnapshot(chunks[j]);
+          }
+          void useAuthStore.getState().silentRefresh();
+          return;
+        }
+
+        // Re-enqueue all remaining chunks so changes are not lost on failure.
+        for (let j = i; j < chunks.length; j++) {
+          this.requeueSnapshot(chunks[j]);
+        }
+
+        this.onError(err instanceof Error ? err : new Error(String(err)));
+        if (this.retryTimer) clearTimeout(this.retryTimer);
+        this.retryTimer = setTimeout(() => {
+          this.retryTimer = null;
+          this.doPush();
+        }, this.retryDelay);
+        this.retryDelay = Math.min(this.retryDelay * 2, this.maxRetryDelay);
         return;
       }
-
-      // Re-enqueue snapshot so changes are not lost on failure.
-      this.requeueSnapshot(snapshot);
-
-      this.onError(err instanceof Error ? err : new Error(String(err)));
-      if (this.retryTimer) clearTimeout(this.retryTimer);
-      this.retryTimer = setTimeout(() => {
-        this.retryTimer = null;
-        this.doPush();
-      }, this.retryDelay);
-      this.retryDelay = Math.min(this.retryDelay * 2, this.maxRetryDelay);
     }
+
+    this.retryDelay = 2000;
+    this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected });
   }
 
   destroy() {
@@ -138,5 +161,50 @@ export class SyncQueue {
     snapshot.entities.bookmarks.forEach(e => this.queue.bookmarks.set((e as { id: string }).id, e));
     snapshot.entities.tags.forEach(e => this.queue.tags.set((e as { id: string }).id, e));
     snapshot.entities.groups.forEach(e => this.queue.groups.set((e as { id: string }).id, e));
+  }
+
+  /**
+   * Splits a payload that exceeds MAX_PER_PUSH into ordered sequential chunks.
+   * Non-bookmark entities (workspaces → collections → tags → groups) come first
+   * so FK targets exist before bookmark references arrive.
+   */
+  private splitPayload(full: SyncPushPayload): SyncPushPayload[] {
+    const { workspaces: ws, collections: col, bookmarks: bm, tags: tag, groups: grp } = full.entities;
+    const total = ws.length + col.length + bm.length + tag.length + grp.length;
+    if (total <= MAX_PER_PUSH) return [full];
+
+    const emptyEntities = (): SyncPushPayload["entities"] => ({
+      workspaces: [],
+      collections: [],
+      bookmarks: [],
+      tags: [],
+      groups: [],
+    });
+
+    const chunks: SyncPushPayload[] = [];
+
+    // Phase 1: non-bookmark entities in FK-safe order (bookmarks reference collections)
+    type NonBmKey = "workspaces" | "collections" | "tags" | "groups";
+    type NonBmEntry = [NonBmKey, object];
+    const nonBm: NonBmEntry[] = [
+      ...ws.map(e => ["workspaces", e] as NonBmEntry),
+      ...col.map(e => ["collections", e] as NonBmEntry),
+      ...tag.map(e => ["tags", e] as NonBmEntry),
+      ...grp.map(e => ["groups", e] as NonBmEntry),
+    ];
+    for (let i = 0; i < nonBm.length; i += MAX_PER_PUSH) {
+      const entities = emptyEntities();
+      for (const [key, e] of nonBm.slice(i, i + MAX_PER_PUSH)) {
+        (entities[key] as object[]).push(e);
+      }
+      chunks.push({ entities });
+    }
+
+    // Phase 2: bookmarks in chunks (collection FKs already pushed above)
+    for (let i = 0; i < bm.length; i += MAX_PER_PUSH) {
+      chunks.push({ entities: { ...emptyEntities(), bookmarks: bm.slice(i, i + MAX_PER_PUSH) } });
+    }
+
+    return chunks;
   }
 }

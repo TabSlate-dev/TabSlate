@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TabsDndProvider } from "@/components/dashboard/tabs-dnd-provider";
@@ -169,6 +169,7 @@ function SyncProvider({
 }) {
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
   const localSeq = useWorkspaceStore((s) => s.localSeq);
   const mergeWorkspaces = useWorkspaceStore((s) => s.mergeFromServer);
   const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
@@ -260,11 +261,26 @@ function SyncProvider({
     };
   }, [accessToken, serverUrl]);
 
-  const handleForceSync = useCallback(() => {
-    syncEngine?.forceSync().catch(() => {});
-  }, []);
+  // When accessToken is absent but the user is logged in (has a refreshToken) with a configured
+  // serverUrl, the engine never started because silentRefresh() couldn't reach the backend.
+  // Surface this as "offline" so the sidebar shows the red dot instead of a misleading green.
+  const effectiveSyncStatus = useMemo<SyncStatus>(
+    () => (!accessToken && !!refreshToken && !!serverUrl ? "offline" : syncStatus),
+    [accessToken, refreshToken, serverUrl, syncStatus],
+  );
 
-  return <>{children(syncStatus, handleForceSync, syncErrorMessage)}</>;
+  const handleForceSync = useCallback(() => {
+    if (syncEngine) {
+      // Normal path: engine is running, trigger a full sync cycle.
+      syncEngine.forceSync().catch(() => {});
+    } else if (serverUrl) {
+      // No engine = accessToken is absent (silentRefresh failed while backend was unreachable).
+      // Retry the token refresh; on success the SyncProvider effect will (re)create the engine.
+      void useAuthStore.getState().silentRefresh();
+    }
+  }, [serverUrl]);
+
+  return <>{children(effectiveSyncStatus, handleForceSync, syncErrorMessage)}</>;
 }
 
 export default function App() {
