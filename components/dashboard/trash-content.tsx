@@ -435,6 +435,7 @@ export function TrashContent() {
   const trashedBookmarks = useBookmarksStore(s => s.trashedBookmarks);
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDeleteBookmark = useBookmarksStore(s => s.permanentlyDelete);
+  const permanentlyDeleteBookmarkBatch = useBookmarksStore(s => s.permanentlyDeleteBatch);
   
   const collections = useWorkspaceStore(s => s.collections);
   const workspaces = useWorkspaceStore(s => s.workspaces);
@@ -712,8 +713,9 @@ export function TrashContent() {
         deleteTabFromTrash(tabId);
       }
     }
-    for (const bmId of selectedBmIds) {
-      permanentlyDeleteBookmark(bmId);
+    // Batch all selected bookmarks into one push (≤900 per request) instead of N requests.
+    if (selectedBmIds.size > 0) {
+      permanentlyDeleteBookmarkBatch(Array.from(selectedBmIds));
     }
     setSelectedColIds(new Set());
     setSelectedGroupIds(new Set());
@@ -728,8 +730,9 @@ export function TrashContent() {
     for (const group of trashedGroups) {
       permanentlyDeleteGroup(group.id);
     }
-    for (const bm of individualTrashedBookmarks) {
-      permanentlyDeleteBookmark(bm.id);
+    // Batch all individual bookmarks into one push (≤900 per request) instead of N requests.
+    if (individualTrashedBookmarks.length > 0) {
+      permanentlyDeleteBookmarkBatch(individualTrashedBookmarks.map((b) => b.id));
     }
     setSelectedColIds(new Set());
     setSelectedGroupIds(new Set());

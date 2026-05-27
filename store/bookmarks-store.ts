@@ -150,6 +150,7 @@ interface BookmarksState {
   trashBookmark: (bookmarkId: string) => void;
   restoreFromTrash: (bookmarkId: string, collectionIdOverride?: string) => void;
   permanentlyDelete: (bookmarkId: string) => void;
+  permanentlyDeleteBatch: (bookmarkIds: string[]) => void;
   mergeFromServer: (resp: SyncPullResponse) => Promise<void>;
   enqueueAllToSync: () => void;
   sweepUnsynced: () => void;
@@ -513,6 +514,57 @@ export const useBookmarksStore = create<BookmarksState>()(
         })();
       },
 
+      permanentlyDeleteBatch: (bookmarkIds) => {
+        void (async () => {
+          if (bookmarkIds.length === 0) { return; }
+          const state = get();
+
+          // Collect Bookmark objects from state (fast path) or IDB (cold start).
+          let bookmarks: Bookmark[];
+          if (state._trashedLoaded) {
+            const idSet = new Set(bookmarkIds);
+            bookmarks = state.trashedBookmarks.filter((b) => idSet.has(b.id));
+          } else {
+            const results = await idbGetMany<Bookmark>("trashed-bookmarks", bookmarkIds);
+            bookmarks = results.filter((b): b is Bookmark => b !== undefined);
+          }
+          if (bookmarks.length === 0) { return; }
+
+          // Optimistic UI removal — items disappear immediately.
+          const removedIds = new Set(bookmarks.map((b) => b.id));
+          set((current) => ({
+            trashedBookmarks: current.trashedBookmarks.filter((b) => !removedIds.has(b.id)),
+          }));
+
+          if (syncEngine) {
+            const CHUNK = 900;
+            for (let i = 0; i < bookmarks.length; i += CHUNK) {
+              const chunk = bookmarks.slice(i, i + CHUNK);
+              try {
+                await syncEngine.forcePush({
+                  bookmarks: chunk.map((b) => toServerBookmark(b, { isTrashed: 2 })),
+                });
+              } catch {
+                // Push failed — roll back this chunk and stop; user can retry.
+                set((current) => ({
+                  trashedBookmarks: [...current.trashedBookmarks, ...chunk],
+                }));
+                return;
+              }
+            }
+          }
+
+          // Server confirmed all chunks — safe to remove from IDB.
+          const ops: BulkWriteOp[] = bookmarks.map((b) => ({
+            type: "delete" as const,
+            store: "trashed-bookmarks" as const,
+            key: b.id,
+          }));
+          await idbBulkWrite(ops);
+          usePlanStore.getState().decrementUsage("bookmark", bookmarks.length);
+        })();
+      },
+
       enqueueAllToSync: () => {
         void (async () => {
           const state = get();
@@ -793,13 +845,10 @@ export const useBookmarksStore = create<BookmarksState>()(
             : await readArchivedBookmarksForCollection(collectionId);
           const all = [...trashed, ...archived];
           if (all.length === 0) { return; }
-          if (syncEngine) {
-            try {
-              await syncEngine.forcePush({ bookmarks: all.map((bookmark) => toServerBookmark(bookmark, { isTrashed: 2 })) });
-            } catch {
-              return; // Push failed — leave IDB intact; caller (permanentlyDeleteCollection) handles rollback.
-            }
-          }
+          // No forcePush here — the server already cascades is_trashed=2 to all
+          // bookmarks in the collection when it processes is_deleted=2 on the
+          // parent collection (see server sync.go cascade logic). We only need
+          // to clean up the local IDB.
           const ops: BulkWriteOp[] = [
             ...trashed.map((bookmark) => ({ type: "delete" as const, store: "trashed-bookmarks" as const, key: bookmark.id })),
             ...archived.map((bookmark) => ({ type: "delete" as const, store: "archived-bookmarks" as const, key: bookmark.id })),
