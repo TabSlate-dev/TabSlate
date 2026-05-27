@@ -1156,5 +1156,8 @@
   },
   "editBookmarkDialog_save": {
     "message": "Save changes"
+  },
+  "languageSelector_auto": {
+    "message": "Auto"
   }
 }
