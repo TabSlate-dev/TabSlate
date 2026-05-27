@@ -10,6 +10,7 @@ import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/store/settings-store";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function getEngineIconSrc(engine: { iconUrl?: string; siteUrl: string }): string {
   if (engine.iconUrl && typeof chrome !== "undefined" && chrome.runtime?.id) {
@@ -31,6 +32,7 @@ interface SearchBoxProps {
 }
 
 export function SearchBox({ collectionId, size = "lg", className }: SearchBoxProps) {
+  const { t } = useTranslation();
   const allEngines = useSettingsStore(s => s.searchEngines);
   const searchEngines = React.useMemo(() => allEngines.filter(e => e.enabled), [allEngines]);
 
@@ -146,8 +148,8 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const isLg = size === "lg";
 
   const placeholder = collectionId
-    ? "Search bookmarks in this collection..."
-    : `Search your bookmarks, tabs or with ${engine?.name ?? "the web"}...`;
+    ? t("search_placeholderCollection")
+    : t("search_placeholderGlobal", engine?.name ?? "the web");
 
   return (
     <div ref={wrapperRef} className={cn("relative", className)}>
@@ -224,7 +226,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
               <section className="flex flex-col gap-1">
                 <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground/75 uppercase tracking-widest flex items-center gap-1.5 border-b border-muted/20 bg-muted/5 rounded-t-xl">
                   <Globe className="size-3 text-primary/80" />
-                  Open Tabs ({filteredTabs.length})
+                  {t("search_openTabs")} ({filteredTabs.length})
                 </div>
                 <div className={cn("py-1 flex flex-col gap-1", isLg ? "px-1.5" : "px-1")}>
                   {filteredTabs.map((tab, i) => (
@@ -261,7 +263,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
               <section className="flex flex-col gap-1">
                 <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground/75 uppercase tracking-widest flex items-center gap-1.5 border-b border-muted/20 bg-muted/5 rounded-t-xl">
                   <BookmarkIcon className="size-3 text-primary/80" />
-                  Bookmarks ({bookmarkResults.length})
+                  {t("search_bookmarks")} ({bookmarkResults.length})
                 </div>
                 <div className={cn("py-1 flex flex-col gap-1", isLg ? "px-1.5" : "px-1")}>
                   {bookmarkResults.map((bm, i) => {
@@ -295,7 +297,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
                             {bm.isArchived && (
                               <span className={cn("shrink-0 flex items-center gap-0.5 px-1 py-px rounded border border-muted/50 bg-muted/30 text-muted-foreground font-semibold", isLg ? "text-[9px]" : "text-[8px]")}>
                                 <Archive className={isLg ? "size-2.5" : "size-2"} />
-                                Archived
+                                {t("search_archived")}
                               </span>
                             )}
                           </div>
@@ -328,7 +330,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
                   <img src={getEngineIconSrc(engine)} alt={engine?.name} className={cn("rounded-xs", isLg ? "size-3.5" : "size-3")} />
                 </div>
                 <span className={cn("text-foreground", isLg ? "text-sm" : "text-xs")}>
-                  Search <span className="font-semibold text-primary">"{query}"</span> with {engine?.name}
+                  {t("search_searchWith", [query, engine?.name || ""])}
                 </span>
               </button>
             </div>

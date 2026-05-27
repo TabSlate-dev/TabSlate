@@ -53,8 +53,10 @@ interface GroupCardProps {
 }
 
 import { GroupCardBase } from "@/components/dashboard/shared/group-card-base";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
+  const { t } = useTranslation();
   // Fine-grained selectors
   const updateGroup = useTabsStore(s => s.updateGroup);
   const dissolveGroup = useTabsStore(s => s.dissolveGroup);
@@ -173,9 +175,9 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
             setNameInput(displayTitle);
           }}
           className="text-sm font-semibold hover:text-primary transition-colors truncate max-w-[150px]"
-          title="Click to rename"
+          title={t("tabsPanel_clickToRename")}
         >
-          {displayTitle || "Unnamed group"}
+          {displayTitle || t("tabsPanel_unnamedGroup")}
         </button>
       )}
       <div className="flex items-center gap-0.5 shrink-0">
@@ -184,7 +186,7 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
           size="icon-xs"
           className="size-6 text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
           onClick={handleSaveAsGroup}
-          title="Save as Group"
+          title={t("tabsPanel_saveAsGroup")}
         >
           <Save className="size-3.5" />
         </Button>
@@ -193,7 +195,7 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
           size="icon-xs"
           className="size-6 text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors"
           onClick={() => dissolveGroup(group.id)}
-          title="Ungroup Tabs"
+          title={t("tabsPanel_ungroupTabs")}
         >
           <Ungroup className="size-3.5" />
         </Button>
@@ -202,7 +204,7 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
           size="icon-xs"
           className="size-6 text-destructive hover:text-destructive hover:bg-destructive/10 transition-colors"
           onClick={() => closeGroup(group.id)}
-          title="Close Group"
+          title={t("tabsPanel_closeGroup")}
         >
           <X className="size-3.5" />
         </Button>
@@ -214,7 +216,8 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
     <div className="flex items-center gap-1">
       {saveResult && (
         <span className="text-[10px] bg-green-500/10 text-green-600 px-1.5 py-0.5 rounded-full animate-in fade-in zoom-in duration-300">
-          Saved {saveResult.saved} {saveResult.skipped > 0 && `(${saveResult.skipped} skipped)`}
+          {t("tabsPanel_saved", [saveResult.saved.toString()])}
+          {saveResult.skipped > 0 && t("tabsPanel_skipped", [saveResult.skipped.toString()])}
         </span>
       )}
 
@@ -270,11 +273,11 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={handleSaveAsGroup}>
             <Layers className="size-4 mr-2" />
-            Save as Group
+            {t("tabsPanel_saveAsGroup")}
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setSaveDialogOpen(true)}>
             <Save className="size-4 mr-2" />
-            Save as Collection
+            {t("tabsPanel_saveAsCollection")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
@@ -282,14 +285,14 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
             onClick={() => dissolveGroup(group.id)}
           >
             <Ungroup className="size-4 mr-2" />
-            Ungroup Tabs
+            {t("tabsPanel_ungroupTabs")}
           </DropdownMenuItem>
           <DropdownMenuItem
             className="text-destructive focus:text-destructive focus:bg-destructive/10 font-medium cursor-pointer"
             onClick={() => closeGroup(group.id)}
           >
             <Trash2 className="size-4 mr-2" />
-            Delete Group
+            {t("groupsPanel_deleteGroup")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -8,9 +8,10 @@ import { Button } from "@/components/ui/button";
 import { GripVertical, Trash2, Plus, Bookmark, Layers, Tag, Folder, ShieldCheck, Loader2, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 function SortableSearchEngineItem({
   engine,
@@ -130,6 +131,7 @@ interface SettingsDialogProps {
 }
 
 export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: SettingsDialogProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = React.useState<"general" | "engines" | "plan">("general");
 
   React.useEffect(() => {
@@ -163,6 +165,10 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
     if (!over || active.id === over.id) { return; }
+    
+    // We import arrayMove dynamically or define it:
+    const { arrayMove } = require("@dnd-kit/sortable");
+    
     const oldIndex = searchEngines.findIndex((e) => e.id === active.id);
     const newIndex = searchEngines.findIndex((e) => e.id === over.id);
     updateSearchEngines(arrayMove(searchEngines, oldIndex, newIndex));
@@ -249,18 +255,18 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
   const planName = subscription?.plan || "free";
   let cardStyle = "bg-muted/10 border-muted text-foreground";
   let glowStyle = "bg-primary/5";
-  let badgeText = "FREE PLAN";
+  let badgeText = t("settings_planFreeBadge");
   let badgeStyle = "bg-muted/40 text-muted-foreground border-muted-foreground/10";
 
   if (planName === "pro") {
     cardStyle = "bg-linear-to-br from-violet-500/10 via-pink-500/5 to-background border-violet-500/20 shadow-lg shadow-violet-500/5 relative overflow-hidden";
     glowStyle = "bg-violet-500/15 animate-pulse duration-5000";
-    badgeText = "PRO PLAN";
+    badgeText = t("settings_planProBadge");
     badgeStyle = "bg-linear-to-r from-violet-500/10 to-pink-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20 font-extrabold tracking-wider";
   } else if (planName === "premium") {
     cardStyle = "bg-linear-to-br from-amber-500/10 via-orange-500/5 to-background border-amber-500/20 shadow-lg shadow-amber-500/5 relative overflow-hidden";
     glowStyle = "bg-amber-500/15 animate-pulse duration-5000";
-    badgeText = "PREMIUM PLAN";
+    badgeText = t("settings_planPremiumBadge");
     badgeStyle = "bg-linear-to-r from-amber-500/10 to-orange-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 font-extrabold tracking-wider";
   }
 
@@ -269,8 +275,8 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription className="sr-only">Configure TabSlate settings</DialogDescription>
+          <DialogTitle>{t("settings_title")}</DialogTitle>
+          <DialogDescription className="sr-only">{t("settings_desc")}</DialogDescription>
         </DialogHeader>
 
         {/* Tab switcher */}
@@ -284,7 +290,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            General
+            {t("settings_tabGeneral")}
           </button>
           <button
             onClick={() => setActiveTab("engines")}
@@ -295,7 +301,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            Search Engines
+            {t("settings_tabEngines")}
           </button>
           <button
             onClick={() => setActiveTab("plan")}
@@ -306,7 +312,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            Plan & Quotas
+            {t("settings_tabPlan")}
           </button>
         </div>
 
@@ -316,10 +322,10 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
               <div className="rounded-lg border p-3 shadow-sm bg-card/20">
                 <div className="flex flex-row items-center justify-between">
                   <div className="space-y-0.5">
-                    <h3 className="text-sm font-semibold">Global Search Overlay</h3>
-                    <p className="text-xs text-muted-foreground mr-4 mt-0.5">
-                      Press <kbd className="px-1 py-0.5 rounded-md bg-muted border font-sans text-[10px]">Ctrl+Shift+K</kbd> to search your tabs and bookmarks on any website.
-                    </p>
+                    <h3 className="text-sm font-semibold">{t("settings_generalOverlayTitle")}</h3>
+                    <p className="text-xs text-muted-foreground mr-4 mt-0.5" dangerouslySetInnerHTML={{
+                      __html: t("settings_generalOverlayDesc", ['<kbd class="px-1 py-0.5 rounded-md bg-muted border font-sans text-[10px]">Ctrl+Shift+K</kbd>'])
+                    }} />
                   </div>
                   <Switch
                     checked={searchOverlayEnabled}
@@ -329,12 +335,12 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
               </div>
 
               <div className="space-y-2.5">
-                <h3 className="text-sm font-semibold">Data Import</h3>
+                <h3 className="text-sm font-semibold">{t("settings_generalImportTitle")}</h3>
                 <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                  Import your saved tabs and collections from other extensions, or synchronize from browser bookmarks database.
+                  {t("settings_generalImportDesc")}
                 </p>
                 <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="cursor-pointer">
-                  Import Bookmarks
+                  {t("settings_generalImportBtn")}
                 </Button>
               </div>
             </div>
@@ -343,9 +349,9 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
           {activeTab === "engines" && (
             <div className="space-y-6 animate-in fade-in duration-200">
               <div>
-                <h3 className="text-sm font-semibold">Search Engines</h3>
+                <h3 className="text-sm font-semibold">{t("settings_enginesTitle")}</h3>
                 <p className="text-xs text-muted-foreground mb-4 mt-0.5">
-                  Enable or disable search engines and drag to reorder them. The first enabled engine is the default.
+                  {t("settings_enginesDesc")}
                 </p>
                 
                 <DndContext
@@ -373,19 +379,19 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 {showForm ? (
                   <div className="mt-3 space-y-2 rounded-lg border bg-card p-3">
                     <Input
-                      placeholder="Name"
+                      placeholder={t("settings_enginesPlaceholderName")}
                       value={newName}
                       onChange={(e) => setNewName(e.target.value)}
                       autoFocus
                     />
                     <Input
-                      placeholder="https://example.com/search?q=%s"
+                      placeholder={t("settings_enginesPlaceholderUrl")}
                       value={newUrl}
                       onChange={(e) => setNewUrl(e.target.value)}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Use <code className="font-mono">%s</code> as the search term placeholder
-                    </p>
+                    <p className="text-xs text-muted-foreground" dangerouslySetInnerHTML={{
+                      __html: t("settings_enginesUsePlaceholder", ['<code class="font-mono">%s</code>'])
+                    }} />
                     <div className="flex justify-end gap-2 pt-1">
                       <Button
                         variant="ghost"
@@ -396,10 +402,10 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                           setNewUrl("");
                         }}
                       >
-                        Cancel
+                        {t("settings_cancel")}
                       </Button>
                       <Button size="sm" disabled={!canAdd} onClick={handleAdd}>
-                        Add
+                        {t("settings_add")}
                       </Button>
                     </div>
                   </div>
@@ -411,7 +417,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                     onClick={() => setShowForm(true)}
                   >
                     <Plus className="size-3.5 mr-1" />
-                    Add engine
+                    {t("settings_addEngine")}
                   </Button>
                 )}
               </div>
@@ -430,20 +436,22 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                       {badgeText}
                     </span>
                     <h3 className="text-lg font-bold tracking-tight mt-2 capitalize">
-                      {planName} Account
+                      {t("settings_planAccountTitle", [planName])}
                     </h3>
                     {subscription && subscription.plan !== "free" && subscription.expires_at && (
                       <p className="text-xs text-muted-foreground mt-1">
-                        {subscription.status === "ACTIVE" ? "Renews" : "Expires"} on {new Date(subscription.expires_at * 1000).toLocaleDateString("en-US", {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
+                        {t(subscription.status === "ACTIVE" ? "settings_planRenewsOn" : "settings_planExpiresOn", [
+                          new Date(subscription.expires_at * 1000).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })
+                        ])}
                       </p>
                     )}
                     {(!subscription || subscription.plan === "free") && (
                       <p className="text-xs text-muted-foreground mt-1 leading-relaxed max-w-[340px]">
-                        Get unlimited workspaces, unlimited bookmarks, custom categories, and seamless premium cloud integrations.
+                        {t("settings_planFreeDesc")}
                       </p>
                     )}
                   </div>
@@ -456,7 +464,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                         alert("Upgrade Option: TabSlate Cloud plans are managed via the web platform checkout or subscription portal. Please navigate to the portal to upgrade.");
                       }}
                     >
-                      Upgrade Plan
+                      {t("settings_planUpgradeBtn")}
                     </Button>
                   )}
                 </div>
@@ -465,37 +473,37 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
               {/* Resource quota status trackers */}
               <div className="space-y-3 mt-4">
                 <div className="flex items-center justify-between select-none">
-                  <h4 className="text-xs font-bold text-muted-foreground tracking-wider uppercase">Resource Quotas & Usage</h4>
+                  <h4 className="text-xs font-bold text-muted-foreground tracking-wider uppercase">{t("settings_planQuotasTitle")}</h4>
                   {isPlanFetching && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   <QuotaRow
-                    label="Workspaces"
+                    label={t("settings_planWorkspaces")}
                     usage={usage?.workspaces ?? 0}
                     limit={limits?.max_workspaces ?? -1}
                     icon={Layers}
                   />
                   <QuotaRow
-                    label="Bookmarks"
+                    label={t("settings_planBookmarks")}
                     usage={usage?.bookmarks ?? 0}
                     limit={limits?.max_bookmarks ?? -1}
                     icon={Bookmark}
                   />
                   <QuotaRow
-                    label="Collections"
+                    label={t("settings_planCollections")}
                     usage={usage?.collections ?? 0}
                     limit={limits?.max_collections ?? -1}
                     icon={Folder}
                   />
                   <QuotaRow
-                    label="Tags"
+                    label={t("settings_planTags")}
                     usage={usage?.tags ?? 0}
                     limit={limits?.max_tags ?? -1}
                     icon={Tag}
                   />
                   <QuotaRow
-                    label="Saved Groups"
+                    label={t("settings_planSavedGroups")}
                     usage={usage?.saved_groups ?? 0}
                     limit={limits?.max_saved_groups ?? -1}
                     icon={Sparkles}
@@ -505,7 +513,9 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 {limits && limits.trash_grace_days !== -1 && (
                   <div className="flex items-center gap-2 p-3 text-xs rounded-xl border border-muted bg-muted/5 text-muted-foreground mt-1 select-none">
                     <ShieldCheck className="size-4 text-emerald-500 shrink-0" />
-                    <span>Your trash retention policy holds deleted items safely for <strong>{limits.trash_grace_days} days</strong> before automatic permanent deletion.</span>
+                    <span dangerouslySetInnerHTML={{
+                      __html: t("settings_planTrashDesc", [limits.trash_grace_days.toString()])
+                    }} />
                   </div>
                 )}
               </div>
@@ -514,7 +524,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
         </div>
 
         <div className="pt-4 border-t mt-auto flex justify-end shrink-0">
-          <Button onClick={() => onOpenChange(false)} className="cursor-pointer">Done</Button>
+          <Button onClick={() => onOpenChange(false)} className="cursor-pointer">{t("settings_done")}</Button>
         </div>
       </DialogContent>
     </Dialog>

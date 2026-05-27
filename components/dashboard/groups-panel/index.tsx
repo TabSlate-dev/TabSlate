@@ -16,8 +16,10 @@ import type { BrowserTab } from "@/lib/chrome/tabs";
 import { DraggableTabRow, TabRowPreview } from "./draggable-tab-row";
 import { DroppableGroupCard } from "./droppable-group-card";
 import { CreateGroupBar } from "./create-group-bar";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function GroupsPanel() {
+  const { t } = useTranslation();
   const openTabs = useTabsStore(s => s.openTabs);
   const loadTabs = useTabsStore(s => s.loadTabs);
   const groups = useGroupsStore(s => s.groups);
@@ -80,16 +82,16 @@ export function GroupsPanel() {
         <div className="w-72 shrink-0 border-r flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b">
             <p className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-              Open Tabs ({openTabs.length})
+              {t("groupsPanel_openTabs", [openTabs.length.toString()])}
             </p>
             <p className="text-[11px] text-muted-foreground mt-0.5">
-              Drag tabs into a group →
+              {t("groupsPanel_dragTabsIntoGroup")}
             </p>
           </div>
           <div className="flex-1 overflow-y-auto py-2 space-y-0.5 px-1">
             {openTabs.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-8">
-                No open tabs
+                {t("groupsPanel_noOpenTabs")}
               </p>
             )}
             {openTabs.map((tab) => (
@@ -104,8 +106,8 @@ export function GroupsPanel() {
           {activeGroups.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">
               <Globe className="size-10 mb-3 opacity-30" />
-              <p className="text-sm">No groups yet</p>
-              <p className="text-xs mt-1">Create a group and drag tabs into it</p>
+              <p className="text-sm">{t("groupsPanel_noGroupsYet")}</p>
+              <p className="text-xs mt-1">{t("groupsPanel_createGroupDesc")}</p>
             </div>
           )}
           {activeGroups.map((group) => (

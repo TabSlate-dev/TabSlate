@@ -1,0 +1,1163 @@
+{
+  "extensionName": {
+    "message": "TabSlate"
+  },
+  "extensionDescription": {
+    "message": "A clean and efficient tab and bookmark manager"
+  },
+  "commandOpenSearch": {
+    "message": "Open TabSlate search"
+  },
+  "popup_nothingToSave": {
+    "message": "Nothing to save here"
+  },
+  "popup_navigateHint": {
+    "message": "Navigate to a webpage to save it as a bookmark."
+  },
+  "popup_openTabSlate": {
+    "message": "Open TabSlate"
+  },
+  "popup_saved": {
+    "message": "Saved!"
+  },
+  "popup_viewInTabSlate": {
+    "message": "View in TabSlate"
+  },
+  "popup_collection": {
+    "message": "Collection"
+  },
+  "popup_selectCollection": {
+    "message": "Select collection"
+  },
+  "popup_saveTo": {
+    "message": "Save to"
+  },
+  "popup_note": {
+    "message": "Note"
+  },
+  "popup_optional": {
+    "message": "(optional)"
+  },
+  "popup_addNote": {
+    "message": "Add a note..."
+  },
+  "popup_saving": {
+    "message": "Saving..."
+  },
+  "popup_failedTryAgain": {
+    "message": "Failed — try again"
+  },
+  "popup_saveBookmark": {
+    "message": "Save Bookmark"
+  },
+  "popup_somethingWentWrong": {
+    "message": "Something went wrong."
+  },
+  "popup_pressEnter": {
+    "message": "Press Enter to save quickly"
+  },
+  "sidebar_navOpenTabs": {
+    "message": "Open Tabs & Groups"
+  },
+  "sidebar_navFavorites": {
+    "message": "Favorites"
+  },
+  "sidebar_navArchive": {
+    "message": "Archive"
+  },
+  "sidebar_navTrash": {
+    "message": "Trash"
+  },
+  "sidebar_collections": {
+    "message": "COLLECTIONS"
+  },
+  "sidebar_allBookmarks": {
+    "message": "All Bookmarks"
+  },
+  "sidebar_archiveCollection": {
+    "message": "Archive"
+  },
+  "sidebar_deleteCollection": {
+    "message": "Delete"
+  },
+  "sidebar_addCollection": {
+    "message": "Add Collection"
+  },
+  "sidebar_groups": {
+    "message": "GROUPS"
+  },
+  "sidebar_noSavedGroups": {
+    "message": "No saved groups"
+  },
+  "sidebar_addGroup": {
+    "message": "Add Group"
+  },
+  "sidebar_tags": {
+    "message": "TAGS"
+  },
+  "sidebar_clearTags": {
+    "message": "Clear"
+  },
+  "sidebar_noTagsYet": {
+    "message": "No tags yet"
+  },
+  "auth_forgotPassword": {
+    "message": "Forgot password"
+  },
+  "auth_forgotPasswordDesc": {
+    "message": "Enter your email and we'll send a 6-digit reset code."
+  },
+  "auth_somethingWentWrong": {
+    "message": "Something went wrong"
+  },
+  "auth_email": {
+    "message": "Email"
+  },
+  "auth_emailPlaceholder": {
+    "message": "you@example.com"
+  },
+  "auth_sending": {
+    "message": "Sending..."
+  },
+  "auth_sendResetCode": {
+    "message": "Send reset code"
+  },
+  "auth_backToLogin": {
+    "message": "Back to login"
+  },
+  "auth_resetPassword": {
+    "message": "Reset password"
+  },
+  "auth_resetPasswordDesc1": {
+    "message": "Enter the 6-digit code sent to"
+  },
+  "auth_resetPasswordDesc2": {
+    "message": "and choose a new password."
+  },
+  "auth_newPassword": {
+    "message": "New password"
+  },
+  "auth_passwordPlaceholder": {
+    "message": "••••••••••"
+  },
+  "auth_passwordRequirement": {
+    "message": "At least 10 characters, including a letter and a number."
+  },
+  "auth_resetting": {
+    "message": "Resetting..."
+  },
+  "auth_didntReceive": {
+    "message": "Didn't receive it?"
+  },
+  "auth_resendIn": {
+    "message": "Resend in $1s"
+  },
+  "auth_resendCode": {
+    "message": "Resend code"
+  },
+  "auth_loginTitle": {
+    "message": "Login to your account"
+  },
+  "auth_registerTitle": {
+    "message": "Create an account"
+  },
+  "auth_loginDesc": {
+    "message": "Enter your email below to login to your account"
+  },
+  "auth_registerDesc": {
+    "message": "Enter your details below to create your account"
+  },
+  "auth_name": {
+    "message": "Name"
+  },
+  "auth_namePlaceholder": {
+    "message": "Your name"
+  },
+  "auth_pleaseWait": {
+    "message": "Please wait..."
+  },
+  "auth_loginBtn": {
+    "message": "Login"
+  },
+  "auth_registerBtn": {
+    "message": "Create account"
+  },
+  "auth_noAccount": {
+    "message": "Don't have an account?"
+  },
+  "auth_signUp": {
+    "message": "Sign up"
+  },
+  "auth_hasAccount": {
+    "message": "Already have an account?"
+  },
+  "auth_forgotPasswordLink": {
+    "message": "Forgot password?"
+  },
+  "auth_hideAdvanced": {
+    "message": "Hide advanced"
+  },
+  "auth_advanced": {
+    "message": "Advanced"
+  },
+  "auth_serverUrl": {
+    "message": "Server URL"
+  },
+  "auth_serverUrlDesc": {
+    "message": "For self-hosted TabSlate-server instances."
+  },
+  "auth_password": {
+    "message": "Password"
+  },
+  "auth_checkEmail": {
+    "message": "Check your email"
+  },
+  "auth_checkEmailDesc1": {
+    "message": "We sent a 6-digit code to"
+  },
+  "auth_checkEmailDesc2": {
+    "message": "Enter it below to verify your account."
+  },
+  "auth_verifying": {
+    "message": "Verifying..."
+  },
+  "auth_verifyEmailBtn": {
+    "message": "Verify email"
+  },
+  "auth_sent": {
+    "message": "— sent!"
+  },
+  "auth_useDifferentAccount": {
+    "message": "Use a different account"
+  },
+  "auth_verifyHuman": {
+    "message": "Verify you're human"
+  },
+  "sidebar_userPlanQuotas": {
+    "message": "Plan & Quotas"
+  },
+  "sidebar_userImportBookmarks": {
+    "message": "Import Bookmarks"
+  },
+  "sidebar_userLogout": {
+    "message": "Log out"
+  },
+  "quota_freePlan": {
+    "message": "Free Plan"
+  },
+  "quota_proPlan": {
+    "message": "Pro Plan"
+  },
+  "quota_premiumPlan": {
+    "message": "Premium Plan"
+  },
+  "quota_bookmarks": {
+    "message": "Bookmarks"
+  },
+  "quota_collections": {
+    "message": "Collections"
+  },
+  "quota_tags": {
+    "message": "Tags"
+  },
+  "quota_workspaces": {
+    "message": "Workspaces"
+  },
+  "quota_savedGroups": {
+    "message": "Saved Groups"
+  },
+  "quota_capacity": {
+    "message": "Capacity"
+  },
+  "quota_upgradeToPro": {
+    "message": "Upgrade to Pro for Unlimited"
+  },
+  "quota_managePlan": {
+    "message": "Manage Plan & Quotas"
+  },
+  "sync_idle": {
+    "message": "Synced"
+  },
+  "sync_syncing": {
+    "message": "Syncing..."
+  },
+  "sync_error": {
+    "message": "Sync error"
+  },
+  "sync_offline": {
+    "message": "Offline"
+  },
+  "sync_syncNow": {
+    "message": "Sync now"
+  },
+  "header_sortDateNewest": {
+    "message": "Date Added (Newest)"
+  },
+  "header_sortDateOldest": {
+    "message": "Date Added (Oldest)"
+  },
+  "header_sortAlphaAZ": {
+    "message": "Alphabetical (A-Z)"
+  },
+  "header_sortAlphaZA": {
+    "message": "Alphabetical (Z-A)"
+  },
+  "header_filterAll": {
+    "message": "All Bookmarks"
+  },
+  "header_filterFavorites": {
+    "message": "Favorites Only"
+  },
+  "header_filterWithTags": {
+    "message": "With Tags"
+  },
+  "header_filterWithoutTags": {
+    "message": "Without Tags"
+  },
+  "header_titleBookmarks": {
+    "message": "Bookmarks"
+  },
+  "header_sortBy": {
+    "message": "Sort by"
+  },
+  "header_filterBy": {
+    "message": "Filter by"
+  },
+  "header_filter": {
+    "message": "Filter"
+  },
+  "header_clearFilter": {
+    "message": "Clear filter"
+  },
+  "header_addBookmark": {
+    "message": "Add Bookmark"
+  },
+  "search_placeholderCollection": {
+    "message": "Search bookmarks in this collection..."
+  },
+  "search_placeholderGlobal": {
+    "message": "Search your bookmarks, tabs or with $1..."
+  },
+  "search_openTabs": {
+    "message": "Open Tabs"
+  },
+  "search_bookmarks": {
+    "message": "Bookmarks"
+  },
+  "search_archived": {
+    "message": "Archived"
+  },
+  "search_searchWith": {
+    "message": "Search \"$1\" with $2"
+  },
+  "tabsPanel_openTabs": {
+    "message": "Open Tabs"
+  },
+  "tabsPanel_loading": {
+    "message": "Loading..."
+  },
+  "tabsPanel_tabsAndGroups": {
+    "message": "$1 tabs · $2 group$3"
+  },
+  "tabsPanel_saved": {
+    "message": "Saved $1"
+  },
+  "tabsPanel_skipped": {
+    "message": " ($1 skipped)"
+  },
+  "tabsPanel_saveWindow": {
+    "message": "Save Window"
+  },
+  "tabsPanel_noTabs": {
+    "message": "No tabs open"
+  },
+  "tabsPanel_openSomeTabs": {
+    "message": "Open some tabs and they'll appear here."
+  },
+  "tabsPanel_groups": {
+    "message": "Groups"
+  },
+  "tabsPanel_joinTabGroup": {
+    "message": "Join Tab Group"
+  },
+  "tabsPanel_saveAsCollection": {
+    "message": "Save as Collection"
+  },
+  "tabsPanel_deduplicate": {
+    "message": "Deduplicate"
+  },
+  "tabsPanel_deduplicateDesc": {
+    "message": "Skip tabs already saved elsewhere"
+  },
+  "tabsPanel_ungrouped": {
+    "message": "Ungrouped"
+  },
+  "groupsPanel_openTabs": {
+    "message": "Open Tabs ($1)"
+  },
+  "groupsPanel_dragTabsIntoGroup": {
+    "message": "Drag tabs into a group →"
+  },
+  "groupsPanel_noOpenTabs": {
+    "message": "No open tabs"
+  },
+  "groupsPanel_noGroupsYet": {
+    "message": "No groups yet"
+  },
+  "groupsPanel_createGroupDesc": {
+    "message": "Create a group and drag tabs into it"
+  },
+  "groupsPanel_newGroupName": {
+    "message": "New Group Name..."
+  },
+  "groupsPanel_create": {
+    "message": "Create"
+  },
+  "tabsPanel_joinTabGroupDesc": {
+    "message": "Select an existing group to move the selected tab(s) into."
+  },
+  "tabsPanel_noExistingGroups": {
+    "message": "No existing groups found."
+  },
+  "tabsPanel_saveGroup": {
+    "message": "Save group"
+  },
+  "tabsPanel_closeAll": {
+    "message": "Close all"
+  },
+  "tabsPanel_ungroupAll": {
+    "message": "Ungroup all"
+  },
+  "groupsPanel_deleteGroup": {
+    "message": "Delete Group"
+  },
+  "groupsPanel_deleteAllTabs": {
+    "message": "Delete all tabs"
+  },
+  "groupsPanel_openInNewWindow": {
+    "message": "Open in new window"
+  },
+  "groupsPanel_addToCollection": {
+    "message": "Add to collection"
+  },
+  "tabsPanel_saveAsGroup": {
+    "message": "Save as Group"
+  },
+  "tabsPanel_ungroupTabs": {
+    "message": "Ungroup Tabs"
+  },
+  "tabsPanel_closeGroup": {
+    "message": "Close Group"
+  },
+  "tabsPanel_unnamedGroup": {
+    "message": "Unnamed group"
+  },
+  "tabsPanel_clickToRename": {
+    "message": "Click to rename"
+  },
+  "groupsPanel_newGroup": {
+    "message": "New Group"
+  },
+  "groupsPanel_groupName": {
+    "message": "Group name"
+  },
+  "groupsPanel_cancel": {
+    "message": "Cancel"
+  },
+  "groupsPanel_renameGroup": {
+    "message": "Rename Group"
+  },
+  "groupsPanel_saveToCollection": {
+    "message": "Save to collection"
+  },
+  "groupsPanel_saved": {
+    "message": "Saved!"
+  },
+  "groupsPanel_newCollection": {
+    "message": "New Collection..."
+  },
+  "settings_title": {
+    "message": "Settings"
+  },
+  "settings_desc": {
+    "message": "Configure TabSlate settings"
+  },
+  "settings_tabGeneral": {
+    "message": "General"
+  },
+  "settings_tabEngines": {
+    "message": "Search Engines"
+  },
+  "settings_tabPlan": {
+    "message": "Plan & Quotas"
+  },
+  "settings_generalOverlayTitle": {
+    "message": "Global Search Overlay"
+  },
+  "settings_generalOverlayDesc": {
+    "message": "Press $1 to search your tabs and bookmarks on any website.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_generalImportTitle": {
+    "message": "Data Import"
+  },
+  "settings_generalImportDesc": {
+    "message": "Import your saved tabs and collections from other extensions, or synchronize from browser bookmarks database."
+  },
+  "settings_generalImportBtn": {
+    "message": "Import Bookmarks"
+  },
+  "settings_enginesTitle": {
+    "message": "Search Engines"
+  },
+  "settings_enginesDesc": {
+    "message": "Enable or disable search engines and drag to reorder them. The first enabled engine is the default."
+  },
+  "settings_enginesPlaceholderName": {
+    "message": "Name"
+  },
+  "settings_enginesPlaceholderUrl": {
+    "message": "https://example.com/search?q=%s"
+  },
+  "settings_enginesUsePlaceholder": {
+    "message": "Use $1 as the search term placeholder",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_cancel": {
+    "message": "Cancel"
+  },
+  "settings_add": {
+    "message": "Add"
+  },
+  "settings_addEngine": {
+    "message": "Add engine"
+  },
+  "settings_planFreeBadge": {
+    "message": "FREE PLAN"
+  },
+  "settings_planProBadge": {
+    "message": "PRO PLAN"
+  },
+  "settings_planPremiumBadge": {
+    "message": "PREMIUM PLAN"
+  },
+  "settings_planAccountTitle": {
+    "message": "$1 Account",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_planRenewsOn": {
+    "message": "Renews on $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_planExpiresOn": {
+    "message": "Expires on $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_planFreeDesc": {
+    "message": "Get unlimited workspaces, unlimited bookmarks, custom categories, and seamless premium cloud integrations."
+  },
+  "settings_planUpgradeBtn": {
+    "message": "Upgrade Plan"
+  },
+  "settings_planQuotasTitle": {
+    "message": "Resource Quotas & Usage"
+  },
+  "settings_planWorkspaces": {
+    "message": "Workspaces"
+  },
+  "settings_planBookmarks": {
+    "message": "Bookmarks"
+  },
+  "settings_planCollections": {
+    "message": "Collections"
+  },
+  "settings_planTags": {
+    "message": "Tags"
+  },
+  "settings_planSavedGroups": {
+    "message": "Saved Groups"
+  },
+  "settings_planTrashDesc": {
+    "message": "Your trash retention policy holds deleted items safely for $1 days before automatic permanent deletion.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "settings_done": {
+    "message": "Done"
+  },
+  "addBookmark_title": {
+    "message": "Add Bookmark"
+  },
+  "addBookmark_desc": {
+    "message": "Manually add a bookmark to your collection."
+  },
+  "addBookmark_fieldTitle": {
+    "message": "Title"
+  },
+  "addBookmark_placeholderTitle": {
+    "message": "My Website"
+  },
+  "addBookmark_fieldUrl": {
+    "message": "URL"
+  },
+  "addBookmark_placeholderUrl": {
+    "message": "https://example.com"
+  },
+  "addBookmark_fieldDesc": {
+    "message": "Description"
+  },
+  "addBookmark_placeholderDesc": {
+    "message": "Optional description..."
+  },
+  "addBookmark_fieldCollection": {
+    "message": "Collection"
+  },
+  "addBookmark_selectCollection": {
+    "message": "Select collection"
+  },
+  "addBookmark_fieldTags": {
+    "message": "Tags"
+  },
+  "addBookmark_btnSubmit": {
+    "message": "Add Bookmark"
+  },
+  "import_step0_desc": {
+    "message": "Choose the export source you want to import from."
+  },
+  "import_step1_desc": {
+    "message": "Upload your $1 export file and confirm it looks valid.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_step2_desc": {
+    "message": "Choose the target workspace and review the import summary."
+  },
+  "import_step3_desc": {
+    "message": "Review the import outcome and any skipped entries."
+  },
+  "import_title": {
+    "message": "Import Bookmarks"
+  },
+  "import_titleSource": {
+    "message": "Import from $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_titleConfig": {
+    "message": "Configure Import"
+  },
+  "import_titleFailed": {
+    "message": "Import Failed"
+  },
+  "import_titleComplete": {
+    "message": "Import Complete"
+  },
+  "import_tobyDesc": {
+    "message": "Import lists, cards, and labels from a Toby JSON export."
+  },
+  "import_chromeDesc": {
+    "message": "Import folders and bookmarks from a Chrome HTML export."
+  },
+  "import_tobyHint": {
+    "message": "Upload a Toby JSON export."
+  },
+  "import_chromeHint": {
+    "message": "Upload a Chrome bookmarks HTML export."
+  },
+  "import_dragDrop": {
+    "message": "Drag and drop a file here"
+  },
+  "import_accepts": {
+    "message": "Accepts $1 files only.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_chooseFile": {
+    "message": "Choose file"
+  },
+  "import_selectedFile": {
+    "message": "Selected file: "
+  },
+  "import_validating": {
+    "message": "Validating file"
+  },
+  "import_validatingDesc": {
+    "message": "Checking the file format and previewing what can be imported."
+  },
+  "import_looksGood": {
+    "message": "File looks good"
+  },
+  "import_looksGoodDesc": {
+    "message": "$1 bookmarks across $2 collections are ready to review.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "import_validationFailed": {
+    "message": "Validation failed"
+  },
+  "import_switchTo": {
+    "message": "Switch to $1 import",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_back": {
+    "message": "Back"
+  },
+  "import_next": {
+    "message": "Next"
+  },
+  "import_workspace": {
+    "message": "Workspace"
+  },
+  "import_selectWorkspace": {
+    "message": "Select a workspace"
+  },
+  "import_workspaceDesc": {
+    "message": "Imported items will be created inside the selected workspace."
+  },
+  "import_skipDuplicates": {
+    "message": "Skip duplicate URLs"
+  },
+  "import_skipDuplicatesDesc": {
+    "message": "Existing bookmarks with the same URL will be skipped."
+  },
+  "import_summary": {
+    "message": "Import summary"
+  },
+  "import_statCollections": {
+    "message": "Collections"
+  },
+  "import_statBookmarks": {
+    "message": "Bookmarks"
+  },
+  "import_statTags": {
+    "message": "Tags"
+  },
+  "import_statDuplicates": {
+    "message": "Duplicates skipped"
+  },
+  "import_rejectedUrlsDesc": {
+    "message": "$1 URLs will be rejected because they use an unsupported or invalid format.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_unavailable": {
+    "message": "Import unavailable"
+  },
+  "import_blockedWorkspace": {
+    "message": "Choose a workspace before importing."
+  },
+  "import_blockedValid": {
+    "message": "Upload a valid export file first."
+  },
+  "import_blockedNew": {
+    "message": "Nothing new to import from this file."
+  },
+  "import_blockedCollectionQuota": {
+    "message": "This import would exceed your collection limit."
+  },
+  "import_blockedBookmarkQuota": {
+    "message": "This import would exceed your bookmark limit."
+  },
+  "import_btnImport": {
+    "message": "Import"
+  },
+  "import_completeDesc": {
+    "message": "Your bookmarks were added and queued for sync."
+  },
+  "import_statCollectionsCreated": {
+    "message": "Collections created"
+  },
+  "import_statBookmarksImported": {
+    "message": "Bookmarks imported"
+  },
+  "import_statTagsCreated": {
+    "message": "Tags created"
+  },
+  "import_rejectedUrls": {
+    "message": "Rejected URLs"
+  },
+  "import_close": {
+    "message": "Close"
+  },
+  "import_tryAgain": {
+    "message": "Try again"
+  },
+  "bookmarkCard_openSmart": {
+    "message": "Open (Smart)"
+  },
+  "bookmarkCard_openNewTab": {
+    "message": "Open in new tab"
+  },
+  "bookmarkCard_edit": {
+    "message": "Edit"
+  },
+  "bookmarkCard_addTags": {
+    "message": "Add Tags"
+  },
+  "bookmarkCard_archive": {
+    "message": "Archive"
+  },
+  "bookmarkCard_delete": {
+    "message": "Delete"
+  },
+  "bookmarkCard_copied": {
+    "message": "Copied!"
+  },
+  "bookmarksContent_allBookmarks": {
+    "message": "All Bookmarks"
+  },
+  "bookmarksContent_uncategorized": {
+    "message": "Uncategorized"
+  },
+  "bookmarksContent_emptyTitle": {
+    "message": "No bookmarks found"
+  },
+  "bookmarksContent_emptyDesc": {
+    "message": "Save bookmarks via the popup or drag tabs here to get started."
+  },
+  "bookmarksContent_bookmarkCount_one": {
+    "message": "$1 bookmark",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarksContent_bookmarkCount_other": {
+    "message": "$1 bookmarks",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarksContent_filtered": {
+    "message": " (filtered)"
+  },
+  "bookmarksContent_favoritesOnly": {
+    "message": "Favorites only"
+  },
+  "bookmarksContent_withTags": {
+    "message": "With tags"
+  },
+  "bookmarksContent_withoutTags": {
+    "message": "Without tags"
+  },
+  "bookmarksContent_clearFilters": {
+    "message": "Clear filters"
+  },
+  "favoritesContent_title": {
+    "message": "Favorite Bookmarks"
+  },
+  "favoritesContent_count_one": {
+    "message": "$1 bookmark",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "favoritesContent_count_other": {
+    "message": "$1 bookmarks",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "favoritesContent_markedAsFavorite": {
+    "message": "marked as favorite"
+  },
+  "favoritesContent_emptyTitle": {
+    "message": "No favorites yet"
+  },
+  "favoritesContent_emptyDesc": {
+    "message": "Star a bookmark to add it to your favorites."
+  },
+  "archiveContent_restore": {
+    "message": "Restore"
+  },
+  "archiveContent_moveToTrash": {
+    "message": "Move to Trash"
+  },
+  "archiveContent_openUrl": {
+    "message": "Open URL"
+  },
+  "archiveContent_title": {
+    "message": "Archived"
+  },
+  "archiveContent_selectAll": {
+    "message": "Select All"
+  },
+  "archiveContent_deselectAll": {
+    "message": "Deselect All"
+  },
+  "archiveContent_cancel": {
+    "message": "Cancel"
+  },
+  "archiveContent_selectedCount": {
+    "message": "$1 selected",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_collectionCount_one": {
+    "message": "$1 collection",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_collectionCount_other": {
+    "message": "$1 collections",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_bookmarkCount_one": {
+    "message": "$1 bookmark",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_bookmarkCount_other": {
+    "message": "$1 bookmarks",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "archiveContent_emptyTitle": {
+    "message": "Archive is empty"
+  },
+  "archiveContent_emptyDesc": {
+    "message": "Archived bookmarks and collections will appear here."
+  },
+  "trashContent_restore": {
+    "message": "Restore"
+  },
+  "trashContent_deletePermanently": {
+    "message": "Delete Permanently"
+  },
+  "trashContent_openUrl": {
+    "message": "Open URL"
+  },
+  "trashContent_title": {
+    "message": "Trash"
+  },
+  "trashContent_selectAll": {
+    "message": "Select All"
+  },
+  "trashContent_deselectAll": {
+    "message": "Deselect All"
+  },
+  "trashContent_cancel": {
+    "message": "Cancel"
+  },
+  "trashContent_delete": {
+    "message": "Delete"
+  },
+  "trashContent_selectedCount": {
+    "message": "$1 selected",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_collectionCount_one": {
+    "message": "$1 collection",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_collectionCount_other": {
+    "message": "$1 collections",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_groupCount_one": {
+    "message": "$1 group",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_groupCount_other": {
+    "message": "$1 groups",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_tabCount_one": {
+    "message": "$1 tab",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_tabCount_other": {
+    "message": "$1 tabs",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_bookmarkCount_one": {
+    "message": "$1 bookmark",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_bookmarkCount_other": {
+    "message": "$1 bookmarks",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_gracePeriod": {
+    "message": "Items in trash will be permanently deleted after $1 days",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_emptyConfirmTitle": {
+    "message": "Empty Trash?"
+  },
+  "trashContent_emptyConfirmDesc": {
+    "message": "All items in trash will be permanently deleted. This cannot be undone."
+  },
+  "trashContent_emptyTrash": {
+    "message": "Empty Trash"
+  },
+  "trashContent_deleteConfirmTitle_one": {
+    "message": "Delete $1 item permanently?",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_deleteConfirmTitle_other": {
+    "message": "Delete $1 items permanently?",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_deleteConfirmDesc": {
+    "message": "These items will be permanently deleted and cannot be recovered."
+  },
+  "bookmarkTagsDialog_title": {
+    "message": "Manage Tags"
+  },
+  "bookmarkTagsDialog_desc": {
+    "message": "Select tags for this bookmark."
+  },
+  "bookmarkTagsDialog_noTags": {
+    "message": "No tags available. Create tags in the sidebar first."
+  },
+  "bookmarkTagsDialog_createTag": {
+    "message": "Create new tag"
+  },
+  "bookmarkTagsDialog_cancel": {
+    "message": "Cancel"
+  },
+  "bookmarkTagsDialog_save": {
+    "message": "Save"
+  },
+  "editBookmarkDialog_title": {
+    "message": "Edit Bookmark"
+  },
+  "editBookmarkDialog_desc": {
+    "message": "Edit the title, url and description of this bookmark."
+  },
+  "editBookmarkDialog_titleField": {
+    "message": "Title"
+  },
+  "editBookmarkDialog_urlField": {
+    "message": "URL"
+  },
+  "editBookmarkDialog_descField": {
+    "message": "Description"
+  },
+  "editBookmarkDialog_cancel": {
+    "message": "Cancel"
+  },
+  "editBookmarkDialog_save": {
+    "message": "Save changes"
+  },
+  "languageSelector_auto": {
+    "message": "Auto Detect"
+  }
+}

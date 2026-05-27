@@ -58,6 +58,7 @@ import { SyncStatusIndicator } from "./sync-status";
 import type { SyncStatus } from "@/lib/sync-engine";
 import { QuotaCard } from "./quota-card";
 import { UserProfile } from "./user-profile";
+import { useTranslation } from "@/hooks/use-translation";
 
 // ---------------------------------------------------------------------------
 // Icon map
@@ -82,10 +83,10 @@ function CollectionIcon({ icon }: { icon: string }) {
 }
 
 const navItems = [
-  { icon: Monitor, label: "Open Tabs & Groups", href: "/tabs" },
-  { icon: Heart, label: "Favorites", href: "/favorites" },
-  { icon: Archive, label: "Archive", href: "/archive" },
-  { icon: Trash2, label: "Trash", href: "/trash" },
+  { icon: Monitor, labelKey: "sidebar_navOpenTabs", href: "/tabs" },
+  { icon: Heart, labelKey: "sidebar_navFavorites", href: "/favorites" },
+  { icon: Archive, labelKey: "sidebar_navArchive", href: "/archive" },
+  { icon: Trash2, labelKey: "sidebar_navTrash", href: "/trash" },
 ] as const;
 
 // ---------------------------------------------------------------------------
@@ -171,6 +172,7 @@ interface BookmarksSidebarProps extends React.ComponentProps<typeof Sidebar> {
 }
 
 export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ...props }: BookmarksSidebarProps) {
+  const { t } = useTranslation();
   const { pathname } = useLocation();
   const [collectionsOpen, setCollectionsOpen] = React.useState(true);
   const [groupsOpen, setGroupsOpen] = React.useState(true);
@@ -252,7 +254,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
           {/* Collections */}
           <SidebarGroup className="p-0">
             <SectionHeader
-              label="COLLECTIONS"
+              label={t("sidebar_collections")}
               open={collectionsOpen}
               onToggle={handleToggleCollections}
               actions={
@@ -283,7 +285,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
                           }}
                         >
                           <Bookmark className="size-4" />
-                          <span className="flex-1 text-sm">All Bookmarks</span>
+                          <span className="flex-1 text-sm">{t("sidebar_allBookmarks")}</span>
                           <span className="text-muted-foreground text-xs">{bookmarkCounts.all ?? 0}</span>
                           {isHomePage && selectedCollection === "all" && (
                             <ChevronRight className="size-3.5 text-muted-foreground opacity-60" />
@@ -329,7 +331,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
                                         onClick={(e) => { e.preventDefault(); archiveCollection(col.id); }}
                                       >
                                         <Archive className="size-4 mr-2" />
-                                        Archive
+                                        {t("sidebar_archiveCollection")}
                                       </DropdownMenuItem>
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem
@@ -337,7 +339,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
                                         onClick={(e) => { e.preventDefault(); deleteCollection(col.id); }}
                                       >
                                         <Trash2 className="size-4 mr-2" />
-                                        Delete
+                                        {t("sidebar_deleteCollection")}
                                       </DropdownMenuItem>
                                     </DropdownMenuContent>
                                   </DropdownMenu>
@@ -354,7 +356,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
                     );
                   })}
 
-                  <AddItemButton label="Add Collection" onClick={() => setNewCollectionOpen(true)} />
+                  <AddItemButton label={t("sidebar_addCollection")} onClick={() => setNewCollectionOpen(true)} />
                 </SidebarMenu>
               </SidebarGroupContent>
             )}
@@ -363,7 +365,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
           {/* Groups */}
           <SidebarGroup className="p-0">
             <SectionHeader
-              label="GROUPS"
+              label={t("sidebar_groups")}
               open={groupsOpen}
               onToggle={handleToggleGroups}
             />
@@ -373,7 +375,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
                 <DroppableZone id="sidebar-groups">
                   <SidebarMenu className="mt-1">
                     {groups.length === 0 && (
-                      <p className="text-xs text-muted-foreground px-1 py-1">No saved groups</p>
+                      <p className="text-xs text-muted-foreground px-1 py-1">{t("sidebar_noSavedGroups")}</p>
                     )}
                     {groups.map((group) => (
                       <SidebarMenuItem key={group.id}>
@@ -403,7 +405,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
                       </SidebarMenuItem>
                     ))}
 
-                    <AddItemButton label="Add Group" onClick={() => setNewGroupOpen(true)} />
+                    <AddItemButton label={t("sidebar_addGroup")} onClick={() => setNewGroupOpen(true)} />
                   </SidebarMenu>
                 </DroppableZone>
               </SidebarGroupContent>
@@ -413,7 +415,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
           {/* Tags */}
           <SidebarGroup className="p-0">
             <SectionHeader
-              label="TAGS"
+              label={t("sidebar_tags")}
               open={tagsOpen}
               onToggle={handleToggleTags}
               actions={
@@ -426,7 +428,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
                       }}
                       className="text-[10px] text-muted-foreground hover:text-foreground"
                     >
-                      Clear
+                      {t("sidebar_clearTags")}
                     </button>
                   )}
                   <button
@@ -443,7 +445,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
               <SidebarGroupContent>
                 <div className="flex flex-wrap gap-1.5 mt-2 px-1">
                   {tags.length === 0 && (
-                    <p className="text-xs text-muted-foreground w-full py-1">No tags yet</p>
+                    <p className="text-xs text-muted-foreground w-full py-1">{t("sidebar_noTagsYet")}</p>
                   )}
                   {tags.map((tag) => (
                     <button
@@ -478,11 +480,11 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
             <SidebarGroupContent>
               <SidebarMenu>
                 {navItems.map((item) => (
-                  <SidebarMenuItem key={item.label}>
+                  <SidebarMenuItem key={item.labelKey}>
                     <SidebarMenuButton asChild isActive={pathname === item.href} className="h-9">
                       <Link to={item.href}>
                         <item.icon className="size-4" />
-                        <span className="text-sm">{item.label}</span>
+                        <span className="text-sm">{t(item.labelKey)}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

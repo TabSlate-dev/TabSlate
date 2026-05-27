@@ -3,9 +3,10 @@ import { defineConfig } from "wxt";
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
   manifest: {
-    name: "TabSlate (标签石板)",
-    description: "一个简洁高效的标签页与书签管理工具 / A clean and efficient tab and bookmark manager",
+    name: "__MSG_extensionName__",
+    description: "__MSG_extensionDescription__",
     version: "0.1.0",
+    default_locale: "en",
     permissions: ["tabs", "tabGroups", "storage", "bookmarks", "sessions", "contextMenus", "favicon", "scripting"],
     optional_host_permissions: ["<all_urls>"],
     host_permissions: [],
@@ -21,7 +22,7 @@ export default defineConfig({
           default: "Ctrl+Shift+K",
           mac: "Command+Shift+K",
         },
-        description: "Open TabSlate search",
+        description: "__MSG_commandOpenSearch__",
       },
     },
   },

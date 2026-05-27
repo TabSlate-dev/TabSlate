@@ -33,6 +33,7 @@ import { GroupCardBase } from "@/components/dashboard/shared/group-card-base";
 import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-collection-dialog";
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { generateId } from "@/lib/id";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface DroppableGroupCardProps {
   group: SavedGroup;
@@ -40,6 +41,7 @@ interface DroppableGroupCardProps {
 }
 
 export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
+  const { t } = useTranslation();
   const { isOver, setNodeRef } = useDroppable({
     id: `group-${group.id}`,
     data: { type: "saved-group", groupId: group.id },
@@ -214,11 +216,11 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => setEditing(true)}>
                 <Pencil className="size-4 mr-2" />
-                Rename Group
+                {t("groupsPanel_renameGroup")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setSaveDialogOpen(true)}>
                 <Save className="size-4 mr-2" />
-                Save as Collection
+                {t("tabsPanel_saveAsCollection")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -226,7 +228,7 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
                 onClick={() => deleteGroup(group.id)}
               >
                 <Trash2 className="size-4 mr-2" />
-                Delete Group
+                {t("groupsPanel_deleteGroup")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -256,18 +258,18 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
         )}
         {tabs
           .sort((a, b) => a.position - b.position)
-          .map((t) => (
+          .map((tab) => (
             <div
-              key={t.id}
+              key={tab.id}
               className="group/tab flex items-center gap-2.5 px-2 py-1.5 rounded-md border border-transparent hover:border-border hover:bg-muted/40 transition-all"
             >
-              <FaviconImage src={t.favicon} className="size-4 shrink-0 rounded-sm" />
+              <FaviconImage src={tab.favicon} className="size-4 shrink-0 rounded-sm" />
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-medium truncate leading-tight group-hover/tab:text-primary transition-colors">
-                  {t.title}
+                  {tab.title}
                 </p>
                 <p className="text-[10px] text-muted-foreground truncate opacity-70">
-                  {new URL(t.url).hostname}
+                  {new URL(tab.url).hostname}
                 </p>
               </div>
               
@@ -275,25 +277,25 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  onClick={() => removeTabFromGroup(t.id)}
+                  onClick={() => removeTabFromGroup(tab.id)}
                   className="size-6 text-destructive hover:bg-destructive/10"
                   title="Remove from group"
                 >
                   <BrushCleaning className="size-3" />
                 </Button>
                 <DropdownMenu
-                  open={saveMenuOpenMap[t.id] ?? false}
-                  onOpenChange={(open) => setSaveMenuOpenMap(prev => ({ ...prev, [t.id]: open }))}
+                  open={saveMenuOpenMap[tab.id] ?? false}
+                  onOpenChange={(open) => setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: open }))}
                 >
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon-xs"
                       onClick={(e) => e.stopPropagation()}
-                      title={savedTabIds.has(t.id) ? "Saved!" : "Save to collection"}
-                      className={cn("size-6 text-muted-foreground", savedTabIds.has(t.id) && "text-green-600 hover:text-green-600")}
+                      title={savedTabIds.has(tab.id) ? t("groupsPanel_saved") : t("groupsPanel_saveToCollection")}
+                      className={cn("size-6 text-muted-foreground", savedTabIds.has(tab.id) && "text-green-600 hover:text-green-600")}
                     >
-                      {savedTabIds.has(t.id) ? <Check className="size-3" /> : <BookmarkPlus className="size-3" />}
+                      {savedTabIds.has(tab.id) ? <Check className="size-3" /> : <BookmarkPlus className="size-3" />}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-48 max-h-64 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -302,8 +304,8 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
                         key={c.id}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setSaveMenuOpenMap(prev => ({ ...prev, [t.id]: false }));
-                          handleSaveTab(t, c.id);
+                          setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: false }));
+                          handleSaveTab(tab, c.id);
                         }}
                       >
                         <span className="truncate">{c.name}</span>
@@ -313,19 +315,19 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
                     <DropdownMenuItem
                       onClick={(e) => {
                         e.stopPropagation();
-                        setSaveMenuOpenMap(prev => ({ ...prev, [t.id]: false }));
-                        setCollectionDialogTab(t);
+                        setSaveMenuOpenMap(prev => ({ ...prev, [tab.id]: false }));
+                        setCollectionDialogTab(tab);
                       }}
                     >
                       <FolderPlus className="size-3.5 mr-2" />
-                      New Collection...
+                      {t("groupsPanel_newCollection")}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  onClick={() => window.open(t.url, "_blank")}
+                  onClick={() => window.open(tab.url, "_blank")}
                   className="size-6 text-muted-foreground hover:text-foreground"
                   title="Open in new tab"
                 >
@@ -334,7 +336,7 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  onClick={() => removeTabFromGroup(t.id)}
+                  onClick={() => removeTabFromGroup(tab.id)}
                   className="size-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   title="Delete from list"
                 >

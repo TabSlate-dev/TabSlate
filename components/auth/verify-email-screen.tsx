@@ -19,6 +19,7 @@ import {
 import { Procaptcha } from "@/components/procaptcha";
 import { useAuthStore } from "@/store/auth-store";
 import { api, ApiError } from "@/lib/api";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface VerifyEmailScreenProps {
   email: string;
@@ -34,6 +35,7 @@ const PROSOPO_CAPTCHA_TYPE =
     | undefined) ?? undefined;
 
 export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
+  const { t } = useTranslation();
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState("");
@@ -95,7 +97,7 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
     try {
       await verifyEmailOTP(email, value);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong");
+      setError(err instanceof ApiError ? err.message : t("auth_somethingWentWrong"));
       setCode("");
     } finally {
       setLoading(false);
@@ -163,10 +165,9 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <Mail className="h-6 w-6 text-primary" />
             </div>
-            <h1 className="text-2xl font-bold">Check your email</h1>
+            <h1 className="text-2xl font-bold">{t("auth_checkEmail")}</h1>
             <p className="text-sm text-balance text-muted-foreground">
-              We sent a 6-digit code to <strong>{email}</strong>.
-              Enter it below to verify your account.
+              {t("auth_checkEmailDesc1")} <strong>{email}</strong> {t("auth_checkEmailDesc2")}
             </p>
           </div>
 
@@ -194,22 +195,22 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
             )}
 
             <Button type="submit" disabled={loading || code.length < 6}>
-              {loading ? "Verifying…" : "Verify email"}
+              {loading ? t("auth_verifying") : t("auth_verifyEmailBtn")}
             </Button>
           </form>
 
           <FieldDescription className="text-center text-sm">
-            Didn&apos;t receive it?{" "}
+            {t("auth_didntReceive")}{" "}
             <button
               type="button"
               disabled={retryAfter > 0 || sending}
               className="underline underline-offset-4 hover:text-primary disabled:opacity-50 disabled:no-underline"
               onClick={handleResend}
             >
-              {retryAfter > 0 ? `Resend in ${retryAfter}s` : sending ? "Sending…" : "Resend code"}
+              {retryAfter > 0 ? t("auth_resendIn", retryAfter.toString()) : sending ? t("auth_sending") : t("auth_resendCode")}
             </button>
             {resent && (
-              <span className="ml-1 text-muted-foreground">— sent!</span>
+              <span className="ml-1 text-muted-foreground">{t("auth_sent")}</span>
             )}
           </FieldDescription>
 
@@ -219,7 +220,7 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
               className="underline underline-offset-4 hover:text-primary"
               onClick={() => logout()}
             >
-              Use a different account
+              {t("auth_useDifferentAccount")}
             </button>
           </FieldDescription>
         </FieldGroup>
@@ -229,7 +230,7 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
         <Dialog open={captchaDialogOpen} onOpenChange={setCaptchaDialogOpen}>
           <DialogContent className="sm:max-w-xs" aria-describedby={undefined}>
             <DialogHeader>
-              <DialogTitle>Verify you&apos;re human</DialogTitle>
+              <DialogTitle>{t("auth_verifyHuman")}</DialogTitle>
             </DialogHeader>
             <div className="rounded-lg overflow-hidden bg-white p-1">
               <Procaptcha

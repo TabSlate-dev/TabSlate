@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Plus } from "lucide-react";
 import { TagDialog } from "@/components/dashboard/sidebar/tag-dialog";
 import type { Bookmark } from "@/lib/types";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface BookmarkTagsDialogProps {
   bookmark: Bookmark;
@@ -22,6 +23,7 @@ interface BookmarkTagsDialogProps {
 }
 
 export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTagsDialogProps) {
+  const { t } = useTranslation();
   const tags = useWorkspaceStore(s => s.tags);
   const createTag = useWorkspaceStore(s => s.createTag);
   const updateBookmark = useBookmarksStore(s => s.updateBookmark);
@@ -52,16 +54,16 @@ export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTag
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-xs">
         <DialogHeader>
-          <DialogTitle>Manage Tags</DialogTitle>
+          <DialogTitle>{t("bookmarkTagsDialog_title")}</DialogTitle>
           <DialogDescription className="sr-only">
-            Select tags for this bookmark.
+            {t("bookmarkTagsDialog_desc")}
           </DialogDescription>
         </DialogHeader>
         
         <div className="space-y-3 py-4 max-h-[60vh] overflow-y-auto">
           {tags.length === 0 ? (
             <div className="text-sm text-muted-foreground text-center py-4">
-              No tags available. Create tags in the sidebar first.
+              {t("bookmarkTagsDialog_noTags")}
             </div>
           ) : (
             tags.map(tag => (
@@ -88,16 +90,16 @@ export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTag
             onClick={() => setNewTagOpen(true)}
           >
             <Plus className="size-4 mr-2" />
-            Create new tag
+            {t("bookmarkTagsDialog_createTag")}
           </Button>
         </div>
 
         <DialogFooter>
           <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("bookmarkTagsDialog_cancel")}
           </Button>
           <Button type="button" size="sm" onClick={handleSave}>
-            Save
+            {t("bookmarkTagsDialog_save")}
           </Button>
         </DialogFooter>
       </DialogContent>
