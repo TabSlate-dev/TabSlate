@@ -1,4 +1,5 @@
 import * as React from "react";
+import { Languages } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useI18nStore, SupportedLanguage } from "@/store/i18n-store";
@@ -17,7 +18,12 @@ export function LanguageSelector() {
   const currentLabel = React.useMemo(() => {
     if (language === "en") return "🇺🇸 English";
     if (language === "zh_CN") return "🇨🇳 简体中文";
-    return `🌐 ${t("languageSelector_auto")}`;
+    return (
+      <span className="flex items-center gap-1.5">
+        <Languages className="h-4 w-4" />
+        {t("languageSelector_auto")}
+      </span>
+    );
   }, [language, t]);
 
   return (
@@ -29,7 +35,10 @@ export function LanguageSelector() {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={() => handleSelect("auto")}>
-          <span className={language === "auto" ? "font-bold" : ""}>🌐 {t("languageSelector_auto")}</span>
+          <span className={`flex items-center gap-1.5 ${language === "auto" ? "font-bold" : ""}`}>
+            <Languages className="h-4 w-4" />
+            {t("languageSelector_auto")}
+          </span>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => handleSelect("en")}>
           <span className={language === "en" ? "font-bold" : ""}>🇺🇸 English</span>
