@@ -11,6 +11,10 @@ export interface RawAd {
   name: string;
   websiteUrl: string;
   weight: number;
+  tier?: {
+    id: string;
+    name: string;
+  };
   meta: RawAdMeta[];
 }
 
@@ -22,6 +26,7 @@ export interface Ad {
   action: string;
   websiteUrl: string;
   weight: number;
+  tierId?: string;
   iconUrl?: string;
   gradient: string;
   iconColor: string;
@@ -29,6 +34,8 @@ export interface Ad {
 
 interface AdsState {
   ads: Ad[];
+  homepageAds: Ad[];
+  sidebarAds: Ad[];
   isFetching: boolean;
   fetchedAt: number | null;
   fetchAds: () => Promise<void>;
@@ -56,6 +63,7 @@ export function mapRawAd(raw: RawAd, index: number): Ad {
     action: metaMap.get("action") || "Learn More",
     websiteUrl: raw.websiteUrl,
     weight: raw.weight ?? 1,
+    tierId: raw.tier?.id,
     iconUrl: metaMap.get("icon url"),
     gradient: style.gradient,
     iconColor: style.iconColor,
@@ -66,6 +74,8 @@ const TTL_MS = 10 * 60 * 1000; // 10 minutes cache TTL
 
 export const useAdsStore = create<AdsState>()((set, get) => ({
   ads: [],
+  homepageAds: [],
+  sidebarAds: [],
   isFetching: false,
   fetchedAt: null,
 
@@ -91,8 +101,16 @@ export const useAdsStore = create<AdsState>()((set, get) => ({
         .map((raw, idx) => mapRawAd(raw, idx))
         .sort((a, b) => b.weight - a.weight);
 
+      const homepageTierId = import.meta.env.VITE_OPENADS_HOMEPAGE_TIER_ID;
+      const sidebarTierId = import.meta.env.VITE_OPENADS_SIDEBAR_TIER_ID;
+
+      const homepageAds = mappedAds.filter((ad) => ad.tierId === homepageTierId);
+      const sidebarAds = mappedAds.filter((ad) => ad.tierId === sidebarTierId);
+
       set({
         ads: mappedAds,
+        homepageAds,
+        sidebarAds,
         fetchedAt: Date.now(),
         isFetching: false,
       });

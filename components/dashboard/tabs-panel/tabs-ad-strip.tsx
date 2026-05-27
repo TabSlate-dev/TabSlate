@@ -108,7 +108,7 @@ function StripAdCard({ ad, vertical }: { ad: Ad; vertical?: boolean }) {
 }
 
 export function TabsAdStrip({ vertical }: { vertical?: boolean }) {
-  const ads = useAdsStore((s) => s.ads);
+  const ads = useAdsStore((s) => s.sidebarAds);
   const ensureFresh = useAdsStore((s) => s.ensureFresh);
 
   React.useEffect(() => {

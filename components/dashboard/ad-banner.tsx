@@ -103,7 +103,7 @@ export function AdBanner() {
   const [isHovered, setIsHovered] = React.useState(false);
   const [isVisible, setIsVisible] = React.useState(true);
 
-  const ads = useAdsStore((s) => s.ads);
+  const ads = useAdsStore((s) => s.homepageAds);
   const ensureFresh = useAdsStore((s) => s.ensureFresh);
 
   React.useEffect(() => {
@@ -249,13 +249,11 @@ export function AdBanner() {
           <div
             key={`${ad.id}-${idx}`}
             className={cn(
-              "shrink-0 transition-all",
-              !isCarousel
-                ? "w-full max-w-3xl mx-auto h-44"
-                : "w-[calc(100vw-2.5rem)] sm:w-[300px] md:w-[360px] h-40"
+              "shrink-0 transition-all w-[calc(100vw-2.5rem)] sm:w-[300px] md:w-[360px] h-40",
+              !isCarousel && "mx-auto"
             )}
           >
-            <AdCard ad={ad} compact={isCarousel} />
+            <AdCard ad={ad} compact={true} />
           </div>
         ))}
       </div>

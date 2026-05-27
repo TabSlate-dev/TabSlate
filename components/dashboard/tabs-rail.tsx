@@ -72,7 +72,7 @@ export function TabsRail() {
   const [windows, setWindows] = React.useState<BrowserWindow[]>([]);
   const [selectedWindowId, setSelectedWindowId] = React.useState<number | null>(null);
   const [loading, setLoading] = React.useState(true);
-  const ads = useAdsStore((s) => s.ads);
+  const ads = useAdsStore((s) => s.sidebarAds);
 
   async function refresh() {
     const wins = await loadWindows();
