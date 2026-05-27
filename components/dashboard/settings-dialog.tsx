@@ -459,12 +459,10 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                   {planName === "free" && (
                     <Button
                       size="sm"
-                      className="bg-linear-to-r from-violet-600 to-pink-600 hover:from-violet-700 hover:to-pink-700 text-white shadow-md shadow-violet-500/20 font-bold tracking-wide border-0 cursor-pointer rounded-xl shrink-0"
-                      onClick={() => {
-                        alert("Upgrade Option: TabSlate Cloud plans are managed via the web platform checkout or subscription portal. Please navigate to the portal to upgrade.");
-                      }}
+                      disabled
+                      className="bg-linear-to-r from-violet-600 to-pink-600 text-white shadow-md shadow-violet-500/20 font-bold tracking-wide border-0 cursor-not-allowed rounded-xl shrink-0"
                     >
-                      {t("settings_planUpgradeBtn")}
+                      Coming Soon...
                     </Button>
                   )}
                 </div>
