@@ -116,7 +116,7 @@ export const useAdsStore = create<AdsState>()((set, get) => ({
       });
     } catch (err) {
       console.error("Error fetching ads:", err);
-      set({ isFetching: false });
+      set({ isFetching: false, fetchedAt: null });
     }
   },
 

@@ -452,47 +452,49 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   deleteWorkspace: (id) => {
-    // Soft-delete all active groups in this workspace so they get tombstoned
-    // on the server with a valid workspace_id (avoids ON DELETE SET NULL).
-    const { groups, deleteGroup } = useGroupsStore.getState();
-    for (const g of groups) {
-      if (g.workspaceId === id && !g.deletedAt) {
-        deleteGroup(g.id);
+    void (async () => {
+      // Soft-delete all active groups in this workspace so they get tombstoned
+      // on the server with a valid workspace_id (avoids ON DELETE SET NULL).
+      const { groups, deleteGroup } = useGroupsStore.getState();
+      for (const g of groups) {
+        if (g.workspaceId === id && !g.deletedAt) {
+          deleteGroup(g.id);
+        }
       }
-    }
 
-    const { workspaces, collections, activeWorkspaceId } = get();
-    const ws = workspaces.find(w => w.id === id);
-    const allWorkspaceCols = collections.filter(c => c.workspaceId === id);
-    // Only non-tombstoned collections need a new deletedAt + bookmark move;
-    // already-deleted collections keep their original tombstone intact.
-    const deletedAt = Date.now();
-    const colsToTombstone = allWorkspaceCols
-      .filter(c => !c.deletedAt)
-      .map((c) => ({ ...c, deletedAt }));
-    if (ws) {
-      syncEngine?.enqueue({
-        workspaces: [toServerWorkspace({ ...ws, deletedAt })],
-        collections: colsToTombstone.map(c => toServerCollection(c)),
+      const { workspaces, collections, activeWorkspaceId } = get();
+      const ws = workspaces.find(w => w.id === id);
+      const allWorkspaceCols = collections.filter(c => c.workspaceId === id);
+      // Only non-tombstoned collections need a new deletedAt + bookmark move;
+      // already-deleted collections keep their original tombstone intact.
+      const deletedAt = Date.now();
+      const colsToTombstone = allWorkspaceCols
+        .filter(c => !c.deletedAt)
+        .map((c) => ({ ...c, deletedAt }));
+      if (ws) {
+        syncEngine?.enqueue({
+          workspaces: [toServerWorkspace({ ...ws, deletedAt })],
+          collections: colsToTombstone.map(c => toServerCollection(c)),
+        });
+      }
+      const tombstonedCollections = new Map(colsToTombstone.map(c => [c.id, c]));
+      for (const c of colsToTombstone) {
+        idbPut("collections", c);
+        await useBookmarksStore.getState().trashCollectionBookmarks(c.id);
+      }
+      idbDelete("workspaces", id);
+      const remaining = workspaces.filter(w => w.id !== id);
+      const newActiveId = activeWorkspaceId === id ? (remaining[0]?.id ?? "") : activeWorkspaceId;
+      if (activeWorkspaceId === id) {
+        idbPut("kv", { key: "activeWorkspaceId", value: newActiveId });
+      }
+      set({
+        workspaces: remaining,
+        collections: collections.map(c => tombstonedCollections.get(c.id) ?? c),
+        activeWorkspaceId: newActiveId,
       });
-    }
-    const tombstonedCollections = new Map(colsToTombstone.map(c => [c.id, c]));
-    for (const c of colsToTombstone) {
-      idbPut("collections", c);
-      useBookmarksStore.getState().trashCollectionBookmarks(c.id);
-    }
-    idbDelete("workspaces", id);
-    const remaining = workspaces.filter(w => w.id !== id);
-    const newActiveId = activeWorkspaceId === id ? (remaining[0]?.id ?? "") : activeWorkspaceId;
-    if (activeWorkspaceId === id) {
-      idbPut("kv", { key: "activeWorkspaceId", value: newActiveId });
-    }
-    set({
-      workspaces: remaining,
-      collections: collections.map(c => tombstonedCollections.get(c.id) ?? c),
-      activeWorkspaceId: newActiveId,
-    });
-    usePlanStore.getState().decrementUsage("workspace");
+      usePlanStore.getState().decrementUsage("workspace");
+    })();
   },
 
   // ── Collections ───────────────────────────────────────────────────────

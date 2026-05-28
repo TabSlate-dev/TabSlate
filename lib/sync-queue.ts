@@ -1,7 +1,7 @@
-import { api, ApiError } from "@/lib/api";
-import type { SyncPushPayload, SyncPushResponse } from "@/lib/api";
-import { bufferSyncRecoverySnapshot, takeSyncRecoverySnapshot } from "@/lib/sync-recovery";
-import { useAuthStore } from "@/store/auth-store";
+import { api, ApiError } from "./api";
+import type { SyncPushPayload, SyncPushResponse } from "./api";
+import { bufferSyncRecoverySnapshot, loadSyncRecoverySnapshot } from "./sync-recovery";
+import { useAuthStore } from "../store/auth-store";
 
 // Stay well under the server's hard limit of 1000 entities per push.
 // Non-bookmark entities (workspaces, collections, tags, groups) are always
@@ -38,17 +38,14 @@ export class SyncQueue {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryDelay = 2000;
   private readonly maxRetryDelay = 60_000;
+  private readonly recoveryReady: Promise<void>;
 
   constructor(
     private readonly getCredentials: () => { baseUrl: string; accessToken: string } | null,
     private readonly onSuccess: OnPushSuccess,
     private readonly onError: OnPushError,
   ) {
-    const recoverySnapshot = takeSyncRecoverySnapshot();
-    if (recoverySnapshot) {
-      this.requeueSnapshot(recoverySnapshot);
-      this.schedulePush(0);
-    }
+    this.recoveryReady = this.hydrateRecoverySnapshot();
   }
 
   enqueue(entities: Partial<{ workspaces: object[]; collections: object[]; bookmarks: object[]; tags: object[]; groups: object[] }>) {
@@ -93,6 +90,7 @@ export class SyncQueue {
   }
 
   private async doPush(): Promise<void> {
+    await this.recoveryReady;
     if (this.isEmpty()) return;
     const creds = this.getCredentials();
     if (!creds) return;
@@ -112,11 +110,13 @@ export class SyncQueue {
 
     const chunks = this.splitPayload(full);
     let finalServerSeq = 0;
+    let hadSuccessfulChunk = false;
     const allRejected: SyncPushResponse["rejected"] = [];
 
     for (let i = 0; i < chunks.length; i++) {
       try {
         const resp = await api.syncPush(creds.baseUrl, creds.accessToken, chunks[i]);
+        hadSuccessfulChunk = true;
         finalServerSeq = resp.server_seq;
         allRejected.push(...resp.rejected);
       } catch (err) {
@@ -135,6 +135,9 @@ export class SyncQueue {
           this.requeueSnapshot(chunks[j]);
         }
 
+        if (hadSuccessfulChunk) {
+          this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected });
+        }
         this.onError(err instanceof Error ? err : new Error(String(err)));
         if (this.retryTimer) clearTimeout(this.retryTimer);
         this.retryTimer = setTimeout(() => {
@@ -148,6 +151,20 @@ export class SyncQueue {
 
     this.retryDelay = 2000;
     this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected });
+  }
+
+  private async hydrateRecoverySnapshot() {
+    try {
+      const recoverySnapshot = await loadSyncRecoverySnapshot();
+      if (!recoverySnapshot) {
+        return;
+      }
+
+      this.requeueSnapshot(recoverySnapshot);
+      this.schedulePush(0);
+    } catch (err) {
+      this.onError(err instanceof Error ? err : new Error(String(err)));
+    }
   }
 
   destroy() {

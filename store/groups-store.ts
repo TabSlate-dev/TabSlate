@@ -171,7 +171,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
 
   deleteGroup: (id) => {
     const group = get().groups.find(g => g.id === id);
-    if (!group) { return; }
+    if (!group || group.deletedAt) { return; }
     const tabs = get().groupTabs.filter(t => t.groupId === id);
     const deletedGroup = { ...group, deletedAt: Date.now() };
     syncEngine?.enqueue({ groups: [toServerGroup(deletedGroup, tabs)] });

@@ -31,7 +31,7 @@ export function Procaptcha({ siteKey, serverUrl, onToken, theme = "light", captc
   const [height, setHeight] = useState(MIN_HEIGHT);
 
   const base = serverUrl.replace(/\/$/, "");
-  const params = new URLSearchParams({ siteKey, theme });
+  const params = new URLSearchParams({ siteKey, theme, parentOrigin: window.location.origin });
   if (captchaType) params.set("captchaType", captchaType);
   const src = `${base}/captcha/widget?${params}`;
   const widgetOrigin = new URL(src).origin;

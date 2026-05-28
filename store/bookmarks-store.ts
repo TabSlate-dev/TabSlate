@@ -14,6 +14,10 @@ type SortBy = "date-newest" | "date-oldest" | "alpha-az" | "alpha-za";
 type FilterType = "all" | "favorites" | "with-tags" | "without-tags";
 type BookmarkStoreName = "bookmarks" | "archived-bookmarks" | "trashed-bookmarks";
 
+interface TrashedBookmarkRecord extends Bookmark {
+  isTrashed?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Sync helpers
 // ---------------------------------------------------------------------------
@@ -155,7 +159,7 @@ interface BookmarksState {
   enqueueAllToSync: () => void;
   sweepUnsynced: () => void;
   archiveCollectionBookmarks: (collectionId: string) => void;
-  trashCollectionBookmarks: (collectionId: string) => void;
+  trashCollectionBookmarks: (collectionId: string) => Promise<void>;
   restoreCollectionBookmarks: (collectionId: string) => void;
   permanentlyDeleteCollectionBookmarks: (collectionId: string) => void;
   reassignCollection: (fromId: string, toId: string) => void;
@@ -491,26 +495,36 @@ export const useBookmarksStore = create<BookmarksState>()(
       permanentlyDelete: (bookmarkId) => {
         void (async () => {
           const state = get();
-          const bookmark = state._trashedLoaded
+          const bookmark = (state._trashedLoaded
             ? state.trashedBookmarks.find((candidate) => candidate.id === bookmarkId)
-            : await readBookmarkById("trashed-bookmarks", bookmarkId);
+            : await readBookmarkById("trashed-bookmarks", bookmarkId)) as TrashedBookmarkRecord | undefined;
           if (!bookmark) { return; }
-          // Optimistic UI removal — item stays in IDB until server confirms.
-          set((current) => ({
-            trashedBookmarks: current.trashedBookmarks.filter((candidate) => candidate.id !== bookmarkId),
-          }));
           if (syncEngine) {
             try {
               await syncEngine.forcePush({ bookmarks: [toServerBookmark(bookmark, { isTrashed: 2 })] });
             } catch {
-              // Push failed — roll back UI so item is visible again and user can retry.
-              set((current) => ({ trashedBookmarks: [...current.trashedBookmarks, bookmark] }));
               return;
             }
+            set((current) => ({
+              trashedBookmarks: current.trashedBookmarks.filter((candidate) => candidate.id !== bookmarkId),
+            }));
+            await idbDelete("trashed-bookmarks", bookmarkId);
+            usePlanStore.getState().decrementUsage("bookmark");
+            return;
           }
-          // Server confirmed — safe to delete from IDB.
-          await idbDelete("trashed-bookmarks", bookmarkId);
-          usePlanStore.getState().decrementUsage("bookmark");
+
+          const tombstone: TrashedBookmarkRecord = {
+            ...bookmark,
+            seq: 0,
+            deletedAt: bookmark.deletedAt ?? Date.now(),
+            isTrashed: 2,
+          };
+          await idbPut("trashed-bookmarks", tombstone);
+          if (state._trashedLoaded) {
+            set((current) => ({
+              trashedBookmarks: current.trashedBookmarks.filter((candidate) => candidate.id !== bookmarkId),
+            }));
+          }
         })();
       },
 
@@ -530,38 +544,54 @@ export const useBookmarksStore = create<BookmarksState>()(
           }
           if (bookmarks.length === 0) { return; }
 
-          // Optimistic UI removal — items disappear immediately.
-          const removedIds = new Set(bookmarks.map((b) => b.id));
-          set((current) => ({
-            trashedBookmarks: current.trashedBookmarks.filter((b) => !removedIds.has(b.id)),
-          }));
-
           if (syncEngine) {
             const CHUNK = 900;
             for (let i = 0; i < bookmarks.length; i += CHUNK) {
               const chunk = bookmarks.slice(i, i + CHUNK);
+              const chunkIds = new Set(chunk.map((bookmark) => bookmark.id));
               try {
                 await syncEngine.forcePush({
                   bookmarks: chunk.map((b) => toServerBookmark(b, { isTrashed: 2 })),
                 });
               } catch {
-                // Push failed — roll back this chunk and stop; user can retry.
-                set((current) => ({
-                  trashedBookmarks: [...current.trashedBookmarks, ...chunk],
-                }));
+                // Confirmed chunks were already removed. Leave this chunk and all
+                // remaining chunks untouched so the user can retry safely.
                 return;
               }
+              const ops: BulkWriteOp[] = chunk.map((bookmark) => ({
+                type: "delete" as const,
+                store: "trashed-bookmarks" as const,
+                key: bookmark.id,
+              }));
+              await idbBulkWrite(ops);
+              set((current) => ({
+                trashedBookmarks: current.trashedBookmarks.filter((bookmark) => !chunkIds.has(bookmark.id)),
+              }));
+              usePlanStore.getState().decrementUsage("bookmark", chunk.length);
             }
+            return;
           }
 
-          // Server confirmed all chunks — safe to remove from IDB.
-          const ops: BulkWriteOp[] = bookmarks.map((b) => ({
-            type: "delete" as const,
-            store: "trashed-bookmarks" as const,
-            key: b.id,
+          const deletedAt = Date.now();
+          const tombstones: TrashedBookmarkRecord[] = bookmarks.map((bookmark) => ({
+            ...bookmark,
+            seq: 0,
+            deletedAt: bookmark.deletedAt ?? deletedAt,
+            isTrashed: 2,
           }));
-          await idbBulkWrite(ops);
-          usePlanStore.getState().decrementUsage("bookmark", bookmarks.length);
+          await idbBulkWrite(
+            tombstones.map((bookmark) => ({
+              type: "put" as const,
+              store: "trashed-bookmarks" as const,
+              value: bookmark,
+            })),
+          );
+          if (state._trashedLoaded) {
+            const tombstoneIds = new Set(tombstones.map((bookmark) => bookmark.id));
+            set((current) => ({
+              trashedBookmarks: current.trashedBookmarks.filter((bookmark) => !tombstoneIds.has(bookmark.id)),
+            }));
+          }
         })();
       },
 
@@ -577,7 +607,10 @@ export const useBookmarksStore = create<BookmarksState>()(
             bookmarks: [
               ...current.bookmarks.map((bookmark) => toServerBookmark(bookmark)),
               ...current.archivedBookmarks.map((bookmark) => toServerBookmark(bookmark, { isArchived: true })),
-              ...current.trashedBookmarks.map((bookmark) => toServerBookmark(bookmark, { isTrashed: 1 })),
+              ...current.trashedBookmarks.map((bookmark) => {
+                const rec = bookmark as TrashedBookmarkRecord;
+                return toServerBookmark(bookmark, { isTrashed: rec.isTrashed === 2 ? 2 : 1 });
+              }),
             ],
           });
         })();
@@ -750,7 +783,12 @@ export const useBookmarksStore = create<BookmarksState>()(
               .map(b => toServerBookmark(b, { isArchived: true })),
             ...current.trashedBookmarks
               .filter(b => b.seq === 0)
-              .map(b => toServerBookmark(b, { isTrashed: 1 })),
+              .map((bookmark) => {
+                const trashedBookmark = bookmark as TrashedBookmarkRecord;
+                return toServerBookmark(bookmark, {
+                  isTrashed: trashedBookmark.isTrashed === 2 ? 2 : 1,
+                });
+              }),
           ];
           if (unsynced.length > 0) {
             syncEngine?.enqueue({ bookmarks: unsynced });
@@ -774,7 +812,7 @@ export const useBookmarksStore = create<BookmarksState>()(
       },
 
       trashCollectionBookmarks: (collectionId) => {
-        void (async () => {
+        return (async () => {
           const state = get();
           const active = state.bookmarks.filter((bookmark) => bookmark.collectionId === collectionId);
           const archived = state._archivedLoaded
