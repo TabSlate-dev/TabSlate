@@ -26,7 +26,7 @@ function AdCard({ ad, compact }: { ad: Ad; compact: boolean }) {
     <div
       className={cn(
         "relative z-0 hover:z-10 h-full rounded-2xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg hover:scale-[1.02] group flex flex-col cursor-pointer",
-        compact ? "p-4" : "p-4 md:p-5"
+        compact ? "p-3 2xl:p-4" : "p-4 md:p-5"
       )}
       onClick={handleClick}
       role="button"
@@ -60,32 +60,32 @@ function AdCard({ ad, compact }: { ad: Ad; compact: boolean }) {
 
       <div className="relative z-10 flex flex-col h-full">
         {/* Title and Icon inline */}
-        <div className="flex items-start gap-2.5 mb-3 pr-12">
+        <div className="flex items-start gap-2.5 mb-2 2xl:mb-3 pr-12">
           <div className={cn(
-            "shrink-0 rounded-lg flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:shadow-md size-10 overflow-hidden",
+            "shrink-0 rounded-lg flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-105 group-hover:shadow-md size-8 2xl:size-10 overflow-hidden",
             ad.gradient
           )}>
             {ad.iconUrl ? (
-              <FaviconImage src={ad.iconUrl} className="size-6 object-contain" />
+              <FaviconImage src={ad.iconUrl} className="size-5 2xl:size-6 object-contain" />
             ) : (
-              <Icon className={cn(ad.iconColor, "size-5")} />
+              <Icon className={cn(ad.iconColor, "size-4 2xl:size-5")} />
             )}
           </div>
-          <h3 className="text-sm md:text-base font-semibold tracking-tight text-foreground leading-tight mt-1 drop-shadow-sm truncate">
+          <h3 className="text-sm 2xl:text-base font-semibold tracking-tight text-foreground leading-tight mt-1 drop-shadow-sm truncate">
             {ad.title}
           </h3>
         </div>
 
         {/* Content */}
-        <div className="flex-1 mb-4">
-          <p className="text-xs text-foreground/70 leading-relaxed line-clamp-2">
+        <div className="flex-1 mb-2 2xl:mb-4">
+          <p className="text-[11px] 2xl:text-xs text-foreground/70 leading-relaxed line-clamp-2">
             {ad.description}
           </p>
         </div>
 
         {/* Action hint - Fixed at bottom */}
         <div className="flex items-center justify-between mt-auto pt-2 pb-0.5">
-          <span className="text-[11px] font-semibold text-primary/90 group-hover:text-primary transition-colors truncate">
+          <span className="text-[10px] 2xl:text-[11px] font-semibold text-primary/90 group-hover:text-primary transition-colors truncate">
             {ad.action}
           </span>
           <div className="flex items-center justify-center w-4 h-4 shrink-0 ml-2">
@@ -249,7 +249,7 @@ export function AdBanner() {
           <div
             key={`${ad.id}-${idx}`}
             className={cn(
-              "shrink-0 transition-all w-[calc(100vw-2.5rem)] sm:w-[300px] md:w-[360px] h-40",
+              "shrink-0 transition-all w-[calc(100vw-2.5rem)] sm:w-[260px] md:w-[280px] lg:w-[320px] 2xl:w-[360px] h-32 lg:h-36 2xl:h-40",
               !isCarousel && "mx-auto"
             )}
           >
