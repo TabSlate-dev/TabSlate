@@ -56,6 +56,7 @@ interface TabsState {
   
   // Group actions
   toggleGroupCompact: (groupId: number) => Promise<void>;
+  registerGroupFullTitle: (groupId: number, fullTitle: string) => Promise<void>;
 }
 
 
@@ -234,14 +235,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const isCompact = compact !== undefined ? compact : compactGroupTitles;
     
     let fullTitle = title.trim();
-    let chromeTitle = "";
-    
     if (!fullTitle) {
       fullTitle = getAutoGroupName();
-      chromeTitle = ""; // Empty as requested by user for Chrome display
-    } else {
-      chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
     }
+    const chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
 
     const groupId = await groupTabs(tabIds, chromeTitle, color);
     
@@ -352,14 +349,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const isCompact = compact !== undefined ? compact : compactGroupTitles;
     
     let fullTitle = title.trim();
-    let chromeTitle = "";
-    
     if (!fullTitle) {
       fullTitle = getAutoGroupName();
-      chromeTitle = "";
-    } else {
-      chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
     }
+    const chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
 
     const groupId = await openAsTabGroup(urls, chromeTitle, color);
     
@@ -382,6 +375,17 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     await openUrls(urls);
   },
 
+  registerGroupFullTitle: async (groupId: number, fullTitle: string) => {
+    const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
+    idbPut("tab-group-titles", { groupId, title: fullTitle });
+
+    const [tabs, groups] = await Promise.all([
+      getCurrentWindowTabs(),
+      getCurrentWindowGroups(),
+    ]);
+    set({ openTabs: tabs, tabGroups: groups, fullTitles: currentTitles });
+  },
+
   toggleGroupCompact: async (groupId: number) => {
     const { tabGroups, fullTitles } = get();
     const group = tabGroups.find((g) => g.id === groupId);
@@ -394,18 +398,29 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
     const currentFullTitle = storedFullTitle || group.title;
     const isCurrentlyCompact = group.title.length === 1 && currentFullTitle.length > 1;
-    const nextTitle = isCurrentlyCompact ? currentFullTitle : (currentFullTitle[0] || "");
+    const isNextCompact = !isCurrentlyCompact;
+    const nextTitle = isNextCompact ? (currentFullTitle[0] || "") : currentFullTitle;
 
-    await updateGroup(groupId, { title: nextTitle });
+    // Directly update chrome group without triggering store's updateGroup (which overwrites full titles)
+    const updated = await updateGroup(groupId, { title: nextTitle });
 
     const updatedTitles = { ...fullTitles };
     if (!updatedTitles[groupId]) { updatedTitles[groupId] = currentFullTitle; }
     idbPut("tab-group-titles", { groupId, title: updatedTitles[groupId] });
 
-    const [tabs, groups] = await Promise.all([
-      getCurrentWindowTabs(),
-      getCurrentWindowGroups(),
-    ]);
-    set({ openTabs: tabs, tabGroups: groups, fullTitles: updatedTitles });
+    set((state) => ({ 
+      tabGroups: state.tabGroups.map((g) => (g.id === groupId ? updated : g)),
+      fullTitles: updatedTitles 
+    }));
+
+    // Sync isCompact change to Saved Groups
+    if (currentFullTitle) {
+      const { useGroupsStore } = await import("./groups-store");
+      const { groups, updateGroup: updateSavedGroup } = useGroupsStore.getState();
+      const savedGroup = groups.find(g => g.name === currentFullTitle);
+      if (savedGroup && savedGroup.isCompact !== isNextCompact) {
+        updateSavedGroup(savedGroup.id, { isCompact: isNextCompact });
+      }
+    }
   },
 }));

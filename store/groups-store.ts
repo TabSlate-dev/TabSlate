@@ -151,9 +151,9 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     if (updated) { idbPut("groups", updated); }
 
     // Sync to open Chrome tab groups
-    if (oldName && (patch.name !== undefined || patch.color !== undefined)) {
+    if (oldName && (patch.name !== undefined || patch.color !== undefined || patch.isCompact !== undefined)) {
       import("./tabs-store").then(({ useTabsStore }) => {
-        const { tabGroups, fullTitles, updateGroup: updateChromeGroup } = useTabsStore.getState();
+        const { tabGroups, fullTitles, updateGroup: updateChromeGroup, toggleGroupCompact } = useTabsStore.getState();
         const chromeGroup = tabGroups.find(g => (fullTitles[g.id] || g.title) === oldName);
         if (chromeGroup) {
           const chromePatch: { title?: string; color?: TabGroupColor } = {};
@@ -165,6 +165,15 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
           }
           if (Object.keys(chromePatch).length > 0) {
             updateChromeGroup(chromeGroup.id, chromePatch);
+          }
+          
+          if (patch.isCompact !== undefined) {
+             const actualFullTitle = fullTitles[chromeGroup.id] || chromeGroup.title;
+             const isCurrentlyCompact = chromeGroup.title.length === 1 && actualFullTitle.length > 1;
+             // If Chrome tab group compact state doesn't match the new desired state
+             if (patch.isCompact !== isCurrentlyCompact) {
+                 toggleGroupCompact(chromeGroup.id);
+             }
           }
         }
       });
@@ -288,7 +297,14 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       .sort((a, b) => a.position - b.position)
       .map((t) => t.url);
     if (!urls.length) { return; }
-    await openAsTabGroup(urls, group.name, group.color, group.isCompact);
+    const chromeGroupId = await openAsTabGroup(urls, group.name, group.color, group.isCompact);
+    
+    // Register the full title in tabs-store so it can sync properly later
+    const { useTabsStore } = await import("./tabs-store");
+    const { registerGroupFullTitle } = useTabsStore.getState();
+    if (registerGroupFullTitle) {
+      await registerGroupFullTitle(chromeGroupId, group.name);
+    }
   },
 
   mergeFromServer: (resp) => {
