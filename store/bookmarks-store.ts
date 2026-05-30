@@ -6,6 +6,7 @@ import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
+import { analytics } from "@/lib/analytics";
 
 export type { Bookmark };
 
@@ -291,6 +292,7 @@ export const useBookmarksStore = create<BookmarksState>()(
           idbPut("bookmarks", bookmark);
           syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
           usePlanStore.getState().incrementUsage("bookmark");
+          analytics.track("bookmark_added");
           return bookmark;
         });
       },
@@ -312,6 +314,7 @@ export const useBookmarksStore = create<BookmarksState>()(
         set((s) => ({ bookmarks: [...normalized, ...s.bookmarks] }));
         for (const b of normalized) { idbPut("bookmarks", b); }
         syncEngine?.enqueue({ bookmarks: normalized.map(b => toServerBookmark(b)) });
+        analytics.track("bookmark_imported", { count: normalized.length });
       },
 
       updateBookmark: (id, patch) => {

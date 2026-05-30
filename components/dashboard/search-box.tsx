@@ -8,6 +8,7 @@ import { useTabsStore } from "@/store/tabs-store";
 import { useAuthStore } from "@/store/auth-store";
 import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
+import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/store/settings-store";
 import { useTranslation } from "@/hooks/use-translation";
@@ -100,10 +101,12 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
 
   const handleSelect = React.useCallback((index: number) => {
     if (index < filteredTabs.length) {
+      analytics.track("search_used", { type: "tabs" });
       const tab = filteredTabs[index];
       chrome.tabs.update(tab.id, { active: true });
       chrome.windows.update(tab.windowId, { focused: true });
     } else if (index < filteredTabs.length + bookmarkResults.length) {
+      analytics.track("search_used", { type: "bookmarks" });
       const url = bookmarkResults[index - filteredTabs.length].url;
       const existingTab = openTabs.find(t => t.url === url);
       if (existingTab) {
@@ -113,6 +116,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
         window.location.href = url;
       }
     } else {
+      analytics.track("search_used", { type: "engine" });
       window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
     }
     setQuery("");
@@ -138,6 +142,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
+      analytics.track("search_used", { type: "engine" });
       window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
       setQuery("");
     }
@@ -147,7 +152,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const engineIndex = filteredTabs.length + bookmarkResults.length;
   const isLg = size === "lg";
 
-  const placeholder = collectionId
+  const placeholder = collectionId !== undefined
     ? t("search_placeholderCollection")
     : t("search_placeholderGlobal", engine?.name ?? "the web");
 

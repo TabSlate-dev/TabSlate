@@ -107,6 +107,7 @@ TabSlate/
 │   ├── chrome-storage-adapter.ts  # 通用 Zustand persist 的 chrome.storage 适配器（非 auth 用）
 │   ├── id.ts               # generateId()
 │   ├── bookmark-utils.ts   # normalizeFavicon()、findDuplicateBookmark()、normalizeUrl()、getNormalizedUrlSet()
+│   ├── analytics.ts        # 匿名分析模块；`analytics.init()` + `analytics.track(name, props?)`；fire-and-forget POST 到自部署 OpenPanel `/api/track`；两个 env var 均为空时 no-op；session ID 存 `chrome.storage.local["tabslate-analytics-id"]`
 │   └── chrome/
 │       ├── tabs.ts         # Chrome tabs API 封装
 │       └── tab-groups.ts   # Chrome tabGroups API 封装 + 颜色常量
@@ -353,6 +354,7 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 | `contextMenus` | 右键菜单"Save to TabSlate" |
 | `scripting` | 配合 `optional_host_permissions` 实现 SearchOverlay 的动态注入 |
 | `optional_host_permissions: <all_urls>` | 用户在设置中手动开启后，用于读取任意页面的 favicon 及挂载搜索浮层；规避安装时的全站权限警告 |
+| `host_permissions: [VITE_OPENPANEL_URL origin]` | 由 `wxt.config.ts` 的 `build:manifestGenerated` hook 在构建时按 env var 动态注入；让扩展页面（newtab/popup/background）可直接 fetch 分析接口而无 CORS 限制；env var 未设置时此项不存在 |
 | `web_accessible_resources: search-engine-icon/*` | 允许 Shadow DOM（content script 上下文）加载扩展内置的搜索引擎 SVG 图标 |
 | `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 发送 `OPEN_SEARCH` 唤起当前页搜索层 |
 

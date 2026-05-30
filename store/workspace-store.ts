@@ -8,6 +8,7 @@ import type { SyncPullResponse } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
+import { analytics } from "@/lib/analytics";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -435,6 +436,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       syncEngine?.enqueue({ workspaces: [toServerWorkspace(ws)], collections: [toServerCollection(defaultCol)] });
       usePlanStore.getState().incrementUsage("workspace");
       usePlanStore.getState().incrementUsage("collection");
+      analytics.track("workspace_created");
       return ws;
     }),
 
@@ -521,6 +523,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         idbPut("collections", col);
         syncEngine?.enqueue({ collections: [toServerCollection(col)] });
         usePlanStore.getState().incrementUsage("collection");
+        analytics.track("collection_created");
         return col;
       },
     ),

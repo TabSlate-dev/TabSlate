@@ -2,9 +2,12 @@ import { generateId } from "@/lib/id";
 import { idbPut } from "@/lib/idb";
 import { getAllTabs, focusTab } from "@/lib/chrome/tabs";
 import { searchBookmarks } from "@/lib/api";
+import { analytics } from "@/lib/analytics";
 import type { ExtensionMessage } from "@/lib/messages";
 
 export default defineBackground(() => {
+  void analytics.init();
+
   // Restrict session storage so content scripts cannot read it (Chrome 112+)
   chrome.storage.session.setAccessLevel({
     accessLevel: (chrome.storage.AccessLevel?.TRUSTED_CONTEXTS ?? "TRUSTED_CONTEXTS"),
@@ -35,6 +38,20 @@ export default defineBackground(() => {
   }
 
   chrome.runtime.onInstalled.addListener(syncContentScriptRegistration);
+  chrome.runtime.onInstalled.addListener((details) => {
+    const version = chrome.runtime.getManifest().version;
+
+    if (details.reason === "install") {
+      analytics.track("extension_installed", { version });
+    }
+
+    if (details.reason === "update") {
+      analytics.track("extension_updated", {
+        version,
+        previousVersion: details.previousVersion ?? "",
+      });
+    }
+  });
   chrome.runtime.onStartup.addListener(syncContentScriptRegistration);
   chrome.permissions.onAdded.addListener(syncContentScriptRegistration);
   chrome.permissions.onRemoved.addListener(syncContentScriptRegistration);

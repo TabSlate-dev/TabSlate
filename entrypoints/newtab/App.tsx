@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HashRouter, Routes, Route } from "react-router-dom";
+import { HashRouter, Route, Routes, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TabsDndProvider } from "@/components/dashboard/tabs-dnd-provider";
 import { WorkspaceRail } from "@/components/dashboard/workspace-rail";
@@ -24,9 +24,20 @@ import { useSettingsStore } from "@/store/settings-store";
 import { usePlanStore, type QuotaResource } from "@/store/plan-store";
 import { QuotaAlert } from "@/components/ui/quota-alert";
 import type { ExtensionMessage } from "@/lib/messages";
+import { analytics } from "@/lib/analytics";
 import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine, releaseSyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
+
+function PageTracker() {
+  const location = useLocation();
+
+  useEffect(() => {
+    analytics.track("page_view", { path: location.pathname });
+  }, [location.pathname]);
+
+  return null;
+}
 
 function Layout({
   title,
@@ -314,6 +325,7 @@ export default function App() {
           <SyncProvider>
             {(syncStatus, onForceSync, syncErrorMessage) => (
               <HashRouter>
+                <PageTracker />
                 <TabsDndProvider>
                   <Routes>
                     <Route

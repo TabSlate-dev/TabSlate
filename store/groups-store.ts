@@ -7,6 +7,7 @@ import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
+import { analytics } from "@/lib/analytics";
 
 export interface GroupTab {
   id: string;
@@ -127,6 +128,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       set((state) => ({ groups: [...state.groups, group] }));
       idbPut("groups", group);
       usePlanStore.getState().incrementUsage("saved_group");
+      analytics.track("group_saved");
       return id;
     }),
 

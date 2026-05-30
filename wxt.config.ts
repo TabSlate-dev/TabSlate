@@ -35,7 +35,17 @@ export default defineConfig({
     "build:manifestGenerated": (wxt, manifest) => {
       // Remove auto-generated host_permissions that conflict with optional_host_permissions
       delete manifest.host_permissions;
+
+      const openpanelUrl = process.env.VITE_OPENPANEL_URL;
+      if (!openpanelUrl) {
+        return;
+      }
+
+      try {
+        manifest.host_permissions = [`${new URL(openpanelUrl).origin}/*`];
+      } catch {
+        // Ignore invalid local config so the build still succeeds without analytics.
+      }
     },
   },
 });
-

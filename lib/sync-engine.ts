@@ -1,4 +1,5 @@
 import { api, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
+import { analytics } from "@/lib/analytics";
 import { SyncQueue } from "@/lib/sync-queue";
 import { SSEClient } from "@/lib/sse-client";
 
@@ -13,6 +14,13 @@ type OnStatusChange = (status: SyncStatus, errorMessage?: string) => void;
 
 const PERIODIC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const SSE_FAILURE_THRESHOLD = 3;
+
+function sanitizeSyncErrorMessage(errorMessage?: string): string {
+  const normalizedMessage = errorMessage ?? "unknown";
+  return normalizedMessage
+    .replace(/(access_token=)[^&\s]+/gi, "$1[redacted]")
+    .slice(0, 100);
+}
 
 /**
  * Orchestrates push (via SyncQueue), SSE real-time pull (via SSEClient),
@@ -184,12 +192,23 @@ export class SyncEngine {
   }
 
   private setStatus(s: SyncStatus, errorMessage?: string) {
-    this.lastErrorMessage = s === "error" ? (errorMessage ?? null) : null;
+    const nextErrorMessage = s === "error" ? (errorMessage ?? null) : null;
+    const shouldTrackError =
+      s === "error" &&
+      (this.status !== s || this.lastErrorMessage !== nextErrorMessage);
+
+    this.lastErrorMessage = nextErrorMessage;
     if (this.status !== s) {
       this.status = s;
       this.onStatusChange(s, this.lastErrorMessage ?? undefined);
     } else if (s === "error" && errorMessage !== undefined) {
       this.onStatusChange(s, errorMessage);
+    }
+
+    if (shouldTrackError) {
+      analytics.track("sync_error", {
+        message: sanitizeSyncErrorMessage(errorMessage),
+      });
     }
   }
 
