@@ -7,7 +7,7 @@ import {
   Check,
   Pencil,
   Trash2,
-  Tag,
+  Tag as TagIcon,
   Archive,
   GripVertical,
 } from "lucide-react";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { smartOpenUrl } from "@/lib/chrome/tabs";
-import type { Bookmark } from "@/lib/types";
+import type { Bookmark, Tag } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -28,6 +28,8 @@ import {
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { TagList } from "@/components/ui/tag-list";
 import { useTranslation } from "@/hooks/use-translation";
+
+const EMPTY_TAGS: Tag[] = [];
 
 interface BookmarkCardProps {
   bookmark: Bookmark;
@@ -55,7 +57,10 @@ export const BookmarkCard = React.memo(function BookmarkCard({
   
   const tags = useWorkspaceStore((s) => s.tags);
   const bookmarkTags = React.useMemo(
-    () => tags.filter((tag) => bookmark.tags.includes(tag.id)),
+    () =>
+      bookmark.tags.length === 0
+        ? EMPTY_TAGS
+        : tags.filter((tag) => bookmark.tags.includes(tag.id)),
     [tags, bookmark.tags]
   );
   const [copied, setCopied] = React.useState(false);
@@ -85,7 +90,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
         {t("bookmarkCard_edit")}
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => { setMenuOpen(false); onAddTags?.(bookmark); }}>
-        <Tag className="size-4 mr-2" />
+        <TagIcon className="size-4 mr-2" />
         {t("bookmarkCard_addTags")}
       </DropdownMenuItem>
       <DropdownMenuSeparator />

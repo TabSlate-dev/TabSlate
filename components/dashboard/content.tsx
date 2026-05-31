@@ -403,8 +403,7 @@ export function BookmarksContent() {
         if (row.type === "collection_header") {
           return `col-header-${row.collectionId}`;
         }
-        const ids = row.bookmarks.map((b) => b.id).join("_");
-        return `bookmarks-row-${viewMode}-${row.collectionId}-${row.rowIndex}-${ids}`;
+        return `bookmarks-row-${viewMode}-${row.collectionId}-${row.rowIndex}`;
       },
       [virtualRows, selectedCollection, hasActiveFilters, viewMode]
     ),
