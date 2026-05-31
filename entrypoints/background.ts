@@ -119,7 +119,7 @@ export default defineBackground(() => {
   let _broadcastTabChangeTimer: ReturnType<typeof setTimeout> | null = null;
   function broadcastTabChange() {
     if (_broadcastTabChangeTimer) {
-      return;
+      clearTimeout(_broadcastTabChangeTimer);
     }
     _broadcastTabChangeTimer = setTimeout(() => {
       _broadcastTabChangeTimer = null;
