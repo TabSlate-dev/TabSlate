@@ -10,7 +10,7 @@ import {
 import { SmartPointerSensor } from "@/lib/drag-sensors";
 import { useTabsStore } from "@/store/tabs-store";
 import { useGroupsStore } from "@/store/groups-store";
-import { bookmarksAsArray, bumpBookmarksRevision, useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { generateId } from "@/lib/id";
 import { TAB_GROUP_COLOR_KEYS, type TabGroupColor } from "@/lib/chrome/tab-groups";
@@ -151,7 +151,6 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         }));
 
         if (newBookmarks.length > 0) {
-          bumpBookmarksRevision();
           useBookmarksStore.setState((state) => ({
             bookmarks: (() => {
               const nextBookmarks = new Map<string, Bookmark>();

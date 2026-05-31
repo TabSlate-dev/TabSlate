@@ -20,20 +20,15 @@ interface TrashedBookmarkRecord extends Bookmark {
 }
 
 let _bookmarksArrayCache: Bookmark[] | null = null;
-let _bookmarksArrayRevSeen = -1;
-let _bookmarksRev = 0;
+let _bookmarksArrayCacheSource: Map<string, Bookmark> | null = null;
 
 export function bookmarksAsArray(map: Map<string, Bookmark>): Bookmark[] {
-  if (_bookmarksArrayRevSeen === _bookmarksRev && _bookmarksArrayCache !== null) {
+  if (_bookmarksArrayCacheSource === map && _bookmarksArrayCache !== null) {
     return _bookmarksArrayCache;
   }
   _bookmarksArrayCache = Array.from(map.values());
-  _bookmarksArrayRevSeen = _bookmarksRev;
+  _bookmarksArrayCacheSource = map;
   return _bookmarksArrayCache;
-}
-
-export function bumpBookmarksRevision(): void {
-  _bookmarksRev++;
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +213,6 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       reloadActive: async () => {
         const bookmarks = await readBookmarkStore("bookmarks");
-        _bookmarksRev++;
         set({ bookmarks: new Map(bookmarks.map((bookmark) => [bookmark.id, bookmark])) });
       },
 
@@ -267,7 +261,6 @@ export const useBookmarksStore = create<BookmarksState>()(
       },
 
       reset: () => {
-        _bookmarksRev++;
         set({
           bookmarks: new Map(),
           archivedBookmarks: [],
@@ -307,7 +300,6 @@ export const useBookmarksStore = create<BookmarksState>()(
             ...input,
             favicon: normalizeFavicon(input.favicon, input.url),
           };
-          _bookmarksRev++;
           set((state) => {
             const nextBookmarks = new Map<string, Bookmark>();
             nextBookmarks.set(bookmark.id, bookmark);
@@ -329,7 +321,6 @@ export const useBookmarksStore = create<BookmarksState>()(
       addBookmarks: (newBookmarks) =>
         guardQuota("bookmark", undefined, undefined, () => {
           const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
-          _bookmarksRev++;
           set((state) => {
             const nextBookmarks = new Map<string, Bookmark>();
             for (const bookmark of normalized) {
@@ -352,7 +343,6 @@ export const useBookmarksStore = create<BookmarksState>()(
       _bulkAddBookmarks: (newBookmarks) => {
         if (newBookmarks.length === 0) { return; }
         const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
-        _bookmarksRev++;
         set((state) => {
           const nextBookmarks = new Map<string, Bookmark>();
           for (const bookmark of normalized) {
@@ -375,7 +365,6 @@ export const useBookmarksStore = create<BookmarksState>()(
         const activeBookmark = state.bookmarks.get(id);
         if (activeBookmark) {
           const updated = { ...activeBookmark, ...patch };
-          _bookmarksRev++;
           set((current) => ({
             bookmarks: new Map(current.bookmarks).set(id, updated),
           }));
@@ -443,7 +432,6 @@ export const useBookmarksStore = create<BookmarksState>()(
         const bookmark = get().bookmarks.get(bookmarkId);
         if (!bookmark) { return; }
         const updated = { ...bookmark, isFavorite: !bookmark.isFavorite };
-        _bookmarksRev++;
         set((state) => ({
           bookmarks: new Map(state.bookmarks).set(bookmarkId, updated),
         }));
@@ -457,7 +445,6 @@ export const useBookmarksStore = create<BookmarksState>()(
         idbDelete("bookmarks", bookmarkId);
         idbPut("archived-bookmarks", bookmark);
         syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark, { isArchived: true })] });
-        _bookmarksRev++;
         set((state) => {
           const nextBookmarks = new Map(state.bookmarks);
           nextBookmarks.delete(bookmarkId);
@@ -477,7 +464,6 @@ export const useBookmarksStore = create<BookmarksState>()(
           idbDelete("archived-bookmarks", bookmarkId);
           idbPut("bookmarks", bookmark);
           syncEngine?.enqueue({ bookmarks: [toServerBookmark(bookmark)] });
-          _bookmarksRev++;
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             nextBookmarks.set(bookmark.id, bookmark);
@@ -497,7 +483,6 @@ export const useBookmarksStore = create<BookmarksState>()(
           await idbDelete("archived-bookmarks", bookmarkId);
           await idbPut("bookmarks", archived);
           syncEngine?.enqueue({ bookmarks: [toServerBookmark(archived)] });
-          _bookmarksRev++;
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             nextBookmarks.set(archived.id, archived);
@@ -518,7 +503,6 @@ export const useBookmarksStore = create<BookmarksState>()(
         idbDelete("bookmarks", bookmarkId);
         idbPut("trashed-bookmarks", trashed);
         syncEngine?.enqueue({ bookmarks: [toServerBookmark(trashed, { isTrashed: 1 })] });
-        _bookmarksRev++;
         set((state) => {
           const nextBookmarks = new Map(state.bookmarks);
           nextBookmarks.delete(bookmarkId);
@@ -541,7 +525,6 @@ export const useBookmarksStore = create<BookmarksState>()(
           idbDelete("trashed-bookmarks", bookmarkId);
           idbPut("bookmarks", restored);
           syncEngine?.enqueue({ bookmarks: [toServerBookmark(restored)] });
-          _bookmarksRev++;
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             nextBookmarks.set(restored.id, restored);
@@ -564,7 +547,6 @@ export const useBookmarksStore = create<BookmarksState>()(
           await idbDelete("trashed-bookmarks", bookmarkId);
           await idbPut("bookmarks", restored);
           syncEngine?.enqueue({ bookmarks: [toServerBookmark(restored)] });
-          _bookmarksRev++;
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             nextBookmarks.set(restored.id, restored);
@@ -844,10 +826,6 @@ export const useBookmarksStore = create<BookmarksState>()(
             newTrashed.length !== current.trashedBookmarks.length ||
             newTrashed.some((bookmark, index) => bookmark !== current.trashedBookmarks[index]);
 
-          if (activeChanged) {
-            _bookmarksRev++;
-          }
-
           return {
             bookmarks: activeChanged ? nextBookmarks : current.bookmarks,
             archivedBookmarks: current._archivedLoaded
@@ -904,7 +882,6 @@ export const useBookmarksStore = create<BookmarksState>()(
         ];
         void idbBulkWrite(ops);
         syncEngine?.enqueue({ bookmarks: affected.map((b) => toServerBookmark(b, { isArchived: true })) });
-        _bookmarksRev++;
         set((state) => {
           const nextBookmarks = new Map(state.bookmarks);
           for (const bookmark of affected) {
@@ -935,9 +912,6 @@ export const useBookmarksStore = create<BookmarksState>()(
           ];
           await idbBulkWrite(ops);
           syncEngine?.enqueue({ bookmarks: trashed.map((bookmark) => toServerBookmark(bookmark, { isTrashed: 1 })) });
-          if (active.length > 0) {
-            _bookmarksRev++;
-          }
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             for (const bookmark of active) {
@@ -975,7 +949,6 @@ export const useBookmarksStore = create<BookmarksState>()(
           ];
           await idbBulkWrite(ops);
           syncEngine?.enqueue({ bookmarks: all.map((b) => toServerBookmark(b)) });
-          _bookmarksRev++;
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             for (const bookmark of all) {
@@ -1032,7 +1005,6 @@ export const useBookmarksStore = create<BookmarksState>()(
         const updated = affected.map(b => ({ ...b, collectionId: toId }));
         void idbBulkWrite(updated.map(b => ({ type: "put" as const, store: "bookmarks" as const, value: b })));
         syncEngine?.enqueue({ bookmarks: updated.map(b => toServerBookmark(b)) });
-        _bookmarksRev++;
         set((state) => {
           const nextBookmarks = new Map(state.bookmarks);
           for (const bookmark of updated) {
