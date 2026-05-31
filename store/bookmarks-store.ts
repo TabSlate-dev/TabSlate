@@ -277,7 +277,7 @@ export const useBookmarksStore = create<BookmarksState>()(
         const faviconMigrated = await idbGet<{ key: string; value: boolean }>("kv", "favicon-migrated-bookmarks-v1");
         const bookmarks = faviconMigrated?.value ? await idbGetAll<Bookmark>("bookmarks") : await readBookmarkStore("bookmarks");
         if (!faviconMigrated?.value) {
-          void idbPut("kv", { key: "favicon-migrated-bookmarks-v1", value: true });
+          await idbPut("kv", { key: "favicon-migrated-bookmarks-v1", value: true });
         }
         const map = new Map(bookmarks.map((bookmark) => [bookmark.id, bookmark]));
         set({
@@ -382,13 +382,8 @@ export const useBookmarksStore = create<BookmarksState>()(
             favicon: normalizeFavicon(input.favicon, input.url),
           };
           set((state) => {
-            const nextBookmarks = new Map<string, Bookmark>();
+            const nextBookmarks = new Map(state.bookmarks);
             nextBookmarks.set(bookmark.id, bookmark);
-            for (const [existingId, existingBookmark] of state.bookmarks) {
-              if (!nextBookmarks.has(existingId)) {
-                nextBookmarks.set(existingId, existingBookmark);
-              }
-            }
             const nextCounts = { ...state.countsByCollection };
             incrementCollectionCount(nextCounts, bookmark.collectionId);
             return {
@@ -481,24 +476,14 @@ export const useBookmarksStore = create<BookmarksState>()(
         const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
         const effectiveIncomingValues = Array.from(effectiveIncoming.values());
         set((state) => {
-          const nextBookmarks = new Map<string, Bookmark>();
-          for (const bookmark of effectiveIncomingValues) {
-            nextBookmarks.set(bookmark.id, bookmark);
-          }
-          for (const [existingId, existingBookmark] of state.bookmarks) {
-            if (!nextBookmarks.has(existingId)) {
-              nextBookmarks.set(existingId, existingBookmark);
-            }
-          }
+          const nextBookmarks = new Map(state.bookmarks);
           const nextCounts = { ...state.countsByCollection };
           for (const bookmark of effectiveIncomingValues) {
-            const bookmarkId = bookmark.id;
-            const existingBookmark = state.bookmarks.get(bookmarkId);
+            const existingBookmark = state.bookmarks.get(bookmark.id);
+            nextBookmarks.set(bookmark.id, bookmark);
             if (!existingBookmark) {
               incrementCollectionCount(nextCounts, bookmark.collectionId);
-              continue;
-            }
-            if (existingBookmark.collectionId !== bookmark.collectionId) {
+            } else if (existingBookmark.collectionId !== bookmark.collectionId) {
               decrementCollectionCount(nextCounts, existingBookmark.collectionId);
               incrementCollectionCount(nextCounts, bookmark.collectionId);
             }

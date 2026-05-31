@@ -119,7 +119,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
           return fixed;
         });
     if (!faviconMigrated?.value) {
-      void idbPut("kv", { key: "favicon-migrated-groups-v1", value: true });
+      await idbPut("kv", { key: "favicon-migrated-groups-v1", value: true });
     }
     set({ groups, groupTabs: migratedTabs, _hydrated: true });
   },
