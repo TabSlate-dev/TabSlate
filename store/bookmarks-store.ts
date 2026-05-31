@@ -401,56 +401,75 @@ export const useBookmarksStore = create<BookmarksState>()(
         });
       },
 
-      addBookmarks: (newBookmarks) =>
-        guardQuota("bookmark", undefined, undefined, () => {
-          const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
-          const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
-          const effectiveIncomingValues = Array.from(effectiveIncoming.values());
-          let usageDelta = 0;
-          set((state) => {
-            const nextBookmarks = new Map<string, Bookmark>();
-            for (const bookmark of effectiveIncomingValues) {
-              nextBookmarks.set(bookmark.id, bookmark);
-            }
-            for (const [existingId, existingBookmark] of state.bookmarks) {
-              if (!nextBookmarks.has(existingId)) {
-                nextBookmarks.set(existingId, existingBookmark);
-              }
-            }
-            const nextCounts = { ...state.countsByCollection };
-            for (const bookmark of effectiveIncomingValues) {
-              const bookmarkId = bookmark.id;
-              const existingBookmark = state.bookmarks.get(bookmarkId);
-              if (!existingBookmark) {
-                incrementCollectionCount(nextCounts, bookmark.collectionId);
-                usageDelta += 1;
-                continue;
-              }
-              if (existingBookmark.collectionId !== bookmark.collectionId) {
-                decrementCollectionCount(nextCounts, existingBookmark.collectionId);
-                incrementCollectionCount(nextCounts, bookmark.collectionId);
-              }
-            }
-            return {
-              bookmarks: nextBookmarks,
-              countsByCollection: nextCounts,
-            };
-          });
-          assertCountsInvariant(get());
-          void idbBulkWrite(
-            effectiveIncomingValues.map((bookmark) => ({
-              type: "put" as const,
-              store: "bookmarks" as const,
-              value: bookmark,
-            })),
-          );
-          if (effectiveIncomingValues.length > 0) {
-            syncEngine?.enqueue({ bookmarks: effectiveIncomingValues.map((bookmark) => toServerBookmark(bookmark)) });
+      addBookmarks: (newBookmarks) => {
+        const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
+        const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
+        const effectiveIncomingValues = Array.from(effectiveIncoming.values());
+        const activeBookmarks = get().bookmarks;
+        const effectiveGrowth = effectiveIncomingValues.reduce((count, bookmark) => {
+          return activeBookmarks.has(bookmark.id) ? count : count + 1;
+        }, 0);
+
+        const planStore = usePlanStore.getState();
+        planStore.ensureFresh();
+        const { limits, usage } = planStore;
+        const maxBookmarks = limits?.max_bookmarks;
+        if (
+          effectiveGrowth > 0 &&
+          maxBookmarks !== undefined &&
+          maxBookmarks !== -1 &&
+          usage !== null &&
+          usage.bookmarks + effectiveGrowth > maxBookmarks
+        ) {
+          planStore.showQuotaAlert("bookmark");
+          return;
+        }
+
+        let usageDelta = 0;
+        set((state) => {
+          const nextBookmarks = new Map<string, Bookmark>();
+          for (const bookmark of effectiveIncomingValues) {
+            nextBookmarks.set(bookmark.id, bookmark);
           }
-          if (usageDelta > 0) {
-            usePlanStore.getState().incrementUsage("bookmark", usageDelta);
+          for (const [existingId, existingBookmark] of state.bookmarks) {
+            if (!nextBookmarks.has(existingId)) {
+              nextBookmarks.set(existingId, existingBookmark);
+            }
           }
-        }),
+          const nextCounts = { ...state.countsByCollection };
+          for (const bookmark of effectiveIncomingValues) {
+            const bookmarkId = bookmark.id;
+            const existingBookmark = state.bookmarks.get(bookmarkId);
+            if (!existingBookmark) {
+              incrementCollectionCount(nextCounts, bookmark.collectionId);
+              usageDelta += 1;
+              continue;
+            }
+            if (existingBookmark.collectionId !== bookmark.collectionId) {
+              decrementCollectionCount(nextCounts, existingBookmark.collectionId);
+              incrementCollectionCount(nextCounts, bookmark.collectionId);
+            }
+          }
+          return {
+            bookmarks: nextBookmarks,
+            countsByCollection: nextCounts,
+          };
+        });
+        assertCountsInvariant(get());
+        void idbBulkWrite(
+          effectiveIncomingValues.map((bookmark) => ({
+            type: "put" as const,
+            store: "bookmarks" as const,
+            value: bookmark,
+          })),
+        );
+        if (effectiveIncomingValues.length > 0) {
+          syncEngine?.enqueue({ bookmarks: effectiveIncomingValues.map((bookmark) => toServerBookmark(bookmark)) });
+        }
+        if (usageDelta > 0) {
+          usePlanStore.getState().incrementUsage("bookmark", usageDelta);
+        }
+      },
 
       _bulkAddBookmarks: (newBookmarks) => {
         if (newBookmarks.length === 0) { return; }
@@ -494,7 +513,7 @@ export const useBookmarksStore = create<BookmarksState>()(
           })),
         );
         syncEngine?.enqueue({ bookmarks: effectiveIncomingValues.map((bookmark) => toServerBookmark(bookmark)) });
-        analytics.track("bookmark_imported", { count: normalized.length });
+        analytics.track("bookmark_imported", { count: effectiveIncomingValues.length });
       },
 
       updateBookmark: (id, patch) => {
