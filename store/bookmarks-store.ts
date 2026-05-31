@@ -39,15 +39,63 @@ function recomputeCounts(map: Map<string, Bookmark>): Record<string, number> {
   return counts;
 }
 
+function incrementCollectionCount(counts: Record<string, number>, collectionId: string, delta = 1): void {
+  if (delta <= 0) {
+    return;
+  }
+  counts[collectionId] = (counts[collectionId] ?? 0) + delta;
+}
+
+function decrementCollectionCount(counts: Record<string, number>, collectionId: string, delta = 1): void {
+  if (delta <= 0) {
+    return;
+  }
+  const nextValue = (counts[collectionId] ?? 0) - delta;
+  if (nextValue <= 0) {
+    delete counts[collectionId];
+    return;
+  }
+  counts[collectionId] = nextValue;
+}
+
+function setCollectionCount(counts: Record<string, number>, collectionId: string, value: number): void {
+  if (value <= 0) {
+    delete counts[collectionId];
+    return;
+  }
+  counts[collectionId] = value;
+}
+
+function buildEffectiveIncomingBookmarks(bookmarks: Bookmark[]): Map<string, Bookmark> {
+  const effectiveBookmarks = new Map<string, Bookmark>();
+  for (const bookmark of bookmarks) {
+    effectiveBookmarks.set(bookmark.id, bookmark);
+  }
+  return effectiveBookmarks;
+}
+
 function assertCountsInvariant(
   state: { bookmarks: Map<string, Bookmark>; countsByCollection: Record<string, number> },
 ): void {
   if (!import.meta.env.DEV) {
     return;
   }
-  const sum = Object.values(state.countsByCollection).reduce((a, b) => a + b, 0);
-  if (sum !== state.bookmarks.size) {
-    throw new Error(`countsByCollection drift: sum=${sum}, bookmarks.size=${state.bookmarks.size}`);
+  const expected = recomputeCounts(state.bookmarks);
+  const actualEntries = Object.entries(state.countsByCollection).sort(([a], [b]) => a.localeCompare(b));
+  const expectedEntries = Object.entries(expected).sort(([a], [b]) => a.localeCompare(b));
+  if (actualEntries.length !== expectedEntries.length) {
+    throw new Error(
+      `countsByCollection drift: expected ${JSON.stringify(expected)}, got ${JSON.stringify(state.countsByCollection)}`,
+    );
+  }
+  for (let index = 0; index < expectedEntries.length; index += 1) {
+    const [expectedKey, expectedValue] = expectedEntries[index];
+    const [actualKey, actualValue] = actualEntries[index];
+    if (expectedKey !== actualKey || expectedValue !== actualValue) {
+      throw new Error(
+        `countsByCollection drift: expected ${JSON.stringify(expected)}, got ${JSON.stringify(state.countsByCollection)}`,
+      );
+    }
   }
 }
 
@@ -337,12 +385,11 @@ export const useBookmarksStore = create<BookmarksState>()(
                 nextBookmarks.set(existingId, existingBookmark);
               }
             }
+            const nextCounts = { ...state.countsByCollection };
+            incrementCollectionCount(nextCounts, bookmark.collectionId);
             return {
               bookmarks: nextBookmarks,
-              countsByCollection: {
-                ...state.countsByCollection,
-                [bookmark.collectionId]: (state.countsByCollection[bookmark.collectionId] ?? 0) + 1,
-              },
+              countsByCollection: nextCounts,
             };
           });
           assertCountsInvariant(get());
@@ -358,8 +405,9 @@ export const useBookmarksStore = create<BookmarksState>()(
         guardQuota("bookmark", undefined, undefined, () => {
           const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
           set((state) => {
+            const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
             const nextBookmarks = new Map<string, Bookmark>();
-            for (const bookmark of normalized) {
+            for (const bookmark of effectiveIncoming.values()) {
               nextBookmarks.set(bookmark.id, bookmark);
             }
             for (const [existingId, existingBookmark] of state.bookmarks) {
@@ -368,8 +416,16 @@ export const useBookmarksStore = create<BookmarksState>()(
               }
             }
             const nextCounts = { ...state.countsByCollection };
-            for (const bookmark of normalized) {
-              nextCounts[bookmark.collectionId] = (nextCounts[bookmark.collectionId] ?? 0) + 1;
+            for (const [bookmarkId, bookmark] of effectiveIncoming) {
+              const existingBookmark = state.bookmarks.get(bookmarkId);
+              if (!existingBookmark) {
+                incrementCollectionCount(nextCounts, bookmark.collectionId);
+                continue;
+              }
+              if (existingBookmark.collectionId !== bookmark.collectionId) {
+                decrementCollectionCount(nextCounts, existingBookmark.collectionId);
+                incrementCollectionCount(nextCounts, bookmark.collectionId);
+              }
             }
             return {
               bookmarks: nextBookmarks,
@@ -388,8 +444,9 @@ export const useBookmarksStore = create<BookmarksState>()(
         if (newBookmarks.length === 0) { return; }
         const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
         set((state) => {
+          const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
           const nextBookmarks = new Map<string, Bookmark>();
-          for (const bookmark of normalized) {
+          for (const bookmark of effectiveIncoming.values()) {
             nextBookmarks.set(bookmark.id, bookmark);
           }
           for (const [existingId, existingBookmark] of state.bookmarks) {
@@ -398,8 +455,16 @@ export const useBookmarksStore = create<BookmarksState>()(
             }
           }
           const nextCounts = { ...state.countsByCollection };
-          for (const bookmark of normalized) {
-            nextCounts[bookmark.collectionId] = (nextCounts[bookmark.collectionId] ?? 0) + 1;
+          for (const [bookmarkId, bookmark] of effectiveIncoming) {
+            const existingBookmark = state.bookmarks.get(bookmarkId);
+            if (!existingBookmark) {
+              incrementCollectionCount(nextCounts, bookmark.collectionId);
+              continue;
+            }
+            if (existingBookmark.collectionId !== bookmark.collectionId) {
+              decrementCollectionCount(nextCounts, existingBookmark.collectionId);
+              incrementCollectionCount(nextCounts, bookmark.collectionId);
+            }
           }
           return {
             bookmarks: nextBookmarks,
@@ -420,11 +485,8 @@ export const useBookmarksStore = create<BookmarksState>()(
           set((current) => {
             const nextCounts = { ...current.countsByCollection };
             if (patch.collectionId !== undefined && patch.collectionId !== activeBookmark.collectionId) {
-              nextCounts[activeBookmark.collectionId] = Math.max(
-                0,
-                (nextCounts[activeBookmark.collectionId] ?? 0) - 1,
-              );
-              nextCounts[patch.collectionId] = (nextCounts[patch.collectionId] ?? 0) + 1;
+              decrementCollectionCount(nextCounts, activeBookmark.collectionId);
+              incrementCollectionCount(nextCounts, patch.collectionId);
             }
             return {
               bookmarks: new Map(current.bookmarks).set(id, updated),
@@ -512,12 +574,11 @@ export const useBookmarksStore = create<BookmarksState>()(
         set((state) => {
           const nextBookmarks = new Map(state.bookmarks);
           nextBookmarks.delete(bookmarkId);
+          const nextCounts = { ...state.countsByCollection };
+          decrementCollectionCount(nextCounts, bookmark.collectionId);
           return {
             bookmarks: nextBookmarks,
-            countsByCollection: {
-              ...state.countsByCollection,
-              [bookmark.collectionId]: Math.max(0, (state.countsByCollection[bookmark.collectionId] ?? 0) - 1),
-            },
+            countsByCollection: nextCounts,
             archivedBookmarks: state._archivedLoaded ? [...state.archivedBookmarks, bookmark] : state.archivedBookmarks,
           };
         });
@@ -536,13 +597,12 @@ export const useBookmarksStore = create<BookmarksState>()(
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             nextBookmarks.set(bookmark.id, bookmark);
+            const nextCounts = { ...current.countsByCollection };
+            incrementCollectionCount(nextCounts, bookmark.collectionId);
             return {
               archivedBookmarks: current.archivedBookmarks.filter((candidate) => candidate.id !== bookmarkId),
               bookmarks: nextBookmarks,
-              countsByCollection: {
-                ...current.countsByCollection,
-                [bookmark.collectionId]: (current.countsByCollection[bookmark.collectionId] ?? 0) + 1,
-              },
+              countsByCollection: nextCounts,
             };
           });
           assertCountsInvariant(get());
@@ -560,15 +620,14 @@ export const useBookmarksStore = create<BookmarksState>()(
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             nextBookmarks.set(archived.id, archived);
+            const nextCounts = { ...current.countsByCollection };
+            incrementCollectionCount(nextCounts, archived.collectionId);
             return {
               archivedBookmarks: current._archivedLoaded
                 ? current.archivedBookmarks.filter((candidate) => candidate.id !== bookmarkId)
                 : current.archivedBookmarks,
               bookmarks: nextBookmarks,
-              countsByCollection: {
-                ...current.countsByCollection,
-                [archived.collectionId]: (current.countsByCollection[archived.collectionId] ?? 0) + 1,
-              },
+              countsByCollection: nextCounts,
             };
           });
           assertCountsInvariant(get());
@@ -585,12 +644,11 @@ export const useBookmarksStore = create<BookmarksState>()(
         set((state) => {
           const nextBookmarks = new Map(state.bookmarks);
           nextBookmarks.delete(bookmarkId);
+          const nextCounts = { ...state.countsByCollection };
+          decrementCollectionCount(nextCounts, bookmark.collectionId);
           return {
             bookmarks: nextBookmarks,
-            countsByCollection: {
-              ...state.countsByCollection,
-              [bookmark.collectionId]: Math.max(0, (state.countsByCollection[bookmark.collectionId] ?? 0) - 1),
-            },
+            countsByCollection: nextCounts,
             trashedBookmarks: state._trashedLoaded ? [...state.trashedBookmarks, trashed] : state.trashedBookmarks,
           };
         });
@@ -612,13 +670,12 @@ export const useBookmarksStore = create<BookmarksState>()(
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             nextBookmarks.set(restored.id, restored);
+            const nextCounts = { ...current.countsByCollection };
+            incrementCollectionCount(nextCounts, restored.collectionId);
             return {
               trashedBookmarks: current.trashedBookmarks.filter((candidate) => candidate.id !== bookmarkId),
               bookmarks: nextBookmarks,
-              countsByCollection: {
-                ...current.countsByCollection,
-                [restored.collectionId]: (current.countsByCollection[restored.collectionId] ?? 0) + 1,
-              },
+              countsByCollection: nextCounts,
             };
           });
           assertCountsInvariant(get());
@@ -639,15 +696,14 @@ export const useBookmarksStore = create<BookmarksState>()(
           set((current) => {
             const nextBookmarks = new Map(current.bookmarks);
             nextBookmarks.set(restored.id, restored);
+            const nextCounts = { ...current.countsByCollection };
+            incrementCollectionCount(nextCounts, restored.collectionId);
             return {
               trashedBookmarks: current._trashedLoaded
                 ? current.trashedBookmarks.filter((candidate) => candidate.id !== bookmarkId)
                 : current.trashedBookmarks,
               bookmarks: nextBookmarks,
-              countsByCollection: {
-                ...current.countsByCollection,
-                [restored.collectionId]: (current.countsByCollection[restored.collectionId] ?? 0) + 1,
-              },
+              countsByCollection: nextCounts,
             };
           });
           assertCountsInvariant(get());
@@ -984,12 +1040,11 @@ export const useBookmarksStore = create<BookmarksState>()(
           for (const bookmark of affected) {
             nextBookmarks.delete(bookmark.id);
           }
+          const nextCounts = { ...state.countsByCollection };
+          setCollectionCount(nextCounts, collectionId, 0);
           return {
             bookmarks: nextBookmarks,
-            countsByCollection: {
-              ...state.countsByCollection,
-              [collectionId]: 0,
-            },
+            countsByCollection: nextCounts,
             archivedBookmarks: state._archivedLoaded ? [...state.archivedBookmarks, ...affected] : state.archivedBookmarks,
           };
         });
@@ -1019,12 +1074,11 @@ export const useBookmarksStore = create<BookmarksState>()(
             for (const bookmark of active) {
               nextBookmarks.delete(bookmark.id);
             }
+            const nextCounts = { ...current.countsByCollection };
+            setCollectionCount(nextCounts, collectionId, 0);
             return {
               bookmarks: nextBookmarks,
-              countsByCollection: {
-                ...current.countsByCollection,
-                [collectionId]: 0,
-              },
+              countsByCollection: nextCounts,
               archivedBookmarks: current._archivedLoaded
                 ? current.archivedBookmarks.filter((bookmark) => bookmark.collectionId !== collectionId)
                 : current.archivedBookmarks,
@@ -1061,6 +1115,8 @@ export const useBookmarksStore = create<BookmarksState>()(
             for (const bookmark of all) {
               nextBookmarks.set(bookmark.id, bookmark);
             }
+            const nextCounts = { ...current.countsByCollection };
+            incrementCollectionCount(nextCounts, collectionId, all.length);
             return {
               archivedBookmarks: current._archivedLoaded
                 ? current.archivedBookmarks.filter((b) => b.collectionId !== collectionId)
@@ -1069,10 +1125,7 @@ export const useBookmarksStore = create<BookmarksState>()(
                 ? current.trashedBookmarks.filter((b) => b.collectionId !== collectionId)
                 : current.trashedBookmarks,
               bookmarks: nextBookmarks,
-              countsByCollection: {
-                ...current.countsByCollection,
-                [collectionId]: (current.countsByCollection[collectionId] ?? 0) + all.length,
-              },
+              countsByCollection: nextCounts,
             };
           });
           assertCountsInvariant(get());
@@ -1122,13 +1175,12 @@ export const useBookmarksStore = create<BookmarksState>()(
           for (const bookmark of updated) {
             nextBookmarks.set(bookmark.id, bookmark);
           }
+          const nextCounts = { ...state.countsByCollection };
+          decrementCollectionCount(nextCounts, fromId, updated.length);
+          incrementCollectionCount(nextCounts, toId, updated.length);
           return {
             bookmarks: nextBookmarks,
-            countsByCollection: {
-              ...state.countsByCollection,
-              [fromId]: Math.max(0, (state.countsByCollection[fromId] ?? 0) - updated.length),
-              [toId]: (state.countsByCollection[toId] ?? 0) + updated.length,
-            },
+            countsByCollection: nextCounts,
           };
         });
         assertCountsInvariant(get());
