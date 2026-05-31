@@ -274,7 +274,11 @@ export const useBookmarksStore = create<BookmarksState>()(
       _archivedLoaded: false,
       _trashedLoaded: false,
       hydrate: async () => {
-        const bookmarks = await readBookmarkStore("bookmarks");
+        const faviconMigrated = await idbGet<{ key: string; value: boolean }>("kv", "favicon-migrated-bookmarks-v1");
+        const bookmarks = faviconMigrated?.value ? await idbGetAll<Bookmark>("bookmarks") : await readBookmarkStore("bookmarks");
+        if (!faviconMigrated?.value) {
+          void idbPut("kv", { key: "favicon-migrated-bookmarks-v1", value: true });
+        }
         const map = new Map(bookmarks.map((bookmark) => [bookmark.id, bookmark]));
         set({
           bookmarks: map,

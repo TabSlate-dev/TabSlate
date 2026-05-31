@@ -31,9 +31,28 @@ import { Loader2 } from "lucide-react";
 
 function PageTracker() {
   const location = useLocation();
+  const lastPathRef = useRef<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    analytics.track("page_view", { path: location.pathname });
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+
+    const path = location.pathname;
+    timerRef.current = setTimeout(() => {
+      if (lastPathRef.current === path) {
+        return;
+      }
+      lastPathRef.current = path;
+      analytics.track("page_view", { path });
+    }, 200);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
   }, [location.pathname]);
 
   return null;

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { openAsTabGroup } from "@/lib/chrome/tab-groups";
 import { generateId } from "@/lib/id";
-import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
+import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
@@ -107,12 +107,20 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       }
       return true;
     });
-    const migratedTabs = groupTabs.map((t): GroupTab => {
-      if (!t.favicon.startsWith("data:")) { return t; }
-      const fixed = { ...t, favicon: normalizeFavicon(t.favicon, t.url) };
-      idbPut("group-tabs", fixed);
-      return fixed;
-    });
+    const faviconMigrated = await idbGet<{ key: string; value: boolean }>("kv", "favicon-migrated-groups-v1");
+    const migratedTabs = faviconMigrated?.value
+      ? groupTabs
+      : groupTabs.map((t): GroupTab => {
+          if (!t.favicon.startsWith("data:")) {
+            return t;
+          }
+          const fixed = { ...t, favicon: normalizeFavicon(t.favicon, t.url) };
+          void idbPut("group-tabs", fixed);
+          return fixed;
+        });
+    if (!faviconMigrated?.value) {
+      void idbPut("kv", { key: "favicon-migrated-groups-v1", value: true });
+    }
     set({ groups, groupTabs: migratedTabs, _hydrated: true });
   },
 
