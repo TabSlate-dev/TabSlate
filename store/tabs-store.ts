@@ -208,8 +208,12 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   focusTab: async (tabId, windowId) => {
     await focusTab(tabId, windowId);
-    // Silent reload to update "active" state without unmounting components
-    await get().loadTabs(true);
+    set(state => ({
+      openTabs: state.openTabs.map(t => ({
+        ...t,
+        active: t.id === tabId && t.windowId === windowId,
+      })),
+    }));
   },
   
   ungroupSpecificTabs: async (tabIds) => {

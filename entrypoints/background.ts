@@ -116,8 +116,15 @@ export default defineBackground(() => {
   // -------------------------------------------------------------------------
   // Tab events — broadcast signal so newtab page can react
   // -------------------------------------------------------------------------
-  async function broadcastTabChange() {
-    chrome.runtime.sendMessage({ type: "TABS_CHANGED" } as ExtensionMessage).catch(() => {});
+  let _broadcastTabChangeTimer: ReturnType<typeof setTimeout> | null = null;
+  function broadcastTabChange() {
+    if (_broadcastTabChangeTimer) {
+      return;
+    }
+    _broadcastTabChangeTimer = setTimeout(() => {
+      _broadcastTabChangeTimer = null;
+      chrome.runtime.sendMessage({ type: "TABS_CHANGED" } as ExtensionMessage).catch(() => {});
+    }, 100);
   }
 
   chrome.tabs.onCreated.addListener(broadcastTabChange);
