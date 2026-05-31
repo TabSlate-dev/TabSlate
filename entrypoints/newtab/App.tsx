@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { HashRouter, Route, Routes, useLocation } from "react-router-dom";
+import { HashRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TabsDndProvider } from "@/components/dashboard/tabs-dnd-provider";
 import { WorkspaceRail } from "@/components/dashboard/workspace-rail";
@@ -39,19 +39,35 @@ function PageTracker() {
   return null;
 }
 
+const ROUTE_TITLES: Record<string, string> = {
+  "/favorites": "Favorites",
+  "/archive": "Archive",
+  "/trash": "Trash",
+  "/tabs": "Open Tabs",
+  "/groups": "Groups",
+};
+
+function useRouteTitle(): string | undefined {
+  const { pathname } = useLocation();
+
+  if (pathname.startsWith("/groups/")) {
+    return "Groups";
+  }
+
+  return ROUTE_TITLES[pathname];
+}
+
 function Layout({
-  title,
   syncStatus,
   syncErrorMessage,
   onForceSync,
-  children,
 }: {
-  title?: string;
   syncStatus: SyncStatus;
   syncErrorMessage?: string | null;
   onForceSync: () => void;
-  children: React.ReactNode;
 }) {
+  const title = useRouteTitle();
+
   return (
     <div className="flex h-svh overflow-hidden bg-sidebar">
       {/* Far-left workspace rail */}
@@ -74,7 +90,7 @@ function Layout({
             {/* Center content card */}
             <div className="flex-1 flex flex-col lg:border lg:rounded-lg bg-background overflow-hidden min-w-0">
               <BookmarksHeader title={title} />
-              {children}
+              <Outlet />
             </div>
 
             {/* Right open-tabs rail */}
@@ -331,51 +347,20 @@ export default function App() {
                     <Route
                       path="/"
                       element={
-                        <Layout syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <BookmarksContent />
-                        </Layout>
+                        <Layout
+                          syncStatus={syncStatus}
+                          syncErrorMessage={syncErrorMessage}
+                          onForceSync={onForceSync}
+                        />
                       }
-                    />
-                    <Route
-                      path="/favorites"
-                      element={
-                        <Layout title="Favorites" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <FavoritesContent />
-                        </Layout>
-                      }
-                    />
-                    <Route
-                      path="/archive"
-                      element={
-                        <Layout title="Archive" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <ArchiveContent />
-                        </Layout>
-                      }
-                    />
-                    <Route
-                      path="/trash"
-                      element={
-                        <Layout title="Trash" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <TrashContent />
-                        </Layout>
-                      }
-                    />
-                    <Route
-                      path="/tabs"
-                      element={
-                        <Layout title="Open Tabs" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <TabsPanel />
-                        </Layout>
-                      }
-                    />
-                    <Route
-                      path="/groups/:groupId"
-                      element={
-                        <Layout title="Groups" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <GroupDetail />
-                        </Layout>
-                      }
-                    />
+                    >
+                      <Route index element={<BookmarksContent />} />
+                      <Route path="favorites" element={<FavoritesContent />} />
+                      <Route path="archive" element={<ArchiveContent />} />
+                      <Route path="trash" element={<TrashContent />} />
+                      <Route path="tabs" element={<TabsPanel />} />
+                      <Route path="groups/:groupId" element={<GroupDetail />} />
+                    </Route>
                   </Routes>
                 </TabsDndProvider>
               </HashRouter>
