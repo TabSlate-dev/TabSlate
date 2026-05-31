@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { BookmarkCard } from "./bookmark-card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -8,7 +8,7 @@ import { useTranslation } from "@/hooks/use-translation";
 
 export function FavoritesContent() {
   const { t } = useTranslation();
-  const bookmarks = useBookmarksStore(s => s.bookmarks);
+  const bookmarks = useBookmarksStore(s => bookmarksAsArray(s.bookmarks));
   const viewMode = useBookmarksStore(s => s.viewMode);
 
   const collections = useWorkspaceStore(s => s.collections);

@@ -81,7 +81,8 @@ async function _saveTabsToCollectionHelper(
   if (!tabsToSave.length) { return { saved: 0, skipped: 0 }; }
 
   const { activeWorkspaceId, collections, createCollection } = useWorkspaceStore.getState();
-  const { bookmarks, addBookmarks } = useBookmarksStore.getState();
+  const { bookmarks: bookmarksMap, addBookmarks } = useBookmarksStore.getState();
+  const bookmarks = Array.from(bookmarksMap.values());
 
   const now = new Date().toISOString();
   const newBookmarksData: Omit<Bookmark, "collectionId">[] = [];
@@ -339,7 +340,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   openCollectionAsGroup: async (collectionId, title, color, compact) => {
-    const { bookmarks } = useBookmarksStore.getState();
+    const { bookmarks: bookmarksMap } = useBookmarksStore.getState();
+    const bookmarks = Array.from(bookmarksMap.values());
     const urls = bookmarks
       .filter((b) => b.collectionId === collectionId)
       .map((b) => b.url);
@@ -368,7 +370,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   openCollection: async (collectionId) => {
-    const { bookmarks } = useBookmarksStore.getState();
+    const { bookmarks: bookmarksMap } = useBookmarksStore.getState();
+    const bookmarks = Array.from(bookmarksMap.values());
     const urls = bookmarks
       .filter((b) => b.collectionId === collectionId)
       .map((b) => b.url);

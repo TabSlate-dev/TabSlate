@@ -10,12 +10,13 @@ import {
 import { SmartPointerSensor } from "@/lib/drag-sensors";
 import { useTabsStore } from "@/store/tabs-store";
 import { useGroupsStore } from "@/store/groups-store";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, bumpBookmarksRevision, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { generateId } from "@/lib/id";
 import { TAB_GROUP_COLOR_KEYS, type TabGroupColor } from "@/lib/chrome/tab-groups";
 import { findDuplicateBookmark } from "@/lib/bookmark-utils";
 import type { BrowserTab } from "@/lib/chrome/tabs";
+import type { Bookmark } from "@/lib/types";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { AlertCircle } from "lucide-react";
@@ -112,7 +113,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
 
       if (targetCollectionId) {
         const now = new Date().toISOString();
-        const { bookmarks: existing } = useBookmarksStore.getState();
+        const existing = bookmarksAsArray(useBookmarksStore.getState().bookmarks);
 
         const duplicates: number[] = [];
         const existingCollectionIds = new Set<string>();
@@ -150,8 +151,20 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         }));
 
         if (newBookmarks.length > 0) {
+          bumpBookmarksRevision();
           useBookmarksStore.setState((state) => ({
-            bookmarks: [...newBookmarks, ...state.bookmarks],
+            bookmarks: (() => {
+              const nextBookmarks = new Map<string, Bookmark>();
+              for (const bookmark of newBookmarks) {
+                nextBookmarks.set(bookmark.id, bookmark);
+              }
+              for (const [existingId, existingBookmark] of state.bookmarks) {
+                if (!nextBookmarks.has(existingId)) {
+                  nextBookmarks.set(existingId, existingBookmark);
+                }
+              }
+              return nextBookmarks;
+            })(),
           }));
         }
       }
@@ -187,7 +200,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
           targetCollectionId = defaultCol?.id ?? "";
         }
 
-        const bookmark = useBookmarksStore.getState().bookmarks.find(b => b.id === dragData.bookmarkId);
+        const bookmark = useBookmarksStore.getState().bookmarks.get(dragData.bookmarkId);
         if (bookmark && bookmark.collectionId === targetCollectionId) {
           showNotification("Already in this collection");
           return;

@@ -46,7 +46,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
@@ -187,7 +187,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const selectedTags = useBookmarksStore(s => s.selectedTags);
   const toggleTag = useBookmarksStore(s => s.toggleTag);
   const clearTags = useBookmarksStore(s => s.clearTags);
-  const bookmarks = useBookmarksStore(s => s.bookmarks);
+  const bookmarks = useBookmarksStore(s => bookmarksAsArray(s.bookmarks));
 
   const allGroups = useGroupsStore(s => s.groups);
   const deleteGroup = useGroupsStore(s => s.deleteGroup);

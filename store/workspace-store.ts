@@ -687,7 +687,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const planStore = usePlanStore.getState();
     planStore.ensureFresh();
 
-    const bookmarkCount = useBookmarksStore.getState().bookmarks.length;
+    const bookmarkCount = useBookmarksStore.getState().bookmarks.size;
     // Backend counts collections where is_deleted < 2, so active, archived,
     // and trashed entries all count. Only permanentlyDeleteCollection sends
     // is_deleted:2 and removes the entry from the local array, so

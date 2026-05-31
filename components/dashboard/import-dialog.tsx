@@ -16,7 +16,7 @@ import { buildChromeImportPlan, parseChromeHTML, validateChromeFile } from "@/li
 import { buildTobyImportPlan, parseTobyJSON, validateTobyFile } from "@/lib/import-toby";
 import type { ImportPlan, ValidationResult } from "@/lib/import-types";
 import { cn } from "@/lib/utils";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { usePlanStore } from "@/store/plan-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import {
@@ -168,7 +168,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
   const collections = useWorkspaceStore((state) => state.collections);
   const tags = useWorkspaceStore((state) => state.tags);
   const importFromPlan = useWorkspaceStore((state) => state.importFromPlan);
-  const bookmarks = useBookmarksStore((state) => state.bookmarks);
+  const bookmarks = useBookmarksStore((state) => bookmarksAsArray(state.bookmarks));
   const checkQuota = usePlanStore((state) => state.checkQuota);
 
   const activeWorkspaces = React.useMemo(

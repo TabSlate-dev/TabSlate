@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useTabsDndContext } from "./tabs-dnd-provider";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useTabDragDrop } from "@/hooks/use-tab-drag-drop";
 import { BookmarkCard } from "./bookmark-card";
@@ -202,7 +202,7 @@ export function BookmarksContent() {
   const filterType = useBookmarksStore(s => s.filterType);
   const setFilterType = useBookmarksStore(s => s.setFilterType);
   const sortBy = useBookmarksStore(s => s.sortBy);
-  const bookmarks = useBookmarksStore(s => s.bookmarks);
+  const bookmarks = useBookmarksStore(s => bookmarksAsArray(s.bookmarks));
   const searchQuery = useBookmarksStore(s => s.searchQuery);
   const getFilteredBookmarks = useBookmarksStore(s => s.getFilteredBookmarks);
 
