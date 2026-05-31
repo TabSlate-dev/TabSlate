@@ -133,7 +133,7 @@ function PopupContent() {
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <div className="flex items-center gap-2">
-          <div className="size-6 rounded-full bg-linear-to-br from-blue-400 via-indigo-500 to-violet-500" />
+          <img src="/wxt.svg" alt="TabSlate" className="size-6" />
           <span className="font-semibold text-sm">TabSlate</span>
         </div>
         <div className="flex items-center gap-1">

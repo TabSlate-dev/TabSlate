@@ -167,6 +167,21 @@
   "auth_registerDesc": {
     "message": "Enter your details below to create your account"
   },
+  "auth_registerTermsDesc1": {
+    "message": "By creating an account you accept the "
+  },
+  "auth_termsOfService": {
+    "message": "Terms of Service"
+  },
+  "auth_registerTermsDesc2": {
+    "message": " and "
+  },
+  "auth_privacyPolicy": {
+    "message": "Privacy Policy"
+  },
+  "auth_registerTermsDesc3": {
+    "message": "."
+  },
   "auth_name": {
     "message": "Name"
   },
@@ -204,7 +219,7 @@
     "message": "Server URL"
   },
   "auth_serverUrlDesc": {
-    "message": "For self-hosted TabSlate-server instances."
+    "message": "For self-hosted TabSlate Server instances."
   },
   "auth_password": {
     "message": "Password"

@@ -38,7 +38,7 @@ export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [mode, setMode] = React.useState<Mode>("login");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -354,9 +354,31 @@ export function LoginForm({
             {mode === "login" ? t("auth_loginTitle") : t("auth_registerTitle")}
           </h1>
           <p className="text-sm text-balance text-muted-foreground">
-            {mode === "login"
-              ? t("auth_loginDesc")
-              : t("auth_registerDesc")}
+            {mode === "login" ? (
+              t("auth_loginDesc")
+            ) : (
+              <>
+                {t("auth_registerTermsDesc1")}
+                <a
+                  href={`https://tabslate.com/${language === "zh_CN" ? "zh" : "en"}/terms`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4 hover:text-primary"
+                >
+                  {t("auth_termsOfService")}
+                </a>
+                {t("auth_registerTermsDesc2")}
+                <a
+                  href={`https://tabslate.com/${language === "zh_CN" ? "zh" : "en"}/privacy-policy`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4 hover:text-primary"
+                >
+                  {t("auth_privacyPolicy")}
+                </a>
+                {t("auth_registerTermsDesc3")}
+              </>
+            )}
           </p>
         </div>
 
@@ -535,7 +557,7 @@ export function LoginForm({
             <FieldLabel htmlFor="server-url">{t("auth_serverUrl")}</FieldLabel>
             <Input
               id="server-url"
-              placeholder="https://api.tabslate.app"
+              placeholder="https://api.tabslate.com"
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
             />

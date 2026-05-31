@@ -167,6 +167,21 @@
   "auth_registerDesc": {
     "message": "请填写以下信息以创建账号"
   },
+  "auth_registerTermsDesc1": {
+    "message": "创建账户即表示您同意 "
+  },
+  "auth_termsOfService": {
+    "message": "服务条款"
+  },
+  "auth_registerTermsDesc2": {
+    "message": " 和 "
+  },
+  "auth_privacyPolicy": {
+    "message": "隐私政策"
+  },
+  "auth_registerTermsDesc3": {
+    "message": "。"
+  },
   "auth_name": {
     "message": "名称"
   },
@@ -204,7 +219,7 @@
     "message": "服务器地址"
   },
   "auth_serverUrlDesc": {
-    "message": "适用于自托管 TabSlate 服务端实例。"
+    "message": "适用于自托管 TabSlate Server 实例。"
   },
   "auth_password": {
     "message": "密码"
