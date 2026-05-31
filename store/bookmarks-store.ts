@@ -301,7 +301,7 @@ export const useBookmarksStore = create<BookmarksState>()(
         guardQuota("bookmark", undefined, undefined, () => {
           const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
           set((s) => ({ bookmarks: [...normalized, ...s.bookmarks] }));
-          for (const b of normalized) { idbPut("bookmarks", b); }
+          void idbBulkWrite(normalized.map(b => ({ type: "put" as const, store: "bookmarks" as const, value: b })));
           if (normalized.length > 0) {
             syncEngine?.enqueue({ bookmarks: normalized.map((b) => toServerBookmark(b)) });
           }
@@ -312,7 +312,7 @@ export const useBookmarksStore = create<BookmarksState>()(
         if (newBookmarks.length === 0) { return; }
         const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
         set((s) => ({ bookmarks: [...normalized, ...s.bookmarks] }));
-        for (const b of normalized) { idbPut("bookmarks", b); }
+        void idbBulkWrite(normalized.map(b => ({ type: "put" as const, store: "bookmarks" as const, value: b })));
         syncEngine?.enqueue({ bookmarks: normalized.map(b => toServerBookmark(b)) });
         analytics.track("bookmark_imported", { count: normalized.length });
       },
@@ -911,7 +911,7 @@ export const useBookmarksStore = create<BookmarksState>()(
         const affected = get().bookmarks.filter(b => b.collectionId === fromId);
         if (affected.length === 0) { return; }
         const updated = affected.map(b => ({ ...b, collectionId: toId }));
-        for (const b of updated) { idbPut("bookmarks", b); }
+        void idbBulkWrite(updated.map(b => ({ type: "put" as const, store: "bookmarks" as const, value: b })));
         syncEngine?.enqueue({ bookmarks: updated.map(b => toServerBookmark(b)) });
         set((s) => ({
           bookmarks: s.bookmarks.map(b => b.collectionId === fromId ? { ...b, collectionId: toId } : b),

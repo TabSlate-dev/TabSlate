@@ -530,8 +530,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         });
       }
       const tombstonedCollections = new Map(colsToTombstone.map(c => [c.id, c]));
+      void idbBulkWrite(colsToTombstone.map(c => ({ type: "put" as const, store: "collections" as const, value: c })));
       for (const c of colsToTombstone) {
-        idbPut("collections", c);
         await useBookmarksStore.getState().trashCollectionBookmarks(c.id);
       }
       idbDelete("workspaces", id);
