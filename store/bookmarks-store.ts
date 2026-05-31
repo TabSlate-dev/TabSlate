@@ -404,10 +404,12 @@ export const useBookmarksStore = create<BookmarksState>()(
       addBookmarks: (newBookmarks) =>
         guardQuota("bookmark", undefined, undefined, () => {
           const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
+          const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
+          const effectiveIncomingValues = Array.from(effectiveIncoming.values());
+          let usageDelta = 0;
           set((state) => {
-            const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
             const nextBookmarks = new Map<string, Bookmark>();
-            for (const bookmark of effectiveIncoming.values()) {
+            for (const bookmark of effectiveIncomingValues) {
               nextBookmarks.set(bookmark.id, bookmark);
             }
             for (const [existingId, existingBookmark] of state.bookmarks) {
@@ -416,10 +418,12 @@ export const useBookmarksStore = create<BookmarksState>()(
               }
             }
             const nextCounts = { ...state.countsByCollection };
-            for (const [bookmarkId, bookmark] of effectiveIncoming) {
+            for (const bookmark of effectiveIncomingValues) {
+              const bookmarkId = bookmark.id;
               const existingBookmark = state.bookmarks.get(bookmarkId);
               if (!existingBookmark) {
                 incrementCollectionCount(nextCounts, bookmark.collectionId);
+                usageDelta += 1;
                 continue;
               }
               if (existingBookmark.collectionId !== bookmark.collectionId) {
@@ -433,20 +437,29 @@ export const useBookmarksStore = create<BookmarksState>()(
             };
           });
           assertCountsInvariant(get());
-          void idbBulkWrite(normalized.map(b => ({ type: "put" as const, store: "bookmarks" as const, value: b })));
-          if (normalized.length > 0) {
-            syncEngine?.enqueue({ bookmarks: normalized.map((b) => toServerBookmark(b)) });
+          void idbBulkWrite(
+            effectiveIncomingValues.map((bookmark) => ({
+              type: "put" as const,
+              store: "bookmarks" as const,
+              value: bookmark,
+            })),
+          );
+          if (effectiveIncomingValues.length > 0) {
+            syncEngine?.enqueue({ bookmarks: effectiveIncomingValues.map((bookmark) => toServerBookmark(bookmark)) });
           }
-          usePlanStore.getState().incrementUsage("bookmark", normalized.length);
+          if (usageDelta > 0) {
+            usePlanStore.getState().incrementUsage("bookmark", usageDelta);
+          }
         }),
 
       _bulkAddBookmarks: (newBookmarks) => {
         if (newBookmarks.length === 0) { return; }
         const normalized = newBookmarks.map((b) => ({ ...b, favicon: normalizeFavicon(b.favicon, b.url) }));
+        const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
+        const effectiveIncomingValues = Array.from(effectiveIncoming.values());
         set((state) => {
-          const effectiveIncoming = buildEffectiveIncomingBookmarks(normalized);
           const nextBookmarks = new Map<string, Bookmark>();
-          for (const bookmark of effectiveIncoming.values()) {
+          for (const bookmark of effectiveIncomingValues) {
             nextBookmarks.set(bookmark.id, bookmark);
           }
           for (const [existingId, existingBookmark] of state.bookmarks) {
@@ -455,7 +468,8 @@ export const useBookmarksStore = create<BookmarksState>()(
             }
           }
           const nextCounts = { ...state.countsByCollection };
-          for (const [bookmarkId, bookmark] of effectiveIncoming) {
+          for (const bookmark of effectiveIncomingValues) {
+            const bookmarkId = bookmark.id;
             const existingBookmark = state.bookmarks.get(bookmarkId);
             if (!existingBookmark) {
               incrementCollectionCount(nextCounts, bookmark.collectionId);
@@ -472,8 +486,14 @@ export const useBookmarksStore = create<BookmarksState>()(
           };
         });
         assertCountsInvariant(get());
-        void idbBulkWrite(normalized.map(b => ({ type: "put" as const, store: "bookmarks" as const, value: b })));
-        syncEngine?.enqueue({ bookmarks: normalized.map(b => toServerBookmark(b)) });
+        void idbBulkWrite(
+          effectiveIncomingValues.map((bookmark) => ({
+            type: "put" as const,
+            store: "bookmarks" as const,
+            value: bookmark,
+          })),
+        );
+        syncEngine?.enqueue({ bookmarks: effectiveIncomingValues.map((bookmark) => toServerBookmark(bookmark)) });
         analytics.track("bookmark_imported", { count: normalized.length });
       },
 
