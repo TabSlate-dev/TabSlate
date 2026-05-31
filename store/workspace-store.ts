@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Workspace, Collection, Tag } from "@/lib/types";
 import type { ImportPlan } from "@/lib/import-types";
 import { generateId } from "@/lib/id";
-import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
+import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
@@ -284,36 +284,54 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const permDeletedCollectionIds = new Set(
       resp.entities.collections.filter(c => c.is_deleted === 2).map(c => c.id)
     );
+    const existingWorkspaces = get().workspaces;
+    const existingCollections = get().collections;
+    const existingTags = get().tags;
+    const wsIdx = new Map<string, number>(existingWorkspaces.map((w, i) => [w.id, i]));
+    const colIdx = new Map<string, number>(existingCollections.map((c, i) => [c.id, i]));
+    const tagIdx = new Map<string, number>(existingTags.map((t, i) => [t.id, i]));
 
     set((state) => {
-      let workspaces = [...state.workspaces];
-      let collections = [...state.collections];
-      let tags = [...state.tags];
+      let workspaces = [...existingWorkspaces];
+      let collections = [...existingCollections];
+      let tags = [...existingTags];
+      const deletedWorkspaceIds = new Set<string>();
+      const deletedCollectionIds = new Set<string>();
+      const deletedTagIds = new Set<string>();
 
       for (const sw of resp.entities.workspaces) {
+        const idx = wsIdx.get(sw.id);
         if (sw.deleted_at) {
-          workspaces = workspaces.filter(w => w.id !== sw.id);
+          if (idx !== undefined) {
+            deletedWorkspaceIds.add(sw.id);
+          }
         } else {
-          const idx = workspaces.findIndex(w => w.id === sw.id);
-          if (idx === -1) {
+          if (idx === undefined) {
+            wsIdx.set(sw.id, workspaces.length);
             workspaces.push({ id: sw.id, name: sw.name, color: sw.color ?? "", position: sw.position, seq: sw.seq });
           } else {
             workspaces[idx] = { ...workspaces[idx], name: sw.name, color: sw.color ?? workspaces[idx].color, position: sw.position, seq: sw.seq };
           }
         }
       }
+      if (deletedWorkspaceIds.size > 0) {
+        workspaces = workspaces.filter(w => !deletedWorkspaceIds.has(w.id));
+      }
 
       for (const sc of resp.entities.collections) {
+        const idx = colIdx.get(sc.id);
         if (permDeletedCollectionIds.has(sc.id)) {
           // Permanently deleted on server — skip; IDB deletion happens after set() returns.
-          collections = collections.filter(c => c.id !== sc.id);
+          if (idx !== undefined) {
+            deletedCollectionIds.add(sc.id);
+          }
           continue;
         }
         if (sc.deleted_at) {
           // Server confirmed soft-delete — keep in collections with deletedAt so
           // TrashContent can still find and display the collection card.
-          const idx = collections.findIndex(c => c.id === sc.id);
-          if (idx === -1) {
+          if (idx === undefined) {
+            colIdx.set(sc.id, collections.length);
             collections.push({
               id: sc.id,
               workspaceId: sc.workspace_id ?? "",
@@ -328,8 +346,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
             collections[idx] = { ...collections[idx], seq: sc.seq, deletedAt: sc.deleted_at };
           }
         } else {
-          const idx = collections.findIndex(c => c.id === sc.id);
-          if (idx === -1) {
+          if (idx === undefined) {
+            colIdx.set(sc.id, collections.length);
             collections.push({
               id: sc.id,
               workspaceId: sc.workspace_id ?? "",
@@ -360,18 +378,27 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           }
         }
       }
+      if (deletedCollectionIds.size > 0) {
+        collections = collections.filter(c => !deletedCollectionIds.has(c.id));
+      }
 
       for (const st of resp.entities.tags) {
+        const idx = tagIdx.get(st.id);
         if (st.deleted_at) {
-          tags = tags.filter(t => t.id !== st.id);
+          if (idx !== undefined) {
+            deletedTagIds.add(st.id);
+          }
         } else {
-          const idx = tags.findIndex(t => t.id === st.id);
-          if (idx === -1) {
+          if (idx === undefined) {
+            tagIdx.set(st.id, tags.length);
             tags.push({ id: st.id, name: st.name, color: st.color ?? "", seq: st.seq });
           } else {
             tags[idx] = { ...tags[idx], name: st.name, color: st.color ?? tags[idx].color, seq: st.seq };
           }
         }
+      }
+      if (deletedTagIds.size > 0) {
+        tags = tags.filter(t => !deletedTagIds.has(t.id));
       }
 
       const sortedWs = [...workspaces].sort((a, b) => a.position - b.position);
@@ -382,22 +409,45 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       return { workspaces, collections, tags, activeWorkspaceId };
     });
 
-    // Sync IDB after Zustand state update (fire-and-forget)
-    const state = get();
-    idbPut("kv", { key: "activeWorkspaceId", value: state.activeWorkspaceId });
-    for (const w of state.workspaces) { idbPut("workspaces", w); }
-    for (const c of state.collections) { idbPut("collections", c); }
-    for (const t of state.tags) { idbPut("tags", t); }
+    const afterState = get();
+    const wsByIdAfter = new Map(afterState.workspaces.map(w => [w.id, w]));
+    const colByIdAfter = new Map(afterState.collections.map(c => [c.id, c]));
+    const tagByIdAfter = new Map(afterState.tags.map(t => [t.id, t]));
+
+    const idbOps: BulkWriteOp[] = [
+      { type: "put", store: "kv", value: { key: "activeWorkspaceId", value: afterState.activeWorkspaceId } },
+    ];
     for (const sw of resp.entities.workspaces) {
-      if (sw.deleted_at) { idbDelete("workspaces", sw.id); }
+      if (sw.deleted_at) {
+        idbOps.push({ type: "delete", store: "workspaces", key: sw.id });
+      } else {
+        const w = wsByIdAfter.get(sw.id);
+        if (w) {
+          idbOps.push({ type: "put", store: "workspaces", value: w });
+        }
+      }
     }
-    // is_deleted=2: hard-delete from IDB (state already filtered above).
-    // is_deleted=1 (soft-deleted): kept in IDB with deletedAt so TrashContent
-    // can display the collection card after a page reload.
-    for (const id of permDeletedCollectionIds) { idbDelete("collections", id); }
+    for (const sc of resp.entities.collections) {
+      if (permDeletedCollectionIds.has(sc.id)) {
+        idbOps.push({ type: "delete", store: "collections", key: sc.id });
+      } else {
+        const c = colByIdAfter.get(sc.id);
+        if (c) {
+          idbOps.push({ type: "put", store: "collections", value: c });
+        }
+      }
+    }
     for (const st of resp.entities.tags) {
-      if (st.deleted_at) { idbDelete("tags", st.id); }
+      if (st.deleted_at) {
+        idbOps.push({ type: "delete", store: "tags", key: st.id });
+      } else {
+        const t = tagByIdAfter.get(st.id);
+        if (t) {
+          idbOps.push({ type: "put", store: "tags", value: t });
+        }
+      }
     }
+    void idbBulkWrite(idbOps);
   },
 
   // ── Workspaces ────────────────────────────────────────────────────────
