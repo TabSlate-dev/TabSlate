@@ -157,7 +157,7 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 采用 push-first 模式（`forcePush` → `idbDelete`），失败时回滚；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
 | `usePlanStore` | chrome.storage.local | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；书签配额以 `is_trashed < 2` 计（active + trashed），仅 `permanentlyDelete` 时 `decrementUsage`；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 维护本地计数；`clear` 在登出时调用 |
 | `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
-| `useTabsStore` | 不持久化 | Chrome 当前窗口的实时标签页和 tab group 数据 |
+| `useTabsStore` | 不持久化（tab-group-titles + kv 写 IDB） | Chrome 当前窗口的实时标签页和 tab group 数据；`fullTitles: Record<number, string>` 维护 compact group 的完整标题，`loadTabs` 通过两层恢复逻辑（孤儿条目对账 + kv 稳定回退）在重启后重新关联（详见 CLAUDE.md Compact group title） |
 
 ### 跨进程通知
 

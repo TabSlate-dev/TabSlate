@@ -75,6 +75,7 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<{ saved: number; skipped: number } | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [compactAlert, setCompactAlert] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
 
   const displayTitle = (fullTitles && fullTitles[group.id]) || group.title;
@@ -220,6 +221,11 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
           {saveResult.skipped > 0 && t("tabsPanel_skipped", [saveResult.skipped.toString()])}
         </span>
       )}
+      {compactAlert && (
+        <span className="text-[10px] bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 px-1.5 py-0.5 rounded-full animate-in fade-in zoom-in duration-300 max-w-[200px] leading-tight whitespace-normal text-center">
+          {t("tabsPanel_compactUnnamedAlert")}
+        </span>
+      )}
 
       {selected.size > 0 && (
         <>
@@ -255,7 +261,14 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
       <div className="flex items-center gap-1.5 px-2 border-l border-r border-border/50">
         <Switch
           checked={group.title.length === 1}
-          onCheckedChange={() => toggleGroupCompact(group.id)}
+          onCheckedChange={() => {
+            if (!displayTitle) {
+              setCompactAlert(true);
+              setTimeout(() => setCompactAlert(false), 2500);
+              return;
+            }
+            toggleGroupCompact(group.id);
+          }}
           onMouseDown={(e) => e.preventDefault()}
           className="scale-75"
           title="Toggle Compact"

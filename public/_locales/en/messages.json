@@ -470,6 +470,9 @@
   "tabsPanel_clickToRename": {
     "message": "Click to rename"
   },
+  "tabsPanel_compactUnnamedAlert": {
+    "message": "This group has no name. Rename it first to enable compact mode."
+  },
   "groupsPanel_newGroup": {
     "message": "New Group"
   },
