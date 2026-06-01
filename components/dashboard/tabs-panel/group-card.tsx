@@ -256,6 +256,7 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
         <Switch
           checked={group.title.length === 1}
           onCheckedChange={() => toggleGroupCompact(group.id)}
+          onMouseDown={(e) => e.preventDefault()}
           className="scale-75"
           title="Toggle Compact"
         />
