@@ -243,10 +243,12 @@ export const api = {
     email: string,
     password: string,
     captchaToken?: string,
+    lang?: string,
   ): Promise<AuthResponse> {
     return request<AuthResponse>(baseUrl, "/auth/register", {
       method: "POST",
       body: JSON.stringify({ name, email, password, captcha_token: captchaToken }),
+      headers: lang ? { "Accept-Language": lang } : undefined,
     });
   },
 
@@ -255,10 +257,12 @@ export const api = {
     email: string,
     password: string,
     captchaToken?: string,
+    lang?: string,
   ): Promise<AuthResponse> {
     return request<AuthResponse>(baseUrl, "/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password, captcha_token: captchaToken }),
+      headers: lang ? { "Accept-Language": lang } : undefined,
     });
   },
 
@@ -306,10 +310,11 @@ export const api = {
     );
   },
 
-  resendVerification(baseUrl: string, email: string, captchaToken?: string): Promise<void> {
+  resendVerification(baseUrl: string, email: string, captchaToken?: string, lang?: string): Promise<void> {
     return request<void>(baseUrl, "/auth/resend-verification", {
       method: "POST",
       body: JSON.stringify({ email, captcha_token: captchaToken }),
+      headers: lang ? { "Accept-Language": lang } : undefined,
     });
   },
 
@@ -332,10 +337,11 @@ export const api = {
     });
   },
 
-  forgotPassword(baseUrl: string, email: string, captchaToken?: string): Promise<void> {
+  forgotPassword(baseUrl: string, email: string, captchaToken?: string, lang?: string): Promise<void> {
     return request<void>(baseUrl, "/auth/forgot-password", {
       method: "POST",
       body: JSON.stringify({ email, captcha_token: captchaToken }),
+      headers: lang ? { "Accept-Language": lang } : undefined,
     });
   },
 

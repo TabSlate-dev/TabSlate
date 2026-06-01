@@ -12,6 +12,12 @@ interface I18nState {
   _hasHydrated: () => void;
 }
 
+export function resolveAcceptLanguage(lang: SupportedLanguage): string {
+  if (lang === "zh_CN") return "zh-CN";
+  if (lang === "en") return "en";
+  return navigator.language;
+}
+
 export const useI18nStore = create<I18nState>()(
   persist(
     (set, get) => ({

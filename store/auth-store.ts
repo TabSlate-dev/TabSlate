@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { authStorageAdapter } from "@/lib/auth-storage-adapter";
 import { api, ApiError } from "@/lib/api";
+import { useI18nStore, resolveAcceptLanguage } from "@/store/i18n-store";
 import type { ApiUser } from "@/lib/api";
 import { clearDB } from "@/lib/idb";
 import { clearSyncRecoverySnapshot } from "@/lib/sync-recovery";
@@ -140,7 +141,8 @@ export const useAuthStore = create<AuthState>()(
       login: async (email, password, captchaToken) => {
         invalidateRefreshWork();
         const { serverUrl, otpSentAt } = get();
-        const resp = await api.login(serverUrl, email, password, captchaToken);
+        const lang = resolveAcceptLanguage(useI18nStore.getState().language);
+        const resp = await api.login(serverUrl, email, password, captchaToken, lang);
         // If the user is unverified, the server auto-sends an OTP when the
         // 60s cooldown has elapsed. Mirror that here so VerifyEmailScreen
         // shows the correct countdown on mount.
@@ -162,12 +164,14 @@ export const useAuthStore = create<AuthState>()(
       register: async (name, email, password, captchaToken) => {
         invalidateRefreshWork();
         const { serverUrl } = get();
+        const lang = resolveAcceptLanguage(useI18nStore.getState().language);
         const resp = await api.register(
           serverUrl,
           name,
           email,
           password,
           captchaToken,
+          lang,
         );
         set({
           user: resp.user,
@@ -179,7 +183,8 @@ export const useAuthStore = create<AuthState>()(
 
       resendVerification: async (email, captchaToken) => {
         const { serverUrl } = get();
-        await api.resendVerification(serverUrl, email, captchaToken);
+        const lang = resolveAcceptLanguage(useI18nStore.getState().language);
+        await api.resendVerification(serverUrl, email, captchaToken, lang);
         set({ otpSentAt: Date.now() });
       },
 
@@ -195,7 +200,8 @@ export const useAuthStore = create<AuthState>()(
 
       forgotPassword: async (email, captchaToken) => {
         const { serverUrl } = get();
-        await api.forgotPassword(serverUrl, email, captchaToken);
+        const lang = resolveAcceptLanguage(useI18nStore.getState().language);
+        await api.forgotPassword(serverUrl, email, captchaToken, lang);
       },
 
       resetPassword: async (email, code, newPassword) => {
