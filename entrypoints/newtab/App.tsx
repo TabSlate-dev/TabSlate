@@ -342,7 +342,7 @@ export default function App() {
         useWorkspaceStore.getState().hydrate();
       }
       if (message.type === "TABS_CHANGED") {
-        useTabsStore.getState().loadTabs();
+        useTabsStore.getState().loadTabs(true);
       }
       if (message.type === "OPEN_SEARCH") {
         window.dispatchEvent(new CustomEvent("tabslate-focus-search"));

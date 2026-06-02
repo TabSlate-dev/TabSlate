@@ -189,6 +189,7 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
             <Switch
               checked={group.isCompact}
               onCheckedChange={(checked) => updateGroup(group.id, { isCompact: checked })}
+              onMouseDown={(e) => e.preventDefault()}
               className="scale-75"
               title="Toggle Compact"
             />

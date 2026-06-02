@@ -470,6 +470,9 @@
   "tabsPanel_clickToRename": {
     "message": "点击可重命名"
   },
+  "tabsPanel_compactUnnamedAlert": {
+    "message": "该分组尚未命名，请先命名再开启简称模式。"
+  },
   "groupsPanel_newGroup": {
     "message": "新建分组"
   },

@@ -248,6 +248,7 @@ export function GroupDetail() {
         <Switch
           checked={group.isCompact}
           onCheckedChange={(checked) => updateGroup(group.id, { isCompact: checked })}
+          onMouseDown={(e) => e.preventDefault()}
           className="scale-75"
           title="Toggle Compact"
         />
