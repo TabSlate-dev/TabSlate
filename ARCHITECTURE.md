@@ -83,7 +83,7 @@ TabSlate/
 │       └── trash-content.tsx
 │
 ├── store/
-│   ├── auth-store.ts       # 认证状态（user、accessToken、refreshToken、serverUrl）— 持久化
+│   ├── auth-store.ts       # 认证状态（user、accessToken、refreshToken、serverUrl）— 持久化；login/register/resendVerification/forgotPassword 均调 resolveAcceptLanguage 并将结果作为 Accept-Language 传给 api.*
 │   ├── bookmarks-store.ts  # 书签数据 + UI 过滤状态；含 mergeFromServer（同步合并）
 │   ├── workspace-store.ts  # 工作区/集合/标签配置；含 localSeq、mergeFromServer、setLocalSeq
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
@@ -95,7 +95,7 @@ TabSlate/
 │   └── prosopo.d.ts        # window.procaptcha 全局类型声明（captcha widget 页面使用）
 │
 ├── lib/
-│   ├── api.ts              # TabSlate-server HTTP 客户端（auth + sync + search）；ApiError 携带 status/captchaRequired/retryAfter；searchBookmarks() 调用 GET /search
+│   ├── api.ts              # TabSlate-server HTTP 客户端（auth + sync + search）；ApiError 携带 status/captchaRequired/retryAfter；searchBookmarks() 调用 GET /search；register/login/resendVerification/forgotPassword 接受可选 lang 参数，非空时注入 Accept-Language 请求头
 │   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义（含 seq, deletedAt 同步字段）
 │   ├── sync-engine.ts      # SyncEngine：协调 SyncQueue + SSEClient + 定期拉取；模块单例 syncEngine
 │   ├── sync-queue.ts       # SyncQueue：按实体 ID 去重、2s 防抖、指数退避推送（2s→60s）
