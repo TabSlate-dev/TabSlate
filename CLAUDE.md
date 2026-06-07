@@ -8,7 +8,7 @@ TabSlate 由三个仓库组成：
 |---|---|---|
 | **`TabSlate`**（本仓库） | 公开，AGPL | Chrome 扩展前端，TypeScript + React + WXT |
 | **`TabSlate-server`** | 公开，非开源 | Go 后端，提供免费版，可自托管，计费基于本地 License JWT |
-| **`TabSlate-cloud`** | 私有 | Go 后端 Cloud 版，以 `TabSlate-server` 为 Go module 依赖，注入 Meteroid 计费 |
+| **`TabSlate-cloud`** | 私有 | Go 后端 Cloud 版，以 `TabSlate-server` 为 Go module 依赖，注入 Flexprice 计费 |
 
 前端直接通过 Chrome extension API 与后端 REST API 通信；Cloud 版与 OSS 版暴露完全相同的 API 路由，前端无感知差异。
 
