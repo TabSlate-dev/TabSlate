@@ -85,7 +85,7 @@ export const useAdsStore = create<AdsState>()((set, get) => ({
     try {
       const apiUrl = import.meta.env.VITE_OPENADS_API_URL;
       if (!apiUrl) {
-        console.warn("VITE_OPENADS_API_URL is not configured in .env.local");
+        console.warn("VITE_OPENADS_API_URL is not configured in .env");
         set({ isFetching: false });
         return;
       }
