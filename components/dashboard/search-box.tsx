@@ -8,8 +8,10 @@ import { useTabsStore } from "@/store/tabs-store";
 import { useAuthStore } from "@/store/auth-store";
 import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
+import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/store/settings-store";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function getEngineIconSrc(engine: { iconUrl?: string; siteUrl: string }): string {
   if (engine.iconUrl && typeof chrome !== "undefined" && chrome.runtime?.id) {
@@ -31,6 +33,7 @@ interface SearchBoxProps {
 }
 
 export function SearchBox({ collectionId, size = "lg", className }: SearchBoxProps) {
+  const { t } = useTranslation();
   const allEngines = useSettingsStore(s => s.searchEngines);
   const searchEngines = React.useMemo(() => allEngines.filter(e => e.enabled), [allEngines]);
 
@@ -98,10 +101,12 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
 
   const handleSelect = React.useCallback((index: number) => {
     if (index < filteredTabs.length) {
+      analytics.track("search_used", { type: "tabs" });
       const tab = filteredTabs[index];
       chrome.tabs.update(tab.id, { active: true });
       chrome.windows.update(tab.windowId, { focused: true });
     } else if (index < filteredTabs.length + bookmarkResults.length) {
+      analytics.track("search_used", { type: "bookmarks" });
       const url = bookmarkResults[index - filteredTabs.length].url;
       const existingTab = openTabs.find(t => t.url === url);
       if (existingTab) {
@@ -111,6 +116,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
         window.location.href = url;
       }
     } else {
+      analytics.track("search_used", { type: "engine" });
       window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
     }
     setQuery("");
@@ -136,6 +142,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
+      analytics.track("search_used", { type: "engine" });
       window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
       setQuery("");
     }
@@ -145,9 +152,9 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const engineIndex = filteredTabs.length + bookmarkResults.length;
   const isLg = size === "lg";
 
-  const placeholder = collectionId
-    ? "Search bookmarks in this collection..."
-    : `Search your bookmarks, tabs or with ${engine?.name ?? "the web"}...`;
+  const placeholder = collectionId !== undefined
+    ? t("search_placeholderCollection")
+    : t("search_placeholderGlobal", engine?.name ?? "the web");
 
   return (
     <div ref={wrapperRef} className={cn("relative", className)}>
@@ -224,7 +231,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
               <section className="flex flex-col gap-1">
                 <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground/75 uppercase tracking-widest flex items-center gap-1.5 border-b border-muted/20 bg-muted/5 rounded-t-xl">
                   <Globe className="size-3 text-primary/80" />
-                  Open Tabs ({filteredTabs.length})
+                  {t("search_openTabs")} ({filteredTabs.length})
                 </div>
                 <div className={cn("py-1 flex flex-col gap-1", isLg ? "px-1.5" : "px-1")}>
                   {filteredTabs.map((tab, i) => (
@@ -261,7 +268,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
               <section className="flex flex-col gap-1">
                 <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground/75 uppercase tracking-widest flex items-center gap-1.5 border-b border-muted/20 bg-muted/5 rounded-t-xl">
                   <BookmarkIcon className="size-3 text-primary/80" />
-                  Bookmarks ({bookmarkResults.length})
+                  {t("search_bookmarks")} ({bookmarkResults.length})
                 </div>
                 <div className={cn("py-1 flex flex-col gap-1", isLg ? "px-1.5" : "px-1")}>
                   {bookmarkResults.map((bm, i) => {
@@ -295,7 +302,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
                             {bm.isArchived && (
                               <span className={cn("shrink-0 flex items-center gap-0.5 px-1 py-px rounded border border-muted/50 bg-muted/30 text-muted-foreground font-semibold", isLg ? "text-[9px]" : "text-[8px]")}>
                                 <Archive className={isLg ? "size-2.5" : "size-2"} />
-                                Archived
+                                {t("search_archived")}
                               </span>
                             )}
                           </div>
@@ -328,7 +335,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
                   <img src={getEngineIconSrc(engine)} alt={engine?.name} className={cn("rounded-xs", isLg ? "size-3.5" : "size-3")} />
                 </div>
                 <span className={cn("text-foreground", isLg ? "text-sm" : "text-xs")}>
-                  Search <span className="font-semibold text-primary">"{query}"</span> with {engine?.name}
+                  {t("search_searchWith", [query, engine?.name || ""])}
                 </span>
               </button>
             </div>

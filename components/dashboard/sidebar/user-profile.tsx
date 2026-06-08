@@ -20,8 +20,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function UserProfile() {
+  const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const subscription = usePlanStore((s) => s.subscription);
@@ -159,7 +161,7 @@ export function UserProfile() {
             }}
           >
             <Award className={cn("size-4", glowStyles.iconColorClass)} />
-            <span>Plan & Quotas</span>
+            <span>{t("sidebar_userPlanQuotas")}</span>
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
@@ -170,7 +172,7 @@ export function UserProfile() {
             }}
           >
             <Upload className="size-4" />
-            <span>Import Bookmarks</span>
+            <span>{t("sidebar_userImportBookmarks")}</span>
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
@@ -179,7 +181,7 @@ export function UserProfile() {
             onClick={() => logout()}
           >
             <LogOut className="mr-2 size-4" />
-            <span>Log out</span>
+            <span>{t("sidebar_userLogout")}</span>
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

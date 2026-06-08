@@ -1,51 +1,50 @@
 import * as React from "react";
-import { ArrowRight, Sparkles, Bot, ShieldCheck } from "lucide-react";
+import { ArrowRight, Sparkles, Bot, ShieldCheck, Cloud } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAdsStore, type Ad } from "@/store/ads-store";
+import { FaviconImage } from "@/components/ui/favicon-image";
 
-const STRIP_ADS = [
-  {
-    id: "a1",
-    title: "TabSlate Premium",
-    description: "Unlock AI organization & cloud sync.",
-    badge: "Pro",
-    icon: Sparkles,
-    action: "Upgrade",
-    gradient: "from-primary/20 to-purple-500/20",
-    iconColor: "text-primary/80",
-  },
-  {
-    id: "a2",
-    title: "AI Tab Grouping",
-    description: "Let AI organize your tabs intelligently.",
-    badge: "New",
-    icon: Bot,
-    action: "Try Now",
-    gradient: "from-emerald-500/20 to-teal-500/20",
-    iconColor: "text-emerald-500/80",
-  },
-  {
-    id: "a3",
-    title: "Privacy Shield",
-    description: "End-to-end encryption for all your data.",
-    badge: "Offer",
-    icon: ShieldCheck,
-    action: "Learn More",
-    gradient: "from-rose-500/20 to-orange-500/20",
-    iconColor: "text-rose-500/80",
-  },
-];
+const getAdIcon = (badge: string) => {
+  const normalized = badge.toLowerCase().trim();
+  if (normalized === "sponsor" || normalized === "pro") { return Sparkles; }
+  if (normalized === "ad" || normalized === "offer") { return Cloud; }
+  if (normalized === "new" || normalized === "featured") { return Bot; }
+  if (normalized === "trending") { return ShieldCheck; }
+  return Sparkles;
+};
 
-function StripAdCard({ ad, vertical }: { ad: typeof STRIP_ADS[0]; vertical?: boolean }) {
-  const Icon = ad.icon;
+function StripAdCard({ ad, vertical }: { ad: Ad; vertical?: boolean }) {
+  const Icon = getAdIcon(ad.badge);
+
+  const handleClick = () => {
+    if (ad.websiteUrl) {
+      window.open(ad.websiteUrl, "_blank", "noopener,noreferrer");
+    }
+  };
 
   if (vertical) {
     return (
-      <div className="relative z-0 flex items-center overflow-hidden rounded-lg border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/30 group cursor-pointer px-2.5 py-2 gap-2.5">
+      <div
+        className="relative z-0 flex items-center overflow-hidden rounded-lg border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-300 hover:shadow-md hover:border-primary/30 group cursor-pointer px-2.5 py-2 gap-2.5"
+        onClick={handleClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleClick();
+          }
+        }}
+      >
         {/* Outer glow */}
         <div className={cn("absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md z-[-1] rounded-lg pointer-events-none", ad.gradient)} />
         {/* Icon */}
-        <div className={cn("shrink-0 size-7 rounded-md flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-110 z-10", ad.gradient)}>
-          <Icon className={cn(ad.iconColor, "size-3.5")} />
+        <div className={cn("shrink-0 size-7 rounded-md flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-110 z-10 overflow-hidden", ad.gradient)}>
+          {ad.iconUrl ? (
+            <FaviconImage src={ad.iconUrl} className="size-4.5 object-contain" />
+          ) : (
+            <Icon className={cn(ad.iconColor, "size-3.5")} />
+          )}
         </div>
         {/* Text */}
         <div className="flex-1 min-w-0 z-10">
@@ -62,7 +61,18 @@ function StripAdCard({ ad, vertical }: { ad: typeof STRIP_ADS[0]; vertical?: boo
   }
 
   return (
-    <div className="relative z-0 flex flex-col overflow-hidden rounded-xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg hover:border-primary/30 hover:-translate-y-0.5 group cursor-pointer p-4">
+    <div
+      className="relative z-0 flex flex-col overflow-hidden rounded-xl border border-muted/60 bg-gradient-to-br from-background/90 to-muted/40 backdrop-blur-md shadow-sm transition-all duration-500 hover:shadow-lg hover:border-primary/30 hover:-translate-y-0.5 group cursor-pointer p-4"
+      onClick={handleClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          handleClick();
+        }
+      }}
+    >
       {/* Outer glow */}
       <div className={cn("absolute inset-0 bg-gradient-to-r opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-md z-[-1] rounded-xl pointer-events-none", ad.gradient)} />
       {/* Background icon watermark */}
@@ -78,8 +88,12 @@ function StripAdCard({ ad, vertical }: { ad: typeof STRIP_ADS[0]; vertical?: boo
       {/* Content */}
       <div className="relative z-10 flex flex-col gap-2">
         <div className="flex items-center gap-2.5 pr-8">
-          <div className={cn("shrink-0 size-8 rounded-lg flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-110", ad.gradient)}>
-            <Icon className={cn(ad.iconColor, "size-4")} />
+          <div className={cn("shrink-0 size-8 rounded-lg flex items-center justify-center border shadow-sm transition-transform duration-300 group-hover:scale-110 overflow-hidden", ad.gradient)}>
+            {ad.iconUrl ? (
+              <FaviconImage src={ad.iconUrl} className="size-5 object-contain" />
+            ) : (
+              <Icon className={cn(ad.iconColor, "size-4")} />
+            )}
           </div>
           <span className="text-sm font-semibold text-foreground leading-tight line-clamp-1">{ad.title}</span>
         </div>
@@ -94,9 +108,20 @@ function StripAdCard({ ad, vertical }: { ad: typeof STRIP_ADS[0]; vertical?: boo
 }
 
 export function TabsAdStrip({ vertical }: { vertical?: boolean }) {
-  // Limit to first 3 ads to avoid overwhelming the user interface
-  const adsToShow = vertical ? STRIP_ADS.slice(0, 3) : STRIP_ADS.slice(0, 4);
-  
+  const ads = useAdsStore((s) => s.sidebarAds);
+  const ensureFresh = useAdsStore((s) => s.ensureFresh);
+
+  React.useEffect(() => {
+    ensureFresh();
+  }, [ensureFresh]);
+
+  if (ads.length === 0) {
+    return null;
+  }
+
+  // Limit to first 3 ads for vertical, first 4 for horizontal to avoid clutter
+  const adsToShow = vertical ? ads.slice(0, 3) : ads.slice(0, 4);
+
   return (
     <div className={cn(vertical ? "flex flex-col gap-2" : "grid grid-cols-3 gap-3")}>
       {adsToShow.map((ad) => (

@@ -1,12 +1,14 @@
 import * as React from "react";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { BookmarkCard } from "./bookmark-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Heart } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function FavoritesContent() {
-  const bookmarks = useBookmarksStore(s => s.bookmarks);
+  const { t } = useTranslation();
+  const bookmarks = useBookmarksStore(s => bookmarksAsArray(s.bookmarks));
   const viewMode = useBookmarksStore(s => s.viewMode);
 
   const collections = useWorkspaceStore(s => s.collections);
@@ -36,10 +38,9 @@ export function FavoritesContent() {
             <Heart className="size-5" />
           </div>
           <div>
-            <h2 className="text-lg font-semibold">Favorite Bookmarks</h2>
+            <h2 className="text-lg font-semibold">{t("favoritesContent_title")}</h2>
             <p className="text-sm text-muted-foreground">
-              {favoriteBookmarks.length} bookmark
-              {favoriteBookmarks.length !== 1 ? "s" : ""} marked as favorite
+              {t(favoriteBookmarks.length === 1 ? "favoritesContent_count_one" : "favoritesContent_count_other", [favoriteBookmarks.length.toString()])} {t("favoritesContent_markedAsFavorite")}
             </p>
           </div>
         </div>
@@ -61,8 +62,8 @@ export function FavoritesContent() {
         {favoriteBookmarks.length === 0 && (
           <EmptyState
             icon={Heart}
-            title="No favorites yet"
-            description="Star a bookmark to add it to your favorites."
+            title={t("favoritesContent_emptyTitle")}
+            description={t("favoritesContent_emptyDesc")}
           />
         )}
       </div>

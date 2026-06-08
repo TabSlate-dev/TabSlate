@@ -12,6 +12,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import type { Bookmark } from "@/lib/types";
 import { useBookmarksStore } from "@/store/bookmarks-store";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface EditBookmarkDialogProps {
   bookmark: Bookmark;
@@ -20,15 +21,16 @@ interface EditBookmarkDialogProps {
 }
 
 export function EditBookmarkDialog({ bookmark, open, onOpenChange }: EditBookmarkDialogProps) {
+  const { t } = useTranslation();
   const updateBookmark = useBookmarksStore(s => s.updateBookmark);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Bookmark</DialogTitle>
+          <DialogTitle>{t("editBookmarkDialog_title")}</DialogTitle>
           <DialogDescription className="sr-only">
-            Edit the title, url and description of this bookmark.
+            {t("editBookmarkDialog_desc")}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -47,7 +49,7 @@ export function EditBookmarkDialog({ bookmark, open, onOpenChange }: EditBookmar
           }}
         >
           <Field>
-            <FieldLabel htmlFor="edit-title">Title</FieldLabel>
+            <FieldLabel htmlFor="edit-title">{t("editBookmarkDialog_titleField")}</FieldLabel>
             <Input
               id="edit-title"
               name="title"
@@ -57,7 +59,7 @@ export function EditBookmarkDialog({ bookmark, open, onOpenChange }: EditBookmar
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="edit-url">URL</FieldLabel>
+            <FieldLabel htmlFor="edit-url">{t("editBookmarkDialog_urlField")}</FieldLabel>
             <Input
               id="edit-url"
               name="url"
@@ -67,7 +69,7 @@ export function EditBookmarkDialog({ bookmark, open, onOpenChange }: EditBookmar
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="edit-description">Description</FieldLabel>
+            <FieldLabel htmlFor="edit-description">{t("editBookmarkDialog_descField")}</FieldLabel>
             <Input
               id="edit-description"
               name="description"
@@ -76,10 +78,10 @@ export function EditBookmarkDialog({ bookmark, open, onOpenChange }: EditBookmar
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("editBookmarkDialog_cancel")}
             </Button>
             <Button type="submit" size="sm">
-              Save changes
+              {t("editBookmarkDialog_save")}
             </Button>
           </DialogFooter>
         </form>

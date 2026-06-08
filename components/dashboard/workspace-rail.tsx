@@ -188,8 +188,8 @@ export function WorkspaceRail() {
       <div className="flex flex-col items-center gap-1.5 w-13 shrink-0 h-svh py-3 bg-sidebar border-r border-sidebar-border">
         {/* Logo */}
         <div className="mb-2">
-          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <Layers className="size-4 text-primary" />
+          <div className="size-8 rounded-lg flex items-center justify-center">
+            <img src="/wxt.svg" alt="TabSlate" className="size-6" />
           </div>
         </div>
 

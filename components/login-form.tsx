@@ -17,6 +17,7 @@ import {
   InputOTPSeparator,
   InputOTPSlot,
 } from "@/components/ui/input-otp";
+import { useTranslation } from "@/hooks/use-translation";
 
 type Mode =
   | "login"
@@ -37,6 +38,7 @@ export function LoginForm({
   className,
   ...props
 }: React.ComponentProps<"div">) {
+  const { t, language } = useTranslation();
   const [mode, setMode] = React.useState<Mode>("login");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -141,9 +143,9 @@ export function LoginForm({
       <div className={cn("flex flex-col gap-6", className)} {...props}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-2xl font-bold">Forgot password</h1>
+            <h1 className="text-2xl font-bold">{t("auth_forgotPassword")}</h1>
             <p className="text-sm text-balance text-muted-foreground">
-              Enter your email and we&apos;ll send a 6-digit reset code.
+              {t("auth_forgotPasswordDesc")}
             </p>
           </div>
 
@@ -168,7 +170,7 @@ export function LoginForm({
                     setForgotCaptchaKey((k) => k + 1);
                   }
                 } else {
-                  setError("Something went wrong");
+                  setError(t("auth_somethingWentWrong"));
                 }
               } finally {
                 setLoading(false);
@@ -176,12 +178,12 @@ export function LoginForm({
             }}
           >
             <Field>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
+              <FieldLabel htmlFor="email">{t("auth_email")}</FieldLabel>
               <Input
                 id="email"
                 name="email"
                 type="email"
-                placeholder="you@example.com"
+                placeholder={t("auth_emailPlaceholder")}
                 required
                 autoFocus
                 autoComplete="email"
@@ -209,7 +211,7 @@ export function LoginForm({
               type="submit"
               disabled={loading || !!(PROSOPO_SITE_KEY && forgotCaptchaRequired && !forgotCaptchaToken)}
             >
-              {loading ? "Sending…" : "Send reset code"}
+              {loading ? t("auth_sending") : t("auth_sendResetCode")}
             </Button>
           </form>
 
@@ -219,7 +221,7 @@ export function LoginForm({
               className="underline underline-offset-4 hover:text-primary"
               onClick={() => switchMode("login")}
             >
-              Back to login
+              {t("auth_backToLogin")}
             </button>
           </FieldDescription>
         </FieldGroup>
@@ -233,10 +235,9 @@ export function LoginForm({
       <div className={cn("flex flex-col gap-6", className)} {...props}>
         <FieldGroup>
           <div className="flex flex-col items-center gap-2 text-center">
-            <h1 className="text-2xl font-bold">Reset password</h1>
+            <h1 className="text-2xl font-bold">{t("auth_resetPassword")}</h1>
             <p className="text-sm text-balance text-muted-foreground">
-              Enter the 6-digit code sent to <strong>{pendingEmail}</strong> and
-              choose a new password.
+              {t("auth_resetPasswordDesc1")} <strong>{pendingEmail}</strong> {t("auth_resetPasswordDesc2")}
             </p>
           </div>
 
@@ -251,7 +252,7 @@ export function LoginForm({
                 await resetPassword(pendingEmail, resetCode, newPassword);
                 switchMode("login");
               } catch (err) {
-                setError(err instanceof ApiError ? err.message : "Something went wrong");
+                setError(err instanceof ApiError ? err.message : t("auth_somethingWentWrong"));
                 setResetCode("");
               } finally {
                 setLoading(false);
@@ -285,18 +286,18 @@ export function LoginForm({
             </div>
 
             <Field>
-              <FieldLabel htmlFor="new_password">New password</FieldLabel>
+              <FieldLabel htmlFor="new_password">{t("auth_newPassword")}</FieldLabel>
               <Input
                 id="new_password"
                 name="new_password"
                 type="password"
-                placeholder="••••••••••"
+                placeholder={t("auth_passwordPlaceholder")}
                 required
                 minLength={10}
                 autoComplete="new-password"
               />
               <FieldDescription>
-                At least 10 characters, including a letter and a number.
+                {t("auth_passwordRequirement")}
               </FieldDescription>
             </Field>
 
@@ -307,12 +308,12 @@ export function LoginForm({
             )}
 
             <Button type="submit" disabled={loading || resetCode.length < 6}>
-              {loading ? "Resetting…" : "Reset password"}
+              {loading ? t("auth_resetting") : t("auth_resetPassword")}
             </Button>
           </form>
 
           <FieldDescription className="text-center text-sm">
-            Didn&apos;t receive it?{" "}
+            {t("auth_didntReceive")}{" "}
             <button
               type="button"
               disabled={resetCooldown > 0}
@@ -326,7 +327,7 @@ export function LoginForm({
                 }
               }}
             >
-              {resetCooldown > 0 ? `Resend in ${resetCooldown}s` : "Resend code"}
+              {resetCooldown > 0 ? t("auth_resendIn", resetCooldown.toString()) : t("auth_resendCode")}
             </button>
           </FieldDescription>
 
@@ -336,7 +337,7 @@ export function LoginForm({
               className="underline underline-offset-4 hover:text-primary"
               onClick={() => switchMode("login")}
             >
-              Back to login
+              {t("auth_backToLogin")}
             </button>
           </FieldDescription>
         </FieldGroup>
@@ -350,12 +351,34 @@ export function LoginForm({
       <FieldGroup>
         <div className="flex flex-col items-center gap-1 text-center">
           <h1 className="text-2xl font-bold">
-            {mode === "login" ? "Login to your account" : "Create an account"}
+            {mode === "login" ? t("auth_loginTitle") : t("auth_registerTitle")}
           </h1>
           <p className="text-sm text-balance text-muted-foreground">
-            {mode === "login"
-              ? "Enter your email below to login to your account"
-              : "Enter your details below to create your account"}
+            {mode === "login" ? (
+              t("auth_loginDesc")
+            ) : (
+              <>
+                {t("auth_registerTermsDesc1")}
+                <a
+                  href={`https://tabslate.com/${language === "zh_CN" ? "zh" : "en"}/terms`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4 hover:text-primary"
+                >
+                  {t("auth_termsOfService")}
+                </a>
+                {t("auth_registerTermsDesc2")}
+                <a
+                  href={`https://tabslate.com/${language === "zh_CN" ? "zh" : "en"}/privacy-policy`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-4 hover:text-primary"
+                >
+                  {t("auth_privacyPolicy")}
+                </a>
+                {t("auth_registerTermsDesc3")}
+              </>
+            )}
           </p>
         </div>
 
@@ -396,7 +419,7 @@ export function LoginForm({
                   }).catch(() => {});
                 }
               } else {
-                setError("Something went wrong");
+                setError(t("auth_somethingWentWrong"));
               }
               resetCaptcha();
             } finally {
@@ -406,11 +429,11 @@ export function LoginForm({
         >
           {mode === "register" && (
             <Field>
-              <FieldLabel htmlFor="name">Name</FieldLabel>
+              <FieldLabel htmlFor="name">{t("auth_name")}</FieldLabel>
               <Input
                 id="name"
                 name="name"
-                placeholder="Your name"
+                placeholder={t("auth_namePlaceholder")}
                 required
                 autoFocus={mode === "register"}
                 autoComplete="name"
@@ -418,12 +441,12 @@ export function LoginForm({
             </Field>
           )}
           <Field>
-            <FieldLabel htmlFor="email">Email</FieldLabel>
+            <FieldLabel htmlFor="email">{t("auth_email")}</FieldLabel>
             <Input
               id="email"
               name="email"
               type="email"
-              placeholder="you@example.com"
+              placeholder={t("auth_emailPlaceholder")}
               required
               autoFocus={mode === "login"}
               autoComplete="email"
@@ -435,12 +458,12 @@ export function LoginForm({
             />
           </Field>
           <Field>
-            <FieldLabel htmlFor="password">Password</FieldLabel>
+            <FieldLabel htmlFor="password">{t("auth_password")}</FieldLabel>
             <Input
               id="password"
               name="password"
               type="password"
-              placeholder="••••••••••"
+              placeholder={t("auth_passwordPlaceholder")}
               required
               minLength={10}
               autoComplete={
@@ -449,7 +472,7 @@ export function LoginForm({
             />
             {mode === "register" && (
               <FieldDescription>
-                At least 10 characters, including a letter and a number.
+                {t("auth_passwordRequirement")}
               </FieldDescription>
             )}
           </Field>
@@ -474,34 +497,34 @@ export function LoginForm({
 
           <Button type="submit" disabled={loading}>
             {loading
-              ? "Please wait…"
+              ? t("auth_pleaseWait")
               : mode === "login"
-                ? "Login"
-                : "Create account"}
+                ? t("auth_loginBtn")
+                : t("auth_registerBtn")}
           </Button>
         </form>
 
         <FieldDescription className="text-center">
           {mode === "login" ? (
             <>
-              Don&apos;t have an account?{" "}
+              {t("auth_noAccount")}{" "}
               <button
                 type="button"
                 className="underline underline-offset-4 hover:text-primary"
                 onClick={() => switchMode("register")}
               >
-                Sign up
+                {t("auth_signUp")}
               </button>
             </>
           ) : (
             <>
-              Already have an account?{" "}
+              {t("auth_hasAccount")}{" "}
               <button
                 type="button"
                 className="underline underline-offset-4 hover:text-primary"
                 onClick={() => switchMode("login")}
               >
-                Login
+                {t("auth_loginBtn")}
               </button>
             </>
           )}
@@ -514,7 +537,7 @@ export function LoginForm({
               className="underline underline-offset-4 hover:text-primary"
               onClick={() => switchMode("forgot-password")}
             >
-              Forgot password?
+              {t("auth_forgotPasswordLink")}
             </button>
           </FieldDescription>
         )}
@@ -526,20 +549,20 @@ export function LoginForm({
             className="text-xs text-muted-foreground hover:text-primary underline-offset-4 hover:underline"
             onClick={() => setShowAdvanced((v) => !v)}
           >
-            {showAdvanced ? "Hide advanced" : "Advanced"}
+            {showAdvanced ? t("auth_hideAdvanced") : t("auth_advanced")}
           </button>
         </div>
         {showAdvanced && (
           <Field>
-            <FieldLabel htmlFor="server-url">Server URL</FieldLabel>
+            <FieldLabel htmlFor="server-url">{t("auth_serverUrl")}</FieldLabel>
             <Input
               id="server-url"
-              placeholder="https://api.tabslate.app"
+              placeholder="https://api.tabslate.com"
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
             />
             <FieldDescription>
-              For self-hosted TabSlate-server instances.
+              {t("auth_serverUrlDesc")}
             </FieldDescription>
           </Field>
         )}

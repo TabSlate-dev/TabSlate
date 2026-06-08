@@ -56,7 +56,11 @@ export default defineContentScript({
     // -----------------------------------------------------------------
     // Message listener
     // -----------------------------------------------------------------
-    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    function handleMessage(
+      message: { type?: string },
+      _sender: chrome.runtime.MessageSender,
+      sendResponse: (response?: unknown) => void,
+    ) {
       if (message.type === "OPEN_SEARCH") {
         showOverlay();
         return false;
@@ -87,6 +91,9 @@ export default defineContentScript({
       });
 
       return true;
-    });
+    }
+
+    chrome.runtime.onMessage.addListener(handleMessage);
+    ctx.onInvalidated(() => chrome.runtime.onMessage.removeListener(handleMessage));
   },
 });

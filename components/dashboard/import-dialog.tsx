@@ -16,7 +16,7 @@ import { buildChromeImportPlan, parseChromeHTML, validateChromeFile } from "@/li
 import { buildTobyImportPlan, parseTobyJSON, validateTobyFile } from "@/lib/import-toby";
 import type { ImportPlan, ValidationResult } from "@/lib/import-types";
 import { cn } from "@/lib/utils";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { usePlanStore } from "@/store/plan-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import {
@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useTranslation } from "@/hooks/use-translation";
 
 type ImportStep = 0 | 1 | 2 | 3;
 type ImportSource = "toby" | "chrome";
@@ -89,31 +90,32 @@ function detectMismatchSource(source: ImportSource, file: File): ImportSource | 
   return null;
 }
 
-function getStepDescription(step: ImportStep, source: ImportSource | null): string {
+function getStepDescription(step: ImportStep, source: ImportSource | null, t: any): string {
   if (step === 0) {
-    return "Choose the export source you want to import from.";
+    return t("import_step0_desc");
   }
 
   if (step === 1 && source) {
-    return `Upload your ${SOURCE_LABEL[source]} export file and confirm it looks valid.`;
+    return t("import_step1_desc", [SOURCE_LABEL[source]]);
   }
 
   if (step === 2) {
-    return "Choose the target workspace and review the import summary.";
+    return t("import_step2_desc");
   }
 
-  return "Review the import outcome and any skipped entries.";
+  return t("import_step3_desc");
 }
 
 function getDialogTitle(
   step: ImportStep,
   source: ImportSource | null,
   resultStatus: "success" | "error" | null,
+  t: any,
 ): string {
-  if (step === 0) { return "Import Bookmarks"; }
-  if (step === 1) { return source ? `Import from ${SOURCE_LABEL[source]}` : "Import Bookmarks"; }
-  if (step === 2) { return "Configure Import"; }
-  return resultStatus === "error" ? "Import Failed" : "Import Complete";
+  if (step === 0) { return t("import_title"); }
+  if (step === 1) { return source ? t("import_titleSource", [SOURCE_LABEL[source]]) : t("import_title"); }
+  if (step === 2) { return t("import_titleConfig"); }
+  return resultStatus === "error" ? t("import_titleFailed") : t("import_titleComplete");
 }
 
 function SourceCard({
@@ -160,12 +162,13 @@ function SummaryStat({
 }
 
 export function ImportDialog({ open, onOpenChange }: Props) {
+  const { t } = useTranslation();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const collections = useWorkspaceStore((state) => state.collections);
   const tags = useWorkspaceStore((state) => state.tags);
   const importFromPlan = useWorkspaceStore((state) => state.importFromPlan);
-  const bookmarks = useBookmarksStore((state) => state.bookmarks);
+  const bookmarks = useBookmarksStore((state) => bookmarksAsArray(state.bookmarks));
   const checkQuota = usePlanStore((state) => state.checkQuota);
 
   const activeWorkspaces = React.useMemo(
@@ -323,23 +326,23 @@ export function ImportDialog({ open, onOpenChange }: Props) {
 
   const importBlockedMessage = React.useMemo(() => {
     if (!workspaceId) {
-      return "Choose a workspace before importing.";
+      return t("import_blockedWorkspace");
     }
 
     if (!validation?.valid || rawContent.length === 0) {
-      return "Upload a valid export file first.";
+      return t("import_blockedValid");
     }
 
     if (!hasValidPlan) {
-      return "Nothing new to import from this file.";
+      return t("import_blockedNew");
     }
 
     if (!collectionQuotaOk) {
-      return "This import would exceed your collection limit.";
+      return t("import_blockedCollectionQuota");
     }
 
     if (!bookmarkQuotaOk) {
-      return "This import would exceed your bookmark limit.";
+      return t("import_blockedBookmarkQuota");
     }
 
     return null;
@@ -354,8 +357,8 @@ export function ImportDialog({ open, onOpenChange }: Props) {
 
   const canProceedFromUpload = validation?.valid === true && rawContent.length > 0;
   const canImport = !isImporting && importBlockedMessage === null;
-  const stepDescription = getStepDescription(step, source);
-  const dialogTitle = getDialogTitle(step, source, result?.status ?? null);
+  const stepDescription = getStepDescription(step, source, t);
+  const dialogTitle = getDialogTitle(step, source, result?.status ?? null, t);
 
   const handleSourceSelect = React.useCallback((nextSource: ImportSource) => {
     setSource(nextSource);
@@ -525,7 +528,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
   }, []);
 
   const selectedSourceLabel = source ? SOURCE_LABEL[source] : "";
-  const selectedSourceHint = source ? SOURCE_FILE_HINT[source] : "";
+  const selectedSourceHint = source ? t(source === "toby" ? "import_tobyHint" : "import_chromeHint") : "";
   const selectedAccept = source ? SOURCE_ACCEPT[source] : "";
 
   return (
@@ -545,13 +548,13 @@ export function ImportDialog({ open, onOpenChange }: Props) {
           <div className="space-y-3">
             <SourceCard
               title="Toby"
-              description="Import lists, cards, and labels from a Toby JSON export."
+              description={t("import_tobyDesc")}
               icon={<FileJson className="size-4" />}
               onClick={() => handleSourceSelect("toby")}
             />
             <SourceCard
               title="Chrome Bookmarks"
-              description="Import folders and bookmarks from a Chrome HTML export."
+              description={t("import_chromeDesc")}
               icon={<FileText className="size-4" />}
               onClick={() => handleSourceSelect("chrome")}
             />
@@ -587,9 +590,9 @@ export function ImportDialog({ open, onOpenChange }: Props) {
                 <Upload className="size-4" />
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-medium">Drag and drop a file here</p>
+                <p className="text-sm font-medium">{t("import_dragDrop")}</p>
                 <p className="text-xs text-muted-foreground">
-                  Accepts {selectedAccept} files only.
+                  {t("import_accepts", [selectedAccept])}
                 </p>
               </div>
               <Button
@@ -602,7 +605,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
                   handleBrowse();
                 }}
               >
-                Choose file
+                {t("import_chooseFile")}
               </Button>
               <input
                 ref={fileInputRef}
@@ -617,16 +620,16 @@ export function ImportDialog({ open, onOpenChange }: Props) {
 
             {selectedFileName && (
               <p className="text-xs text-muted-foreground">
-                Selected file: <span className="font-medium text-foreground">{selectedFileName}</span>
+                {t("import_selectedFile")} <span className="font-medium text-foreground">{selectedFileName}</span>
               </p>
             )}
 
             {validationPhase === "validating" && (
               <Alert variant="info">
                 <Loader2 className="animate-spin" />
-                <AlertTitle>Validating file</AlertTitle>
+                <AlertTitle>{t("import_validating")}</AlertTitle>
                 <AlertDescription>
-                  Checking the file format and previewing what can be imported.
+                  {t("import_validatingDesc")}
                 </AlertDescription>
               </Alert>
             )}
@@ -634,10 +637,13 @@ export function ImportDialog({ open, onOpenChange }: Props) {
             {validationPhase === "complete" && validation?.valid && validation.preview && (
               <Alert variant="info">
                 <CheckCircle2 />
-                <AlertTitle>File looks good</AlertTitle>
+                <AlertTitle>{t("import_looksGood")}</AlertTitle>
                 <AlertDescription>
                   <p>
-                    {validation.preview.bookmarks} bookmarks across {validation.preview.collections} collections are ready to review.
+                    {t("import_looksGoodDesc", [
+                      validation.preview.bookmarks.toString(),
+                      validation.preview.collections.toString()
+                    ])}
                   </p>
                 </AlertDescription>
               </Alert>
@@ -646,7 +652,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
             {validationPhase === "complete" && validation && !validation.valid && (
               <Alert variant="destructive">
                 <AlertCircle />
-                <AlertTitle>Validation failed</AlertTitle>
+                <AlertTitle>{t("import_validationFailed")}</AlertTitle>
                 <AlertDescription>
                   <p>{validation.error}</p>
                   {mismatchSource && (
@@ -659,7 +665,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
                         void handleSwitchSource();
                       }}
                     >
-                      Switch to {SOURCE_LABEL[mismatchSource]} import
+                      {t("import_switchTo", [SOURCE_LABEL[mismatchSource]])}
                     </Button>
                   )}
                 </AlertDescription>
@@ -669,7 +675,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
             <DialogFooter>
               <Button type="button" variant="outline" size="sm" onClick={() => setStep(0)}>
                 <ArrowLeft className="size-4" />
-                Back
+                {t("import_back")}
               </Button>
               <Button
                 type="button"
@@ -677,7 +683,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
                 disabled={!canProceedFromUpload}
                 onClick={() => setStep(2)}
               >
-                Next
+                {t("import_next")}
               </Button>
             </DialogFooter>
           </div>
@@ -686,10 +692,10 @@ export function ImportDialog({ open, onOpenChange }: Props) {
         {step === 2 && source && (
           <div className="space-y-4">
             <Field>
-              <FieldLabel htmlFor="import-workspace">Workspace</FieldLabel>
+              <FieldLabel htmlFor="import-workspace">{t("import_workspace")}</FieldLabel>
               <Select value={workspaceId} onValueChange={setWorkspaceId}>
                 <SelectTrigger id="import-workspace">
-                  <SelectValue placeholder="Select a workspace" />
+                  <SelectValue placeholder={t("import_selectWorkspace")} />
                 </SelectTrigger>
                 <SelectContent>
                   {activeWorkspaces.map((workspace) => (
@@ -700,15 +706,15 @@ export function ImportDialog({ open, onOpenChange }: Props) {
                 </SelectContent>
               </Select>
               <FieldDescription>
-                Imported items will be created inside the selected workspace.
+                {t("import_workspaceDesc")}
               </FieldDescription>
             </Field>
 
             <Field orientation="horizontal">
               <div className="space-y-1">
-                <FieldLabel htmlFor="skip-duplicates">Skip duplicate URLs</FieldLabel>
+                <FieldLabel htmlFor="skip-duplicates">{t("import_skipDuplicates")}</FieldLabel>
                 <FieldDescription>
-                  Existing bookmarks with the same URL will be skipped.
+                  {t("import_skipDuplicatesDesc")}
                 </FieldDescription>
               </div>
               <Switch
@@ -719,18 +725,18 @@ export function ImportDialog({ open, onOpenChange }: Props) {
             </Field>
 
             <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
-              <div className="text-sm font-medium">Import summary</div>
+              <div className="text-sm font-medium">{t("import_summary")}</div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <SummaryStat label="Collections" value={importPlan.collections.length} />
-                <SummaryStat label="Bookmarks" value={importPlan.bookmarks.length} />
+                <SummaryStat label={t("import_statCollections")} value={importPlan.collections.length} />
+                <SummaryStat label={t("import_statBookmarks")} value={importPlan.bookmarks.length} />
                 {source === "toby" && (
-                  <SummaryStat label="Tags" value={importPlan.tags.length} />
+                  <SummaryStat label={t("import_statTags")} value={importPlan.tags.length} />
                 )}
-                <SummaryStat label="Duplicates skipped" value={importPlan.duplicatesSkipped} />
+                <SummaryStat label={t("import_statDuplicates")} value={importPlan.duplicatesSkipped} />
               </div>
               {importPlan.rejectedUrls.length > 0 && (
                 <p className="text-xs text-muted-foreground">
-                  {importPlan.rejectedUrls.length} URLs will be rejected because they use an unsupported or invalid format.
+                  {t("import_rejectedUrlsDesc", [importPlan.rejectedUrls.length.toString()])}
                 </p>
               )}
             </div>
@@ -738,7 +744,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
             {importBlockedMessage && (
               <Alert variant="destructive">
                 <AlertCircle />
-                <AlertTitle>Import unavailable</AlertTitle>
+                <AlertTitle>{t("import_unavailable")}</AlertTitle>
                 <AlertDescription>{importBlockedMessage}</AlertDescription>
               </Alert>
             )}
@@ -746,11 +752,11 @@ export function ImportDialog({ open, onOpenChange }: Props) {
             <DialogFooter>
               <Button type="button" variant="outline" size="sm" onClick={() => setStep(1)}>
                 <ArrowLeft className="size-4" />
-                Back
+                {t("import_back")}
               </Button>
               <Button type="button" size="sm" disabled={!canImport} onClick={handleImport}>
                 {isImporting && <Loader2 className="size-4 animate-spin" />}
-                Import
+                {t("import_btnImport")}
               </Button>
             </DialogFooter>
           </div>
@@ -762,22 +768,22 @@ export function ImportDialog({ open, onOpenChange }: Props) {
               <>
                 <Alert variant="success">
                   <CheckCircle2 />
-                  <AlertTitle>Import complete</AlertTitle>
+                  <AlertTitle>{t("import_titleComplete")}</AlertTitle>
                   <AlertDescription>
-                    Your bookmarks were added and queued for sync.
+                    {t("import_completeDesc")}
                   </AlertDescription>
                 </Alert>
 
                 <div className="grid grid-cols-2 gap-3">
-                  <SummaryStat label="Collections created" value={result.collectionsCreated} />
-                  <SummaryStat label="Bookmarks imported" value={result.bookmarksImported} />
-                  <SummaryStat label="Tags created" value={result.tagsCreated} />
-                  <SummaryStat label="Duplicates skipped" value={result.duplicatesSkipped} />
+                  <SummaryStat label={t("import_statCollectionsCreated")} value={result.collectionsCreated} />
+                  <SummaryStat label={t("import_statBookmarksImported")} value={result.bookmarksImported} />
+                  <SummaryStat label={t("import_statTagsCreated")} value={result.tagsCreated} />
+                  <SummaryStat label={t("import_statDuplicates")} value={result.duplicatesSkipped} />
                 </div>
 
                 {result.rejectedUrls.length > 0 && (
                   <div className="space-y-2">
-                    <div className="text-sm font-medium">Rejected URLs</div>
+                    <div className="text-sm font-medium">{t("import_rejectedUrls")}</div>
                     <div className="max-h-40 overflow-y-auto rounded-md border bg-muted/20 p-3">
                       <ul className="space-y-1 text-xs text-muted-foreground">
                         {result.rejectedUrls.map((url) => (
@@ -792,7 +798,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
 
                 <DialogFooter>
                   <Button type="button" size="sm" onClick={() => onOpenChange(false)}>
-                    Close
+                    {t("import_close")}
                   </Button>
                 </DialogFooter>
               </>
@@ -800,16 +806,16 @@ export function ImportDialog({ open, onOpenChange }: Props) {
               <>
                 <Alert variant="destructive">
                   <AlertCircle />
-                  <AlertTitle>Import failed</AlertTitle>
+                  <AlertTitle>{t("import_titleFailed")}</AlertTitle>
                   <AlertDescription>{result.message}</AlertDescription>
                 </Alert>
 
                 <DialogFooter>
                   <Button type="button" variant="outline" size="sm" onClick={handleRetry}>
-                    Try again
+                    {t("import_tryAgain")}
                   </Button>
                   <Button type="button" size="sm" onClick={() => onOpenChange(false)}>
-                    Close
+                    {t("import_close")}
                   </Button>
                 </DialogFooter>
               </>

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface SaveCollectionDialogProps {
   open: boolean;
@@ -30,6 +31,7 @@ export function SaveCollectionDialog({
   onConfirm,
   onClose,
 }: SaveCollectionDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(defaultName);
   const [deduplicate, setDeduplicate] = useState(false);
 
@@ -44,7 +46,7 @@ export function SaveCollectionDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Save as Collection</DialogTitle>
+          <DialogTitle>{t("tabsPanel_saveAsCollection")}</DialogTitle>
           <DialogDescription className="sr-only">
             Save {tabCount} tabs as a new collection of bookmarks.
           </DialogDescription>
@@ -62,8 +64,8 @@ export function SaveCollectionDialog({
           />
           <Field orientation="horizontal" className="px-1 pt-1">
             <FieldContent>
-              <FieldLabel htmlFor="deduplicate">Deduplicate</FieldLabel>
-              <FieldDescription>Skip tabs already saved elsewhere</FieldDescription>
+              <FieldLabel htmlFor="deduplicate">{t("tabsPanel_deduplicate")}</FieldLabel>
+              <FieldDescription>{t("tabsPanel_deduplicateDesc")}</FieldDescription>
             </FieldContent>
             <Switch
               id="deduplicate"

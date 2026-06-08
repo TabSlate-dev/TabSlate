@@ -1,4 +1,5 @@
 import { api, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
+import { analytics } from "@/lib/analytics";
 import { SyncQueue } from "@/lib/sync-queue";
 import { SSEClient } from "@/lib/sse-client";
 
@@ -13,6 +14,13 @@ type OnStatusChange = (status: SyncStatus, errorMessage?: string) => void;
 
 const PERIODIC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const SSE_FAILURE_THRESHOLD = 3;
+
+function sanitizeSyncErrorMessage(errorMessage?: string): string {
+  const normalizedMessage = errorMessage ?? "unknown";
+  return normalizedMessage
+    .replace(/(access_token=)[^&\s]+/gi, "$1[redacted]")
+    .slice(0, 100);
+}
 
 /**
  * Orchestrates push (via SyncQueue), SSE real-time pull (via SSEClient),
@@ -57,6 +65,11 @@ export class SyncEngine {
           if (this.sseClient.failureCount >= SSE_FAILURE_THRESHOLD) {
             this.setStatus("offline");
             this.ensurePeriodicPull();
+          } else {
+            // Before the threshold: probe connectivity immediately via pull().
+            // If the backend is truly down, pull() will detect TypeError → "offline".
+            // If pull is already in progress the isPulling guard makes this a no-op.
+            this.pull();
           }
         } else {
           this.cancelPeriodicPull();
@@ -142,7 +155,13 @@ export class SyncEngine {
       if (resp) this.onPullSuccess(resp);
       this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
     } catch (err) {
-      this.setStatus("error", err instanceof Error ? err.message : "Pull failed");
+      // TypeError = network failure (connection refused / offline) — mirror forceSync() logic.
+      if (err instanceof TypeError) {
+        this.setStatus("offline");
+        this.ensurePeriodicPull(); // keep retrying while offline
+      } else {
+        this.setStatus("error", err instanceof Error ? err.message : "Pull failed");
+      }
     } finally {
       this.isPulling = false;
     }
@@ -173,12 +192,23 @@ export class SyncEngine {
   }
 
   private setStatus(s: SyncStatus, errorMessage?: string) {
-    this.lastErrorMessage = s === "error" ? (errorMessage ?? null) : null;
+    const nextErrorMessage = s === "error" ? (errorMessage ?? null) : null;
+    const shouldTrackError =
+      s === "error" &&
+      (this.status !== s || this.lastErrorMessage !== nextErrorMessage);
+
+    this.lastErrorMessage = nextErrorMessage;
     if (this.status !== s) {
       this.status = s;
       this.onStatusChange(s, this.lastErrorMessage ?? undefined);
     } else if (s === "error" && errorMessage !== undefined) {
       this.onStatusChange(s, errorMessage);
+    }
+
+    if (shouldTrackError) {
+      analytics.track("sync_error", {
+        message: sanitizeSyncErrorMessage(errorMessage),
+      });
     }
   }
 

@@ -6,8 +6,10 @@ import { ColorPicker } from "@/components/ui/color-picker";
 import { useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function CreateGroupBar() {
+  const { t } = useTranslation();
   const createGroup = useGroupsStore(s => s.createGroup);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const [name, setName] = React.useState("");
@@ -31,7 +33,7 @@ export function CreateGroupBar() {
         onClick={() => setOpen(true)}
       >
         <Plus className="size-4 mr-1" />
-        New Group
+        {t("groupsPanel_newGroup")}
       </Button>
     );
   }
@@ -40,7 +42,7 @@ export function CreateGroupBar() {
     <div className="border rounded-lg p-3 space-y-2 bg-card">
       <Input
         autoFocus
-        placeholder="Group name"
+        placeholder={t("groupsPanel_groupName")}
         value={name}
         onChange={(e) => setName(e.target.value)}
         onKeyDown={(e) => {
@@ -52,10 +54,10 @@ export function CreateGroupBar() {
       <ColorPicker value={color} onChange={setColor} size="sm" />
       <div className="flex gap-2">
         <Button size="sm" className="flex-1" onClick={handleCreate}>
-          Create
+          {t("groupsPanel_create")}
         </Button>
         <Button size="sm" variant="outline" onClick={() => setOpen(false)}>
-          Cancel
+          {t("groupsPanel_cancel")}
         </Button>
       </div>
     </div>

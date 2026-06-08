@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useTabsDndContext } from "./tabs-dnd-provider";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useTabDragDrop } from "@/hooks/use-tab-drag-drop";
 import { BookmarkCard } from "./bookmark-card";
@@ -37,6 +37,7 @@ import { useTabsStore } from "@/store/tabs-store";
 import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-dialog";
 import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
 import { SearchBox } from "./search-box";
+import { useTranslation } from "@/hooks/use-translation";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   folder: Folder,
@@ -184,6 +185,7 @@ type VirtualItem =
   | { type: "empty_state"; title: string; description: string };
 
 export function BookmarksContent() {
+  const { t } = useTranslation();
   const openTabs = useTabsStore(s => s.openTabs);
   const loadTabs = useTabsStore(s => s.loadTabs);
 
@@ -200,7 +202,7 @@ export function BookmarksContent() {
   const filterType = useBookmarksStore(s => s.filterType);
   const setFilterType = useBookmarksStore(s => s.setFilterType);
   const sortBy = useBookmarksStore(s => s.sortBy);
-  const bookmarks = useBookmarksStore(s => s.bookmarks);
+  const bookmarks = useBookmarksStore(s => bookmarksAsArray(s.bookmarks));
   const searchQuery = useBookmarksStore(s => s.searchQuery);
   const getFilteredBookmarks = useBookmarksStore(s => s.getFilteredBookmarks);
 
@@ -238,7 +240,7 @@ export function BookmarksContent() {
 
   const currentCollection =
     selectedCollection === "all"
-      ? { name: "All Bookmarks" }
+      ? { name: t("bookmarksContent_allBookmarks") }
       : collections.find((c) => c.id === selectedCollection);
 
   const activeTagsData = React.useMemo(
@@ -259,8 +261,8 @@ export function BookmarksContent() {
     if (filteredBookmarks.length === 0) {
       rows.push({
         type: "empty_state",
-        title: "No bookmarks found",
-        description: "Save bookmarks via the popup or drag tabs here to get started.",
+        title: t("bookmarksContent_emptyTitle"),
+        description: t("bookmarksContent_emptyDesc"),
       });
       return rows;
     }
@@ -337,7 +339,7 @@ export function BookmarksContent() {
         rows.push({
           type: "collection_header",
           collectionId: "uncategorized",
-          collectionName: "Uncategorized",
+          collectionName: t("bookmarksContent_uncategorized"),
           count: uncategorizedBookmarks.length,
           icon: "bookmark",
           isDefault: false,
@@ -370,6 +372,7 @@ export function BookmarksContent() {
     expandedCollectionIds,
     viewMode,
     gridCols,
+    t
   ]);
 
   const virtualizer = useVirtualizer({
@@ -400,8 +403,7 @@ export function BookmarksContent() {
         if (row.type === "collection_header") {
           return `col-header-${row.collectionId}`;
         }
-        const ids = row.bookmarks.map((b) => b.id).join("_");
-        return `bookmarks-row-${viewMode}-${row.collectionId}-${row.rowIndex}-${ids}`;
+        return `bookmarks-row-${viewMode}-${row.collectionId}-${row.rowIndex}`;
       },
       [virtualRows, selectedCollection, hasActiveFilters, viewMode]
     ),
@@ -490,12 +492,11 @@ export function BookmarksContent() {
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div>
                           <h2 className="text-lg font-semibold">
-                            {currentCollection?.name || "All Bookmarks"}
+                            {currentCollection?.name || t("bookmarksContent_allBookmarks")}
                           </h2>
                           <p className="text-sm text-muted-foreground">
-                            {filteredBookmarks.length} bookmark
-                            {filteredBookmarks.length !== 1 ? "s" : ""}
-                            {hasActiveFilters && " (filtered)"}
+                            {t(filteredBookmarks.length === 1 ? "bookmarksContent_bookmarkCount_one" : "bookmarksContent_bookmarkCount_other", [filteredBookmarks.length.toString()])}
+                            {hasActiveFilters && t("bookmarksContent_filtered")}
                           </p>
                         </div>
                         {selectedCollection !== "all" && (
@@ -507,9 +508,9 @@ export function BookmarksContent() {
                         <div className="flex flex-wrap items-center gap-2">
                           {filterType !== "all" && (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary">
-                              {filterType === "favorites" && "Favorites only"}
-                              {filterType === "with-tags" && "With tags"}
-                              {filterType === "without-tags" && "Without tags"}
+                              {filterType === "favorites" && t("bookmarksContent_favoritesOnly")}
+                              {filterType === "with-tags" && t("bookmarksContent_withTags")}
+                              {filterType === "without-tags" && t("bookmarksContent_withoutTags")}
                               <button
                                 onClick={() => setFilterType("all")}
                                 className="hover:bg-primary/20 rounded-full p-0.5"
@@ -563,7 +564,7 @@ export function BookmarksContent() {
                   action={
                     hasActiveFilters ? (
                       <Button variant="outline" size="sm" onClick={() => setFilterType("all")}>
-                        Clear filters
+                        {t("bookmarksContent_clearFilters")}
                       </Button>
                     ) : undefined
                   }

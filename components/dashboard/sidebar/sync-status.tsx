@@ -2,6 +2,7 @@ import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SyncStatus } from "@/lib/sync-engine";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface SyncStatusProps {
   status: SyncStatus;
@@ -10,6 +11,7 @@ interface SyncStatusProps {
 }
 
 export function SyncStatusIndicator({ status, errorMessage, onForceSync }: SyncStatusProps) {
+  const { t } = useTranslation();
   const dot: Record<SyncStatus, string> = {
     idle:    "bg-green-500",
     syncing: "bg-blue-500 animate-pulse",
@@ -18,10 +20,10 @@ export function SyncStatusIndicator({ status, errorMessage, onForceSync }: SyncS
   };
 
   const label: Record<SyncStatus, string> = {
-    idle:    "Synced",
-    syncing: "Syncing…",
-    error:   "Sync error",
-    offline: "Offline",
+    idle:    t("sync_idle"),
+    syncing: t("sync_syncing"),
+    error:   t("sync_error"),
+    offline: t("sync_offline"),
   };
 
   const statusLabel = (
@@ -52,11 +54,11 @@ export function SyncStatusIndicator({ status, errorMessage, onForceSync }: SyncS
           size="sm"
           onClick={onForceSync}
           disabled={status === "syncing"}
-          aria-label="Sync now"
+          aria-label={t("sync_syncNow")}
           className="h-6 px-2 text-xs"
         >
           <RefreshCw className={`size-3 ${status === "syncing" ? "animate-spin" : ""}`} />
-          Sync now
+          {t("sync_syncNow")}
         </Button>
       </div>
     </TooltipProvider>

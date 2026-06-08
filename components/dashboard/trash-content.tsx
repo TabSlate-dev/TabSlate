@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 import { usePlanStore } from "@/store/plan-store";
+import { useTranslation } from "@/hooks/use-translation";
 
 // ---------------------------------------------------------------------------
 // Icon map (mirrors sidebar)
@@ -86,6 +87,7 @@ function TrashedCollectionCard({
   onToggleBm?: (id: string) => void;
   onPermanentlyDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const [expanded, setExpanded] = React.useState(false);
 
@@ -118,7 +120,7 @@ function TrashedCollectionCard({
             {expanded ? <ChevronDown className="size-3.5 text-muted-foreground" /> : <ChevronRight className="size-3.5 text-muted-foreground" />}
           </div>
           <p className="text-sm text-muted-foreground">
-            {bookmarks.length} bookmark{bookmarks.length !== 1 ? "s" : ""}
+            {t(bookmarks.length === 1 ? "trashContent_bookmarkCount_one" : "trashContent_bookmarkCount_other", [bookmarks.length.toString()])}
           </p>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
@@ -134,7 +136,7 @@ function TrashedCollectionCard({
             }}
           >
             <RotateCcw className="size-4 mr-1" />
-            Restore
+            {t("trashContent_restore")}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -148,7 +150,7 @@ function TrashedCollectionCard({
                 onClick={onPermanentlyDelete}
               >
                 <XCircle className="size-4 mr-2" />
-                Delete Permanently
+                {t("trashContent_deletePermanently")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -184,6 +186,7 @@ function TrashedBookmarkCard({
   onSelect?: (checked: boolean) => void;
   onPermanentlyDelete?: () => void;
 }) {
+  const { t } = useTranslation();
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDelete = useBookmarksStore(s => s.permanentlyDelete);
   const collections = useWorkspaceStore(s => s.collections);
@@ -251,7 +254,7 @@ function TrashedBookmarkCard({
       <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
         <Button variant="outline" size="sm" onClick={handleRestore}>
           <RotateCcw className="size-4 mr-1" />
-          Restore
+          {t("trashContent_restore")}
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -262,7 +265,7 @@ function TrashedBookmarkCard({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={() => window.open(bookmark.url, "_blank")}>
               <ExternalLink className="size-4 mr-2" />
-              Open URL
+              {t("trashContent_openUrl")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
@@ -270,7 +273,7 @@ function TrashedBookmarkCard({
               onClick={() => onPermanentlyDelete ? onPermanentlyDelete() : permanentlyDelete(bookmark.id)}
             >
               <XCircle className="size-4 mr-2" />
-              Delete Permanently
+              {t("trashContent_deletePermanently")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -298,6 +301,7 @@ function TrashedGroupCard({
   onPermanentlyDeleteGroup: () => void;
   onPermanentlyDeleteTab: (tabId: string) => void;
 }) {
+  const { t } = useTranslation();
   const restoreGroup = useGroupsStore(s => s.restoreGroup);
   const createGroup = useGroupsStore(s => s.createGroup);
   const addTabToGroup = useGroupsStore(s => s.addTabToGroup);
@@ -343,13 +347,13 @@ function TrashedGroupCard({
             </div>
           </div>
           <p className="text-sm text-muted-foreground">
-            {tabs.length} tab{tabs.length !== 1 ? "s" : ""}
+            {t(tabs.length === 1 ? "trashContent_tabCount_one" : "trashContent_tabCount_other", [tabs.length.toString()])}
           </p>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
           <Button variant="outline" size="sm" onClick={() => restoreGroup(group.id)}>
             <RotateCcw className="size-4 mr-1" />
-            Restore
+            {t("trashContent_restore")}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -363,7 +367,7 @@ function TrashedGroupCard({
                 onClick={onPermanentlyDeleteGroup}
               >
                 <XCircle className="size-4 mr-2" />
-                Delete Permanently
+                {t("trashContent_deletePermanently")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -399,7 +403,7 @@ function TrashedGroupCard({
                     onClick={() => handleRestoreTab(tab)}
                   >
                     <RotateCcw className="size-3.5 mr-1" />
-                    Restore
+                    {t("trashContent_restore")}
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -413,7 +417,7 @@ function TrashedGroupCard({
                         onClick={() => onPermanentlyDeleteTab(tab.id)}
                       >
                         <XCircle className="size-4 mr-2" />
-                        Delete Permanently
+                        {t("trashContent_deletePermanently")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -428,6 +432,7 @@ function TrashedGroupCard({
 }
 
 export function TrashContent() {
+  const { t } = useTranslation();
   React.useEffect(() => {
     void useBookmarksStore.getState().loadTrashedBookmarks();
   }, []);
@@ -435,6 +440,7 @@ export function TrashContent() {
   const trashedBookmarks = useBookmarksStore(s => s.trashedBookmarks);
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDeleteBookmark = useBookmarksStore(s => s.permanentlyDelete);
+  const permanentlyDeleteBookmarkBatch = useBookmarksStore(s => s.permanentlyDeleteBatch);
   
   const collections = useWorkspaceStore(s => s.collections);
   const workspaces = useWorkspaceStore(s => s.workspaces);
@@ -712,8 +718,9 @@ export function TrashContent() {
         deleteTabFromTrash(tabId);
       }
     }
-    for (const bmId of selectedBmIds) {
-      permanentlyDeleteBookmark(bmId);
+    // Batch all selected bookmarks into one push (≤900 per request) instead of N requests.
+    if (selectedBmIds.size > 0) {
+      permanentlyDeleteBookmarkBatch(Array.from(selectedBmIds));
     }
     setSelectedColIds(new Set());
     setSelectedGroupIds(new Set());
@@ -728,8 +735,9 @@ export function TrashContent() {
     for (const group of trashedGroups) {
       permanentlyDeleteGroup(group.id);
     }
-    for (const bm of individualTrashedBookmarks) {
-      permanentlyDeleteBookmark(bm.id);
+    // Batch all individual bookmarks into one push (≤900 per request) instead of N requests.
+    if (individualTrashedBookmarks.length > 0) {
+      permanentlyDeleteBookmarkBatch(individualTrashedBookmarks.map((b) => b.id));
     }
     setSelectedColIds(new Set());
     setSelectedGroupIds(new Set());
@@ -746,50 +754,50 @@ export function TrashContent() {
               <Trash2 className="size-5" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold">Trash</h2>
+              <h2 className="text-lg font-semibold">{t("trashContent_title")}</h2>
               <p className="text-sm text-muted-foreground">
-                {trashedCollections.length > 0 && `${trashedCollections.length} collection${trashedCollections.length !== 1 ? "s" : ""}, `}
-                {trashedGroups.length > 0 && `${trashedGroups.length} group${trashedGroups.length !== 1 ? "s" : ""}, `}
-                {individualTrashedBookmarks.length} bookmark{individualTrashedBookmarks.length !== 1 ? "s" : ""}
+                {trashedCollections.length > 0 && `${t(trashedCollections.length === 1 ? "trashContent_collectionCount_one" : "trashContent_collectionCount_other", [trashedCollections.length.toString()])}, `}
+                {trashedGroups.length > 0 && `${t(trashedGroups.length === 1 ? "trashContent_groupCount_one" : "trashContent_groupCount_other", [trashedGroups.length.toString()])}, `}
+                {t(individualTrashedBookmarks.length === 1 ? "trashContent_bookmarkCount_one" : "trashContent_bookmarkCount_other", [individualTrashedBookmarks.length.toString()])}
               </p>
             </div>
           </div>
           {totalCount > 0 && selectedCount === 0 && (
             <div className="flex items-center gap-4">
               <p className="text-xs text-muted-foreground hidden md:block mr-2">
-                Items in trash will be permanently deleted after {trashGraceDays} days
+                {t("trashContent_gracePeriod", [trashGraceDays.toString()])}
               </p>
               <Button variant="destructive" size="sm" onClick={() => requestConfirm(
-                "Empty Trash?",
-                "All items in trash will be permanently deleted. This cannot be undone.",
+                t("trashContent_emptyConfirmTitle"),
+                t("trashContent_emptyConfirmDesc"),
                 handleEmptyTrash
               )}>
-                Empty Trash
+                {t("trashContent_emptyTrash")}
               </Button>
               <Button variant="outline" size="sm" onClick={handleSelectAll}>
-                Select All
+                {t("trashContent_selectAll")}
               </Button>
             </div>
           )}
 
           {selectedCount > 0 && (
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium mr-2 hidden sm:inline-block">{selectedCount} selected</span>
+              <span className="text-sm font-medium mr-2 hidden sm:inline-block">{t("trashContent_selectedCount", [selectedCount.toString()])}</span>
               <Button variant="outline" size="sm" onClick={() => { setSelectedColIds(new Set()); setSelectedGroupIds(new Set()); setSelectedTabIds(new Set()); setSelectedBmIds(new Set()); }}>
-                Cancel
+                {t("trashContent_cancel")}
               </Button>
               <Button variant="outline" size="sm" onClick={handleSelectAll}>
-                {selectedCount === totalCount ? "Deselect All" : "Select All"}
+                {selectedCount === totalCount ? t("trashContent_deselectAll") : t("trashContent_selectAll")}
               </Button>
               <Button size="sm" onClick={handleBatchRestore}>
-                <RotateCcw className="size-4 mr-1" /> Restore
+                <RotateCcw className="size-4 mr-1" /> {t("trashContent_restore")}
               </Button>
               <Button size="sm" variant="destructive" onClick={() => requestConfirm(
-                `Delete ${selectedCount} item${selectedCount !== 1 ? "s" : ""} permanently?`,
-                "These items will be permanently deleted and cannot be recovered.",
+                t(selectedCount === 1 ? "trashContent_deleteConfirmTitle_one" : "trashContent_deleteConfirmTitle_other", [selectedCount.toString()]),
+                t("trashContent_deleteConfirmDesc"),
                 handleBatchDelete
               )}>
-                <Trash2 className="size-4 mr-1" /> Delete
+                <Trash2 className="size-4 mr-1" /> {t("trashContent_delete")}
               </Button>
             </div>
           )}

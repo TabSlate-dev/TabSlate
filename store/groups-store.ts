@@ -2,11 +2,12 @@ import { create } from "zustand";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { openAsTabGroup } from "@/lib/chrome/tab-groups";
 import { generateId } from "@/lib/id";
-import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
+import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
+import { analytics } from "@/lib/analytics";
 
 export interface GroupTab {
   id: string;
@@ -106,12 +107,20 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       }
       return true;
     });
-    const migratedTabs = groupTabs.map((t): GroupTab => {
-      if (!t.favicon.startsWith("data:")) { return t; }
-      const fixed = { ...t, favicon: normalizeFavicon(t.favicon, t.url) };
-      idbPut("group-tabs", fixed);
-      return fixed;
-    });
+    const faviconMigrated = await idbGet<{ key: string; value: boolean }>("kv", "favicon-migrated-groups-v1");
+    const migratedTabs = faviconMigrated?.value
+      ? groupTabs
+      : groupTabs.map((t): GroupTab => {
+          if (!t.favicon.startsWith("data:")) {
+            return t;
+          }
+          const fixed = { ...t, favicon: normalizeFavicon(t.favicon, t.url) };
+          void idbPut("group-tabs", fixed);
+          return fixed;
+        });
+    if (!faviconMigrated?.value) {
+      await idbPut("kv", { key: "favicon-migrated-groups-v1", value: true });
+    }
     set({ groups, groupTabs: migratedTabs, _hydrated: true });
   },
 
@@ -127,6 +136,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       set((state) => ({ groups: [...state.groups, group] }));
       idbPut("groups", group);
       usePlanStore.getState().incrementUsage("saved_group");
+      analytics.track("group_saved");
       return id;
     }),
 
@@ -149,9 +159,9 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     if (updated) { idbPut("groups", updated); }
 
     // Sync to open Chrome tab groups
-    if (oldName && (patch.name !== undefined || patch.color !== undefined)) {
+    if (oldName && (patch.name !== undefined || patch.color !== undefined || patch.isCompact !== undefined)) {
       import("./tabs-store").then(({ useTabsStore }) => {
-        const { tabGroups, fullTitles, updateGroup: updateChromeGroup } = useTabsStore.getState();
+        const { tabGroups, fullTitles, updateGroup: updateChromeGroup, toggleGroupCompact } = useTabsStore.getState();
         const chromeGroup = tabGroups.find(g => (fullTitles[g.id] || g.title) === oldName);
         if (chromeGroup) {
           const chromePatch: { title?: string; color?: TabGroupColor } = {};
@@ -164,6 +174,15 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
           if (Object.keys(chromePatch).length > 0) {
             updateChromeGroup(chromeGroup.id, chromePatch);
           }
+          
+          if (patch.isCompact !== undefined) {
+             const actualFullTitle = fullTitles[chromeGroup.id] || chromeGroup.title;
+             const isCurrentlyCompact = chromeGroup.title.length === 1 && actualFullTitle.length > 1;
+             // If Chrome tab group compact state doesn't match the new desired state
+             if (patch.isCompact !== isCurrentlyCompact) {
+                 toggleGroupCompact(chromeGroup.id);
+             }
+          }
         }
       });
     }
@@ -171,7 +190,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
 
   deleteGroup: (id) => {
     const group = get().groups.find(g => g.id === id);
-    if (!group) { return; }
+    if (!group || group.deletedAt) { return; }
     const tabs = get().groupTabs.filter(t => t.groupId === id);
     const deletedGroup = { ...group, deletedAt: Date.now() };
     syncEngine?.enqueue({ groups: [toServerGroup(deletedGroup, tabs)] });
@@ -286,7 +305,14 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       .sort((a, b) => a.position - b.position)
       .map((t) => t.url);
     if (!urls.length) { return; }
-    await openAsTabGroup(urls, group.name, group.color, group.isCompact);
+    const chromeGroupId = await openAsTabGroup(urls, group.name, group.color, group.isCompact);
+    
+    // Register the full title in tabs-store so it can sync properly later
+    const { useTabsStore } = await import("./tabs-store");
+    const { registerGroupFullTitle } = useTabsStore.getState();
+    if (registerGroupFullTitle) {
+      await registerGroupFullTitle(chromeGroupId, group.name);
+    }
   },
 
   mergeFromServer: (resp) => {

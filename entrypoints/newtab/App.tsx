@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { HashRouter, Routes, Route } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { HashRouter, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TabsDndProvider } from "@/components/dashboard/tabs-dnd-provider";
 import { WorkspaceRail } from "@/components/dashboard/workspace-rail";
@@ -24,23 +24,69 @@ import { useSettingsStore } from "@/store/settings-store";
 import { usePlanStore, type QuotaResource } from "@/store/plan-store";
 import { QuotaAlert } from "@/components/ui/quota-alert";
 import type { ExtensionMessage } from "@/lib/messages";
+import { analytics } from "@/lib/analytics";
 import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine, releaseSyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
+function PageTracker() {
+  const location = useLocation();
+  const lastPathRef = useRef<string | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+
+    const path = location.pathname;
+    timerRef.current = setTimeout(() => {
+      if (lastPathRef.current === path) {
+        return;
+      }
+      lastPathRef.current = path;
+      analytics.track("page_view", { path });
+    }, 200);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [location.pathname]);
+
+  return null;
+}
+
+const ROUTE_TITLES: Record<string, string> = {
+  "/favorites": "Favorites",
+  "/archive": "Archive",
+  "/trash": "Trash",
+  "/tabs": "Open Tabs",
+  "/groups": "Groups",
+};
+
+function useRouteTitle(): string | undefined {
+  const { pathname } = useLocation();
+
+  if (pathname.startsWith("/groups/")) {
+    return "Groups";
+  }
+
+  return ROUTE_TITLES[pathname];
+}
+
 function Layout({
-  title,
   syncStatus,
   syncErrorMessage,
   onForceSync,
-  children,
 }: {
-  title?: string;
   syncStatus: SyncStatus;
   syncErrorMessage?: string | null;
   onForceSync: () => void;
-  children: React.ReactNode;
 }) {
+  const title = useRouteTitle();
+
   return (
     <div className="flex h-svh overflow-hidden bg-sidebar">
       {/* Far-left workspace rail */}
@@ -63,7 +109,7 @@ function Layout({
             {/* Center content card */}
             <div className="flex-1 flex flex-col lg:border lg:rounded-lg bg-background overflow-hidden min-w-0">
               <BookmarksHeader title={title} />
-              {children}
+              <Outlet />
             </div>
 
             {/* Right open-tabs rail */}
@@ -169,6 +215,7 @@ function SyncProvider({
 }) {
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const accessToken = useAuthStore((s) => s.accessToken);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
   const localSeq = useWorkspaceStore((s) => s.localSeq);
   const mergeWorkspaces = useWorkspaceStore((s) => s.mergeFromServer);
   const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
@@ -260,11 +307,26 @@ function SyncProvider({
     };
   }, [accessToken, serverUrl]);
 
-  const handleForceSync = useCallback(() => {
-    syncEngine?.forceSync().catch(() => {});
-  }, []);
+  // When accessToken is absent but the user is logged in (has a refreshToken) with a configured
+  // serverUrl, the engine never started because silentRefresh() couldn't reach the backend.
+  // Surface this as "offline" so the sidebar shows the red dot instead of a misleading green.
+  const effectiveSyncStatus = useMemo<SyncStatus>(
+    () => (!accessToken && !!refreshToken && !!serverUrl ? "offline" : syncStatus),
+    [accessToken, refreshToken, serverUrl, syncStatus],
+  );
 
-  return <>{children(syncStatus, handleForceSync, syncErrorMessage)}</>;
+  const handleForceSync = useCallback(() => {
+    if (syncEngine) {
+      // Normal path: engine is running, trigger a full sync cycle.
+      syncEngine.forceSync().catch(() => {});
+    } else if (serverUrl) {
+      // No engine = accessToken is absent (silentRefresh failed while backend was unreachable).
+      // Retry the token refresh; on success the SyncProvider effect will (re)create the engine.
+      void useAuthStore.getState().silentRefresh();
+    }
+  }, [serverUrl]);
+
+  return <>{children(effectiveSyncStatus, handleForceSync, syncErrorMessage)}</>;
 }
 
 export default function App() {
@@ -280,7 +342,7 @@ export default function App() {
         useWorkspaceStore.getState().hydrate();
       }
       if (message.type === "TABS_CHANGED") {
-        useTabsStore.getState().loadTabs();
+        useTabsStore.getState().loadTabs(true);
       }
       if (message.type === "OPEN_SEARCH") {
         window.dispatchEvent(new CustomEvent("tabslate-focus-search"));
@@ -298,56 +360,26 @@ export default function App() {
           <SyncProvider>
             {(syncStatus, onForceSync, syncErrorMessage) => (
               <HashRouter>
+                <PageTracker />
                 <TabsDndProvider>
                   <Routes>
                     <Route
                       path="/"
                       element={
-                        <Layout syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <BookmarksContent />
-                        </Layout>
+                        <Layout
+                          syncStatus={syncStatus}
+                          syncErrorMessage={syncErrorMessage}
+                          onForceSync={onForceSync}
+                        />
                       }
-                    />
-                    <Route
-                      path="/favorites"
-                      element={
-                        <Layout title="Favorites" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <FavoritesContent />
-                        </Layout>
-                      }
-                    />
-                    <Route
-                      path="/archive"
-                      element={
-                        <Layout title="Archive" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <ArchiveContent />
-                        </Layout>
-                      }
-                    />
-                    <Route
-                      path="/trash"
-                      element={
-                        <Layout title="Trash" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <TrashContent />
-                        </Layout>
-                      }
-                    />
-                    <Route
-                      path="/tabs"
-                      element={
-                        <Layout title="Open Tabs" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <TabsPanel />
-                        </Layout>
-                      }
-                    />
-                    <Route
-                      path="/groups/:groupId"
-                      element={
-                        <Layout title="Groups" syncStatus={syncStatus} syncErrorMessage={syncErrorMessage} onForceSync={onForceSync}>
-                          <GroupDetail />
-                        </Layout>
-                      }
-                    />
+                    >
+                      <Route index element={<BookmarksContent />} />
+                      <Route path="favorites" element={<FavoritesContent />} />
+                      <Route path="archive" element={<ArchiveContent />} />
+                      <Route path="trash" element={<TrashContent />} />
+                      <Route path="tabs" element={<TabsPanel />} />
+                      <Route path="groups/:groupId" element={<GroupDetail />} />
+                    </Route>
                   </Routes>
                 </TabsDndProvider>
               </HashRouter>

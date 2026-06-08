@@ -20,7 +20,7 @@ import { useWorkspaceStore } from "@/store/workspace-store";
 import { generateId } from "@/lib/id";
 import { normalizeUrl, getNormalizedUrlSet } from "@/lib/bookmark-utils";
 import type { Bookmark } from "@/lib/types";
-import { idbGetAll, idbPut, idbDelete } from "@/lib/idb";
+import { idbGet, idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 
 interface TabsState {
   openTabs: BrowserTab[];
@@ -56,6 +56,7 @@ interface TabsState {
   
   // Group actions
   toggleGroupCompact: (groupId: number) => Promise<void>;
+  registerGroupFullTitle: (groupId: number, fullTitle: string) => Promise<void>;
 }
 
 
@@ -80,7 +81,8 @@ async function _saveTabsToCollectionHelper(
   if (!tabsToSave.length) { return { saved: 0, skipped: 0 }; }
 
   const { activeWorkspaceId, collections, createCollection } = useWorkspaceStore.getState();
-  const { bookmarks, addBookmarks } = useBookmarksStore.getState();
+  const { bookmarks: bookmarksMap, addBookmarks } = useBookmarksStore.getState();
+  const bookmarks = Array.from(bookmarksMap.values());
 
   const now = new Date().toISOString();
   const newBookmarksData: Omit<Bookmark, "collectionId">[] = [];
@@ -191,6 +193,56 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       (acc, e) => { acc[e.groupId] = e.title; return acc; },
       {},
     );
+
+    // After a browser restart Chrome assigns new IDs to restored tab groups,
+    // so IDB entries keyed by old IDs become orphaned. Two-layer recovery:
+    //
+    // Layer 1 — orphaned-entry reconciliation: match compact groups against
+    // orphaned full-title entries by (firstChar, title.length > 1). Only match
+    // when unambiguous (exactly one candidate per firstChar). Skips poisoned
+    // 1-char entries (written by old buggy code) via the length > 1 guard.
+    const currentGroupIds = new Set(groups.map((g) => g.id));
+    const orphaned = titleEntries.filter((e) => !currentGroupIds.has(e.groupId));
+    if (orphaned.length > 0) {
+      const orphanedPool = [...orphaned];
+      const reconcileWrites: Array<{ newId: number; oldId: number; title: string }> = [];
+      for (const group of groups) {
+        if (group.title.length === 1 && !fullTitles[group.id]) {
+          const candidates = orphanedPool.filter((e) => e.title[0] === group.title && e.title.length > 1);
+          if (candidates.length === 1) {
+            const match = candidates[0];
+            fullTitles[group.id] = match.title;
+            reconcileWrites.push({ newId: group.id, oldId: match.groupId, title: match.title });
+            orphanedPool.splice(orphanedPool.indexOf(match), 1);
+          }
+        }
+      }
+      for (const { newId, oldId, title } of reconcileWrites) {
+        idbPut("tab-group-titles", { groupId: newId, title });
+        idbDelete("tab-group-titles", oldId);
+      }
+    }
+
+    // Layer 2 — stable kv fallback: when compact was enabled, we also wrote
+    // kv["compact-group-title:${color}:${firstChar}"] = fullTitle. This key
+    // does not use the ephemeral Chrome group ID, so it survives restarts even
+    // when the orphaned-entry path fails (ambiguous matches, cleared IDB, etc.).
+    const needsKvFallback = groups.filter(g => g.title.length === 1 && !fullTitles[g.id]);
+    if (needsKvFallback.length > 0) {
+      const kvEntries = await Promise.all(
+        needsKvFallback.map(g =>
+          idbGet<{ key: string; value: string }>("kv", `compact-group-title:${g.color}:${g.title}`)
+        )
+      );
+      for (let i = 0; i < needsKvFallback.length; i++) {
+        const entry = kvEntries[i];
+        if (entry?.value) {
+          fullTitles[needsKvFallback[i].id] = entry.value;
+          idbPut("tab-group-titles", { groupId: needsKvFallback[i].id, title: entry.value });
+        }
+      }
+    }
+
     set({ openTabs: tabs, tabGroups: groups, fullTitles, isLoading: false });
   },
 
@@ -206,8 +258,12 @@ export const useTabsStore = create<TabsState>((set, get) => ({
 
   focusTab: async (tabId, windowId) => {
     await focusTab(tabId, windowId);
-    // Silent reload to update "active" state without unmounting components
-    await get().loadTabs(true);
+    set(state => ({
+      openTabs: state.openTabs.map(t => ({
+        ...t,
+        active: t.id === tabId && t.windowId === windowId,
+      })),
+    }));
   },
   
   ungroupSpecificTabs: async (tabIds) => {
@@ -234,14 +290,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const isCompact = compact !== undefined ? compact : compactGroupTitles;
     
     let fullTitle = title.trim();
-    let chromeTitle = "";
-    
     if (!fullTitle) {
       fullTitle = getAutoGroupName();
-      chromeTitle = ""; // Empty as requested by user for Chrome display
-    } else {
-      chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
     }
+    const chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
 
     const groupId = await groupTabs(tabIds, chromeTitle, color);
     
@@ -304,10 +356,14 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   dissolveGroup: async (groupId) => {
-    const { openTabs, fullTitles } = get();
+    const { openTabs, fullTitles, tabGroups } = get();
+    const group = tabGroups.find(g => g.id === groupId);
     const tabIds = openTabs.filter((t) => t.groupId === groupId).map((t) => t.id);
     if (tabIds.length) { await ungroupTabs(tabIds); }
     idbDelete("tab-group-titles", groupId);
+    if (group && group.title.length === 1 && (fullTitles[groupId]?.length ?? 0) > 1) {
+      idbDelete("kv", `compact-group-title:${group.color}:${group.title}`);
+    }
     const updatedTitles = { ...fullTitles };
     delete updatedTitles[groupId];
     const [tabs, groups] = await Promise.all([
@@ -318,12 +374,16 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   closeGroup: async (groupId) => {
-    const { openTabs } = get();
+    const { openTabs, fullTitles, tabGroups } = get();
+    const group = tabGroups.find(g => g.id === groupId);
     const tabIds = openTabs.filter((t) => t.groupId === groupId).map((t) => t.id);
     if (tabIds.length) {
       await Promise.all(tabIds.map((id) => closeTab(id)));
     }
     idbDelete("tab-group-titles", groupId);
+    if (group && group.title.length === 1 && (fullTitles[groupId]?.length ?? 0) > 1) {
+      idbDelete("kv", `compact-group-title:${group.color}:${group.title}`);
+    }
     await get().loadTabs(true);
   },
 
@@ -342,7 +402,8 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   openCollectionAsGroup: async (collectionId, title, color, compact) => {
-    const { bookmarks } = useBookmarksStore.getState();
+    const { bookmarks: bookmarksMap } = useBookmarksStore.getState();
+    const bookmarks = Array.from(bookmarksMap.values());
     const urls = bookmarks
       .filter((b) => b.collectionId === collectionId)
       .map((b) => b.url);
@@ -352,14 +413,10 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     const isCompact = compact !== undefined ? compact : compactGroupTitles;
     
     let fullTitle = title.trim();
-    let chromeTitle = "";
-    
     if (!fullTitle) {
       fullTitle = getAutoGroupName();
-      chromeTitle = "";
-    } else {
-      chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
     }
+    const chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
 
     const groupId = await openAsTabGroup(urls, chromeTitle, color);
     
@@ -375,11 +432,23 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   openCollection: async (collectionId) => {
-    const { bookmarks } = useBookmarksStore.getState();
+    const { bookmarks: bookmarksMap } = useBookmarksStore.getState();
+    const bookmarks = Array.from(bookmarksMap.values());
     const urls = bookmarks
       .filter((b) => b.collectionId === collectionId)
       .map((b) => b.url);
     await openUrls(urls);
+  },
+
+  registerGroupFullTitle: async (groupId: number, fullTitle: string) => {
+    const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
+    idbPut("tab-group-titles", { groupId, title: fullTitle });
+
+    const [tabs, groups] = await Promise.all([
+      getCurrentWindowTabs(),
+      getCurrentWindowGroups(),
+    ]);
+    set({ openTabs: tabs, tabGroups: groups, fullTitles: currentTitles });
   },
 
   toggleGroupCompact: async (groupId: number) => {
@@ -393,19 +462,53 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     }
 
     const currentFullTitle = storedFullTitle || group.title;
-    const isCurrentlyCompact = group.title.length === 1 && currentFullTitle.length > 1;
-    const nextTitle = isCurrentlyCompact ? currentFullTitle : (currentFullTitle[0] || "");
+    // isCurrentlyCompact is true whenever Chrome is displaying the 1-char title,
+    // regardless of whether we have a stored full title. The previous check required
+    // currentFullTitle.length > 1, which broke after a browser restart when the full
+    // title IDB entry was orphaned and currentFullTitle fell back to the 1-char title.
+    const isCurrentlyCompact = group.title.length === 1;
+    const isNextCompact = !isCurrentlyCompact;
+    const nextTitle = isNextCompact ? (currentFullTitle[0] || "") : currentFullTitle;
 
-    await updateGroup(groupId, { title: nextTitle });
+    // If turning off compact but the full title is still just 1 char (title was lost),
+    // there is nothing meaningful to restore — skip the Chrome update and IDB write.
+    if (!isNextCompact && nextTitle.length <= 1) { return; }
+
+    // Directly update chrome group without triggering store's updateGroup (which overwrites full titles)
+    const updated = await updateGroup(groupId, { title: nextTitle });
 
     const updatedTitles = { ...fullTitles };
-    if (!updatedTitles[groupId]) { updatedTitles[groupId] = currentFullTitle; }
-    idbPut("tab-group-titles", { groupId, title: updatedTitles[groupId] });
+    // Only record the full title when it is actually longer than one character.
+    // Writing a 1-char title here would poison IDB and prevent future reconciliation.
+    if (!updatedTitles[groupId] && currentFullTitle.length > 1) {
+      updatedTitles[groupId] = currentFullTitle;
+    }
+    if (updatedTitles[groupId]) {
+      idbPut("tab-group-titles", { groupId, title: updatedTitles[groupId] });
+    }
 
-    const [tabs, groups] = await Promise.all([
-      getCurrentWindowTabs(),
-      getCurrentWindowGroups(),
-    ]);
-    set({ openTabs: tabs, tabGroups: groups, fullTitles: updatedTitles });
+    // Maintain stable kv entry keyed by (color, firstChar) — does not use the
+    // ephemeral Chrome group ID, so it survives browser restarts.
+    const kvKey = `compact-group-title:${group.color}:${isNextCompact ? nextTitle : group.title}`;
+    if (isNextCompact && currentFullTitle.length > 1) {
+      idbPut("kv", { key: kvKey, value: currentFullTitle });
+    } else if (!isNextCompact) {
+      idbDelete("kv", kvKey);
+    }
+
+    set((state) => ({ 
+      tabGroups: state.tabGroups.map((g) => (g.id === groupId ? updated : g)),
+      fullTitles: updatedTitles 
+    }));
+
+    // Sync isCompact change to Saved Groups
+    if (currentFullTitle) {
+      const { useGroupsStore } = await import("./groups-store");
+      const { groups, updateGroup: updateSavedGroup } = useGroupsStore.getState();
+      const savedGroup = groups.find(g => g.name === currentFullTitle);
+      if (savedGroup && savedGroup.isCompact !== isNextCompact) {
+        updateSavedGroup(savedGroup.id, { isCompact: isNextCompact });
+      }
+    }
   },
 }));
