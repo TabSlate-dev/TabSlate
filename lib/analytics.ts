@@ -13,7 +13,7 @@ interface AnalyticsTrackPayload {
 }
 
 interface AnalyticsRequestBody {
-  type: "track" | "screen_view";
+  type: "track";
   payload: AnalyticsTrackPayload;
 }
 
@@ -137,9 +137,9 @@ function track(name: string, properties?: AnalyticsProperties): void {
       }
 
       await postTrackEvent(getOpenpanelUrl(), getOpenpanelClientId(), {
-        type: name === "page_view" ? "screen_view" : "track",
+        type: "track",
         payload: {
-          name,
+          name: name === "page_view" ? "screen_view" : name,
           profileId,
           properties: properties ?? {},
         },

@@ -18,7 +18,7 @@ function AdCard({ ad, compact }: { ad: Ad; compact: boolean }) {
 
   const handleClick = () => {
     if (ad.websiteUrl) {
-      window.open(ad.websiteUrl, "_blank", "noopener,noreferrer");
+      window.location.href = ad.websiteUrl;
     }
   };
 

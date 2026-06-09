@@ -189,7 +189,7 @@ export function BookmarksHeader({ title }: BookmarksHeaderProps) {
 
           <Button variant="ghost" size="icon" asChild>
             <a
-              href="https://github.com/ln-dev7/square-ui"
+              href="https://github.com/TabSlate-dev/TabSlate"
               target="_blank"
               rel="noopener noreferrer"
             >

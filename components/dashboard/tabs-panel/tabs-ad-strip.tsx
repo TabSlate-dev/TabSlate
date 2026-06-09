@@ -18,7 +18,7 @@ function StripAdCard({ ad, vertical }: { ad: Ad; vertical?: boolean }) {
 
   const handleClick = () => {
     if (ad.websiteUrl) {
-      window.open(ad.websiteUrl, "_blank", "noopener,noreferrer");
+      window.location.href = ad.websiteUrl;
     }
   };
 
