@@ -7,7 +7,7 @@ export default defineConfig({
     description: "__MSG_extensionDescription__",
     version: "0.1.0",
     default_locale: "en",
-    permissions: ["tabs", "tabGroups", "storage", "bookmarks", "sessions", "contextMenus", "favicon", "scripting"],
+    permissions: ["tabs", "tabGroups", "storage", "contextMenus", "scripting"],
     optional_host_permissions: ["<all_urls>"],
     host_permissions: [],
     chrome_url_overrides: {
