@@ -354,31 +354,7 @@ export function LoginForm({
             {mode === "login" ? t("auth_loginTitle") : t("auth_registerTitle")}
           </h1>
           <p className="text-sm text-balance text-muted-foreground">
-            {mode === "login" ? (
-              t("auth_loginDesc")
-            ) : (
-              <>
-                {t("auth_registerTermsDesc1")}
-                <a
-                  href={`https://tabslate.com/${language === "zh_CN" ? "zh" : "en"}/terms`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline underline-offset-4 hover:text-primary"
-                >
-                  {t("auth_termsOfService")}
-                </a>
-                {t("auth_registerTermsDesc2")}
-                <a
-                  href={`https://tabslate.com/${language === "zh_CN" ? "zh" : "en"}/privacy-policy`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline underline-offset-4 hover:text-primary"
-                >
-                  {t("auth_privacyPolicy")}
-                </a>
-                {t("auth_registerTermsDesc3")}
-              </>
-            )}
+            {mode === "login" ? t("auth_loginDesc") : t("auth_registerDesc")}
           </p>
         </div>
 
@@ -502,6 +478,30 @@ export function LoginForm({
                 ? t("auth_loginBtn")
                 : t("auth_registerBtn")}
           </Button>
+
+          {mode === "register" && (
+            <p className="text-xs text-center text-muted-foreground leading-relaxed px-2">
+              {t("auth_registerTermsDesc1")}
+              <a
+                href={`https://tabslate.com/${language === "zh_CN" ? "zh/" : ""}terms`}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-4 hover:text-primary"
+              >
+                {t("auth_termsOfService")}
+              </a>
+              {t("auth_registerTermsDesc2")}
+              <a
+                href={`https://tabslate.com/${language === "zh_CN" ? "zh/" : ""}privacy-policy`}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-4 hover:text-primary"
+              >
+                {t("auth_privacyPolicy")}
+              </a>
+              {t("auth_registerTermsDesc3")}
+            </p>
+          )}
         </form>
 
         <FieldDescription className="text-center">
