@@ -15,6 +15,7 @@ export default defineConfig({
     },
     web_accessible_resources: [
       { resources: ["search-engine-icon/*"], matches: ["<all_urls>"] },
+      { resources: ["newtab.html"], matches: ["*://*.tabslate.com/*", "http://localhost:*/*"] },
     ],
     commands: {
       "open-search": {
