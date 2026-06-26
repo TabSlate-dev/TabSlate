@@ -132,9 +132,16 @@ interface SettingsDialogProps {
   initialTab?: "general" | "engines" | "plan" | "account";
 }
 
-function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+function DeleteAccountDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (password: string) => Promise<{ scheduled_at: number; executes_at: number }>;
+}) {
   const { t } = useTranslation();
-  const requestAccountDeletion = useAuthStore(s => s.requestAccountDeletion);
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = React.useState(false);
@@ -152,7 +159,7 @@ function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     setError(null);
     setIsSubmitting(true);
     try {
-      await requestAccountDeletion(password);
+      await onConfirm(password);
       onOpenChange(false);
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -160,7 +167,7 @@ function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChan
       } else if (err instanceof ApiError && err.status === 409) {
         setError(t("settings_accountDeletionAlreadyScheduled"));
       } else {
-        setError(t("settings_accountDeletionPasswordError"));
+        setError(err instanceof Error ? err.message : "Something went wrong.");
       }
     } finally {
       setIsSubmitting(false);
@@ -217,6 +224,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
   }, [open, initialTab]);
 
   const user = useAuthStore(s => s.user);
+  const requestAccountDeletion = useAuthStore(s => s.requestAccountDeletion);
   const [deleteAccountDialogOpen, setDeleteAccountDialogOpen] = React.useState(false);
 
   const searchEngines = useSettingsStore(s => s.searchEngines);
@@ -665,7 +673,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
       </DialogContent>
     </Dialog>
     <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
-    <DeleteAccountDialog open={deleteAccountDialogOpen} onOpenChange={setDeleteAccountDialogOpen} />
+    <DeleteAccountDialog open={deleteAccountDialogOpen} onOpenChange={setDeleteAccountDialogOpen} onConfirm={requestAccountDeletion} />
     </>
   );
 }
