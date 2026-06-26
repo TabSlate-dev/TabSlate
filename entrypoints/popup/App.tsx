@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { storageService, getWorkspaceState, type BookmarkInput } from "@/lib/storage";
+import { authStorageAdapter } from "@/lib/auth-storage-adapter";
 import {
   Bookmark,
   Check,
@@ -18,9 +19,10 @@ import {
   ExternalLink,
   Folder,
   Loader2,
+  LogIn,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Collection } from "@/lib/types";
+import type { Collection, Tag } from "@/lib/types";
 import { useTranslation } from "@/hooks/use-translation";
 
 interface TabInfo {
@@ -37,37 +39,56 @@ function PopupContent() {
   const [loading, setLoading] = useState(true);
   const [saveableCollections, setSaveableCollections] = useState<Collection[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
-  const [note, setNote] = useState("");
+  const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+  const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
+  const [tagInput, setTagInput] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [pageInfo, setPageInfo] = useState<{ ogTitle: string; metaDescription: string } | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Load current tab
-    chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
-      if (activeTab) {
-        setTab({
-          title: activeTab.title ?? activeTab.url ?? "Untitled",
-          url: activeTab.url ?? "",
-          favIconUrl: activeTab.favIconUrl ?? "",
+    Promise.all([
+      new Promise<void>((resolve) => {
+        chrome.tabs.query({ active: true, currentWindow: true }, ([activeTab]) => {
+          if (activeTab) {
+            setTab({
+              title: activeTab.title ?? activeTab.url ?? "Untitled",
+              url: activeTab.url ?? "",
+              favIconUrl: activeTab.favIconUrl ?? "",
+            });
+          }
+          if (activeTab?.id) {
+            chrome.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_INFO" })
+              .then((info: { ogTitle?: string; metaDescription?: string }) => {
+                setPageInfo({ ogTitle: info.ogTitle ?? "", metaDescription: info.metaDescription ?? "" });
+              })
+              .catch(() => {});
+          }
+          resolve();
         });
-      }
-      if (activeTab?.id) {
-        chrome.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_INFO" })
-          .then((info: { ogTitle?: string; metaDescription?: string }) => {
-            setPageInfo({ ogTitle: info.ogTitle ?? "", metaDescription: info.metaDescription ?? "" });
-          })
-          .catch(() => {});
-      }
+      }),
+      authStorageAdapter.getItem("tabslate-auth").then((result) => {
+        let loggedIn = false;
+        if (result) {
+          try {
+            const blob = JSON.parse(result);
+            if (blob.state?.refreshToken) {
+              loggedIn = true;
+            }
+          } catch { }
+        }
+        setIsLoggedIn(loggedIn);
+      }),
+      getWorkspaceState().then((state) => {
+        const cols = state.collections.filter(
+          (c) => c.workspaceId === state.activeWorkspaceId
+        );
+        setSaveableCollections(cols);
+        setAvailableTags(state.tags);
+        if (cols.length > 0) { setSelectedCollectionId(cols[0].id); }
+      })
+    ]).finally(() => {
       setLoading(false);
-    });
-
-    // Load collections from workspace store
-    getWorkspaceState().then((state) => {
-      const cols = state.collections.filter(
-        (c) => c.workspaceId === state.activeWorkspaceId
-      );
-      setSaveableCollections(cols);
-      if (cols.length > 0) { setSelectedCollectionId(cols[0].id); }
     });
   }, []);
 
@@ -84,9 +105,9 @@ function PopupContent() {
         title: pageInfo?.ogTitle || tab.title,
         url: tab.url,
         favicon: tab.favIconUrl,
-        description: note || pageInfo?.metaDescription || "",
+        description: pageInfo?.metaDescription || "",
         collectionId: selectedCollectionId,
-        tags: [],
+        tags: selectedTags.map((t) => t.id),
         seq: 0,
       };
 
@@ -114,9 +135,9 @@ function PopupContent() {
     window.close();
   };
 
-  if (loading) {
+  if (loading || isLoggedIn === null) {
     return (
-      <div className="flex items-center justify-center h-32">
+      <div className="flex items-center justify-center h-32 w-[360px]">
         <Loader2 className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
@@ -129,7 +150,7 @@ function PopupContent() {
     tab.url === "";
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-w-[360px]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b">
         <div className="flex items-center gap-2">
@@ -144,7 +165,22 @@ function PopupContent() {
         </div>
       </div>
 
-      {isNewTabPage ? (
+      {!isLoggedIn ? (
+        <div className="flex flex-col items-center justify-center flex-1 gap-3 px-6 py-8 text-center">
+          <div className="size-12 rounded-full bg-muted flex items-center justify-center">
+            <LogIn className="size-5 text-muted-foreground" />
+          </div>
+          <div>
+            <p className="font-medium text-sm">{t("popup_notLoggedIn") || "You are not logged in"}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t("popup_loginHint") || "Please login to use TabSlate"}
+            </p>
+          </div>
+          <Button size="sm" onClick={openTabSlate}>
+            {t("auth_loginBtn") || "Login"}
+          </Button>
+        </div>
+      ) : isNewTabPage ? (
         /* Can't save new tab / extension pages */
         <div className="flex flex-col items-center justify-center flex-1 gap-3 px-6 py-8 text-center">
           <div className="size-12 rounded-full bg-muted flex items-center justify-center">
@@ -243,21 +279,114 @@ function PopupContent() {
             </DropdownMenu>
           </div>
 
-          {/* Note field */}
+          {/* Tags field */}
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium text-muted-foreground">
-              {t("popup_note")}{" "}
-              <span className="text-muted-foreground/60 font-normal">
-                {t("popup_optional")}
-              </span>
+              {t("popup_tags") || "Tags"}
             </label>
-            <Input
-              placeholder={t("popup_addNote")}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSave()}
-              className="h-9 text-sm"
-            />
+            <div className="relative">
+              {selectedTags.length > 0 && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {selectedTags.map((tag) => (
+                    <span
+                      key={tag.id}
+                      className={cn(
+                        "inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium cursor-pointer",
+                        tag.color
+                      )}
+                      onClick={() =>
+                        setSelectedTags((prev) => prev.filter((t) => t.id !== tag.id))
+                      }
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <Input
+                placeholder={t("popup_addTag") || "Add a tag..."}
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={async (e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const val = tagInput.trim();
+                    if (!val) {
+                      handleSave();
+                      return;
+                    }
+                    let existing = availableTags.find(
+                      (t) => t.name.toLowerCase() === val.toLowerCase()
+                    );
+                    if (!existing) {
+                      const TAG_COLORS = [
+                        "bg-blue-500/10 text-blue-500",
+                        "bg-emerald-500/10 text-emerald-500",
+                        "bg-violet-500/10 text-violet-500",
+                        "bg-amber-500/10 text-amber-500",
+                        "bg-rose-500/10 text-rose-500",
+                        "bg-cyan-500/10 text-cyan-500",
+                        "bg-orange-500/10 text-orange-500",
+                        "bg-pink-500/10 text-pink-500",
+                      ];
+                      const color = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
+                      existing = await storageService.addTag(val, color);
+                      setAvailableTags((prev) => [...prev, existing!]);
+                      chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") }, (tabs) => {
+                        tabs.forEach((t) => {
+                          if (t.id) {
+                            try { chrome.tabs.sendMessage(t.id, { type: "WORKSPACE_CHANGED" }); } catch {}
+                          }
+                        });
+                      });
+                    }
+                    if (!selectedTags.find((t) => t.id === existing!.id)) {
+                      setSelectedTags((prev) => [...prev, existing!]);
+                    }
+                    setTagInput("");
+                  }
+                }}
+                className="h-9 text-sm"
+              />
+              {tagInput.trim() && (
+                <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-popover border rounded-md shadow-md z-10 p-1">
+                  {availableTags.filter(
+                    (t) =>
+                      t.name.toLowerCase().includes(tagInput.toLowerCase()) &&
+                      !selectedTags.find((st) => st.id === t.id)
+                  ).length > 0 ? (
+                    availableTags
+                      .filter(
+                        (t) =>
+                          t.name.toLowerCase().includes(tagInput.toLowerCase()) &&
+                          !selectedTags.find((st) => st.id === t.id)
+                      )
+                      .map((tag) => (
+                        <div
+                          key={tag.id}
+                          className="px-2 py-1.5 text-sm cursor-pointer hover:bg-accent rounded-sm flex items-center gap-2"
+                          onClick={() => {
+                            setSelectedTags((prev) => [...prev, tag]);
+                            setTagInput("");
+                          }}
+                        >
+                          <span
+                            className={cn(
+                              "inline-block size-3 rounded-full",
+                              tag.color.split(" ")[0].replace("/10", "")
+                            )}
+                          />
+                          {tag.name}
+                        </div>
+                      ))
+                  ) : (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      Press Enter to create "{tagInput}"
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Save button */}

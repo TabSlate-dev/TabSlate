@@ -5,7 +5,7 @@ export default defineConfig({
   manifest: {
     name: "__MSG_extensionName__",
     description: "__MSG_extensionDescription__",
-    version: "0.1.0",
+    version: "0.1.1",
     default_locale: "en",
     permissions: ["tabs", "tabGroups", "storage", "contextMenus", "scripting"],
     optional_host_permissions: ["<all_urls>"],

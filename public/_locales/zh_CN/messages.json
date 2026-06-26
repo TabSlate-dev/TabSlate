@@ -56,6 +56,18 @@
   "popup_pressEnter": {
     "message": "按回车键快速保存"
   },
+  "popup_notLoggedIn": {
+    "message": "未登录"
+  },
+  "popup_loginHint": {
+    "message": "请先登录以使用 TabSlate"
+  },
+  "popup_tags": {
+    "message": "标签"
+  },
+  "popup_addTag": {
+    "message": "添加标签..."
+  },
   "sidebar_navOpenTabs": {
     "message": "打开的标签页与分组"
   },

@@ -56,6 +56,18 @@
   "popup_pressEnter": {
     "message": "Press Enter to save quickly"
   },
+  "popup_notLoggedIn": {
+    "message": "Not logged in"
+  },
+  "popup_loginHint": {
+    "message": "Please login to use TabSlate"
+  },
+  "popup_tags": {
+    "message": "Tags"
+  },
+  "popup_addTag": {
+    "message": "Add a tag..."
+  },
   "sidebar_navOpenTabs": {
     "message": "Open Tabs & Groups"
   },

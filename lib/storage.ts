@@ -58,4 +58,14 @@ export const storageService = {
     await idbPut("bookmarks", newBookmark);
     return newBookmark;
   },
+  async addTag(name: string, color: string): Promise<import("@/lib/types").Tag> {
+    const newTag = {
+      id: generateId(),
+      name,
+      color,
+      seq: 0,
+    };
+    await idbPut("tags", newTag);
+    return newTag;
+  },
 };
