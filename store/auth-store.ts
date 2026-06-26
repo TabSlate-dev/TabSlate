@@ -67,6 +67,7 @@ interface AuthState {
   verifyEmailOTP: (email: string, code: string) => Promise<void>;
   forgotPassword: (email: string, captchaToken?: string) => Promise<void>;
   resetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
+  requestAccountDeletion: (password: string) => Promise<{ scheduled_at: number; executes_at: number }>;
   logout: () => Promise<void>;
 }
 
@@ -207,6 +208,16 @@ export const useAuthStore = create<AuthState>()(
       resetPassword: async (email, code, newPassword) => {
         const { serverUrl } = get();
         await api.resetPassword(serverUrl, email, code, newPassword);
+      },
+
+      requestAccountDeletion: async (password) => {
+        const { serverUrl, accessToken } = get();
+        if (!accessToken) throw new Error("not authenticated");
+        const result = await api.deleteAccount(serverUrl, accessToken, password);
+        // Refresh user so deletion_scheduled_at is populated in UI.
+        const me = await api.me(serverUrl, accessToken);
+        set({ user: me.user });
+        return result;
       },
 
       logout: async () => {

@@ -638,6 +638,57 @@
   "settings_done": {
     "message": "完成"
   },
+  "settings_tabAccount": {
+    "message": "账户"
+  },
+  "settings_accountInfoTitle": {
+    "message": "账户信息"
+  },
+  "settings_accountEmail": {
+    "message": "邮箱"
+  },
+  "settings_accountMemberSince": {
+    "message": "注册时间"
+  },
+  "settings_accountDangerZoneTitle": {
+    "message": "注销账户"
+  },
+  "settings_accountDangerZoneDesc": {
+    "message": "您的账户及所有关联数据将在 30 天宽限期后永久删除。如需取消，在此期间重新登录即可——无需其他任何操作。"
+  },
+  "settings_accountDeleteBtn": {
+    "message": "注销账户"
+  },
+  "settings_accountDeletionPendingTitle": {
+    "message": "注销申请处理中"
+  },
+  "settings_accountDeletionPendingDesc": {
+    "message": "您的账户已计划于 $1 删除。请在此日期之前登录以取消。",
+    "placeholders": {
+      "1": {
+        "content": "$1",
+        "example": "2026年7月26日"
+      }
+    }
+  },
+  "settings_accountDeletionConfirmTitle": {
+    "message": "确认注销账户"
+  },
+  "settings_accountDeletionConfirmDesc": {
+    "message": "您的账户及所有数据将在 30 天宽限期后永久删除。如需取消，只需在截止日期前登录——无需其他操作。"
+  },
+  "settings_accountDeletionPasswordLabel": {
+    "message": "当前密码"
+  },
+  "settings_accountDeletionPasswordError": {
+    "message": "密码错误，请重试。"
+  },
+  "settings_accountDeletionAlreadyScheduled": {
+    "message": "账户注销申请已处理中。"
+  },
+  "settings_accountDeletionSubmitBtn": {
+    "message": "注销账户"
+  },
   "addBookmark_title": {
     "message": "添加书签"
   },

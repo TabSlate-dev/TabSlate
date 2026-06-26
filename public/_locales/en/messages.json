@@ -638,6 +638,57 @@
   "settings_done": {
     "message": "Done"
   },
+  "settings_tabAccount": {
+    "message": "Account"
+  },
+  "settings_accountInfoTitle": {
+    "message": "Account Info"
+  },
+  "settings_accountEmail": {
+    "message": "Email"
+  },
+  "settings_accountMemberSince": {
+    "message": "Member since"
+  },
+  "settings_accountDangerZoneTitle": {
+    "message": "Delete Account"
+  },
+  "settings_accountDangerZoneDesc": {
+    "message": "Your account and all associated data will be permanently deleted after a 30-day grace period. To cancel at any time, simply log in — no other action is required."
+  },
+  "settings_accountDeleteBtn": {
+    "message": "Delete Account"
+  },
+  "settings_accountDeletionPendingTitle": {
+    "message": "Account Deletion Scheduled"
+  },
+  "settings_accountDeletionPendingDesc": {
+    "message": "Your account is scheduled for deletion on $1. Log in before that date to cancel.",
+    "placeholders": {
+      "1": {
+        "content": "$1",
+        "example": "July 26, 2026"
+      }
+    }
+  },
+  "settings_accountDeletionConfirmTitle": {
+    "message": "Confirm Account Deletion"
+  },
+  "settings_accountDeletionConfirmDesc": {
+    "message": "Your account and all data will be permanently deleted after a 30-day grace period. To cancel, simply log in before the deadline — no other action is required."
+  },
+  "settings_accountDeletionPasswordLabel": {
+    "message": "Current password"
+  },
+  "settings_accountDeletionPasswordError": {
+    "message": "Incorrect password. Please try again."
+  },
+  "settings_accountDeletionAlreadyScheduled": {
+    "message": "An account deletion is already scheduled."
+  },
+  "settings_accountDeletionSubmitBtn": {
+    "message": "Delete Account"
+  },
   "addBookmark_title": {
     "message": "Add Bookmark"
   },

@@ -7,6 +7,7 @@ export interface ApiUser {
   is_verified: boolean;
   created_at: number;
   updated_at: number;
+  deletion_scheduled_at?: number | null;
 }
 
 export interface AuthResponse {
@@ -386,6 +387,22 @@ export const api = {
       `/sync/pull?after_seq=${afterSeq}`,
       {
         method: "GET",
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
+  },
+
+  deleteAccount(
+    baseUrl: string,
+    accessToken: string,
+    password: string,
+  ): Promise<{ scheduled_at: number; executes_at: number }> {
+    return request<{ scheduled_at: number; executes_at: number }>(
+      baseUrl,
+      "/auth/delete-account",
+      {
+        method: "POST",
+        body: JSON.stringify({ password }),
         headers: { Authorization: `Bearer ${accessToken}` },
       },
     );
