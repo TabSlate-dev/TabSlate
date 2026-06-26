@@ -3,6 +3,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ImportDialog } from "@/components/dashboard/import-dialog";
 import { useSettingsStore, SearchEngine } from "@/store/settings-store";
 import { usePlanStore } from "@/store/plan-store";
+import { useAuthStore } from "@/store/auth-store";
+import { ApiError } from "@/lib/api";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { GripVertical, Trash2, Plus, Bookmark, Layers, Tag, Folder, ShieldCheck, Loader2, Sparkles } from "lucide-react";
@@ -127,18 +129,95 @@ function QuotaRow({ label, usage, limit, icon: Icon }: QuotaRowProps) {
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialTab?: "general" | "engines" | "plan";
+  initialTab?: "general" | "engines" | "plan" | "account";
+}
+
+function DeleteAccountDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation();
+  const requestAccountDeletion = useAuthStore(s => s.requestAccountDeletion);
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) {
+      setPassword("");
+      setError(null);
+      setIsSubmitting(false);
+    }
+  }, [open]);
+
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await requestAccountDeletion(password);
+      onOpenChange(false);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setError(t("settings_accountDeletionPasswordError"));
+      } else if (err instanceof ApiError && err.status === 409) {
+        setError(t("settings_accountDeletionAlreadyScheduled"));
+      } else {
+        setError(t("settings_accountDeletionPasswordError"));
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t("settings_accountDeletionConfirmTitle")}</DialogTitle>
+          <DialogDescription>{t("settings_accountDeletionConfirmDesc")}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium" htmlFor="delete-account-password">
+              {t("settings_accountDeletionPasswordLabel")}
+            </label>
+            <Input
+              id="delete-account-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete="current-password"
+              autoFocus
+            />
+            {error && (
+              <p className="text-xs text-destructive">{error}</p>
+            )}
+          </div>
+          <div className="flex justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+              {t("settings_cancel")}
+            </Button>
+            <Button type="submit" variant="destructive" disabled={!password || isSubmitting}>
+              {isSubmitting && <Loader2 className="size-3.5 mr-1.5 animate-spin" />}
+              {t("settings_accountDeletionSubmitBtn")}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: SettingsDialogProps) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = React.useState<"general" | "engines" | "plan">("general");
+  const [activeTab, setActiveTab] = React.useState<"general" | "engines" | "plan" | "account">("general");
 
   React.useEffect(() => {
     if (open) {
       setActiveTab(initialTab);
     }
   }, [open, initialTab]);
+
+  const user = useAuthStore(s => s.user);
+  const [deleteAccountDialogOpen, setDeleteAccountDialogOpen] = React.useState(false);
 
   const searchEngines = useSettingsStore(s => s.searchEngines);
   const updateSearchEngines = useSettingsStore(s => s.updateSearchEngines);
@@ -313,6 +392,17 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
             )}
           >
             {t("settings_tabPlan")}
+          </button>
+          <button
+            onClick={() => setActiveTab("account")}
+            className={cn(
+              "flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg transition-all text-center cursor-pointer",
+              activeTab === "account"
+                ? "bg-background text-foreground shadow-xs font-bold"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t("settings_tabAccount")}
           </button>
         </div>
 
@@ -519,6 +609,54 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
               </div>
             </div>
           )}
+
+          {activeTab === "account" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Account Info */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold">{t("settings_accountInfoTitle")}</h3>
+                <div className="rounded-lg border bg-card/20 p-3 space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-xs">{t("settings_accountEmail")}</span>
+                    <span className="font-medium text-xs truncate max-w-[60%] text-right">{user?.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-xs">{t("settings_accountMemberSince")}</span>
+                    <span className="font-medium text-xs">
+                      {user ? new Date(user.created_at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : ""}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Danger Zone */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-destructive">{t("settings_accountDangerZoneTitle")}</h3>
+                {user?.deletion_scheduled_at ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                    <p className="text-sm font-semibold">{t("settings_accountDeletionPendingTitle")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings_accountDeletionPendingDesc", [
+                        new Date(user.deletion_scheduled_at * 1000).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }),
+                      ])}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border p-3 space-y-3 bg-card/20">
+                    <p className="text-xs text-muted-foreground leading-relaxed">{t("settings_accountDangerZoneDesc")}</p>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setDeleteAccountDialogOpen(true)}
+                      className="cursor-pointer"
+                    >
+                      {t("settings_accountDeleteBtn")}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="pt-4 border-t mt-auto flex justify-end shrink-0">
@@ -527,6 +665,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
       </DialogContent>
     </Dialog>
     <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+    <DeleteAccountDialog open={deleteAccountDialogOpen} onOpenChange={setDeleteAccountDialogOpen} />
     </>
   );
 }
