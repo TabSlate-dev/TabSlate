@@ -515,9 +515,6 @@
   "settings_tabGeneral": {
     "message": "通用"
   },
-  "settings_tabEngines": {
-    "message": "搜索引擎"
-  },
   "settings_tabPlan": {
     "message": "套餐与用量"
   },
@@ -541,34 +538,11 @@
   "settings_generalImportBtn": {
     "message": "导入书签"
   },
-  "settings_enginesTitle": {
-    "message": "搜索引擎"
-  },
-  "settings_enginesDesc": {
-    "message": "启用或禁用搜索引擎，可拖拽调整顺序。首个启用的引擎将作为默认搜索引擎。"
-  },
-  "settings_enginesPlaceholderName": {
-    "message": "名称"
-  },
-  "settings_enginesPlaceholderUrl": {
-    "message": "https://example.com/search?q=%s"
-  },
-  "settings_enginesUsePlaceholder": {
-    "message": "使用 $1 作为搜索词占位符",
-    "placeholders": {
-      "1": {
-        "content": "$1"
-      }
-    }
-  },
   "settings_cancel": {
     "message": "取消"
   },
   "settings_add": {
     "message": "添加"
-  },
-  "settings_addEngine": {
-    "message": "添加搜索引擎"
   },
   "settings_planFreeBadge": {
     "message": "免费版"
@@ -688,6 +662,21 @@
   },
   "settings_accountDeletionSubmitBtn": {
     "message": "注销账户"
+  },
+  "settings_accountDeletionSuccessTitle": {
+    "message": "注销申请已提交"
+  },
+  "settings_accountDeletionSuccessBody": {
+    "message": "您的账户将在 30 天后自动注销。\n\n如需取消，只需在截止日期前重新登录即可——登录后系统将自动取消本次注销申请，无需任何其他操作。"
+  },
+  "settings_accountDeletionSuccessCountdown": {
+    "message": "$1 秒后自动退出登录……",
+    "placeholders": {
+      "1": {
+        "content": "$1",
+        "example": "10"
+      }
+    }
   },
   "addBookmark_title": {
     "message": "添加书签"

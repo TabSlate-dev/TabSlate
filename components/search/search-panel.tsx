@@ -3,7 +3,6 @@ import { Search, Globe, BookmarkIcon, Archive } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { useAuthStore } from "@/store/auth-store";
-import { useSettingsStore } from "@/store/settings-store";
 import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
 import type { BrowserTab } from "@/lib/chrome/tabs";
@@ -26,11 +25,6 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
 
   const accessToken = useAuthStore(s => s.accessToken);
   const serverUrl = useAuthStore(s => s.serverUrl);
-  const searchEngines = useSettingsStore(s => s.searchEngines);
-  const defaultEngine = React.useMemo(
-    () => searchEngines.find(e => e.enabled) ?? searchEngines[0],
-    [searchEngines]
-  );
 
   const filteredTabs = React.useMemo(() => {
     if (query.length < 2) { return []; }
@@ -43,7 +37,6 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
   const showDropdown = query.length >= 2;
   const totalItems = bookmarkResults.length + filteredTabs.length + 1;
 
-  // Debounced bookmark search
   React.useEffect(() => {
     if (query.length < 2 || !accessToken) {
       setBookmarkResults([]);
@@ -60,12 +53,8 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
     return () => clearTimeout(timer);
   }, [query, accessToken, serverUrl]);
 
-  // Reset active index when results change
-  React.useEffect(() => {
-    setActiveIndex(0);
-  }, [bookmarkResults.length, filteredTabs.length]);
+  React.useEffect(() => { setActiveIndex(0); }, [bookmarkResults.length, filteredTabs.length]);
 
-  // Dismiss on outside click
   React.useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
@@ -94,12 +83,10 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
       chrome.windows.update(tab.windowId, { focused: true });
       onClose?.();
     } else {
-      chrome.tabs.create({
-        url: defaultEngine.url.replace("%s", encodeURIComponent(query.trim())),
-      });
+      chrome.search.query({ text: query.trim(), disposition: "NEW_TAB" });
       onClose?.();
     }
-  }, [bookmarkResults, filteredTabs, query, openUrl, onClose, defaultEngine]);
+  }, [bookmarkResults, filteredTabs, query, openUrl, onClose]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showDropdown) { return; }
@@ -118,11 +105,10 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
   };
 
   const isActive = (idx: number) => idx === activeIndex;
-  const engineIndex = bookmarkResults.length + filteredTabs.length;
+  const webIndex = bookmarkResults.length + filteredTabs.length;
 
   return (
     <div ref={panelRef} className="relative w-full max-w-xl">
-      {/* Search input */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
         <Input
@@ -135,10 +121,8 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
         />
       </div>
 
-      {/* Dropdown */}
       {showDropdown && (
         <div className="absolute top-full mt-1 left-0 right-0 z-50 rounded-lg border bg-popover shadow-lg overflow-hidden">
-          {/* Bookmarks section */}
           {bookmarkResults.length > 0 && (
             <section>
               <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5 border-b">
@@ -177,7 +161,6 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
             </section>
           )}
 
-          {/* Open Tabs section */}
           {filteredTabs.length > 0 && (
             <section>
               <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5 border-b">
@@ -208,19 +191,18 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
             </section>
           )}
 
-          {/* Search with default engine — always present */}
           <button
             type="button"
             className={cn(
               "w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-accent border-t",
-              isActive(engineIndex) && "bg-accent",
+              isActive(webIndex) && "bg-accent",
             )}
-            onMouseEnter={() => setActiveIndex(engineIndex)}
-            onClick={() => handleSelect(engineIndex)}
+            onMouseEnter={() => setActiveIndex(webIndex)}
+            onClick={() => handleSelect(webIndex)}
           >
             <Search className="size-4 shrink-0 text-muted-foreground" />
             <span className="text-sm">
-              Search <span className="font-medium">"{query}"</span> with {defaultEngine.name}
+              Search <span className="font-medium">"{query}"</span> on the web
             </span>
           </button>
         </div>

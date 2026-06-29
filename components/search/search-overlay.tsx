@@ -40,14 +40,8 @@ export function SearchOverlay({ onClose }: Props) {
       chrome.runtime.sendMessage(
         { type: "SEARCH_BOOKMARKS", query },
         (response: { ok: boolean; bookmarks: SearchBookmark[] } | undefined) => {
-          if (cancelled) {
-            return;
-          }
-          if (response?.ok) {
-            setBookmarkResults(response.bookmarks);
-            return;
-          }
-          setBookmarkResults([]);
+          if (cancelled) { return; }
+          setBookmarkResults(response?.ok ? response.bookmarks : []);
         },
       );
     }, 300);
