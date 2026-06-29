@@ -213,11 +213,7 @@ export const useAuthStore = create<AuthState>()(
       requestAccountDeletion: async (password) => {
         const { serverUrl, accessToken } = get();
         if (!accessToken) throw new Error("not authenticated");
-        const result = await api.deleteAccount(serverUrl, accessToken, password);
-        // Refresh user so deletion_scheduled_at is populated in UI.
-        const me = await api.me(serverUrl, accessToken);
-        set({ user: me.user });
-        return result;
+        return api.deleteAccount(serverUrl, accessToken, password);
       },
 
       logout: async () => {
