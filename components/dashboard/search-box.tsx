@@ -136,10 +136,11 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const isActive = (idx: number) => idx === activeIndex;
   const webIndex = filteredTabs.length + bookmarkResults.length;
   const isLg = size === "lg";
+  const placeholderEngineName = "the web";
 
   const placeholder = collectionId !== undefined
     ? t("search_placeholderCollection")
-    : t("search_placeholderGlobal");
+    : t("search_placeholderGlobal", [placeholderEngineName]);
 
   return (
     <div ref={wrapperRef} className={cn("relative", className)}>
