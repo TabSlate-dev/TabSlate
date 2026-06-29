@@ -2,7 +2,7 @@
   "name": "tab-slate",
   "description": "manifest.json description",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.3",
   "type": "module",
   "scripts": {
     "dev": "wxt",
