@@ -269,8 +269,16 @@ export default defineBackground(() => {
       return true; // keep channel open for async response
     }
     if (message.type === "WEB_SEARCH") {
-      chrome.search.query({ text: message.query, disposition: "NEW_TAB" });
-      sendResponse({ ok: true });
+      const handleWebSearch = async () => {
+        try {
+          await chrome.search.query({ text: message.query, disposition: "NEW_TAB" });
+          sendResponse({ ok: true });
+        } catch {
+          sendResponse({ ok: false });
+        }
+      };
+
+      void handleWebSearch().catch(() => sendResponse({ ok: false }));
       return true;
     }
   });
