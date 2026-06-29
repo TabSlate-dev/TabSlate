@@ -7,14 +7,13 @@ export default defineConfig({
     description: "__MSG_extensionDescription__",
     version: "0.1.1",
     default_locale: "en",
-    permissions: ["tabs", "tabGroups", "storage", "contextMenus", "scripting"],
+    permissions: ["tabs", "tabGroups", "storage", "contextMenus", "scripting", "search"],
     optional_host_permissions: ["<all_urls>"],
     host_permissions: [],
     chrome_url_overrides: {
       newtab: "newtab.html",
     },
     web_accessible_resources: [
-      { resources: ["search-engine-icon/*"], matches: ["<all_urls>"] },
       { resources: ["newtab.html"], matches: ["*://*.tabslate.com/*", "http://localhost:*/*"] },
     ],
     commands: {
