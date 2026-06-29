@@ -2,7 +2,6 @@ import * as React from "react";
 import { Search, Archive, BookmarkIcon, Globe } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { useTabsStore } from "@/store/tabs-store";
 import { useAuthStore } from "@/store/auth-store";
@@ -10,20 +9,7 @@ import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
-import { useSettingsStore } from "@/store/settings-store";
 import { useTranslation } from "@/hooks/use-translation";
-
-export function getEngineIconSrc(engine: { iconUrl?: string; siteUrl: string }): string {
-  if (engine.iconUrl && typeof chrome !== "undefined" && chrome.runtime?.id) {
-    return chrome.runtime.getURL(engine.iconUrl);
-  }
-  try {
-    const domain = new URL(engine.siteUrl).hostname;
-    return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
-  } catch {
-    return "";
-  }
-}
 
 interface SearchBoxProps {
   /** When provided, bookmark results are filtered to this collection. */
@@ -34,11 +20,7 @@ interface SearchBoxProps {
 
 export function SearchBox({ collectionId, size = "lg", className }: SearchBoxProps) {
   const { t } = useTranslation();
-  const allEngines = useSettingsStore(s => s.searchEngines);
-  const searchEngines = React.useMemo(() => allEngines.filter(e => e.enabled), [allEngines]);
-
   const [query, setQuery] = React.useState("");
-  const [engine, setEngine] = React.useState(searchEngines[0] ?? allEngines[0]);
   const [bookmarkResults, setBookmarkResults] = React.useState<SearchBookmark[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const wrapperRef = React.useRef<HTMLDivElement>(null);
@@ -99,6 +81,13 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  const searchWeb = React.useCallback(() => {
+    if (!query.trim()) { return; }
+    analytics.track("search_used", { type: "web" });
+    chrome.search.query({ text: query.trim(), disposition: "CURRENT_TAB" });
+    setQuery("");
+  }, [query]);
+
   const handleSelect = React.useCallback((index: number) => {
     if (index < filteredTabs.length) {
       analytics.track("search_used", { type: "tabs" });
@@ -116,11 +105,11 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
         window.location.href = url;
       }
     } else {
-      analytics.track("search_used", { type: "engine" });
-      window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
+      searchWeb();
+      return;
     }
     setQuery("");
-  }, [bookmarkResults, filteredTabs, openTabs, engine, query]);
+  }, [bookmarkResults, filteredTabs, openTabs, searchWeb]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!showDropdown) { return; }
@@ -141,51 +130,26 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    if (query.trim()) {
-      analytics.track("search_used", { type: "engine" });
-      window.location.href = engine.url.replace("%s", encodeURIComponent(query.trim()));
-      setQuery("");
-    }
+    searchWeb();
   };
 
   const isActive = (idx: number) => idx === activeIndex;
-  const engineIndex = filteredTabs.length + bookmarkResults.length;
+  const webIndex = filteredTabs.length + bookmarkResults.length;
   const isLg = size === "lg";
 
   const placeholder = collectionId !== undefined
     ? t("search_placeholderCollection")
-    : t("search_placeholderGlobal", engine?.name ?? "the web");
+    : t("search_placeholderGlobal");
 
   return (
     <div ref={wrapperRef} className={cn("relative", className)}>
       <form onSubmit={handleSearch} className="relative flex items-center w-full group">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              type="button"
-              className={cn(
-                "absolute left-1 z-10 rounded-full hover:bg-muted focus-visible:ring-0",
-                isLg ? "size-12" : "size-8",
-              )}
-            >
-              <img
-                src={getEngineIconSrc(engine)}
-                alt={engine?.name}
-                className={cn("rounded-sm", isLg ? "size-5" : "size-4")}
-              />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="min-w-[150px] max-h-[300px] overflow-y-auto">
-            {searchEngines.map((e) => (
-              <DropdownMenuItem key={e.id} onClick={() => setEngine(e)} className="cursor-pointer">
-                <img src={getEngineIconSrc(e)} alt={e.name} className="size-4 mr-2 rounded-sm" />
-                {e.name}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className={cn(
+          "absolute left-1 z-10 flex items-center justify-center rounded-full pointer-events-none",
+          isLg ? "size-12" : "size-8",
+        )}>
+          <Search className={cn("text-muted-foreground", isLg ? "size-5" : "size-4")} />
+        </div>
 
         <Input
           ref={inputRef}
@@ -321,21 +285,21 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
                 className={cn(
                   "w-full flex items-center text-left transition-all duration-200 border border-transparent cursor-pointer rounded-xl",
                   isLg ? "gap-3 px-3 py-2.5" : "gap-2.5 px-2.5 py-2",
-                  isActive(engineIndex)
+                  isActive(webIndex)
                     ? "bg-primary/5 border-primary/10 dark:bg-primary/10 font-medium"
                     : "hover:bg-muted/40 hover:border-muted/30",
                 )}
-                onMouseEnter={() => setActiveIndex(engineIndex)}
-                onClick={() => handleSelect(engineIndex)}
+                onMouseEnter={() => setActiveIndex(webIndex)}
+                onClick={() => handleSelect(webIndex)}
               >
                 <div className={cn(
                   "rounded-md bg-background/85 shadow-xs border border-muted/40 flex items-center justify-center shrink-0",
                   isLg ? "size-6" : "size-5",
                 )}>
-                  <img src={getEngineIconSrc(engine)} alt={engine?.name} className={cn("rounded-xs", isLg ? "size-3.5" : "size-3")} />
+                  <Search className={cn("text-muted-foreground", isLg ? "size-3.5" : "size-3")} />
                 </div>
                 <span className={cn("text-foreground", isLg ? "text-sm" : "text-xs")}>
-                  {t("search_searchWith", [query, engine?.name || ""])}
+                  {t("search_searchWeb", query)}
                 </span>
               </button>
             </div>

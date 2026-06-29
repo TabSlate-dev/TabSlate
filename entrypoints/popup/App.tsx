@@ -67,7 +67,7 @@ function PopupContent() {
           resolve();
         });
       }),
-      authStorageAdapter.getItem("tabslate-auth").then((result) => {
+      Promise.resolve(authStorageAdapter.getItem("tabslate-auth")).then((result) => {
         let loggedIn = false;
         if (result) {
           try {
@@ -84,7 +84,7 @@ function PopupContent() {
           (c) => c.workspaceId === state.activeWorkspaceId
         );
         setSaveableCollections(cols);
-        setAvailableTags(state.tags);
+        setAvailableTags(state.tags.map(t => ({ ...t, seq: 0 })));
         if (cols.length > 0) { setSelectedCollectionId(cols[0].id); }
       })
     ]).finally(() => {

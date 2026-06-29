@@ -363,7 +363,7 @@
     "message": "搜索此收藏集中的书签…"
   },
   "search_placeholderGlobal": {
-    "message": "搜索书签、标签页，或使用 $1 搜索…"
+    "message": "搜索书签、标签页或网页…"
   },
   "search_openTabs": {
     "message": "打开的标签页"
@@ -374,8 +374,8 @@
   "search_archived": {
     "message": "已归档"
   },
-  "search_searchWith": {
-    "message": "使用 $2 搜索「$1」"
+  "search_searchWeb": {
+    "message": "在网页上搜索「$1」"
   },
   "tabsPanel_openTabs": {
     "message": "打开的标签页"
@@ -515,9 +515,6 @@
   "settings_tabGeneral": {
     "message": "通用"
   },
-  "settings_tabEngines": {
-    "message": "搜索引擎"
-  },
   "settings_tabPlan": {
     "message": "套餐与用量"
   },
@@ -541,34 +538,11 @@
   "settings_generalImportBtn": {
     "message": "导入书签"
   },
-  "settings_enginesTitle": {
-    "message": "搜索引擎"
-  },
-  "settings_enginesDesc": {
-    "message": "启用或禁用搜索引擎，可拖拽调整顺序。首个启用的引擎将作为默认搜索引擎。"
-  },
-  "settings_enginesPlaceholderName": {
-    "message": "名称"
-  },
-  "settings_enginesPlaceholderUrl": {
-    "message": "https://example.com/search?q=%s"
-  },
-  "settings_enginesUsePlaceholder": {
-    "message": "使用 $1 作为搜索词占位符",
-    "placeholders": {
-      "1": {
-        "content": "$1"
-      }
-    }
-  },
   "settings_cancel": {
     "message": "取消"
   },
   "settings_add": {
     "message": "添加"
-  },
-  "settings_addEngine": {
-    "message": "添加搜索引擎"
   },
   "settings_planFreeBadge": {
     "message": "免费版"
@@ -637,6 +611,72 @@
   },
   "settings_done": {
     "message": "完成"
+  },
+  "settings_tabAccount": {
+    "message": "账户"
+  },
+  "settings_accountInfoTitle": {
+    "message": "账户信息"
+  },
+  "settings_accountEmail": {
+    "message": "邮箱"
+  },
+  "settings_accountMemberSince": {
+    "message": "注册时间"
+  },
+  "settings_accountDangerZoneTitle": {
+    "message": "注销账户"
+  },
+  "settings_accountDangerZoneDesc": {
+    "message": "您的账户及所有关联数据将在 30 天宽限期后永久删除。如需取消，在此期间重新登录即可——无需其他任何操作。"
+  },
+  "settings_accountDeleteBtn": {
+    "message": "注销账户"
+  },
+  "settings_accountDeletionPendingTitle": {
+    "message": "注销申请处理中"
+  },
+  "settings_accountDeletionPendingDesc": {
+    "message": "您的账户已计划于 $1 删除。请在此日期之前登录以取消。",
+    "placeholders": {
+      "1": {
+        "content": "$1",
+        "example": "2026年7月26日"
+      }
+    }
+  },
+  "settings_accountDeletionConfirmTitle": {
+    "message": "确认注销账户"
+  },
+  "settings_accountDeletionConfirmDesc": {
+    "message": "您的账户及所有数据将在 30 天宽限期后永久删除。如需取消，只需在截止日期前登录——无需其他操作。"
+  },
+  "settings_accountDeletionPasswordLabel": {
+    "message": "当前密码"
+  },
+  "settings_accountDeletionPasswordError": {
+    "message": "密码错误，请重试。"
+  },
+  "settings_accountDeletionAlreadyScheduled": {
+    "message": "账户注销申请已处理中。"
+  },
+  "settings_accountDeletionSubmitBtn": {
+    "message": "注销账户"
+  },
+  "settings_accountDeletionSuccessTitle": {
+    "message": "注销申请已提交"
+  },
+  "settings_accountDeletionSuccessBody": {
+    "message": "您的账户将在 30 天后自动注销。\n\n如需取消，只需在截止日期前重新登录即可——登录后系统将自动取消本次注销申请，无需任何其他操作。"
+  },
+  "settings_accountDeletionSuccessCountdown": {
+    "message": "$1 秒后自动退出登录……",
+    "placeholders": {
+      "1": {
+        "content": "$1",
+        "example": "10"
+      }
+    }
   },
   "addBookmark_title": {
     "message": "添加书签"

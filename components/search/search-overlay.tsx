@@ -3,20 +3,7 @@ import { Search, Archive, BookmarkIcon, Globe, X } from "lucide-react";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import type { SearchBookmark } from "@/lib/api";
 import type { BrowserTab } from "@/lib/chrome/tabs";
-import type { SearchEngine } from "@/store/settings-store";
 import { cn } from "@/lib/utils";
-
-const FALLBACK_ENGINE: SearchEngine = {
-  id: "google", name: "Google", url: "https://www.google.com/search?q=%s",
-  siteUrl: "https://www.google.com", iconUrl: "search-engine-icon/brand-google.svg", enabled: true,
-};
-
-function getEngineIconSrc(engine: SearchEngine): string {
-  if (engine.iconUrl) { return chrome.runtime.getURL(engine.iconUrl); }
-  try {
-    return `https://icons.duckduckgo.com/ip3/${new URL(engine.siteUrl).hostname}.ico`;
-  } catch { return ""; }
-}
 
 interface Props {
   onClose: () => void;
@@ -27,30 +14,13 @@ export function SearchOverlay({ onClose }: Props) {
   const [openTabs, setOpenTabs] = React.useState<BrowserTab[]>([]);
   const [bookmarkResults, setBookmarkResults] = React.useState<SearchBookmark[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
-  const [engines, setEngines] = React.useState<SearchEngine[]>([FALLBACK_ENGINE]);
-  const engine = React.useMemo(() => engines.find(e => e.enabled) ?? engines[0], [engines]);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  // Load user's search engines from chrome.storage.local (written by newtab StoreGate)
-  React.useEffect(() => {
-    chrome.storage.local.get("tabslate-search-engines", (result: Record<string, unknown>) => {
-      const raw = result["tabslate-search-engines"];
-      if (typeof raw !== "string") { return; }
-      try {
-        const parsed = JSON.parse(raw) as SearchEngine[];
-        if (Array.isArray(parsed) && parsed.length > 0) { setEngines(parsed); }
-      } catch { /* ignore malformed data */ }
-    });
-  }, []);
-
-  // Fetch open tabs via background proxy (content scripts can't call chrome.tabs.query directly)
   React.useEffect(() => {
     chrome.runtime.sendMessage({ type: "GET_OPEN_TABS" }, (tabs: BrowserTab[]) => {
       if (tabs) { setOpenTabs(tabs); }
     });
   }, []);
-
-
 
   const filteredTabs = React.useMemo(() => {
     if (query.length < 2) { return []; }
@@ -60,7 +30,6 @@ export function SearchOverlay({ onClose }: Props) {
     );
   }, [openTabs, query]);
 
-  // Debounced bookmark search — proxied through background to avoid CORS
   React.useEffect(() => {
     if (query.length < 2) {
       setBookmarkResults([]);
@@ -71,14 +40,8 @@ export function SearchOverlay({ onClose }: Props) {
       chrome.runtime.sendMessage(
         { type: "SEARCH_BOOKMARKS", query },
         (response: { ok: boolean; bookmarks: SearchBookmark[] } | undefined) => {
-          if (cancelled) {
-            return;
-          }
-          if (response?.ok) {
-            setBookmarkResults(response.bookmarks);
-            return;
-          }
-          setBookmarkResults([]);
+          if (cancelled) { return; }
+          setBookmarkResults(response?.ok ? response.bookmarks : []);
         },
       );
     }, 300);
@@ -88,8 +51,8 @@ export function SearchOverlay({ onClose }: Props) {
   React.useEffect(() => { setActiveIndex(0); }, [bookmarkResults.length, filteredTabs.length]);
 
   const showDropdown = query.length >= 2;
-  const engineIndex = bookmarkResults.length + filteredTabs.length;
-  const totalItems = engineIndex + 1;
+  const webIndex = bookmarkResults.length + filteredTabs.length;
+  const totalItems = webIndex + 1;
 
   const handleSelect = React.useCallback((index: number) => {
     if (index < bookmarkResults.length) {
@@ -104,15 +67,15 @@ export function SearchOverlay({ onClose }: Props) {
       const tab = filteredTabs[index - bookmarkResults.length];
       chrome.runtime.sendMessage({ type: "FOCUS_TAB", tabId: tab.id, windowId: tab.windowId });
     } else {
-      chrome.runtime.sendMessage({ type: "OPEN_TAB", url: engine.url.replace("%s", encodeURIComponent(query.trim())) });
+      chrome.runtime.sendMessage({ type: "WEB_SEARCH", query: query.trim() });
     }
     onClose();
-  }, [bookmarkResults, filteredTabs, openTabs, engine, query, onClose]);
+  }, [bookmarkResults, filteredTabs, openTabs, query, onClose]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") { onClose(); return; }
     if (!showDropdown) {
-      if (e.key === "Enter" && query.trim() && !e.nativeEvent.isComposing) { handleSelect(engineIndex); }
+      if (e.key === "Enter" && query.trim() && !e.nativeEvent.isComposing) { handleSelect(webIndex); }
       return;
     }
     if (e.key === "ArrowDown") {
@@ -131,21 +94,18 @@ export function SearchOverlay({ onClose }: Props) {
   const isActive = (idx: number) => idx === activeIndex;
 
   return (
-    /* Full-screen backdrop */
     <div
       className="fixed inset-0 z-[2147483647] flex items-start justify-center pt-[12vh] bg-black/50 backdrop-blur-sm"
       onMouseDown={(e) => { if (e.target === e.currentTarget) { onClose(); } }}
     >
-      {/* Search card */}
       <div className="w-full max-w-2xl mx-4 animate-in zoom-in-95 fade-in duration-150">
-        {/* Search input row */}
         <div className="relative flex items-center">
           <Search className="absolute left-4 size-5 text-muted-foreground pointer-events-none z-10" />
           <input
             ref={inputRef}
             type="text"
             autoComplete="off"
-            placeholder={`Search bookmarks, tabs, or ${engine.name}…`}
+            placeholder="Search bookmarks, tabs, or the web…"
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -154,8 +114,7 @@ export function SearchOverlay({ onClose }: Props) {
               "bg-background text-foreground border border-border",
               "shadow-2xl placeholder:text-muted-foreground",
               "focus:ring-2 focus:ring-primary/40 transition-shadow",
-              !showDropdown && "rounded-2xl",
-              showDropdown && "rounded-t-2xl rounded-b-none",
+              showDropdown ? "rounded-t-2xl rounded-b-none" : "rounded-2xl",
             )}
           />
           <button
@@ -167,11 +126,9 @@ export function SearchOverlay({ onClose }: Props) {
           </button>
         </div>
 
-        {/* Dropdown */}
         {showDropdown && (
           <div className="rounded-b-2xl border border-t-0 border-border bg-popover shadow-2xl overflow-hidden">
             <div className="max-h-[55vh] overflow-y-auto">
-              {/* Bookmarks */}
               {bookmarkResults.length > 0 && (
                 <section>
                   <div className="px-4 py-2 text-xs font-semibold text-muted-foreground flex items-center gap-1.5 bg-muted/40 border-b border-border">
@@ -206,7 +163,6 @@ export function SearchOverlay({ onClose }: Props) {
                 </section>
               )}
 
-              {/* Open Tabs */}
               {filteredTabs.length > 0 && (
                 <section>
                   <div className="px-4 py-2 text-xs font-semibold text-muted-foreground flex items-center gap-1.5 bg-muted/40 border-b border-border">
@@ -234,17 +190,16 @@ export function SearchOverlay({ onClose }: Props) {
                 </section>
               )}
 
-              {/* Engine fallback */}
               <div className="border-t border-border px-2 py-1">
                 <button
                   type="button"
-                  className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-colors", isActive(engineIndex) ? "bg-accent" : "hover:bg-accent/60")}
-                  onMouseEnter={() => setActiveIndex(engineIndex)}
-                  onClick={() => handleSelect(engineIndex)}
+                  className={cn("w-full flex items-center gap-3 px-3 py-2 rounded-xl text-left transition-colors", isActive(webIndex) ? "bg-accent" : "hover:bg-accent/60")}
+                  onMouseEnter={() => setActiveIndex(webIndex)}
+                  onClick={() => handleSelect(webIndex)}
                 >
-                  <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-4 shrink-0 rounded-sm" />
+                  <Search className="size-4 shrink-0 text-muted-foreground" />
                   <span className="text-sm text-foreground">
-                    Search <span className="font-semibold">"{query}"</span> with {engine.name}
+                    Search <span className="font-semibold">"{query}"</span> on the web
                   </span>
                 </button>
               </div>

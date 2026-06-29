@@ -1,85 +1,15 @@
 import * as React from "react";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ImportDialog } from "@/components/dashboard/import-dialog";
-import { useSettingsStore, SearchEngine } from "@/store/settings-store";
 import { usePlanStore } from "@/store/plan-store";
+import { useAuthStore } from "@/store/auth-store";
+import { ApiError } from "@/lib/api";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
-import { GripVertical, Trash2, Plus, Bookmark, Layers, Tag, Folder, ShieldCheck, Loader2, Sparkles } from "lucide-react";
+import { Bookmark, Layers, Tag, Folder, ShieldCheck, Loader2, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
-import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
-
-function SortableSearchEngineItem({
-  engine,
-  onToggle,
-  onDelete,
-}: {
-  engine: SearchEngine;
-  onToggle: (id: string, enabled: boolean) => void;
-  onDelete: (id: string) => void;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: engine.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 1 : 0,
-  };
-
-  function getEngineIconSrc(engine: { iconUrl?: string; siteUrl: string }): string {
-    if (engine.iconUrl && typeof chrome !== "undefined" && chrome.runtime?.id) {
-      return chrome.runtime.getURL(engine.iconUrl);
-    }
-    try {
-      const domain = new URL(engine.siteUrl).hostname;
-      return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
-    } catch {
-      return "";
-    }
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center justify-between p-3 rounded-lg border bg-card ${isDragging ? 'shadow-md ring-1 ring-primary/20' : ''}`}
-    >
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="cursor-grab text-muted-foreground hover:text-foreground active:cursor-grabbing p-1"
-        >
-          <GripVertical className="size-4" />
-        </button>
-        <img src={getEngineIconSrc(engine)} alt={engine.name} className="size-5 rounded-sm" />
-        <span className="font-medium text-sm">{engine.name}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <Switch
-          checked={engine.enabled}
-          onCheckedChange={(checked) => onToggle(engine.id, checked)}
-        />
-        {engine.custom && (
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`Delete ${engine.name}`}
-            className="size-7 text-muted-foreground hover:text-destructive"
-            onClick={() => onDelete(engine.id)}
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 interface QuotaRowProps {
   label: string;
@@ -127,12 +57,128 @@ function QuotaRow({ label, usage, limit, icon: Icon }: QuotaRowProps) {
 interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  initialTab?: "general" | "engines" | "plan";
+  initialTab?: "general" | "plan" | "account";
+}
+
+function DeleteAccountDialog({
+  open,
+  onOpenChange,
+  onConfirm,
+  onLogout,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (password: string) => Promise<{ scheduled_at: number; executes_at: number }>;
+  onLogout: () => void;
+}) {
+  const { t } = useTranslation();
+  const [password, setPassword] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const [countdown, setCountdown] = React.useState<number | null>(null);
+  const [confirmed, setConfirmed] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) {
+      setPassword("");
+      setError(null);
+      setIsSubmitting(false);
+      setCountdown(null);
+      setConfirmed(false);
+    }
+  }, [open]);
+
+  React.useEffect(() => {
+    if (countdown === null) { return; }
+    if (countdown <= 0) { onLogout(); return; }
+    const timer = setTimeout(() => setCountdown(c => (c ?? 1) - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, onLogout]);
+
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      await onConfirm(password);
+      setConfirmed(true);
+      setCountdown(5);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setError(t("settings_accountDeletionPasswordError"));
+      } else if (err instanceof ApiError && err.status === 409) {
+        setError(t("settings_accountDeletionAlreadyScheduled"));
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        {!confirmed ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>{t("settings_accountDeletionConfirmTitle")}</DialogTitle>
+              <DialogDescription>{t("settings_accountDeletionConfirmDesc")}</DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleSubmit} className="space-y-4 mt-2">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium" htmlFor="delete-account-password">
+                  {t("settings_accountDeletionPasswordLabel")}
+                </label>
+                <Input
+                  id="delete-account-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  autoFocus
+                />
+                {error && (
+                  <p className="text-xs text-destructive">{error}</p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+                  {t("settings_cancel")}
+                </Button>
+                <Button type="submit" variant="destructive" disabled={!password || isSubmitting}>
+                  {isSubmitting && <Loader2 className="size-3.5 mr-1.5 animate-spin" />}
+                  {t("settings_accountDeletionSubmitBtn")}
+                </Button>
+              </div>
+            </form>
+          </>
+        ) : (
+          <>
+            <DialogHeader>
+              <DialogTitle>{t("settings_accountDeletionSuccessTitle")}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground whitespace-pre-line mt-1">
+              {t("settings_accountDeletionSuccessBody")}
+            </p>
+            <div className="flex items-center justify-between mt-4 pt-4 border-t">
+              <p className="text-sm text-muted-foreground">
+                {t("settings_accountDeletionSuccessCountdown", String(countdown))}
+              </p>
+              <Button variant="ghost" size="sm" onClick={onLogout}>
+                {t("sidebar_userLogout")}
+              </Button>
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: SettingsDialogProps) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = React.useState<"general" | "engines" | "plan">("general");
+  const [activeTab, setActiveTab] = React.useState<"general" | "plan" | "account">("general");
 
   React.useEffect(() => {
     if (open) {
@@ -140,8 +186,10 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
     }
   }, [open, initialTab]);
 
-  const searchEngines = useSettingsStore(s => s.searchEngines);
-  const updateSearchEngines = useSettingsStore(s => s.updateSearchEngines);
+  const user = useAuthStore(s => s.user);
+  const requestAccountDeletion = useAuthStore(s => s.requestAccountDeletion);
+  const logout = useAuthStore(s => s.logout);
+  const [deleteAccountDialogOpen, setDeleteAccountDialogOpen] = React.useState(false);
 
   const subscription = usePlanStore(s => s.subscription);
   const limits = usePlanStore(s => s.limits);
@@ -155,57 +203,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
     }
   }, [open, activeTab, fetchPlan]);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const handleDragEnd = (event: any) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) { return; }
-    
-    // We import arrayMove dynamically or define it:
-    const { arrayMove } = require("@dnd-kit/sortable");
-    
-    const oldIndex = searchEngines.findIndex((e) => e.id === active.id);
-    const newIndex = searchEngines.findIndex((e) => e.id === over.id);
-    updateSearchEngines(arrayMove(searchEngines, oldIndex, newIndex));
-  };
-
-  const handleToggle = (id: string, enabled: boolean) => {
-    updateSearchEngines(
-      searchEngines.map((e) => (e.id === id ? { ...e, enabled } : e))
-    );
-  };
-
-  const handleDelete = (id: string) => {
-    updateSearchEngines(searchEngines.filter((e) => e.id !== id));
-  };
-
   const [importDialogOpen, setImportDialogOpen] = React.useState(false);
-  const [showForm, setShowForm] = React.useState(false);
-  const [newName, setNewName] = React.useState("");
-  const [newUrl, setNewUrl] = React.useState("");
-
-  React.useEffect(() => {
-    if (!open) {
-      setShowForm(false);
-      setNewName("");
-      setNewUrl("");
-    }
-  }, [open]);
-
-  const canAdd = (() => {
-    if (!newName.trim() || !newUrl.trim().includes("%s")) { return false; }
-    try {
-      new URL(newUrl.trim().replace("%s", "x"));
-      return true;
-    } catch {
-      return false;
-    }
-  })();
 
   const [searchOverlayEnabled, setSearchOverlayEnabled] = React.useState(false);
 
@@ -217,7 +215,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
 
   const handleToggleSearchOverlay = async (checked: boolean) => {
     if (typeof chrome === "undefined" || !chrome.permissions) return;
-    
+
     if (checked) {
       const granted = await chrome.permissions.request({ origins: ["<all_urls>"] });
       setSearchOverlayEnabled(granted);
@@ -227,28 +225,6 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
         setSearchOverlayEnabled(false);
       }
     }
-  };
-
-  const handleAdd = () => {
-    const siteUrl = (() => {
-      try {
-        return new URL(newUrl.trim().replace("%s", "x")).origin;
-      } catch {
-        return "";
-      }
-    })();
-    const engine: SearchEngine = {
-      id: crypto.randomUUID(),
-      name: newName.trim(),
-      url: newUrl.trim(),
-      siteUrl,
-      custom: true,
-      enabled: true,
-    };
-    updateSearchEngines([...searchEngines, engine]);
-    setNewName("");
-    setNewUrl("");
-    setShowForm(false);
   };
 
   // Plan Premium styling resolving
@@ -293,17 +269,6 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
             {t("settings_tabGeneral")}
           </button>
           <button
-            onClick={() => setActiveTab("engines")}
-            className={cn(
-              "flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg transition-all text-center cursor-pointer",
-              activeTab === "engines"
-                ? "bg-background text-foreground shadow-xs font-bold"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {t("settings_tabEngines")}
-          </button>
-          <button
             onClick={() => setActiveTab("plan")}
             className={cn(
               "flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg transition-all text-center cursor-pointer",
@@ -313,6 +278,17 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
             )}
           >
             {t("settings_tabPlan")}
+          </button>
+          <button
+            onClick={() => setActiveTab("account")}
+            className={cn(
+              "flex-1 py-1.5 px-3 text-xs font-semibold rounded-lg transition-all text-center cursor-pointer",
+              activeTab === "account"
+                ? "bg-background text-foreground shadow-xs font-bold"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t("settings_tabAccount")}
           </button>
         </div>
 
@@ -342,84 +318,6 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 <Button variant="outline" size="sm" onClick={() => setImportDialogOpen(true)} className="cursor-pointer">
                   {t("settings_generalImportBtn")}
                 </Button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "engines" && (
-            <div className="space-y-6 animate-in fade-in duration-200">
-              <div>
-                <h3 className="text-sm font-semibold">{t("settings_enginesTitle")}</h3>
-                <p className="text-xs text-muted-foreground mb-4 mt-0.5">
-                  {t("settings_enginesDesc")}
-                </p>
-                
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
-                >
-                  <SortableContext
-                    items={searchEngines.map((e) => e.id)}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="space-y-2">
-                      {searchEngines.map((engine) => (
-                        <SortableSearchEngineItem
-                          key={engine.id}
-                          engine={engine}
-                          onToggle={handleToggle}
-                          onDelete={handleDelete}
-                        />
-                      ))}
-                    </div>
-                  </SortableContext>
-                </DndContext>
-
-                {showForm ? (
-                  <div className="mt-3 space-y-2 rounded-lg border bg-card p-3">
-                    <Input
-                      placeholder={t("settings_enginesPlaceholderName")}
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      autoFocus
-                    />
-                    <Input
-                      placeholder={t("settings_enginesPlaceholderUrl")}
-                      value={newUrl}
-                      onChange={(e) => setNewUrl(e.target.value)}
-                    />
-                    <p className="text-xs text-muted-foreground" dangerouslySetInnerHTML={{
-                      __html: t("settings_enginesUsePlaceholder", ['<code class="font-mono">%s</code>'])
-                    }} />
-                    <div className="flex justify-end gap-2 pt-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setShowForm(false);
-                          setNewName("");
-                          setNewUrl("");
-                        }}
-                      >
-                        {t("settings_cancel")}
-                      </Button>
-                      <Button size="sm" disabled={!canAdd} onClick={handleAdd}>
-                        {t("settings_add")}
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-2 w-full text-muted-foreground hover:text-foreground cursor-pointer"
-                    onClick={() => setShowForm(true)}
-                  >
-                    <Plus className="size-3.5 mr-1" />
-                    {t("settings_addEngine")}
-                  </Button>
-                )}
               </div>
             </div>
           )}
@@ -455,7 +353,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                       </p>
                     )}
                   </div>
-                  
+
                   {planName === "free" && (
                     <Button
                       size="sm"
@@ -519,6 +417,54 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
               </div>
             </div>
           )}
+
+          {activeTab === "account" && (
+            <div className="space-y-6 animate-in fade-in duration-200">
+              {/* Account Info */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold">{t("settings_accountInfoTitle")}</h3>
+                <div className="rounded-lg border bg-card/20 p-3 space-y-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-xs">{t("settings_accountEmail")}</span>
+                    <span className="font-medium text-xs truncate max-w-[60%] text-right">{user?.email}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground text-xs">{t("settings_accountMemberSince")}</span>
+                    <span className="font-medium text-xs">
+                      {user ? new Date(user.created_at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : ""}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Danger Zone */}
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-destructive">{t("settings_accountDangerZoneTitle")}</h3>
+                {user?.deletion_scheduled_at ? (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-1">
+                    <p className="text-sm font-semibold">{t("settings_accountDeletionPendingTitle")}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {t("settings_accountDeletionPendingDesc", [
+                        new Date(user.deletion_scheduled_at * 1000).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }),
+                      ])}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border p-3 space-y-3 bg-card/20">
+                    <p className="text-xs text-muted-foreground leading-relaxed">{t("settings_accountDangerZoneDesc")}</p>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setDeleteAccountDialogOpen(true)}
+                      className="cursor-pointer"
+                    >
+                      {t("settings_accountDeleteBtn")}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="pt-4 border-t mt-auto flex justify-end shrink-0">
@@ -527,6 +473,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
       </DialogContent>
     </Dialog>
     <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+    <DeleteAccountDialog open={deleteAccountDialogOpen} onOpenChange={setDeleteAccountDialogOpen} onConfirm={requestAccountDeletion} onLogout={logout} />
     </>
   );
 }

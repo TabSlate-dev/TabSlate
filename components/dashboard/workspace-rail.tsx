@@ -155,14 +155,14 @@ export function WorkspaceRail() {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [importDialogOpen, setImportDialogOpen] = React.useState(false);
-  const [settingsTab, setSettingsTab] = React.useState<"general" | "engines" | "plan">("general");
+  const [settingsTab, setSettingsTab] = React.useState<"general" | "plan" | "account">("general");
   const [editWorkspace, setEditWorkspace] = React.useState<Workspace | null>(
     null
   );
 
   React.useEffect(() => {
     const handleOpenSettings = (e: Event) => {
-      const customEvent = e as CustomEvent<{ tab?: "general" | "engines" | "plan" }>;
+      const customEvent = e as CustomEvent<{ tab?: "general" | "plan" | "account" }>;
       const tab = customEvent.detail?.tab || "general";
       setSettingsTab(tab);
       setSettingsOpen(true);

@@ -363,7 +363,7 @@
     "message": "Search bookmarks in this collection..."
   },
   "search_placeholderGlobal": {
-    "message": "Search your bookmarks, tabs or with $1..."
+    "message": "Search your bookmarks, tabs, or the web..."
   },
   "search_openTabs": {
     "message": "Open Tabs"
@@ -374,8 +374,8 @@
   "search_archived": {
     "message": "Archived"
   },
-  "search_searchWith": {
-    "message": "Search \"$1\" with $2"
+  "search_searchWeb": {
+    "message": "Search \"$1\" on the web"
   },
   "tabsPanel_openTabs": {
     "message": "Open Tabs"
@@ -515,9 +515,6 @@
   "settings_tabGeneral": {
     "message": "General"
   },
-  "settings_tabEngines": {
-    "message": "Search Engines"
-  },
   "settings_tabPlan": {
     "message": "Plan & Quotas"
   },
@@ -541,34 +538,11 @@
   "settings_generalImportBtn": {
     "message": "Import Bookmarks"
   },
-  "settings_enginesTitle": {
-    "message": "Search Engines"
-  },
-  "settings_enginesDesc": {
-    "message": "Enable or disable search engines and drag to reorder them. The first enabled engine is the default."
-  },
-  "settings_enginesPlaceholderName": {
-    "message": "Name"
-  },
-  "settings_enginesPlaceholderUrl": {
-    "message": "https://example.com/search?q=%s"
-  },
-  "settings_enginesUsePlaceholder": {
-    "message": "Use $1 as the search term placeholder",
-    "placeholders": {
-      "1": {
-        "content": "$1"
-      }
-    }
-  },
   "settings_cancel": {
     "message": "Cancel"
   },
   "settings_add": {
     "message": "Add"
-  },
-  "settings_addEngine": {
-    "message": "Add engine"
   },
   "settings_planFreeBadge": {
     "message": "FREE PLAN"
@@ -637,6 +611,72 @@
   },
   "settings_done": {
     "message": "Done"
+  },
+  "settings_tabAccount": {
+    "message": "Account"
+  },
+  "settings_accountInfoTitle": {
+    "message": "Account Info"
+  },
+  "settings_accountEmail": {
+    "message": "Email"
+  },
+  "settings_accountMemberSince": {
+    "message": "Member since"
+  },
+  "settings_accountDangerZoneTitle": {
+    "message": "Delete Account"
+  },
+  "settings_accountDangerZoneDesc": {
+    "message": "Your account and all associated data will be permanently deleted after a 30-day grace period. To cancel at any time, simply log in — no other action is required."
+  },
+  "settings_accountDeleteBtn": {
+    "message": "Delete Account"
+  },
+  "settings_accountDeletionPendingTitle": {
+    "message": "Account Deletion Scheduled"
+  },
+  "settings_accountDeletionPendingDesc": {
+    "message": "Your account is scheduled for deletion on $1. Log in before that date to cancel.",
+    "placeholders": {
+      "1": {
+        "content": "$1",
+        "example": "July 26, 2026"
+      }
+    }
+  },
+  "settings_accountDeletionConfirmTitle": {
+    "message": "Confirm Account Deletion"
+  },
+  "settings_accountDeletionConfirmDesc": {
+    "message": "Your account and all data will be permanently deleted after a 30-day grace period. To cancel, simply log in before the deadline — no other action is required."
+  },
+  "settings_accountDeletionPasswordLabel": {
+    "message": "Current password"
+  },
+  "settings_accountDeletionPasswordError": {
+    "message": "Incorrect password. Please try again."
+  },
+  "settings_accountDeletionAlreadyScheduled": {
+    "message": "An account deletion is already scheduled."
+  },
+  "settings_accountDeletionSubmitBtn": {
+    "message": "Delete Account"
+  },
+  "settings_accountDeletionSuccessTitle": {
+    "message": "Deletion Request Submitted"
+  },
+  "settings_accountDeletionSuccessBody": {
+    "message": "Your account is scheduled for deletion in 30 days.\n\nTo cancel, simply log back in at any time before the deadline — your deletion request will be automatically cancelled upon login.\n\nNo other action is required."
+  },
+  "settings_accountDeletionSuccessCountdown": {
+    "message": "Logging out in $1 seconds…",
+    "placeholders": {
+      "1": {
+        "content": "$1",
+        "example": "10"
+      }
+    }
   },
   "addBookmark_title": {
     "message": "Add Bookmark"
