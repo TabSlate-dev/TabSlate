@@ -363,7 +363,7 @@
     "message": "搜索此收藏集中的书签…"
   },
   "search_placeholderGlobal": {
-    "message": "搜索书签、标签页，或使用 $1 搜索…"
+    "message": "搜索书签、标签页或网页…"
   },
   "search_openTabs": {
     "message": "打开的标签页"
@@ -374,8 +374,8 @@
   "search_archived": {
     "message": "已归档"
   },
-  "search_searchWith": {
-    "message": "使用 $2 搜索「$1」"
+  "search_searchWeb": {
+    "message": "在网页上搜索「$1」"
   },
   "tabsPanel_openTabs": {
     "message": "打开的标签页"

@@ -363,7 +363,7 @@
     "message": "Search bookmarks in this collection..."
   },
   "search_placeholderGlobal": {
-    "message": "Search your bookmarks, tabs or with $1..."
+    "message": "Search your bookmarks, tabs, or the web..."
   },
   "search_openTabs": {
     "message": "Open Tabs"
@@ -374,8 +374,8 @@
   "search_archived": {
     "message": "Archived"
   },
-  "search_searchWith": {
-    "message": "Search \"$1\" with $2"
+  "search_searchWeb": {
+    "message": "Search \"$1\" on the web"
   },
   "tabsPanel_openTabs": {
     "message": "Open Tabs"
