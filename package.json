@@ -18,6 +18,8 @@
     "zip:edge": "wxt zip -b chrome --mv3",
     "zip:firefox": "wxt zip -b firefox --mv3",
     "package:firefox:amo": "bun run zip:firefox",
+    "sign:firefox": "node scripts/sign-firefox.mjs",
+    "package:firefox:selfhost": "node scripts/sign-firefox.mjs --selfhost",
     "compile": "tsc --noEmit",
     "postinstall": "wxt prepare"
   },
@@ -59,6 +61,7 @@
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
     "typescript": "5.9.3",
+    "web-ext": "^8.0.0",
     "wxt": "^0.20.25"
   }
 }

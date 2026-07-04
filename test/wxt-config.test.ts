@@ -2,6 +2,7 @@
 import { describe, expect, test } from "bun:test";
 
 import config from "../wxt.config";
+import pkg from "../package.json";
 
 const getManifest = async (
   browser: "chrome" | "firefox" | "edge",
@@ -37,5 +38,15 @@ describe("wxt cross-browser manifest", () => {
     expect(manifest.permissions).toContain("search");
     expect(manifest.permissions).toContain("tabGroups");
     expect(manifest.chrome_url_overrides?.newtab).toBe("newtab.html");
+  });
+});
+
+describe("Firefox packaging scripts", () => {
+  test("package scripts expose signing entrypoints", () => {
+    expect(pkg.scripts["package:firefox:amo"]).toBe("bun run zip:firefox");
+    expect(pkg.scripts["sign:firefox"]).toBe("node scripts/sign-firefox.mjs");
+    expect(pkg.scripts["package:firefox:selfhost"]).toBe(
+      "node scripts/sign-firefox.mjs --selfhost",
+    );
   });
 });
