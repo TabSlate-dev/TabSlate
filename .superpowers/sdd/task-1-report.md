@@ -1,58 +1,76 @@
 # Task 1 Report
 
-## What I changed
+## Status
 
-Updated `wxt.config.ts` to add the Chrome `search` permission and removed `search-engine-icon/*` from `web_accessible_resources`.
+DONE_WITH_CONCERNS
 
-Updated `lib/messages.ts` to add the shared `WEB_SEARCH` message type to `ExtensionMessage`.
+## Scope Delivered
 
-## Verification
+Implemented the browser-aware MV3 baseline for manifest generation and package scripts:
 
-Ran:
+- Converted `wxt.config.ts` from a static manifest object to a browser-aware manifest factory.
+- Added Firefox MV3 `browser_specific_settings.gecko` metadata:
+  - `id: "@tabslate"`
+  - `strict_min_version: "128.0"`
+  - `data_collection_permissions.required: ["none"]`
+- Kept the Chromium manifest behavior intact for permissions and `chrome_url_overrides.newtab`.
+- Expanded `package.json` into explicit browser-targeted MV3 scripts for Chrome, Edge, and Firefox.
+- Added a focused config test that asserts Firefox metadata and Chromium permissions/newtab behavior.
 
-```bash
-npx wxt build 2>&1 | tail -10
-```
+## Files Changed
 
-Result: build succeeded.
-
-Additional manifest sanity check:
-
-```bash
-rg -n '"search"|search-engine-icon' .output/chrome-mv3/manifest.json
-```
-
-Result: the generated manifest includes `"search"` in `permissions` and no longer includes `search-engine-icon/*` in `web_accessible_resources`.
-
-## Files changed
-
+- `package.json`
 - `wxt.config.ts`
-- `lib/messages.ts`
+- `test/wxt-config.test.ts`
 
-## Self-review notes
+## TDD Notes
 
-- Scope stayed within the two owned code files requested for this task.
-- The manifest change matches the brief exactly, and the generated manifest confirms the final shape.
-- The shared message union now exposes `WEB_SEARCH` for later migration steps.
+Started with a failing test:
 
-## TDD evidence
+- `bun test test/wxt-config.test.ts`
+- Initial failure: `Expected function manifest config`
 
-No tests were added for this step. This task is a manifest/configuration change plus a shared type definition, so the verification path was the requested build check instead of a test-first cycle.
+Then implemented the manifest factory and explicit scripts, and re-ran the focused test until green.
 
-## Fix pass
+## Verification Run
 
-Corrected `lib/messages.ts` by removing the stray semicolon that terminated the `ExtensionMessage` union early, then re-added `WEB_SEARCH` as a proper union member.
+Focused verification:
 
-### Verification results
+- `bun test test/wxt-config.test.ts`
+- `bun run compile`
 
-`npx tsc --noEmit`
+Full relevant verification:
 
-- Result: failed due to existing unrelated type errors in `entrypoints/popup/App.tsx`:
-  - `entrypoints/popup/App.tsx(70,7): error TS2531: Object is possibly 'null'.`
-  - `entrypoints/popup/App.tsx(70,51): error TS2339: Property 'then' does not exist on type 'string | Promise<string | null>'.`
-  - `entrypoints/popup/App.tsx(70,57): error TS7006: Parameter 'result' implicitly has an 'any' type.`
-  - `entrypoints/popup/App.tsx(87,26): error TS2345: Argument of type '{ id: string; name: string; color: string; }[]' is not assignable to parameter of type 'SetStateAction<Tag[]>'.`
+- `bun run build:chrome`
+- `bun run build:firefox`
+- `bun run build:edge`
 
-`npx wxt build`
+Observed results:
 
-- Result: passed successfully.
+- Focused test passed with 2/2 tests green.
+- TypeScript compile passed.
+- Chrome build succeeded and emitted `.output/chrome-mv3/manifest.json`.
+- Firefox build succeeded and emitted `.output/firefox-mv3/manifest.json`.
+- Edge build succeeded via the explicit Chromium MV3 flow.
+- Generated Firefox manifest contains the expected `browser_specific_settings.gecko` block.
+
+## Self-Review
+
+Checked the diff and generated manifests after the build:
+
+- `package.json` now exposes explicit MV3 browser scripts with Chrome as the default alias.
+- `wxt.config.ts` injects Firefox-only gecko metadata without changing Chromium-only behavior.
+- The existing `build:manifestGenerated` hook still removes generated `host_permissions` and preserves OpenPanel origin injection behavior.
+- The test covers the two acceptance-critical paths for this task:
+  - Firefox MV3 metadata exists
+  - Chromium builds keep required permissions and newtab override
+
+## Concerns
+
+- `package.json` now declares `sign:firefox` and `package:firefox:selfhost`, but `scripts/sign-firefox.mjs` does not exist in this task’s scope, so those two commands were not executed and would currently fail if invoked.
+
+## Commit
+
+Planned commit message:
+
+- `build: add browser-aware MV3 manifest and package scripts`

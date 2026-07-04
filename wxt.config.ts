@@ -1,13 +1,17 @@
 import { defineConfig } from "wxt";
 
+function getPermissions(): string[] {
+  return ["tabs", "tabGroups", "storage", "contextMenus", "scripting", "search"];
+}
+
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
-  manifest: {
+  manifest: ({ browser }) => ({
     name: "__MSG_extensionName__",
     description: "__MSG_extensionDescription__",
     version: "0.1.3",
     default_locale: "en",
-    permissions: ["tabs", "tabGroups", "storage", "contextMenus", "scripting", "search"],
+    permissions: getPermissions(),
     optional_host_permissions: ["<all_urls>"],
     host_permissions: [],
     chrome_url_overrides: {
@@ -25,14 +29,27 @@ export default defineConfig({
         description: "__MSG_commandOpenSearch__",
       },
     },
-  },
+    ...(browser === "firefox"
+      ? {
+          browser_specific_settings: {
+            gecko: {
+              id: "@tabslate",
+              strict_min_version: "128.0",
+              data_collection_permissions: {
+                required: ["none"],
+              },
+            },
+          },
+        }
+      : {}),
+  }),
   vite: () => ({
     build: {
       sourcemap: process.env.NODE_ENV !== "production",
     },
   }),
   hooks: {
-    "build:manifestGenerated": (wxt, manifest) => {
+    "build:manifestGenerated": (_wxt, manifest) => {
       // Remove auto-generated host_permissions that conflict with optional_host_permissions
       delete manifest.host_permissions;
 
