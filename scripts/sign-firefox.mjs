@@ -9,10 +9,6 @@ const args = [
   sourceDir,
   "--channel",
   isSelfhost ? "unlisted" : "listed",
-  "--api-key",
-  process.env.AMO_JWT_ISSUER,
-  "--api-secret",
-  process.env.AMO_JWT_SECRET,
 ];
 
 if (!process.env.AMO_JWT_ISSUER || !process.env.AMO_JWT_SECRET) {
@@ -22,7 +18,11 @@ if (!process.env.AMO_JWT_ISSUER || !process.env.AMO_JWT_SECRET) {
 
 const result = spawnSync("npx", args, {
   stdio: "inherit",
-  env: process.env,
+  env: {
+    ...process.env,
+    WEB_EXT_API_KEY: process.env.AMO_JWT_ISSUER,
+    WEB_EXT_API_SECRET: process.env.AMO_JWT_SECRET,
+  },
 });
 
 if (result.status !== 0) {

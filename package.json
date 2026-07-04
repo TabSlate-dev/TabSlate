@@ -15,7 +15,7 @@
     "build:firefox": "wxt build -b firefox --mv3",
     "zip": "bun run zip:chrome",
     "zip:chrome": "wxt zip -b chrome --mv3",
-    "zip:edge": "wxt zip -b chrome --mv3",
+    "zip:edge": "node scripts/zip-edge.mjs",
     "zip:firefox": "wxt zip -b firefox --mv3",
     "package:firefox:amo": "bun run zip:firefox",
     "sign:firefox": "node scripts/sign-firefox.mjs",

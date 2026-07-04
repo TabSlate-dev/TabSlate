@@ -43,6 +43,7 @@ describe("wxt cross-browser manifest", () => {
 
 describe("Firefox packaging scripts", () => {
   test("package scripts expose signing entrypoints", () => {
+    expect(pkg.scripts["zip:edge"]).toBe("node scripts/zip-edge.mjs");
     expect(pkg.scripts["package:firefox:amo"]).toBe("bun run zip:firefox");
     expect(pkg.scripts["sign:firefox"]).toBe("node scripts/sign-firefox.mjs");
     expect(pkg.scripts["package:firefox:selfhost"]).toBe(

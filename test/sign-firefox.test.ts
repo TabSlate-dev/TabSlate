@@ -21,8 +21,8 @@ fs.writeFileSync(
   capturePath,
   JSON.stringify({
     argv: process.argv.slice(2),
-    apiKey: process.env.AMO_JWT_ISSUER,
-    apiSecret: process.env.AMO_JWT_SECRET,
+    webExtApiKey: process.env.WEB_EXT_API_KEY,
+    webExtApiSecret: process.env.WEB_EXT_API_SECRET,
   }),
 );
 process.exit(0);
@@ -61,22 +61,13 @@ describe("sign-firefox helper", () => {
 
     const capture = JSON.parse(readFileSync(capturePath, "utf8")) as {
       argv: string[];
-      apiKey: string;
-      apiSecret: string;
+      webExtApiKey: string;
+      webExtApiSecret: string;
     };
 
-    expect(capture.argv).toEqual([
-      "web-ext",
-      "sign",
-      "--source-dir",
-      ".output/firefox-mv3",
-      "--channel",
-      "listed",
-      "--api-key",
-      "issuer-value",
-      "--api-secret",
-      "secret-value",
-    ]);
+    expect(capture.argv).toEqual(["web-ext", "sign", "--source-dir", ".output/firefox-mv3", "--channel", "listed"]);
+    expect(capture.webExtApiKey).toBe("issuer-value");
+    expect(capture.webExtApiSecret).toBe("secret-value");
   });
 
   test("uses unlisted channel for self-hosted signing", () => {
