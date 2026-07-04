@@ -7,6 +7,7 @@ import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
 import type { BrowserTab } from "@/lib/chrome/tabs";
 import { smartOpenUrl } from "@/lib/chrome/tabs";
+import { runWebSearch } from "@/lib/browser/search";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -83,7 +84,7 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
       chrome.windows.update(tab.windowId, { focused: true });
       onClose?.();
     } else {
-      chrome.search.query({ text: query.trim(), disposition: "NEW_TAB" });
+      void runWebSearch({ text: query.trim(), disposition: "NEW_TAB" });
       onClose?.();
     }
   }, [bookmarkResults, filteredTabs, query, openUrl, onClose]);

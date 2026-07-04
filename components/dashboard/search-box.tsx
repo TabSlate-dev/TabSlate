@@ -8,6 +8,7 @@ import { useAuthStore } from "@/store/auth-store";
 import { searchBookmarks } from "@/lib/api";
 import type { SearchBookmark } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
+import { runWebSearch } from "@/lib/browser/search";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
 
@@ -84,7 +85,7 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const searchWeb = React.useCallback(() => {
     if (!query.trim()) { return; }
     analytics.track("search_used", { type: "web" });
-    chrome.search.query({ text: query.trim(), disposition: "CURRENT_TAB" });
+    void runWebSearch({ text: query.trim(), disposition: "CURRENT_TAB" });
     setQuery("");
   }, [query]);
 

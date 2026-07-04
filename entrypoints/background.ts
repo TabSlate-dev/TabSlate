@@ -1,6 +1,7 @@
 import { generateId } from "@/lib/id";
 import { idbPut } from "@/lib/idb";
 import { getAllTabs, focusTab } from "@/lib/chrome/tabs";
+import { runWebSearch } from "@/lib/browser/search";
 import { searchBookmarks } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import type { ExtensionMessage } from "@/lib/messages";
@@ -269,16 +270,9 @@ export default defineBackground(() => {
       return true; // keep channel open for async response
     }
     if (message.type === "WEB_SEARCH") {
-      const handleWebSearch = async () => {
-        try {
-          await chrome.search.query({ text: message.query, disposition: "NEW_TAB" });
-          sendResponse({ ok: true });
-        } catch {
-          sendResponse({ ok: false });
-        }
-      };
-
-      void handleWebSearch().catch(() => sendResponse({ ok: false }));
+      runWebSearch({ text: message.query, disposition: "NEW_TAB" })
+        .then(() => sendResponse({ ok: true }))
+        .catch(() => sendResponse({ ok: false }));
       return true;
     }
   });
