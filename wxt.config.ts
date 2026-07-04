@@ -4,6 +4,14 @@ function getPermissions(): string[] {
   return ["tabs", "tabGroups", "storage", "contextMenus", "scripting", "search"];
 }
 
+function getNewtabMatches(browser: string): string[] {
+  if (browser === "firefox") {
+    return ["*://*.tabslate.com/*", "http://localhost/*"];
+  }
+
+  return ["*://*.tabslate.com/*", "http://localhost:*/*"];
+}
+
 export default defineConfig({
   modules: ["@wxt-dev/module-react"],
   manifest: ({ browser }) => ({
@@ -18,7 +26,7 @@ export default defineConfig({
       newtab: "newtab.html",
     },
     web_accessible_resources: [
-      { resources: ["newtab.html"], matches: ["*://*.tabslate.com/*", "http://localhost:*/*"] },
+      { resources: ["newtab.html"], matches: getNewtabMatches(browser) },
     ],
     commands: {
       "open-search": {
