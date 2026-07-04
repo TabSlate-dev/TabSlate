@@ -37,6 +37,15 @@ export const TAB_GROUP_COLORS: Record<TabGroupColor, string> = {
 
 export const TAB_GROUP_COLOR_KEYS = Object.keys(TAB_GROUP_COLORS) as TabGroupColor[];
 
+function toTabIdTuple(tabIds: number[]): [number, ...number[]] {
+  const [firstTabId, ...restTabIds] = tabIds;
+  if (firstTabId === undefined) {
+    throw new Error("At least one tab ID is required");
+  }
+
+  return [firstTabId, ...restTabIds];
+}
+
 function toGroup(g: chrome.tabGroups.TabGroup): BrowserTabGroup {
   return {
     id: g.id,
@@ -48,12 +57,11 @@ function toGroup(g: chrome.tabGroups.TabGroup): BrowserTabGroup {
 }
 
 /** Get all tab groups in the current window */
-export function getCurrentWindowGroups(): Promise<BrowserTabGroup[]> {
-  return new Promise((resolve) => {
-    chrome.tabGroups.query({ windowId: chrome.windows.WINDOW_ID_CURRENT }, (groups) => {
-      resolve(groups.map(toGroup));
-    });
+export async function getCurrentWindowGroups(): Promise<BrowserTabGroup[]> {
+  const groups = await chrome.tabGroups.query({
+    windowId: chrome.windows.WINDOW_ID_CURRENT,
   });
+  return groups.map(toGroup);
 }
 
 /** Create a new tab group from the given tab IDs */
@@ -62,12 +70,8 @@ export async function groupTabs(
   title: string,
   color: TabGroupColor
 ): Promise<number> {
-  const groupId = await new Promise<number>((resolve) =>
-    chrome.tabs.group({ tabIds: tabIds as [number, ...number[]] }, (id) => resolve(id!))
-  );
-  await new Promise<void>((resolve) =>
-    chrome.tabGroups.update(groupId, { title, color }, () => resolve())
-  );
+  const groupId = await chrome.tabs.group({ tabIds: toTabIdTuple(tabIds) });
+  await chrome.tabGroups.update(groupId, { title, color });
   return groupId;
 }
 
@@ -76,17 +80,18 @@ export function updateGroup(
   groupId: number,
   patch: { title?: string; color?: TabGroupColor; collapsed?: boolean }
 ): Promise<BrowserTabGroup> {
-  return new Promise((resolve, reject) =>
-    chrome.tabGroups.update(groupId, patch, (g) => {
-      if (g) { resolve(toGroup(g)); }
-      else { reject(new Error("Failed to update group")); }
-    })
-  );
+  return chrome.tabGroups.update(groupId, patch).then((group) => {
+    if (!group) {
+      throw new Error("Failed to update group");
+    }
+
+    return toGroup(group);
+  });
 }
 
 /** Remove all tabs in this group from the group (ungroup) */
-export function ungroupTabs(tabIds: number[]): Promise<void> {
-  return new Promise((resolve) => chrome.tabs.ungroup(tabIds as [number, ...number[]], () => resolve()));
+export async function ungroupTabs(tabIds: number[]): Promise<void> {
+  await chrome.tabs.ungroup(toTabIdTuple(tabIds));
 }
 
 /**
@@ -103,9 +108,7 @@ export async function openAsTabGroup(
 
   const tabIds: number[] = [];
   for (const url of urls) {
-    const tab = await new Promise<chrome.tabs.Tab>((resolve) =>
-      chrome.tabs.create({ url, active: false }, resolve)
-    );
+    const tab = await chrome.tabs.create({ url, active: false });
     if (tab.id) { tabIds.push(tab.id); }
   }
 

@@ -5,8 +5,24 @@ const removeListenerCalls = [];
 
 let registeredListener = null;
 let invalidatedHandler = null;
+let backgroundStartupListener = null;
+let backgroundInstalledListeners = [];
+let backgroundPermissionAddedListener = null;
+let backgroundPermissionRemovedListener = null;
+
+function importBackgroundModule() {
+  return import(`../entrypoints/background.ts?test=${Date.now()}-${Math.random()}`);
+}
+
+function importTabGroupsModule() {
+  return import(`../lib/chrome/tab-groups.ts?test=${Date.now()}-${Math.random()}`);
+}
 
 globalThis.defineContentScript = (config) => config;
+globalThis.defineBackground = (main) => {
+  main();
+  return { main };
+};
 globalThis.createShadowRootUi = mock(async () => ({
   mount: () => {},
   remove: () => {},
@@ -37,12 +53,38 @@ mock.module("@/components/search/search-overlay", () => ({
 }));
 
 mock.module("@/assets/globals.css", () => ({}));
+mock.module("@/lib/id", () => ({
+  generateId: () => "bookmark-id",
+}));
+mock.module("@/lib/idb", () => ({
+  idbPut: mock(async () => {}),
+}));
+mock.module("@/lib/chrome/tabs", () => ({
+  getAllTabs: mock(async () => []),
+  focusTab: mock(async () => {}),
+}));
+mock.module("@/lib/browser/search", () => ({
+  runWebSearch: mock(async () => {}),
+}));
+mock.module("@/lib/api", () => ({
+  searchBookmarks: mock(async () => []),
+}));
+mock.module("@/lib/analytics", () => ({
+  analytics: {
+    init: mock(async () => {}),
+    track: mock(() => {}),
+  },
+}));
 
 beforeEach(() => {
   addListenerCalls.length = 0;
   removeListenerCalls.length = 0;
   registeredListener = null;
   invalidatedHandler = null;
+  backgroundStartupListener = null;
+  backgroundInstalledListeners = [];
+  backgroundPermissionAddedListener = null;
+  backgroundPermissionRemovedListener = null;
 
   globalThis.chrome = {
     runtime: {
@@ -58,6 +100,92 @@ beforeEach(() => {
     },
   };
 });
+
+function createBackgroundChrome(overrides = {}) {
+  return {
+    runtime: {
+      onInstalled: {
+        addListener: (listener) => {
+          backgroundInstalledListeners.push(listener);
+        },
+      },
+      onStartup: {
+        addListener: (listener) => {
+          backgroundStartupListener = listener;
+        },
+      },
+      onMessage: {
+        addListener: mock(() => {}),
+      },
+      getManifest: () => ({ version: "0.1.3" }),
+      sendMessage: mock(() => Promise.resolve()),
+      getURL: (path) => `chrome-extension://test/${path}`,
+    },
+    permissions: {
+      contains: mock(async () => true),
+      onAdded: {
+        addListener: (listener) => {
+          backgroundPermissionAddedListener = listener;
+        },
+      },
+      onRemoved: {
+        addListener: (listener) => {
+          backgroundPermissionRemovedListener = listener;
+        },
+      },
+    },
+    scripting: {
+      getRegisteredContentScripts: mock(async () => []),
+      registerContentScripts: mock(async () => {}),
+      unregisterContentScripts: mock(async () => {}),
+    },
+    storage: {
+      AccessLevel: {
+        TRUSTED_CONTEXTS: "TRUSTED_CONTEXTS",
+      },
+      session: {
+        setAccessLevel: mock(() => {}),
+        get: mock(async () => ({})),
+        set: mock(async () => {}),
+      },
+      local: {
+        get: mock(async () => ({})),
+        set: mock(async () => {}),
+      },
+    },
+    contextMenus: {
+      create: mock(() => {}),
+      onClicked: {
+        addListener: mock(() => {}),
+      },
+    },
+    tabs: {
+      onCreated: { addListener: mock(() => {}) },
+      onRemoved: { addListener: mock(() => {}) },
+      onUpdated: { addListener: mock(() => {}) },
+      onActivated: { addListener: mock(() => {}) },
+      onMoved: { addListener: mock(() => {}) },
+      query: mock(async () => []),
+      sendMessage: mock(async () => {}),
+      create: mock(async () => {}),
+    },
+    tabGroups: {
+      onCreated: { addListener: mock(() => {}) },
+      onRemoved: { addListener: mock(() => {}) },
+      onUpdated: { addListener: mock(() => {}) },
+      onMoved: { addListener: mock(() => {}) },
+    },
+    commands: {
+      onCommand: {
+        addListener: mock(() => {}),
+      },
+    },
+    windows: {
+      WINDOW_ID_CURRENT: -2,
+    },
+    ...overrides,
+  };
+}
 
 describe("content script message listener lifecycle", () => {
   test("removes the runtime message listener when the content script is invalidated", async () => {
@@ -76,5 +204,109 @@ describe("content script message listener lifecycle", () => {
     invalidatedHandler?.();
 
     expect(removeListenerCalls).toEqual([registeredListener]);
+  });
+});
+
+describe("tab group helpers", () => {
+  test("queries groups through promise-based tabGroups APIs", async () => {
+    globalThis.chrome = {
+      windows: {
+        WINDOW_ID_CURRENT: -2,
+      },
+      tabGroups: {
+        query: mock((queryInfo, callback) => {
+          if (callback) {
+            throw new Error("expected promise-based tabGroups.query");
+          }
+
+          return Promise.resolve([
+            {
+              id: 7,
+              title: "Docs",
+              color: "blue",
+              collapsed: false,
+              windowId: 3,
+            },
+          ]);
+        }),
+      },
+    };
+
+    const { getCurrentWindowGroups } = await importTabGroupsModule();
+    const groups = await getCurrentWindowGroups();
+
+    expect(groups).toEqual([
+      {
+        id: 7,
+        title: "Docs",
+        color: "blue",
+        collapsed: false,
+        windowId: 3,
+      },
+    ]);
+  });
+
+  test("creates groups through promise-based tabs and tabGroups APIs", async () => {
+    globalThis.chrome = {
+      tabs: {
+        group: mock((options, callback) => {
+          if (callback) {
+            throw new Error("expected promise-based tabs.group");
+          }
+
+          return Promise.resolve(42);
+        }),
+      },
+      tabGroups: {
+        update: mock((groupId, patch, callback) => {
+          if (callback) {
+            throw new Error("expected promise-based tabGroups.update");
+          }
+
+          return Promise.resolve({
+            id: groupId,
+            title: patch.title ?? "",
+            color: patch.color ?? "grey",
+            collapsed: false,
+            windowId: 1,
+          });
+        }),
+      },
+    };
+
+    const { groupTabs } = await importTabGroupsModule();
+    const groupId = await groupTabs([1, 2], "Work", "green");
+
+    expect(groupId).toBe(42);
+  });
+});
+
+describe("background content script sync", () => {
+  test("exits early when the scripting API is unavailable", async () => {
+    const consoleError = mock(() => {});
+    globalThis.console = { ...console, error: consoleError };
+    globalThis.chrome = createBackgroundChrome({ scripting: undefined });
+
+    await importBackgroundModule();
+    await backgroundStartupListener?.();
+
+    expect(chrome.permissions.contains).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  test("registers the search overlay script when permission is granted", async () => {
+    globalThis.chrome = createBackgroundChrome();
+
+    await importBackgroundModule();
+    await backgroundStartupListener?.();
+
+    expect(chrome.permissions.contains).toHaveBeenCalledWith({ origins: ["<all_urls>"] });
+    expect(chrome.scripting.getRegisteredContentScripts).toHaveBeenCalled();
+    expect(chrome.scripting.registerContentScripts).toHaveBeenCalledWith([{
+      id: "search-overlay",
+      matches: ["<all_urls>"],
+      js: ["content-scripts/content.js"],
+      runAt: "document_idle",
+    }]);
   });
 });

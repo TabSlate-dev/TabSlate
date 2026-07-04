@@ -1,6 +1,7 @@
 import { generateId } from "@/lib/id";
 import { idbPut } from "@/lib/idb";
 import { getAllTabs, focusTab } from "@/lib/chrome/tabs";
+import { supportsDynamicContentScripts } from "@/lib/browser/capabilities";
 import { runWebSearch } from "@/lib/browser/search";
 import { searchBookmarks } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
@@ -18,20 +19,26 @@ export default defineBackground(() => {
   // Dynamic Content Script Registration for Search Overlay
   // -------------------------------------------------------------------------
   async function syncContentScriptRegistration() {
+    if (!supportsDynamicContentScripts() || !chrome.scripting) {
+      return;
+    }
+
+    const scripting = chrome.scripting;
+
     try {
       const hasPermission = await chrome.permissions.contains({ origins: ["<all_urls>"] });
-      const scripts = await chrome.scripting.getRegisteredContentScripts();
+      const scripts = await scripting.getRegisteredContentScripts();
       const isRegistered = scripts.some(s => s.id === "search-overlay");
 
       if (hasPermission && !isRegistered) {
-        await chrome.scripting.registerContentScripts([{
+        await scripting.registerContentScripts([{
           id: "search-overlay",
           matches: ["<all_urls>"],
           js: ["content-scripts/content.js"],
           runAt: "document_idle",
         }]);
       } else if (!hasPermission && isRegistered) {
-        await chrome.scripting.unregisterContentScripts({ ids: ["search-overlay"] });
+        await scripting.unregisterContentScripts({ ids: ["search-overlay"] });
       }
     } catch (err) {
       console.error("[TabSlate] Failed to sync content script registration:", err);
