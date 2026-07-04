@@ -7,6 +7,10 @@ async function importSearchModule() {
 
 describe("runWebSearch", () => {
   beforeEach(() => {
+    mock.module("@/lib/browser/env", () => ({
+      isFirefoxBuild: () => false,
+    }));
+
     globalThis.chrome = {
       search: {
         query: mock(async () => {}),

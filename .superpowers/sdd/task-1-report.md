@@ -74,3 +74,31 @@ Checked the diff and generated manifests after the build:
 Planned commit message:
 
 - `build: add browser-aware MV3 manifest and package scripts`
+
+## Review Fix
+
+Applied the blocking review fix after the human clarified that Task 1 must follow option 1. At the Task 1 checkpoint, the premature Firefox signing commands were removed from `package.json` and deferred until the packaging task.
+
+Later Task 4 work added `scripts/sign-firefox.mjs` and restored the signing-related package scripts with executable implementations. The current repository state is therefore expected to include `sign:firefox` and `package:firefox:selfhost`.
+
+## Review Fix Verification
+
+Re-ran the covering verification after removing the premature scripts:
+
+- `bun test test/wxt-config.test.ts`
+- `bun run compile`
+- `bun run build:chrome`
+- `bun run build:firefox`
+- `bun run build:edge`
+
+Observed results:
+
+- Focused manifest config test passed with 2/2 tests green
+- TypeScript compile passed
+- Chrome MV3 build passed
+- Firefox MV3 build passed
+- Edge MV3 build passed
+
+## Updated Concerns
+
+- No remaining Task 1 concern on premature Firefox signing commands. They were deferred at the Task 1 checkpoint and implemented later by the packaging task.

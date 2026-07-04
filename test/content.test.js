@@ -68,6 +68,13 @@ mock.module("@/lib/browser/search", () => ({
 }));
 mock.module("@/lib/api", () => ({
   searchBookmarks: mock(async () => []),
+  api: {
+    getPlan: mock(async () => ({
+      subscription: null,
+      limits: null,
+      usage: null,
+    })),
+  },
 }));
 mock.module("@/lib/analytics", () => ({
   analytics: {
@@ -282,6 +289,36 @@ describe("tab group helpers", () => {
 });
 
 describe("background content script sync", () => {
+  test("uses the Firefox storage session access-level API when available", async () => {
+    const browserSetAccessLevel = mock(async () => {});
+    const browserGlobals = globalThis;
+    browserGlobals.browser = {
+      storage: {
+        session: {
+          setAccessLevel: browserSetAccessLevel,
+        },
+      },
+    };
+    globalThis.chrome = createBackgroundChrome({
+      storage: {
+        AccessLevel: {
+          TRUSTED_CONTEXTS: "TRUSTED_CONTEXTS",
+        },
+        session: {
+          get: mock(async () => ({})),
+          set: mock(async () => {}),
+        },
+        local: {
+          get: mock(async () => ({})),
+          set: mock(async () => {}),
+        },
+      },
+    });
+
+    await expect(importBackgroundModule()).resolves.toBeTruthy();
+    expect(browserSetAccessLevel).toHaveBeenCalledWith("TRUSTED_CONTEXTS");
+  });
+
   test("exits early when the scripting API is unavailable", async () => {
     const consoleError = mock(() => {});
     globalThis.console = { ...console, error: consoleError };

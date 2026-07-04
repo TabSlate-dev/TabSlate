@@ -8,11 +8,73 @@ interface StoredAuthBlob {
   version?: number;
 }
 
+interface BrowserStorageArea {
+  get: (keys?: string | string[] | Record<string, unknown> | null) => Promise<Record<string, unknown>>;
+  set: (items: Record<string, unknown>) => Promise<void>;
+  remove: (keys: string | string[]) => Promise<void>;
+}
+
+function getBrowserStorageArea(
+  area: "local" | "session",
+): BrowserStorageArea | null {
+  const browserStorage = (globalThis as typeof globalThis & {
+    browser?: { storage?: { local?: BrowserStorageArea; session?: BrowserStorageArea } };
+  }).browser?.storage;
+
+  if (area === "local") {
+    return browserStorage?.local ?? null;
+  }
+
+  return browserStorage?.session ?? null;
+}
+
+async function storageGet(
+  area: "local" | "session",
+  key: string,
+): Promise<Record<string, unknown>> {
+  const browserArea = getBrowserStorageArea(area);
+  if (browserArea) {
+    return browserArea.get(key);
+  }
+
+  return chrome.storage[area].get(key);
+}
+
+async function storageSet(
+  area: "local" | "session",
+  items: Record<string, unknown>,
+): Promise<void> {
+  const browserArea = getBrowserStorageArea(area);
+  if (browserArea) {
+    await browserArea.set(items);
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    chrome.storage[area].set(items, () => resolve());
+  });
+}
+
+async function storageRemove(
+  area: "local" | "session",
+  key: string,
+): Promise<void> {
+  const browserArea = getBrowserStorageArea(area);
+  if (browserArea) {
+    await browserArea.remove(key);
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    chrome.storage[area].remove(key, () => resolve());
+  });
+}
+
 export const authStorageAdapter: StateStorage = {
   getItem: async (_name: string): Promise<string | null> => {
     const [localResult, sessionResult] = await Promise.all([
-      chrome.storage.local.get(LOCAL_KEY),
-      chrome.storage.session.get(SESSION_KEY),
+      storageGet("local", LOCAL_KEY),
+      storageGet("session", SESSION_KEY),
     ]);
 
     const localRaw = localResult[LOCAL_KEY];
@@ -47,19 +109,12 @@ export const authStorageAdapter: StateStorage = {
       blob.state.accessToken = legacyLocalAccessToken;
 
       await Promise.all([
-        new Promise<void>((resolve) => {
-          chrome.storage.session.set(
-            {
-              [SESSION_KEY]: JSON.stringify({
-                accessToken: legacyLocalAccessToken,
-              }),
-            },
-            () => resolve(),
-          );
+        storageSet("session", {
+          [SESSION_KEY]: JSON.stringify({
+            accessToken: legacyLocalAccessToken,
+          }),
         }),
-        new Promise<void>((resolve) => {
-          chrome.storage.local.set({ [LOCAL_KEY]: sanitizedLocalValue }, () => resolve());
-        }),
+        storageSet("local", { [LOCAL_KEY]: sanitizedLocalValue }),
       ]);
 
       return JSON.stringify(blob);
@@ -89,30 +144,17 @@ export const authStorageAdapter: StateStorage = {
     }
 
     await Promise.all([
-      new Promise<void>((resolve) => {
-        chrome.storage.local.set({ [LOCAL_KEY]: JSON.stringify(blob) }, () => resolve());
-      }),
+      storageSet("local", { [LOCAL_KEY]: JSON.stringify(blob) }),
       accessToken
-        ? new Promise<void>((resolve) => {
-            chrome.storage.session.set(
-              { [SESSION_KEY]: JSON.stringify({ accessToken }) },
-              () => resolve(),
-            );
-          })
-        : new Promise<void>((resolve) => {
-            chrome.storage.session.remove(SESSION_KEY, () => resolve());
-          }),
+        ? storageSet("session", { [SESSION_KEY]: JSON.stringify({ accessToken }) })
+        : storageRemove("session", SESSION_KEY),
     ]);
   },
 
   removeItem: async (_name: string): Promise<void> => {
     await Promise.all([
-      new Promise<void>((resolve) => {
-        chrome.storage.local.remove(LOCAL_KEY, () => resolve());
-      }),
-      new Promise<void>((resolve) => {
-        chrome.storage.session.remove(SESSION_KEY, () => resolve());
-      }),
+      storageRemove("local", LOCAL_KEY),
+      storageRemove("session", SESSION_KEY),
     ]);
   },
 };

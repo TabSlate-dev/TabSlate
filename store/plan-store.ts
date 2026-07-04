@@ -21,7 +21,7 @@ interface PlanState {
   quotaAlert: QuotaAlert | null;
 
   fetchPlan: () => Promise<void>;
-  ensureFresh: () => void;
+  ensureFresh: (force?: boolean) => void;
   checkQuota: (resource: QuotaResource, currentCount?: number) => boolean;
   incrementUsage: (resource: QuotaResource, by?: number) => void;
   decrementUsage: (resource: QuotaResource, by?: number) => void;
@@ -83,10 +83,10 @@ export const usePlanStore = create<PlanState>()(
         }
       },
 
-      ensureFresh: () => {
+      ensureFresh: (force = false) => {
         const { fetchedAt, isFetching } = get();
         if (isFetching) { return; }
-        if (fetchedAt !== null && Date.now() - fetchedAt < TTL_MS) { return; }
+        if (!force && fetchedAt !== null && Date.now() - fetchedAt < TTL_MS) { return; }
         void get().fetchPlan();
       },
 

@@ -39,6 +39,24 @@ describe("wxt cross-browser manifest", () => {
     expect(manifest.permissions).toContain("tabGroups");
     expect(manifest.chrome_url_overrides?.newtab).toBe("newtab.html");
   });
+
+  test("adds the API origin to host permissions during manifest generation", async () => {
+    const originalApiUrl = process.env.VITE_API_URL;
+    process.env.VITE_API_URL = "https://sync.tabslate.com";
+
+    try {
+      const manifest = await getManifest("firefox", 3);
+      const hook = (config.hooks as Record<string, unknown> | undefined)?.["build:manifestGenerated"];
+      if (typeof hook !== "function") {
+        throw new Error("Expected manifestGenerated hook");
+      }
+
+      await hook({} as never, manifest);
+      expect(manifest.host_permissions).toContain("https://sync.tabslate.com/*");
+    } finally {
+      process.env.VITE_API_URL = originalApiUrl;
+    }
+  });
 });
 
 describe("Firefox packaging scripts", () => {

@@ -61,15 +61,27 @@ export default defineConfig({
       // Remove auto-generated host_permissions that conflict with optional_host_permissions
       delete manifest.host_permissions;
 
-      const openpanelUrl = process.env.VITE_OPENPANEL_URL;
-      if (!openpanelUrl) {
-        return;
+      const hostPermissionOrigins = new Set<string>();
+      const apiUrl = process.env.VITE_API_URL;
+      if (apiUrl) {
+        try {
+          hostPermissionOrigins.add(`${new URL(apiUrl).origin}/*`);
+        } catch {
+          // Ignore invalid local config so the build still succeeds.
+        }
       }
 
-      try {
-        manifest.host_permissions = [`${new URL(openpanelUrl).origin}/*`];
-      } catch {
-        // Ignore invalid local config so the build still succeeds without analytics.
+      const openpanelUrl = process.env.VITE_OPENPANEL_URL;
+      if (openpanelUrl) {
+        try {
+          hostPermissionOrigins.add(`${new URL(openpanelUrl).origin}/*`);
+        } catch {
+          // Ignore invalid local config so the build still succeeds without analytics.
+        }
+      }
+
+      if (hostPermissionOrigins.size > 0) {
+        manifest.host_permissions = Array.from(hostPermissionOrigins);
       }
     },
   },

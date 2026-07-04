@@ -3,6 +3,7 @@ import { idbPut } from "@/lib/idb";
 import { getAllTabs, focusTab } from "@/lib/chrome/tabs";
 import { supportsDynamicContentScripts } from "@/lib/browser/capabilities";
 import { runWebSearch } from "@/lib/browser/search";
+import { restrictSessionStorageToTrustedContexts } from "@/lib/browser/storage-session";
 import { searchBookmarks } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import type { ExtensionMessage } from "@/lib/messages";
@@ -11,9 +12,7 @@ export default defineBackground(() => {
   void analytics.init();
 
   // Restrict session storage so content scripts cannot read it (Chrome 112+)
-  chrome.storage.session.setAccessLevel({
-    accessLevel: (chrome.storage.AccessLevel?.TRUSTED_CONTEXTS ?? "TRUSTED_CONTEXTS"),
-  });
+  void restrictSessionStorageToTrustedContexts();
 
   // -------------------------------------------------------------------------
   // Dynamic Content Script Registration for Search Overlay

@@ -262,8 +262,9 @@ function SyncProvider({
           useBookmarksStore.getState().sweepUnsynced();
           useGroupsStore.getState().sweepUnsynced();
         }
-        // Refresh displayed usage after each pull (5-min TTL, no-op when cache is fresh).
-        usePlanStore.getState().ensureFresh();
+        // A remote pull may change usage without any local create/delete action,
+        // so bypass the TTL cache and refresh the authoritative counters.
+        usePlanStore.getState().ensureFresh(true);
       },
       (pushResp) => {
         for (const rejected of pushResp.rejected) {

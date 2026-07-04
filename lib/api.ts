@@ -1,3 +1,5 @@
+import { isFirefoxBuild } from "@/lib/browser/env";
+
 // API types — mirror server internal/model/model.go
 
 export interface ApiUser {
@@ -200,13 +202,21 @@ async function request<T>(
     );
   }
   const url = baseUrl.replace(/\/$/, "") + path;
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers as Record<string, string>),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers as Record<string, string>),
+      },
+    });
+  } catch (err) {
+    const message = isFirefoxBuild()
+      ? "Network request failed. If you are using Firefox, ensure the server allows requests from Firefox extension origins (moz-extension://...)."
+      : "Network request failed. Check your server URL and network connection.";
+    throw new ApiError(message, 0, undefined, undefined);
+  }
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
@@ -458,4 +468,3 @@ export function updatePreferences(
     body: JSON.stringify(preferences),
   });
 }
-
