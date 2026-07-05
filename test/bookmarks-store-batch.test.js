@@ -58,7 +58,7 @@ mock.module("@/lib/bookmark-utils", () => ({
   normalizeFavicon: (favicon) => favicon,
 }));
 
-const { useBookmarksStore } = await import("../store/bookmarks-store");
+const { useBookmarksStore } = await import(`../store/bookmarks-store.ts?test=${Date.now()}-${Math.random()}`);
 
 function createBookmark(id, overrides = {}) {
   return {

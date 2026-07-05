@@ -17,6 +17,7 @@ mock.module("@/lib/bookmark-utils", () => ({
 }));
 
 mock.module("@/lib/idb", () => ({
+  idbGet: async () => undefined,
   idbGetAll: async () => [],
   idbPut: async (store, value) => {
     idbPutCalls.push({ store, value });
@@ -48,7 +49,7 @@ mock.module("@/store/plan-store", () => ({
   },
 }));
 
-const { useGroupsStore } = await import("../store/groups-store");
+const { useGroupsStore } = await import(`../store/groups-store.ts?test=${Date.now()}-${Math.random()}`);
 
 describe("groups-store deleteGroup", () => {
   beforeEach(() => {

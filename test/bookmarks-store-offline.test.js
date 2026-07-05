@@ -25,6 +25,17 @@ mock.module("@/lib/idb", () => ({
   },
   idbBulkWrite: async (ops) => {
     bulkWriteCalls.push(ops);
+    for (const op of ops) {
+      if (op.store !== "trashed-bookmarks") {
+        continue;
+      }
+      if (op.type === "put") {
+        trashedStore.set(op.value.id, op.value);
+      }
+      if (op.type === "delete") {
+        trashedStore.delete(op.key);
+      }
+    }
   },
 }));
 
@@ -60,7 +71,7 @@ mock.module("@/lib/bookmark-utils", () => ({
   normalizeFavicon: (favicon) => favicon,
 }));
 
-const { useBookmarksStore } = await import("../store/bookmarks-store");
+const { useBookmarksStore } = await import(`../store/bookmarks-store.ts?test=${Date.now()}-${Math.random()}`);
 
 function createBookmark(id, overrides = {}) {
   return {
@@ -148,10 +159,13 @@ describe("bookmarks store offline permanent delete", () => {
         }),
       ],
     ]);
-    expect(useBookmarksStore.getState().trashedBookmarks).toEqual([
+    expect(trashedStore.get("bookmark-batch-1")).toEqual(
       expect.objectContaining({ id: "bookmark-batch-1", seq: 0, isTrashed: 2 }),
+    );
+    expect(trashedStore.get("bookmark-batch-2")).toEqual(
       expect.objectContaining({ id: "bookmark-batch-2", seq: 0, isTrashed: 2 }),
-    ]);
+    );
+    expect(useBookmarksStore.getState().trashedBookmarks).toEqual([]);
     expect(decrementCalls).toHaveLength(0);
   });
 

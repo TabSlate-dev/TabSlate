@@ -10,6 +10,7 @@ mock.module("@/lib/api", () => ({
     syncPull: (...args) => syncPullImpl(...args),
     syncPush: async () => ({ server_seq: 0, rejected: [] }),
   },
+  searchBookmarks: mock(async () => []),
 }));
 
 mock.module("@/lib/analytics", () => ({
@@ -42,7 +43,7 @@ mock.module("@/lib/sse-client", () => ({
   },
 }));
 
-const { SyncEngine } = await import("../lib/sync-engine");
+const { SyncEngine } = await import(`../lib/sync-engine.ts?test=${Date.now()}-${Math.random()}`);
 
 describe("SyncEngine analytics", () => {
   beforeEach(() => {

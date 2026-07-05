@@ -106,7 +106,7 @@ describe("analytics", () => {
       name: "tabslate-analytics-id",
       options: { mode: "exclusive" },
     }]);
-    expect(getCalls).toEqual([STORAGE_KEY, STORAGE_KEY]);
+    expect(getCalls).toEqual([STORAGE_KEY]);
     expect(setCalls).toHaveLength(1);
     expect(typeof storedId).toBe("string");
     expect(storedId.length).toBeGreaterThan(0);

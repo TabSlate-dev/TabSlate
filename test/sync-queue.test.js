@@ -26,6 +26,7 @@ mock.module("../lib/api", () => ({
     },
   },
   ApiError: MockApiError,
+  searchBookmarks: mock(async () => []),
 }));
 
 mock.module("../store/auth-store", () => ({

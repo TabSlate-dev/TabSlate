@@ -24,6 +24,7 @@ mock.module("@/lib/api", () => ({
   api: {
     getPlan: getPlanMock,
   },
+  searchBookmarks: mock(async () => []),
 }));
 
 mock.module("@/store/auth-store", () => ({
