@@ -174,7 +174,7 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: "__MSG_extensionName__",
     description: "__MSG_extensionDescription__",
-    version: "0.1.3",
+    version: "0.1.5",
     default_locale: "en",
     permissions: getPermissions(browser),
     optional_host_permissions: ["<all_urls>"],
@@ -481,7 +481,7 @@ describe("background content script sync", () => {
         onInstalled: { addListener: mock(() => {}) },
         onStartup: { addListener: mock(() => {}) },
         onMessage: { addListener: mock(() => {}) },
-        getManifest: () => ({ version: "0.1.3" }),
+        getManifest: () => ({ version: "0.1.5" }),
       },
       permissions: {
         contains: mock(async () => true),

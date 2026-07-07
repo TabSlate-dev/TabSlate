@@ -16,8 +16,8 @@ import { spawnSync } from "node:child_process";
 
 const tempDirs: string[] = [];
 
-const chromeZipPath = join(process.cwd(), ".output", "tab-slate-0.1.3-chrome.zip");
-const edgeZipPath = join(process.cwd(), ".output", "tab-slate-0.1.3-edge.zip");
+const chromeZipPath = join(process.cwd(), ".output", "tab-slate-0.1.5-chrome.zip");
+const edgeZipPath = join(process.cwd(), ".output", "tab-slate-0.1.5-edge.zip");
 const backupChromeZipPath = `${chromeZipPath}.bak-test`;
 const backupEdgeZipPath = `${edgeZipPath}.bak-test`;
 
@@ -55,7 +55,7 @@ const capturePath = process.env.MOCK_CAPTURE_PATH;
 const outputDir = path.join(process.cwd(), ".output");
 fs.mkdirSync(outputDir, { recursive: true });
 fs.writeFileSync(
-  path.join(outputDir, "tab-slate-0.1.3-chrome.zip"),
+  path.join(outputDir, "tab-slate-0.1.5-chrome.zip"),
   "mock chrome zip",
 );
 fs.writeFileSync(

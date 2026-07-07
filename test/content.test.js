@@ -124,7 +124,7 @@ function createBackgroundChrome(overrides = {}) {
       onMessage: {
         addListener: mock(() => {}),
       },
-      getManifest: () => ({ version: "0.1.3" }),
+      getManifest: () => ({ version: "0.1.5" }),
       sendMessage: mock(() => Promise.resolve()),
       getURL: (path) => `chrome-extension://test/${path}`,
     },
