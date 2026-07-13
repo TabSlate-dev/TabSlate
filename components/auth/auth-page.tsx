@@ -1,7 +1,13 @@
 import { LoginForm } from "@/components/login-form";
 import { LanguageSelector } from "@/components/language-selector";
+import { useTheme } from "@/lib/theme";
 
 export function AuthPage() {
+  const { resolvedTheme } = useTheme();
+  const previewSrc = resolvedTheme === "dark"
+    ? "/login-preview-dark.webp"
+    : "/login-preview-light.webp";
+
   return (
     <div className="grid min-h-svh lg:grid-cols-2">
       {/* Left: form */}
@@ -23,8 +29,13 @@ export function AuthPage() {
       </div>
 
       {/* Right: decorative panel (hidden on mobile) */}
-      <div className="relative hidden bg-muted lg:block">
-        <div className="absolute inset-0 bg-linear-to-br from-primary/20 via-muted to-muted-foreground/10" />
+      <div className="relative hidden overflow-hidden bg-slate-100 lg:flex dark:bg-zinc-950">
+        <img
+          src={previewSrc}
+          alt="TabSlate dashboard preview"
+          draggable={false}
+          className="absolute inset-0 size-full select-none object-cover object-center animate-in fade-in duration-500"
+        />
       </div>
     </div>
   );

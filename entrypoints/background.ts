@@ -67,10 +67,12 @@ export default defineBackground(() => {
   // Context menus — registered once on install / update
   // -------------------------------------------------------------------------
   chrome.runtime.onInstalled.addListener(() => {
-    chrome.contextMenus.create({
-      id: "save-to-tabslate",
-      title: "Save to TabSlate",
-      contexts: ["page", "selection", "link"],
+    chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: "save-to-tabslate",
+        title: "Save to TabSlate",
+        contexts: ["page", "selection", "link"],
+      });
     });
   });
 

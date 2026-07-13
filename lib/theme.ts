@@ -1,14 +1,17 @@
 import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = "light" | "dark" | "system";
+export type Theme = "light" | "dark" | "system";
+export type ResolvedTheme = "light" | "dark";
 
 interface ThemeContextValue {
   theme: Theme;
+  resolvedTheme: ResolvedTheme;
   setTheme: (theme: Theme) => void;
 }
 
 export const ThemeContext = createContext<ThemeContextValue>({
   theme: "system",
+  resolvedTheme: "light",
   setTheme: () => {},
 });
 
@@ -22,11 +25,20 @@ function getSystemTheme(): "light" | "dark" {
     : "light";
 }
 
-function applyTheme(theme: Theme) {
+export function resolveTheme(theme: Theme, prefersDark: boolean): ResolvedTheme {
+  if (theme === "system") {
+    return prefersDark ? "dark" : "light";
+  }
+
+  return theme;
+}
+
+function applyTheme(theme: Theme): ResolvedTheme {
   const root = document.documentElement;
-  const resolved = theme === "system" ? getSystemTheme() : theme;
+  const resolved = resolveTheme(theme, getSystemTheme() === "dark");
   root.classList.toggle("dark", resolved === "dark");
   root.style.setProperty("color-scheme", resolved);
+  return resolved;
 }
 
 const STORAGE_KEY = "theme";
@@ -41,15 +53,18 @@ export function getStoredTheme(): Theme {
 
 export function useThemeState() {
   const [theme, setThemeState] = useState<Theme>(getStoredTheme);
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
+    resolveTheme(getStoredTheme(), getSystemTheme() === "dark"),
+  );
 
   useEffect(() => {
-    applyTheme(theme);
+    setResolvedTheme(applyTheme(theme));
   }, [theme]);
 
   useEffect(() => {
     if (theme !== "system") { return; }
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => applyTheme("system");
+    const handler = () => setResolvedTheme(applyTheme("system"));
     mq.addEventListener("change", handler);
     return () => mq.removeEventListener("change", handler);
   }, [theme]);
@@ -69,5 +84,5 @@ export function useThemeState() {
     setThemeState(next);
   };
 
-  return { theme, setTheme };
+  return { theme, resolvedTheme, setTheme };
 }

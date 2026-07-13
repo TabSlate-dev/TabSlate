@@ -13,12 +13,12 @@ export async function restrictSessionStorageToTrustedContexts(): Promise<void> {
     browser?: { storage?: { session?: FirefoxStorageSession } };
   }).browser?.storage?.session;
   if (typeof firefoxSession?.setAccessLevel === "function") {
-    await firefoxSession.setAccessLevel(accessLevel);
+    try { await firefoxSession.setAccessLevel(accessLevel); } catch { /* unsupported */ }
     return;
   }
 
   const sessionStorage = chrome.storage.session as SessionStorageWithAccessLevel;
   if (typeof sessionStorage.setAccessLevel === "function") {
-    await sessionStorage.setAccessLevel({ accessLevel });
+    try { await sessionStorage.setAccessLevel({ accessLevel }); } catch { /* unsupported */ }
   }
 }
