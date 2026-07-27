@@ -17,7 +17,7 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: "__MSG_extensionName__",
     description: "__MSG_extensionDescription__",
-    version: "0.1.6",
+    version: "0.1.8",
     default_locale: "en",
     permissions: getPermissions(),
     optional_host_permissions: ["<all_urls>"],
@@ -60,6 +60,10 @@ export default defineConfig({
     "build:manifestGenerated": (_wxt, manifest) => {
       // Remove auto-generated host_permissions that conflict with optional_host_permissions
       delete manifest.host_permissions;
+
+      if (manifest.content_scripts?.length === 0) {
+        delete manifest.content_scripts;
+      }
 
       const hostPermissionOrigins = new Set<string>();
       const apiUrl = process.env.VITE_API_URL;

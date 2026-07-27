@@ -2,7 +2,7 @@
   "name": "tab-slate",
   "description": "manifest.json description",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.8",
   "type": "module",
   "scripts": {
     "dev": "bun run dev:chrome",
