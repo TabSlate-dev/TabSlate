@@ -1,7 +1,8 @@
-import { api, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
+import { api, ApiError, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import { SyncQueue } from "@/lib/sync-queue";
 import { SSEClient } from "@/lib/sse-client";
+import { useAuthStore } from "@/store/auth-store";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
 
@@ -108,7 +109,22 @@ export class SyncEngine {
         groups: entities.groups ?? [],
       },
     };
-    await api.syncPush(creds.baseUrl, creds.accessToken, payload);
+
+    try {
+      await api.syncPush(creds.baseUrl, creds.accessToken, payload);
+    } catch (err) {
+      if (!(err instanceof ApiError) || (err.status !== 401 && err.status !== 403)) {
+        throw err;
+      }
+
+      const refreshed = await useAuthStore.getState().silentRefresh();
+      const refreshedCreds = this.getCredentials();
+      if (!refreshed || !refreshedCreds) {
+        throw err;
+      }
+
+      await api.syncPush(refreshedCreds.baseUrl, refreshedCreds.accessToken, payload);
+    }
   }
 
   async forceSync(): Promise<{ pushed: number; pulled: number }> {
@@ -118,7 +134,7 @@ export class SyncEngine {
     await this.queue.flush().catch(() => { /* queue handles retries */ });
 
     try {
-      const resp = await this.doPull();
+      const resp = await this.pullWithAuthenticationRecovery();
       if (resp) {
         pulled =
           resp.entities.workspaces.length +
@@ -151,7 +167,7 @@ export class SyncEngine {
     if (!creds) { this.isPulling = false; return; }
     this.setStatus("syncing");
     try {
-      const resp = await this.doPull();
+      const resp = await this.pullWithAuthenticationRecovery();
       if (resp) this.onPullSuccess(resp);
       this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
     } catch (err) {
@@ -177,6 +193,29 @@ export class SyncEngine {
       return api.syncPull(creds.baseUrl, creds.accessToken, 0);
     }
     return resp;
+  }
+
+  /** Refresh a rejected access token once, then retry the pull with current credentials. */
+  private async pullWithAuthenticationRecovery(): Promise<SyncPullResponse | null> {
+    try {
+      return await this.doPull();
+    } catch (err) {
+      if (!(err instanceof ApiError) || (err.status !== 401 && err.status !== 403)) {
+        throw err;
+      }
+
+      const refreshed = await useAuthStore.getState().silentRefresh();
+      if (!refreshed) {
+        // silentRefresh clears the refresh token only after a definitive 401/403.
+        // Preserve an error for transient refresh failures so they are not mistaken for logout.
+        if (!useAuthStore.getState().refreshToken) {
+          return null;
+        }
+        throw err;
+      }
+
+      return this.doPull();
+    }
   }
 
   private ensurePeriodicPull() {

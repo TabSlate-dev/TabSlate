@@ -210,6 +210,7 @@ function SyncProvider({
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const accessToken = useAuthStore((s) => s.accessToken);
   const refreshToken = useAuthStore((s) => s.refreshToken);
+  const hasAccessToken = accessToken !== null;
   const localSeq = useWorkspaceStore((s) => s.localSeq);
   const mergeWorkspaces = useWorkspaceStore((s) => s.mergeFromServer);
   const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
@@ -240,7 +241,16 @@ function SyncProvider({
     useSettingsStore.getState().pullFromServer(serverUrl, accessToken);
 
     const engine = new SyncEngine(
-      () => (accessToken && serverUrl ? { baseUrl: serverUrl, accessToken } : null),
+      () => {
+        const currentAuth = useAuthStore.getState();
+        if (!currentAuth.accessToken || !currentAuth.serverUrl) {
+          return null;
+        }
+        return {
+          baseUrl: currentAuth.serverUrl,
+          accessToken: currentAuth.accessToken,
+        };
+      },
       () => localSeqRef.current,
       async (resp: SyncPullResponse) => {
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
@@ -300,7 +310,7 @@ function SyncProvider({
       engine.destroy();
       releaseSyncEngine(engine);
     };
-  }, [accessToken, serverUrl]);
+  }, [hasAccessToken, serverUrl]);
 
   // When accessToken is absent but the user is logged in (has a refreshToken) with a configured
   // serverUrl, the engine never started because silentRefresh() couldn't reach the backend.

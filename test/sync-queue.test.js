@@ -14,15 +14,19 @@ const onErrorCalls = [];
 const bufferedSnapshots = [];
 const consumedSnapshots = [];
 const silentRefreshCalls = [];
+const syncPushCredentials = [];
 
 let syncPushImpl;
 let loadRecoverySnapshotImpl;
+let silentRefreshImpl;
+let currentRefreshToken;
 
 mock.module("../lib/api", () => ({
   api: {
-    syncPush: (_baseUrl, _accessToken, payload) => {
+    syncPush: (_baseUrl, accessToken, payload) => {
       syncPushCalls.push(payload);
-      return syncPushImpl(payload);
+      syncPushCredentials.push(accessToken);
+      return syncPushImpl(payload, accessToken);
     },
   },
   ApiError: MockApiError,
@@ -32,9 +36,10 @@ mock.module("../lib/api", () => ({
 mock.module("../store/auth-store", () => ({
   useAuthStore: {
     getState: () => ({
+      refreshToken: currentRefreshToken,
       silentRefresh: async () => {
         silentRefreshCalls.push("called");
-        return true;
+        return silentRefreshImpl();
       },
     }),
   },
@@ -67,8 +72,11 @@ describe("SyncQueue", () => {
     bufferedSnapshots.length = 0;
     consumedSnapshots.length = 0;
     silentRefreshCalls.length = 0;
+    syncPushCredentials.length = 0;
     loadRecoverySnapshotImpl = async () => null;
     syncPushImpl = async () => ({ server_seq: 0, rejected: [] });
+    silentRefreshImpl = async () => true;
+    currentRefreshToken = "refresh-token";
   });
 
   test("rehydrates recovery state before normal pushes resume", async () => {
@@ -264,6 +272,188 @@ describe("SyncQueue", () => {
       },
     ]);
     expect(silentRefreshCalls).toEqual(["called"]);
+
+    queue.destroy();
+  });
+
+  test("refreshes authentication when a push is forbidden", async () => {
+    syncPushImpl = async () => {
+      throw new MockApiError("forbidden", 403);
+    };
+
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      (resp) => {
+        onSuccessCalls.push(resp);
+      },
+      (err) => {
+        onErrorCalls.push(err.message);
+      },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "bookmark-403" }] });
+
+    await queue.flush();
+
+    expect(silentRefreshCalls).toEqual(["called"]);
+    expect(onErrorCalls).toEqual([]);
+
+    queue.destroy();
+  });
+
+  test("retries a buffered push after authentication refreshes", async () => {
+    let currentAccessToken = "expired-token";
+    syncPushImpl = async (_payload, accessToken) => {
+      if (accessToken === "expired-token") {
+        throw new MockApiError("access token expired", 401);
+      }
+      return { server_seq: 1, rejected: [] };
+    };
+    silentRefreshImpl = async () => {
+      currentAccessToken = "refreshed-token";
+      return true;
+    };
+
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: currentAccessToken }),
+      (resp) => {
+        onSuccessCalls.push(resp);
+      },
+      (err) => {
+        onErrorCalls.push(err.message);
+      },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "bookmark-retry" }] });
+
+    await queue.flush();
+    await queue.flush();
+
+    expect(silentRefreshCalls).toEqual(["called"]);
+    expect(syncPushCredentials).toEqual(["expired-token", "refreshed-token"]);
+    expect(onSuccessCalls).toEqual([{ server_seq: 1, rejected: [] }]);
+    expect(onErrorCalls).toEqual([]);
+
+    queue.destroy();
+  });
+
+  test("replays a buffered push after a transient refresh failure before pushing later work", async () => {
+    let currentAccessToken = "expired-token";
+    loadRecoverySnapshotImpl = async () => bufferedSnapshots.shift() ?? null;
+    syncPushImpl = async (_payload, accessToken) => {
+      if (accessToken === "expired-token") {
+        throw new MockApiError("access token expired", 401);
+      }
+      return { server_seq: 1, rejected: [] };
+    };
+    silentRefreshImpl = async () => false;
+
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: currentAccessToken }),
+      (resp) => {
+        onSuccessCalls.push(resp);
+      },
+      (err) => {
+        onErrorCalls.push(err.message);
+      },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "bookmark-buffered" }] });
+    await queue.flush();
+
+    currentAccessToken = "refreshed-token";
+    queue.enqueue({ bookmarks: [{ id: "bookmark-later" }] });
+    await queue.flush();
+
+    expect(syncPushCalls.at(-1)?.entities.bookmarks.map((bookmark) => bookmark.id).sort()).toEqual([
+      "bookmark-buffered",
+      "bookmark-later",
+    ]);
+    expect(onErrorCalls).toEqual([]);
+
+    queue.destroy();
+  });
+
+  test("keeps a newer queued edit when replaying an expired-token snapshot", async () => {
+    let currentAccessToken = "expired-token";
+    let resolveRefresh;
+    let notifyRefreshStarted;
+    const refreshStarted = new Promise((resolve) => {
+      notifyRefreshStarted = resolve;
+    });
+    syncPushImpl = async (_payload, accessToken) => {
+      if (accessToken === "expired-token") {
+        throw new MockApiError("access token expired", 401);
+      }
+      return { server_seq: 1, rejected: [] };
+    };
+    silentRefreshImpl = () => {
+      notifyRefreshStarted();
+      return new Promise((resolve) => {
+        resolveRefresh = resolve;
+      });
+    };
+
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: currentAccessToken }),
+      (resp) => {
+        onSuccessCalls.push(resp);
+      },
+      (err) => {
+        onErrorCalls.push(err.message);
+      },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "bookmark-edited", title: "before refresh" }] });
+    const firstFlush = queue.flush();
+    await refreshStarted;
+
+    queue.enqueue({ bookmarks: [{ id: "bookmark-edited", title: "after refresh" }] });
+    currentAccessToken = "refreshed-token";
+    if (!resolveRefresh) {
+      throw new Error("refresh resolver was not assigned");
+    }
+    resolveRefresh(true);
+    await firstFlush;
+    await queue.flush();
+
+    expect(syncPushCalls.at(-1)?.entities.bookmarks).toEqual([
+      { id: "bookmark-edited", title: "after refresh" },
+    ]);
+    expect(onErrorCalls).toEqual([]);
+
+    queue.destroy();
+  });
+
+  test("automatically retries a buffered push after a transient refresh failure", async () => {
+    let currentAccessToken = "expired-token";
+    loadRecoverySnapshotImpl = async () => bufferedSnapshots.shift() ?? null;
+    syncPushImpl = async (_payload, accessToken) => {
+      if (accessToken === "expired-token") {
+        throw new MockApiError("access token expired", 401);
+      }
+      return { server_seq: 1, rejected: [] };
+    };
+    silentRefreshImpl = async () => false;
+
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: currentAccessToken }),
+      (resp) => {
+        onSuccessCalls.push(resp);
+      },
+      (err) => {
+        onErrorCalls.push(err.message);
+      },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "bookmark-auto-retry" }] });
+    await queue.flush();
+    currentAccessToken = "refreshed-token";
+    await new Promise((resolve) => setTimeout(resolve, 2_100));
+
+    expect(syncPushCredentials).toEqual(["expired-token", "refreshed-token"]);
+    expect(onSuccessCalls).toEqual([{ server_seq: 1, rejected: [] }]);
+    expect(onErrorCalls).toEqual([]);
 
     queue.destroy();
   });
