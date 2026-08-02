@@ -25,7 +25,7 @@ describe("wxt cross-browser manifest", () => {
   test("adds Firefox gecko metadata for MV3", async () => {
     const manifest = await getManifest("firefox", 3);
 
-    expect(manifest.browser_specific_settings?.gecko?.id).toBe("@tabslate");
+    expect(manifest.browser_specific_settings?.gecko?.id).toBe("support@cs.tabslate.com");
     expect(manifest.browser_specific_settings?.gecko?.strict_min_version).toBe("128.0");
     expect(
       manifest.browser_specific_settings?.gecko?.data_collection_permissions?.required,

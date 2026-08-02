@@ -41,8 +41,8 @@ export default defineConfig({
       ? {
           browser_specific_settings: {
             gecko: {
-              id: "@tabslate",
-              strict_min_version: "128.0",
+              id: "support@cs.tabslate.com",
+              strict_min_version: "142.0",
               data_collection_permissions: {
                 required: ["none"],
               },

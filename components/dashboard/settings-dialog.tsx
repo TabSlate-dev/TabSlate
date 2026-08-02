@@ -177,7 +177,7 @@ function DeleteAccountDialog({
 }
 
 export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: SettingsDialogProps) {
-  const { t } = useTranslation();
+  const { t, tNode } = useTranslation();
   const [activeTab, setActiveTab] = React.useState<"general" | "plan" | "account">("general");
 
   React.useEffect(() => {
@@ -299,9 +299,11 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 <div className="flex flex-row items-center justify-between">
                   <div className="space-y-0.5">
                     <h3 className="text-sm font-semibold">{t("settings_generalOverlayTitle")}</h3>
-                    <p className="text-xs text-muted-foreground mr-4 mt-0.5" dangerouslySetInnerHTML={{
-                      __html: t("settings_generalOverlayDesc", ['<kbd class="px-1 py-0.5 rounded-md bg-muted border font-sans text-[10px]">Ctrl+Shift+K</kbd>'])
-                    }} />
+                    <p className="text-xs text-muted-foreground mr-4 mt-0.5">
+                      {tNode("settings_generalOverlayDesc", (
+                        <kbd className="px-1 py-0.5 rounded-md bg-muted border font-sans text-[10px]">Ctrl+Shift+K</kbd>
+                      ))}
+                    </p>
                   </div>
                   <Switch
                     checked={searchOverlayEnabled}
@@ -409,9 +411,9 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                 {limits && limits.trash_grace_days !== -1 && (
                   <div className="flex items-center gap-2 p-3 text-xs rounded-xl border border-muted bg-muted/5 text-muted-foreground mt-1 select-none">
                     <ShieldCheck className="size-4 text-emerald-500 shrink-0" />
-                    <span dangerouslySetInnerHTML={{
-                      __html: t("settings_planTrashDesc", [limits.trash_grace_days.toString()])
-                    }} />
+                    <span>
+                      {tNode("settings_planTrashDesc", limits.trash_grace_days.toString())}
+                    </span>
                   </div>
                 )}
               </div>
