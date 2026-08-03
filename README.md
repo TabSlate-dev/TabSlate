@@ -1,120 +1,100 @@
-<div align="center">
-  <img src="docs/public/assets/feature-1-light.png" alt="TabSlate Banner"/>
-  <h1>TabSlate ✨</h1>
-  <p>
-    A modern Chrome extension that replaces the default New Tab page. <br>
-    Providing advanced tab management, visual bookmark organization, and workspace grouping features.<br>
-    <b>Take back control of your browser tabs and bookmarks.</b><br><br>
-    <i>An open-source alternative to <a href="https://www.gettoby.com/">Toby</a> and <a href="https://workona.com/">Workona</a>.</i>
-  </p>
-  
-  <p>
-    <img src="https://img.shields.io/badge/Chrome-✓-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Chrome">
-    <img src="https://img.shields.io/badge/Edge-✓-0078D7?style=flat-square&logo=microsoftedge&logoColor=white" alt="Edge">
-  </p>
-  <p>
-    <img src="https://img.shields.io/github/stars/TabSlate/TabSlate?style=flat-square&logo=github" alt="GitHub stars">
-    <img src="https://img.shields.io/github/forks/TabSlate/TabSlate?style=flat-square&logo=github" alt="GitHub forks">
-    <img src="https://img.shields.io/github/v/release/TabSlate/TabSlate?style=flat-square&logo=github" alt="Latest version">
-  </p>
-</div>
-
 <p align="center">
-  <a href="./README.md">English</a> •
-  <a href="./.github/README_ZH.md">简体中文</a>
+  <img src="./assets/readme/hero.svg" width="100%" alt="TabSlate, a focused workspace for organizing browser tabs, bookmarks, and saved groups" />
 </p>
 
----
+<p align="center">
+  A Chrome extension that turns your new tab into a calm, searchable workspace for everything you are browsing.
+</p>
 
-## 👋 Why TabSlate?
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/hjopekcfkkiphbbdjccdhhlldnnfbchm"><img src="https://img.shields.io/badge/Get%20it%20on-Chrome%20Web%20Store-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Get TabSlate on the Chrome Web Store" /></a>
+  <img src="https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Chrome Manifest V3" />
+  <a href="https://github.com/TabSlate-dev/TabSlate/stargazers"><img src="https://img.shields.io/github/stars/TabSlate-dev/TabSlate?style=flat-square&logo=github&label=Stars" alt="GitHub stars" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-7C3AED?style=flat-square" alt="AGPL-3.0 license" /></a>
+</p>
 
-Are you drowning in dozens of open tabs? Is your bookmarks bar overflowing and chaotic?
+<p align="center">
+  <a href="./README.md">English</a> · <a href="./.github/README_ZH.md">简体中文</a>
+</p>
 
-That's why **TabSlate** was built. Designed as an open-source alternative to tools like [Toby](https://www.gettoby.com/) and [Workona](https://workona.com/), it replaces your browser's default New Tab page with a powerful, organized, and beautiful dashboard. Whether you're a power user juggling multiple projects, a researcher saving links, or just someone who wants a cleaner browsing experience, TabSlate helps you keep everything structured and easily accessible.
+## See the whole browser, not just the current tab
 
----
+![TabSlate workspace showing collections, bookmarks, a search bar, and open tabs](./docs/public/assets/feature-1-light.png)
 
-## ✨ Features
+TabSlate replaces the default new-tab page with one place to keep browsing context intact. Review what is open, collect pages worth returning to, and resume saved tab groups when a project comes back around.
 
-### 🌌 Core Functionality
+## Built around browsing context
 
-- **🗂️ Workspaces & Collections**: Organize your browsing context into dedicated Workspaces and multi-level Collections.
-- **🔖 Visual Bookmarks**: A beautiful, grid-based bookmark manager with automatic Favicon fetching and rich metadata support.
-- **🔍 Global Search Overlay**: Hit `Ctrl+K` (or `Cmd+K`) anywhere to bring up a powerful command palette. Instantly search through open tabs, bookmarks, and collections, or fallback to your default search engine.
-- **☁️ Cloud Sync**: Keep your data synchronized across multiple devices via the self-hosted `TabSlate-server` or the official Cloud service.
-- **🗑️ Trash & Recovery**: Accidentally deleted a bookmark? Recover it easily from the built-in Trash bin.
+### Organize the work behind your tabs
 
-### 📑 Advanced Tab Management
+- Create workspaces and collections for different projects, areas of research, or parts of your day.
+- Save pages as visual bookmarks with favicons and metadata instead of letting useful links disappear into the tab bar.
+- Keep Chrome tab groups as reusable saved groups, ready to restore in one action.
 
-- **📍 Tab Overview**: View and manage all your currently open tabs directly from your New Tab page.
-- **📦 Chrome Tab Groups Sync**: Native integration with Chrome's Tab Groups. Save groups persistently and restore them with a single click.
-- **🤏 Compact Group Titles**: Save space on your tab bar with compact naming options for your groups.
-- **🚫 Duplicate Detection**: Built-in alerts to prevent you from opening the same tab twice.
+### Find the right thing without losing your place
 
-### 🎨 Design & Personalization
+- Search open tabs, bookmarks, and enabled search engines from the new tab.
+- Open the global search overlay with `Ctrl+Shift+K` on Windows and Linux, or `Command+Shift+K` on macOS.
+- Sort, filter, and work in grid or list views when a collection grows.
 
-- **🌙 Dark Mode**: Elegant Dark/Light mode support with smooth transitions, built with Tailwind CSS and `shadcn/ui`.
-- **🌐 i18n Support**: Native localization support (currently available in English and Simplified Chinese).
-- **🎨 Custom Visuals**: Assign distinct colors to your tab groups and collections to keep things visually organized.
+### Recover, continue, and stay in control
 
----
+- Catch duplicate tabs before opening another copy.
+- Archive or move accidental deletions to Trash, then restore them when needed.
+- Sync through a self-hosted TabSlate server or the official cloud service when you want your workspace on more than one device.
 
-## 📥 Installation
+<p align="center">
+  <img src="./assets/readme/context-flow.svg" width="100%" alt="A TabSlate workflow: review open tabs, organize pages into collections, then search or restore saved groups" />
+</p>
 
-<div align="center">
-  <a href="https://chromewebstore.google.com/detail/hjopekcfkkiphbbdjccdhhlldnnfbchm" target="_blank">
-    <img src="https://img.shields.io/badge/Chrome%20Web%20Store-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome Web Store" height="36">
-  </a>
-</div>
+## Install TabSlate
 
-> **Note:** TabSlate is currently under active development.
+### Chrome Web Store
 
-### Manual Installation (Developer Mode)
+Install [TabSlate from the Chrome Web Store](https://chromewebstore.google.com/detail/hjopekcfkkiphbbdjccdhhlldnnfbchm), then open a new tab to start organizing.
 
-1. Clone the repository or download the latest release:
-   ```bash
-   git clone https://github.com/TabSlate/TabSlate.git
-   cd TabSlate
-   ```
-2. Install dependencies (Bun is recommended):
-   ```bash
-   bun install
-   ```
-3. Build the extension:
-   ```bash
-   bun run build
-   ```
-4. Open Chrome and navigate to `chrome://extensions/`.
-5. Enable **"Developer mode"** in the top right corner.
-6. Click **"Load unpacked"** and select the `.output/chrome-mv3` folder inside the project directory.
+### From source
 
----
+```bash
+git clone https://github.com/TabSlate-dev/TabSlate.git
+cd TabSlate
+bun install
+bun run build
+```
 
-## 🛠️ Development
+Then open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `.output/chrome-mv3`.
 
-We welcome contributions! 
+## Develop
 
-### Scripts
+TabSlate is a React and TypeScript Chrome MV3 extension built with WXT, Zustand, Tailwind CSS, and shadcn/ui. Install [Bun](https://bun.sh/) first, then use the commands that fit the task:
 
-- `bun run dev` - Start development mode with hot-reloading.
-- `bun run build` - Build the production extension.
-- `bun run compile` - Run TypeScript type checking.
-- `bun run zip` - Package the extension into a `.zip` for Chrome Web Store distribution.
+```bash
+# Develop with hot reload
+bun run dev
 
-*See `ARCHITECTURE.md` for detailed technical architecture and state management documentation.*
+# Type-check without creating build output
+bun run compile
 
----
+# Build the production extension
+bun run build
 
-## 📄 License
+# Package a Chrome Web Store upload
+bun run zip
+```
 
-TabSlate is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** - see the [LICENSE](LICENSE) file for details.
+The extension has separate new-tab, popup, background-service-worker, and content-script entry points. See [ARCHITECTURE.md](./ARCHITECTURE.md) for the data model, message flows, and codebase map.
 
-### ⚠️ Commercial Use Restriction
+## Contribute
 
-**Please note:** This project is intended for personal and non-commercial use only. **Commercial use is strictly prohibited.** You may not use, reproduce, distribute, or monetize this software or any of its derivatives for commercial purposes without prior written permission from the author.
+Issues and pull requests are welcome. Before opening a change, run:
 
----
+```bash
+bun run compile
+bun run build
+```
 
-<div align="center">
-  <p>Made with ❤️ for a better browsing experience.</p>
-</div>
+If your change affects user-visible behavior, update the relevant README section or architecture documentation in the same pull request.
+
+## License
+
+TabSlate is licensed under the [GNU Affero General Public License v3.0](./LICENSE).
