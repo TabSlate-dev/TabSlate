@@ -7,11 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://tabslate.com">Website</a> ·
-  <a href="https://chromewebstore.google.com/detail/hjopekcfkkiphbbdjccdhhlldnnfbchm">Chrome Web Store</a>
-</p>
-
-<p align="center">
+  <a href="https://tabslate.com"><img src="https://img.shields.io/badge/Website-tabslate.com-172235?style=flat-square&logo=googlechrome&logoColor=white" alt="Visit the TabSlate website" /></a>
   <a href="https://chromewebstore.google.com/detail/hjopekcfkkiphbbdjccdhhlldnnfbchm"><img src="https://img.shields.io/badge/Get%20it%20on-Chrome%20Web%20Store-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Get TabSlate on the Chrome Web Store" /></a>
   <img src="https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Chrome Manifest V3" />
   <a href="https://github.com/TabSlate-dev/TabSlate/stargazers"><img src="https://img.shields.io/github/stars/TabSlate-dev/TabSlate?style=flat-square&logo=github&label=Stars" alt="GitHub stars" /></a>
@@ -27,6 +23,8 @@
 ![TabSlate workspace showing collections, bookmarks, a search bar, and open tabs](./docs/public/assets/feature-1-light.png)
 
 TabSlate replaces the default new-tab page with one place to keep browsing context intact. Review what is open, collect pages worth returning to, and resume saved tab groups when a project comes back around.
+
+It is an open-source alternative to [Toby](https://www.gettoby.com/) and [Workona](https://www.workona.com/).
 
 ## Built around browsing context
 
