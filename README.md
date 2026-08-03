@@ -7,6 +7,11 @@
 </p>
 
 <p align="center">
+  <a href="https://tabslate.com">Website</a> ·
+  <a href="https://chromewebstore.google.com/detail/hjopekcfkkiphbbdjccdhhlldnnfbchm">Chrome Web Store</a>
+</p>
+
+<p align="center">
   <a href="https://chromewebstore.google.com/detail/hjopekcfkkiphbbdjccdhhlldnnfbchm"><img src="https://img.shields.io/badge/Get%20it%20on-Chrome%20Web%20Store-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Get TabSlate on the Chrome Web Store" /></a>
   <img src="https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=googlechrome&logoColor=white" alt="Chrome Manifest V3" />
   <a href="https://github.com/TabSlate-dev/TabSlate/stargazers"><img src="https://img.shields.io/github/stars/TabSlate-dev/TabSlate?style=flat-square&logo=github&label=Stars" alt="GitHub stars" /></a>
