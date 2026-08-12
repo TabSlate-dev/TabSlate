@@ -7,8 +7,11 @@ export function compareActiveCollections(
   left: SortableCollection,
   right: SortableCollection,
 ): number {
-  if (left.isDefault !== right.isDefault) {
-    return left.isDefault ? -1 : 1;
+  const leftIsDefault = left.isDefault === true;
+  const rightIsDefault = right.isDefault === true;
+
+  if (leftIsDefault !== rightIsDefault) {
+    return leftIsDefault ? -1 : 1;
   }
   return right.position - left.position;
 }

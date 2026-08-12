@@ -29,4 +29,17 @@ describe("active collection ordering", () => {
     expect(compareActiveCollections(olderDefault, newerDefault)).toBeGreaterThan(0);
     expect(compareActiveCollections(newerDefault, olderDefault)).toBeLessThan(0);
   });
+
+  test("orders false and omitted default flags by descending position", () => {
+    const explicitFalse = { id: "explicit-false", isDefault: false, position: 2 };
+    const omitted = { id: "omitted", position: 8 };
+
+    const sortedIds = [explicitFalse, omitted]
+      .sort(compareActiveCollections)
+      .map((collection) => collection.id);
+
+    expect(sortedIds).toEqual(["omitted", "explicit-false"]);
+    expect(compareActiveCollections(explicitFalse, omitted)).toBeGreaterThan(0);
+    expect(compareActiveCollections(omitted, explicitFalse)).toBeLessThan(0);
+  });
 });
