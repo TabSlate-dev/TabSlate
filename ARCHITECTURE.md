@@ -315,8 +315,8 @@ StoreGate → SyncProvider（render-prop） → HashRouter/dashboard
 AuthDialog 覆盖在 dashboard 之上；guest 可从 Sidebar 进入，未验证用户强制显示不可关闭的 VerifyEmailScreen OTP 内容。
 ```
 
-`SyncProvider` deps `[accessToken, serverUrl]`：token 刷新或 server URL 变更时销毁旧引擎再创建新引擎。  
-cleanup 函数依次调用 `engine.forceSync()`（fire-and-forget）、`engine.destroy()`、`releaseSyncEngine(engine)` 确保登出前推送最后一次变更，且不会误销毁已重建的新引擎。  
+`SyncProvider` deps `[syncEnabled, serverUrl]`：验证状态或 server URL 变更时销毁旧引擎再创建新引擎；引擎通过 `getCredentials` 实时读取已刷新的 token，不会因 token 刷新而重建。
+cleanup 函数依次调用 `engine.forceSync()`（fire-and-forget）、`engine.destroy()`、`releaseSyncEngine(engine)`，销毁当前引擎实例且不会误销毁已重建的新引擎；fire-and-forget push 不保证 logout 前的持久化数据同步。
 `onPushSuccess` 处理 `quota_exceeded` 拒绝：调用 `showQuotaAlert(type)` 展示配额提示，并触发 `fetchPlan()` 刷新用量。  
 `SyncStatusIndicator` 在 error 状态下悬停时通过 Tooltip 展示 `syncErrorMessage`。  
 `SyncEngine.forcePush(entities)` — 直接、非防抖的单次推送，供 `permanentlyDeleteCollection` / `permanentlyDeleteGroup` / `permanentlyDelete`（单条书签）/ `permanentlyDeleteBatch`（批量书签，≤900 条/请求）在确认服务端落库后再清理本地 IDB 使用；push 失败时调用方回滚乐观 UI。离线路径（`syncEngine === null`）下两者改为写 `isTrashed:2、seq:0` 墓碑到 IDB 并从 state 过滤；`sweepUnsynced` 恢复在线后以 `isTrashed:2` 推送墓碑。
