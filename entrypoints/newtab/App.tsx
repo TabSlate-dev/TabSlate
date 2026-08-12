@@ -13,8 +13,6 @@ import { TabsPanel } from "@/components/dashboard/tabs-panel";
 import { GroupDetail } from "@/components/dashboard/group-detail";
 import { TabsRail } from "@/components/dashboard/tabs-rail";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { AuthPage } from "@/components/auth/auth-page";
-import { VerifyEmailScreen } from "@/components/auth/verify-email-screen";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useAuthStore } from "@/store/auth-store";
@@ -27,6 +25,13 @@ import type { ExtensionMessage } from "@/lib/messages";
 import { analytics } from "@/lib/analytics";
 import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine, releaseSyncEngine } from "@/lib/sync-engine";
 import type { SyncPullResponse } from "@/lib/api";
+import {
+  canStartSync,
+  resolveAuthSessionStatus,
+  shouldInitializeGuestWorkspace,
+  shouldResetLocalData,
+  type AuthSessionStatus,
+} from "@/lib/auth-session";
 import { Loader2 } from "lucide-react";
 
 function PageTracker() {
@@ -132,7 +137,22 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   const settingsHydrated = useSettingsStore((s) => s._hydrated);
   const accessToken = useAuthStore((s) => s.accessToken);
   const refreshToken = useAuthStore((s) => s.refreshToken);
-  const prevHadSessionRef = useRef<boolean | null>(null);
+  const user = useAuthStore((s) => s.user);
+  const workspaceCount = useWorkspaceStore((s) => s.workspaces.length);
+  const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
+  const prevSessionStatusRef = useRef<AuthSessionStatus | null>(null);
+
+  const hydrated =
+    bookmarksHydrated &&
+    workspaceHydrated &&
+    authHydrated &&
+    groupsHydrated &&
+    settingsHydrated;
+  const sessionStatus = resolveAuthSessionStatus({
+    accessToken,
+    refreshToken,
+    isVerified: user?.is_verified ?? null,
+  });
 
   useEffect(() => {
     void Promise.all([
@@ -144,27 +164,31 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Reset all data stores when a previously authenticated session becomes
-  // fully absent, including cold-start refresh failures.
   useEffect(() => {
-    const hasSession = accessToken !== null || refreshToken !== null;
-
-    if (prevHadSessionRef.current === null) {
-      prevHadSessionRef.current = hasSession;
-      return;
-    }
-
-    if (prevHadSessionRef.current && !hasSession) {
+    if (shouldResetLocalData(prevSessionStatusRef.current, sessionStatus)) {
       useWorkspaceStore.getState().reset();
       useBookmarksStore.getState().reset();
       useGroupsStore.getState().reset();
       useSettingsStore.getState().reset();
       usePlanStore.getState().clear();
     }
-    prevHadSessionRef.current = hasSession;
-  }, [accessToken, refreshToken]);
+    prevSessionStatusRef.current = sessionStatus;
+  }, [sessionStatus]);
 
-  const hydrated = bookmarksHydrated && workspaceHydrated && authHydrated && groupsHydrated && settingsHydrated;
+  useEffect(() => {
+    if (!hydrated || sessionStatus !== "guest") {
+      return;
+    }
+
+    usePlanStore.getState().clear();
+    if (shouldInitializeGuestWorkspace({
+      sessionStatus,
+      storesHydrated: hydrated,
+      workspaceCount,
+    })) {
+      createWorkspace("My Workspace", "blue");
+    }
+  }, [createWorkspace, hydrated, sessionStatus, workspaceCount]);
 
   if (!hydrated) {
     return (
@@ -174,29 +198,6 @@ function StoreGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
-}
-
-/** Shows the auth page when no access token is present.
- *  If a token exists but the email is unverified, shows the OTP verification
- *  screen instead of the dashboard — prevents entering without verifying. */
-function AuthGate({ children }: { children: React.ReactNode }) {
-  const accessToken = useAuthStore((s) => s.accessToken);
-  const refreshToken = useAuthStore((s) => s.refreshToken);
-  const user = useAuthStore((s) => s.user);
-
-  useEffect(() => {
-    if (accessToken && user?.is_verified) {
-      void usePlanStore.getState().fetchPlan();
-    }
-  }, [accessToken, user?.is_verified]);
-
-  if (!accessToken && !refreshToken) {
-    return <AuthPage />;
-  }
-  if (user && !user.is_verified) {
-    return <VerifyEmailScreen email={user.email} />;
-  }
   return <>{children}</>;
 }
 
@@ -210,7 +211,7 @@ function SyncProvider({
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const accessToken = useAuthStore((s) => s.accessToken);
   const refreshToken = useAuthStore((s) => s.refreshToken);
-  const hasAccessToken = accessToken !== null;
+  const user = useAuthStore((s) => s.user);
   const localSeq = useWorkspaceStore((s) => s.localSeq);
   const mergeWorkspaces = useWorkspaceStore((s) => s.mergeFromServer);
   const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
@@ -219,6 +220,12 @@ function SyncProvider({
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const sessionStatus = resolveAuthSessionStatus({
+    accessToken,
+    refreshToken,
+    isVerified: user?.is_verified ?? null,
+  });
+  const syncEnabled = canStartSync(sessionStatus, serverUrl);
 
   // Keep refs stable so the engine closure always reads the latest values
   // without needing to be recreated on each localSeq change.
@@ -235,7 +242,15 @@ function SyncProvider({
   useEffect(() => { mergeGroupsRef.current = mergeGroups; }, [mergeGroups]);
 
   useEffect(() => {
-    if (!accessToken || !serverUrl) return;
+    if (syncEnabled) {
+      void usePlanStore.getState().fetchPlan();
+    }
+  }, [syncEnabled]);
+
+  useEffect(() => {
+    if (!syncEnabled || !accessToken) {
+      return;
+    }
 
     // Pull user preferences from server on login
     useSettingsStore.getState().pullFromServer(serverUrl, accessToken);
@@ -310,14 +325,11 @@ function SyncProvider({
       engine.destroy();
       releaseSyncEngine(engine);
     };
-  }, [hasAccessToken, serverUrl]);
+  }, [syncEnabled, serverUrl]);
 
-  // When accessToken is absent but the user is logged in (has a refreshToken) with a configured
-  // serverUrl, the engine never started because silentRefresh() couldn't reach the backend.
-  // Surface this as "offline" so the sidebar shows the red dot instead of a misleading green.
   const effectiveSyncStatus = useMemo<SyncStatus>(
-    () => (!accessToken && !!refreshToken && !!serverUrl ? "offline" : syncStatus),
-    [accessToken, refreshToken, serverUrl, syncStatus],
+    () => sessionStatus === "offline" ? "offline" : syncStatus,
+    [sessionStatus, syncStatus],
   );
 
   const handleForceSync = useCallback(() => {
@@ -360,37 +372,35 @@ export default function App() {
   return (
     <ThemeProvider>
       <StoreGate>
-        <AuthGate>
-          <QuotaAlert />
-          <SyncProvider>
-            {(syncStatus, onForceSync, syncErrorMessage) => (
-              <HashRouter>
-                <PageTracker />
-                <TabsDndProvider>
-                  <Routes>
-                    <Route
-                      path="/"
-                      element={
-                        <Layout
-                          syncStatus={syncStatus}
-                          syncErrorMessage={syncErrorMessage}
-                          onForceSync={onForceSync}
-                        />
-                      }
-                    >
-                      <Route index element={<BookmarksContent />} />
-                      <Route path="favorites" element={<FavoritesContent />} />
-                      <Route path="archive" element={<ArchiveContent />} />
-                      <Route path="trash" element={<TrashContent />} />
-                      <Route path="tabs" element={<TabsPanel />} />
-                      <Route path="groups/:groupId" element={<GroupDetail />} />
-                    </Route>
-                  </Routes>
-                </TabsDndProvider>
-              </HashRouter>
-            )}
-          </SyncProvider>
-        </AuthGate>
+        <QuotaAlert />
+        <SyncProvider>
+          {(syncStatus, onForceSync, syncErrorMessage) => (
+            <HashRouter>
+              <PageTracker />
+              <TabsDndProvider>
+                <Routes>
+                  <Route
+                    path="/"
+                    element={
+                      <Layout
+                        syncStatus={syncStatus}
+                        syncErrorMessage={syncErrorMessage}
+                        onForceSync={onForceSync}
+                      />
+                    }
+                  >
+                    <Route index element={<BookmarksContent />} />
+                    <Route path="favorites" element={<FavoritesContent />} />
+                    <Route path="archive" element={<ArchiveContent />} />
+                    <Route path="trash" element={<TrashContent />} />
+                    <Route path="tabs" element={<TabsPanel />} />
+                    <Route path="groups/:groupId" element={<GroupDetail />} />
+                  </Route>
+                </Routes>
+              </TabsDndProvider>
+            </HashRouter>
+          )}
+        </SyncProvider>
       </StoreGate>
     </ThemeProvider>
   );

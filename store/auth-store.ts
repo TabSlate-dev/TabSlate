@@ -117,6 +117,7 @@ export const useAuthStore = create<AuthState>()(
             if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
               clearRefreshRetry();
               clearSyncRecoverySnapshot();
+              await clearDB();
               set({
                 user: null,
                 accessToken: null,
