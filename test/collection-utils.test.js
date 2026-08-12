@@ -16,4 +16,17 @@ describe("active collection ordering", () => {
 
     expect(sortedIds).toEqual(["default", "newest", "middle", "old"]);
   });
+
+  test("orders multiple default collections by descending position", () => {
+    const olderDefault = { id: "older-default", isDefault: true, position: 2 };
+    const newerDefault = { id: "newer-default", isDefault: true, position: 8 };
+
+    const sortedIds = [olderDefault, newerDefault]
+      .sort(compareActiveCollections)
+      .map((collection) => collection.id);
+
+    expect(sortedIds).toEqual(["newer-default", "older-default"]);
+    expect(compareActiveCollections(olderDefault, newerDefault)).toBeGreaterThan(0);
+    expect(compareActiveCollections(newerDefault, olderDefault)).toBeLessThan(0);
+  });
 });
