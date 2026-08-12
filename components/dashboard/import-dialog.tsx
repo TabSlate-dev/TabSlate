@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useTranslation } from "@/hooks/use-translation";
+import { compareActiveCollections } from "@/lib/collection-utils";
 
 type ImportStep = 0 | 1 | 2 | 3;
 type ImportSource = "toby" | "chrome";
@@ -183,11 +184,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     () =>
       collections
         .filter((collection) => !collection.deletedAt && !collection.archivedAt)
-        .sort((left, right) => {
-          if (left.isDefault) return -1;
-          if (right.isDefault) return 1;
-          return right.position - left.position;
-        }),
+        .sort(compareActiveCollections),
     [collections],
   );
 

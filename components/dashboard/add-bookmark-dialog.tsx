@@ -23,6 +23,7 @@ import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { useTranslation } from "@/hooks/use-translation";
+import { compareActiveCollections } from "@/lib/collection-utils";
 
 interface AddBookmarkDialogProps {
   open: boolean;
@@ -40,11 +41,7 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
   const activeCollections = React.useMemo(
     () => collections
       .filter(c => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-      .sort((a, b) => {
-        if (a.isDefault) return -1;
-        if (b.isDefault) return 1;
-        return b.position - a.position;
-      }),
+      .sort(compareActiveCollections),
     [collections, activeWorkspaceId]
   );
 

@@ -24,6 +24,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Collection, Tag } from "@/lib/types";
 import { useTranslation } from "@/hooks/use-translation";
+import { compareActiveCollections } from "@/lib/collection-utils";
 
 interface TabInfo {
   title: string;
@@ -80,9 +81,13 @@ function PopupContent() {
         setIsLoggedIn(loggedIn);
       }),
       getWorkspaceState().then((state) => {
-        const cols = state.collections.filter(
-          (c) => c.workspaceId === state.activeWorkspaceId
-        );
+        const cols = state.collections
+          .filter((collection) =>
+            collection.workspaceId === state.activeWorkspaceId &&
+            !collection.deletedAt &&
+            !collection.archivedAt
+          )
+          .sort(compareActiveCollections);
         setSaveableCollections(cols);
         setAvailableTags(state.tags.map(t => ({ ...t, seq: 0 })));
         if (cols.length > 0) { setSelectedCollectionId(cols[0].id); }

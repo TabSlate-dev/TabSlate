@@ -38,6 +38,7 @@ import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-
 import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
 import { SearchBox } from "./search-box";
 import { useTranslation } from "@/hooks/use-translation";
+import { compareActiveCollections } from "@/lib/collection-utils";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   folder: Folder,
@@ -287,7 +288,7 @@ export function BookmarksContent() {
 
       const activeCols = collections
         .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-        .sort((a, b) => a.position - b.position);
+        .sort(compareActiveCollections);
 
       activeCols.forEach((c) => {
         groups[c.id] = [];

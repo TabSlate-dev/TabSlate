@@ -34,6 +34,7 @@ import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-col
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { generateId } from "@/lib/id";
 import { useTranslation } from "@/hooks/use-translation";
+import { compareActiveCollections } from "@/lib/collection-utils";
 
 interface DroppableGroupCardProps {
   group: SavedGroup;
@@ -71,11 +72,7 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
   const activeCollections = React.useMemo(() => {
     return collections
       .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-      .sort((a, b) => {
-        if (a.isDefault) return -1;
-        if (b.isDefault) return 1;
-        return b.position - a.position;
-      });
+      .sort(compareActiveCollections);
   }, [collections, activeWorkspaceId]);
 
   const saveEdit = React.useCallback(() => {

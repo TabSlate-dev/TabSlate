@@ -36,6 +36,7 @@ import {
 import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-collection-dialog";
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { generateId } from "@/lib/id";
+import { compareActiveCollections } from "@/lib/collection-utils";
 
 export function GroupDetail() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -75,11 +76,7 @@ export function GroupDetail() {
   const activeCollections = React.useMemo(() => {
     return collections
       .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-      .sort((a, b) => {
-        if (a.isDefault) return -1;
-        if (b.isDefault) return 1;
-        return b.position - a.position;
-      });
+      .sort(compareActiveCollections);
   }, [collections, activeWorkspaceId]);
 
   // Navigate away when workspace switches and this group doesn't belong to the new workspace

@@ -4,6 +4,7 @@ import type { ImportPlan } from "@/lib/import-types";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
+import { compareActiveCollections } from "@/lib/collection-utils";
 import type { SyncPullResponse } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
@@ -755,11 +756,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const wsId = workspaceId ?? state.activeWorkspaceId;
     return state.collections
       .filter((c) => c.workspaceId === wsId && !c.deletedAt && !c.archivedAt)
-      .sort((a, b) => {
-        if (a.isDefault) return -1;
-        if (b.isDefault) return 1;
-        return b.position - a.position;
-      });
+      .sort(compareActiveCollections);
   },
 
   getArchivedCollections: () =>

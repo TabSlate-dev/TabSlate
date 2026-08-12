@@ -62,6 +62,7 @@ import { useTranslation } from "@/hooks/use-translation";
 import { AuthDialog } from "@/components/auth/auth-dialog";
 import type { AuthEntryMode } from "@/lib/auth-session";
 import { useAuthStore } from "@/store/auth-store";
+import { compareActiveCollections } from "@/lib/collection-utils";
 
 // ---------------------------------------------------------------------------
 // Icon map
@@ -223,11 +224,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
     () =>
       collections
         .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-        .sort((a, b) => {
-          if (a.isDefault) return -1;
-          if (b.isDefault) return 1;
-          return b.position - a.position;
-        }),
+        .sort(compareActiveCollections),
     [collections, activeWorkspaceId]
   );
 
