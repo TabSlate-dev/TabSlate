@@ -118,6 +118,9 @@ export const useAuthStore = create<AuthState>()(
               clearRefreshRetry();
               clearSyncRecoverySnapshot();
               await clearDB();
+              if (refreshGeneration !== _authSessionGeneration) {
+                return false;
+              }
               set({
                 user: null,
                 accessToken: null,

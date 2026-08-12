@@ -48,6 +48,12 @@ const USAGE_KEY: Record<QuotaResource, keyof PlanUsage> = {
 };
 
 let _alertTimer: ReturnType<typeof setTimeout> | null = null;
+let _planRequestGeneration = 0;
+
+function hasCurrentAuthCredentials(serverUrl: string, accessToken: string): boolean {
+  const currentAuth = useAuthStore.getState();
+  return currentAuth.serverUrl === serverUrl && currentAuth.accessToken === accessToken;
+}
 
 export const usePlanStore = create<PlanState>()(
   persist(
@@ -63,9 +69,19 @@ export const usePlanStore = create<PlanState>()(
         const { serverUrl, accessToken } = useAuthStore.getState();
         if (!serverUrl || !accessToken) { return; }
         if (get().isFetching) { return; }
+        const requestGeneration = _planRequestGeneration;
         set({ isFetching: true });
         try {
           const data = await api.getPlan(serverUrl, accessToken);
+          if (
+            requestGeneration !== _planRequestGeneration ||
+            !hasCurrentAuthCredentials(serverUrl, accessToken)
+          ) {
+            if (requestGeneration === _planRequestGeneration) {
+              set({ isFetching: false });
+            }
+            return;
+          }
           set({
             subscription: data.subscription,
             limits: data.limits,
@@ -79,7 +95,12 @@ export const usePlanStore = create<PlanState>()(
             bmStore.pruneExpiredTrash(data.limits.trash_grace_days);
           }
         } catch {
-          set({ isFetching: false });
+          if (
+            requestGeneration === _planRequestGeneration &&
+            hasCurrentAuthCredentials(serverUrl, accessToken)
+          ) {
+            set({ isFetching: false });
+          }
         }
       },
 
@@ -131,6 +152,7 @@ export const usePlanStore = create<PlanState>()(
       },
 
       clear: () => {
+        _planRequestGeneration += 1;
         if (_alertTimer !== null) { clearTimeout(_alertTimer); _alertTimer = null; }
         set({
           subscription: null,

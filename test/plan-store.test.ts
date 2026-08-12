@@ -1,7 +1,7 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
-const getPlanMock = mock(async () => ({
+const planResponse = {
   subscription: { plan: "free", status: "active", expires_at: null },
   limits: {
     max_bookmarks: 3000,
@@ -18,7 +18,14 @@ const getPlanMock = mock(async () => ({
     workspaces: 1,
     saved_groups: 0,
   },
-}));
+};
+
+const getPlanMock = mock(async () => planResponse);
+
+const authSession = {
+  serverUrl: "https://sync.tabslate.com",
+  accessToken: "token",
+};
 
 mock.module("@/lib/api", () => ({
   api: {
@@ -29,10 +36,7 @@ mock.module("@/lib/api", () => ({
 
 mock.module("@/store/auth-store", () => ({
   useAuthStore: {
-    getState: () => ({
-      serverUrl: "https://sync.tabslate.com",
-      accessToken: "token",
-    }),
+    getState: () => authSession,
   },
 }));
 
@@ -57,9 +61,20 @@ async function importPlanStore() {
   return import(`../store/plan-store.ts?test=${Date.now()}-${Math.random()}`);
 }
 
+function createDeferred<T>() {
+  let resolve: (value: T) => void = () => {};
+  const promise = new Promise<T>((innerResolve) => {
+    resolve = innerResolve;
+  });
+
+  return { promise, resolve };
+}
+
 describe("plan store refresh policy", () => {
   beforeEach(async () => {
     getPlanMock.mockClear();
+    authSession.serverUrl = "https://sync.tabslate.com";
+    authSession.accessToken = "token";
     const { usePlanStore } = await importPlanStore();
     usePlanStore.setState({
       subscription: null,
@@ -83,5 +98,44 @@ describe("plan store refresh policy", () => {
     await Promise.resolve();
 
     expect(getPlanMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("discards a plan response after the session is cleared", async () => {
+    const deferredPlan = createDeferred<typeof planResponse>();
+    getPlanMock.mockImplementationOnce(() => deferredPlan.promise);
+    const { usePlanStore } = await importPlanStore();
+
+    const fetching = usePlanStore.getState().fetchPlan();
+    await Promise.resolve();
+    authSession.accessToken = "";
+    deferredPlan.resolve(planResponse);
+    await fetching;
+
+    expect(usePlanStore.getState().limits).toBeNull();
+    expect(usePlanStore.getState().usage).toBeNull();
+    expect(usePlanStore.getState().fetchedAt).toBeNull();
+    expect(usePlanStore.getState().isFetching).toBe(false);
+  });
+
+  test("does not clear a newer session's plan request", async () => {
+    const stalePlan = createDeferred<typeof planResponse>();
+    const currentPlan = createDeferred<typeof planResponse>();
+    getPlanMock.mockImplementationOnce(() => stalePlan.promise);
+    getPlanMock.mockImplementationOnce(() => currentPlan.promise);
+    const { usePlanStore } = await importPlanStore();
+
+    const staleFetching = usePlanStore.getState().fetchPlan();
+    await Promise.resolve();
+    authSession.accessToken = "new-token";
+    usePlanStore.getState().clear();
+    const currentFetching = usePlanStore.getState().fetchPlan();
+    await Promise.resolve();
+    stalePlan.resolve(planResponse);
+    await staleFetching;
+
+    expect(usePlanStore.getState().isFetching).toBe(true);
+
+    currentPlan.resolve(planResponse);
+    await currentFetching;
   });
 });
