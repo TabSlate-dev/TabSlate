@@ -57,7 +57,7 @@ You're an expert in the following areas:
 
 ## General Guidelines
 
-- Critical – Do not create new markdown (.md) files.
+- Critical – Do not create new markdown (.md) files, except for specification and plan documents required by the Superpowers workflow.
 - Use early returns for readability.
 - Emphasize type safety and static analysis.
 - Follow existing code style and formatting conventions.
