@@ -69,6 +69,24 @@ export function resolveAuthEntryModeAfterAccountSwitch(
   return currentMode;
 }
 
+interface SwitchAuthAccountInput {
+  currentMode: AuthEntryMode;
+  logout: () => Promise<void>;
+  onModeChange: (mode: AuthEntryMode) => void;
+  onOpenChange: (open: boolean) => void;
+}
+
+export async function switchAuthAccount({
+  currentMode,
+  logout,
+  onModeChange,
+  onOpenChange,
+}: SwitchAuthAccountInput): Promise<void> {
+  await logout();
+  onModeChange(resolveAuthEntryModeAfterAccountSwitch(currentMode));
+  onOpenChange(true);
+}
+
 interface AuthDialogPresentationInput {
   requestedOpen: boolean;
   hasUser: boolean;

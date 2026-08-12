@@ -6,6 +6,7 @@ import {
   resolveAuthSessionStatus,
   shouldInitializeGuestWorkspace,
   shouldResetLocalData,
+  switchAuthAccount,
 } from "../lib/auth-session";
 
 describe("authentication session policy", () => {
@@ -117,5 +118,36 @@ describe("authentication dialog presentation", () => {
 
   test("returns to login after switching away from a registration account", () => {
     expect(resolveAuthEntryModeAfterAccountSwitch("register")).toBe("login");
+  });
+
+  test("waits for logout before reopening the login view", async () => {
+    const calls = [];
+    let finishLogout;
+    const logoutPending = new Promise((resolve) => {
+      finishLogout = resolve;
+    });
+
+    const switching = switchAuthAccount({
+      currentMode: "register",
+      logout: async () => {
+        calls.push("logout-started");
+        await logoutPending;
+        calls.push("logout-finished");
+      },
+      onModeChange: (mode) => calls.push(`mode:${mode}`),
+      onOpenChange: (open) => calls.push(`open:${open}`),
+    });
+
+    expect(calls).toEqual(["logout-started"]);
+
+    finishLogout();
+    await switching;
+
+    expect(calls).toEqual([
+      "logout-started",
+      "logout-finished",
+      "mode:login",
+      "open:true",
+    ]);
   });
 });

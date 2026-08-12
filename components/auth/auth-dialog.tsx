@@ -8,7 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   resolveAuthDialogPresentation,
-  resolveAuthEntryModeAfterAccountSwitch,
+  switchAuthAccount,
   type AuthEntryMode,
 } from "@/lib/auth-session";
 import { useAuthStore } from "@/store/auth-store";
@@ -38,13 +38,8 @@ export function AuthDialog({
   });
 
   React.useEffect(() => {
-    if (!open) {
-      setCredentialModeOverride(null);
-    }
-  }, [open]);
-
-  React.useEffect(() => {
     if (open && user?.is_verified) {
+      setCredentialModeOverride(null);
       onOpenChange(false);
     }
   }, [onOpenChange, open, user?.is_verified]);
@@ -53,15 +48,19 @@ export function AuthDialog({
     if (!nextOpen && !presentation.dismissible) {
       return;
     }
+    if (!nextOpen) {
+      setCredentialModeOverride(null);
+    }
     onOpenChange(nextOpen);
   }, [onOpenChange, presentation.dismissible]);
 
   const handleUseDifferentAccount = React.useCallback(async () => {
-    setCredentialModeOverride(
-      resolveAuthEntryModeAfterAccountSwitch(credentialMode),
-    );
-    await logout();
-    onOpenChange(true);
+    await switchAuthAccount({
+      currentMode: credentialMode,
+      logout,
+      onModeChange: setCredentialModeOverride,
+      onOpenChange,
+    });
   }, [credentialMode, logout, onOpenChange]);
 
   const handleBlockedDismiss = React.useCallback((event: Event) => {
