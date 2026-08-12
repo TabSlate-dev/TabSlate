@@ -382,8 +382,8 @@ export function LoginForm({
                   formData.get("password") as string,
                   captchaToken || undefined,
                 );
-                // AuthGate detects user.is_verified === false and shows
-                // VerifyEmailScreen automatically — no switchMode needed.
+                // AuthDialog detects user.is_verified === false and switches
+                // to its non-dismissible VerifyEmailScreen OTP content automatically.
               }
             } catch (err) {
               if (err instanceof ApiError) {

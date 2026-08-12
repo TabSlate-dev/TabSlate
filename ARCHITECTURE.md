@@ -24,7 +24,7 @@ TabSlate/
 ├── entrypoints/
 │   ├── newtab/          # 主应用入口
 │   │   ├── main.tsx     # ReactDOM.createRoot
-│   │   └── App.tsx      # 路由、布局、StoreGate → AuthGate → SyncProvider → HashRouter
+│   │   └── App.tsx      # 路由、布局、StoreGate → SyncProvider → HashRouter/dashboard；AuthDialog 覆盖在 dashboard 之上
 │   ├── popup/           # 快速保存 popup
 │   │   └── App.tsx      # 独立 React 树，不使用 Zustand；保存时调用 GET_PAGE_INFO 获取 ogTitle/metaDescription
 │   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单 + open-search 快捷键监听 + 动态内容脚本注册（syncContentScriptRegistration）
@@ -32,8 +32,8 @@ TabSlate/
 │
 ├── components/
 │   ├── auth/
-│   │   ├── auth-page.tsx            # 全屏认证页，居中渲染 LoginForm
-│   │   └── verify-email-screen.tsx  # 全屏 OTP 邮箱验证页（AuthGate 拦截未验证用户时显示）
+│   │   ├── auth-dialog.tsx          # 覆盖 dashboard 的认证 Dialog；guest 可关闭，未验证用户强制显示 OTP
+│   │   └── verify-email-screen.tsx  # AuthDialog 内的 OTP 邮箱验证内容（未验证用户不可关闭）
 │   ├── login-form.tsx          # login/register/forgot-password/reset-password 四模式 + Prosopo 验证码 + 密码强度提示
 │   ├── procaptcha.tsx          # Prosopo iframe 包装组件（绕过 MV3 CSP 限制；通过 postMessage 接收 token）
 │   ├── search/
@@ -306,11 +306,13 @@ SyncEngine
 ### App.tsx 中的 SyncProvider
 
 ```
-StoreGate → AuthGate → SyncProvider（render-prop）
-                         ├── new SyncEngine(getCredentials, getLocalSeq, onPullSuccess, onPushSuccess, onStatusChange)
-                         ├── syncStatus: "idle" | "syncing" | "error" | "offline"
-                         ├── syncErrorMessage: string | null  (error 状态下的错误原因，传递给 SyncStatusIndicator tooltip)
-                         └── onForceSync → syncEngine.forceSync()
+StoreGate → SyncProvider（render-prop） → HashRouter/dashboard
+               ├── verified 会话才 new SyncEngine(getCredentials, getLocalSeq, onPullSuccess, onPushSuccess, onStatusChange)
+               ├── syncStatus: "idle" | "syncing" | "error" | "offline"
+               ├── syncErrorMessage: string | null  (error 状态下的错误原因，传递给 SyncStatusIndicator tooltip)
+               └── onForceSync → syncEngine.forceSync()
+
+AuthDialog 覆盖在 dashboard 之上；guest 可从 Sidebar 进入，未验证用户强制显示不可关闭的 VerifyEmailScreen OTP 内容。
 ```
 
 `SyncProvider` deps `[accessToken, serverUrl]`：token 刷新或 server URL 变更时销毁旧引擎再创建新引擎。  
@@ -368,4 +370,3 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 4. **动态注册**：调用 `chrome.scripting.registerContentScripts` 将 `content.ts` 注册到所有站点。
 5. **持久化**：由于内容脚本已持久化，后续浏览器重启会自动注入（只要权限仍被授予）。
 6. **权限移除**：开关关闭时调用 `chrome.permissions.remove`，触发 `onRemoved` 事件，调用 `unregisterContentScripts` 停止注入。
-
