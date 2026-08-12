@@ -59,6 +59,9 @@ import type { SyncStatus } from "@/lib/sync-engine";
 import { QuotaCard } from "./quota-card";
 import { UserProfile } from "./user-profile";
 import { useTranslation } from "@/hooks/use-translation";
+import { AuthDialog } from "@/components/auth/auth-dialog";
+import type { AuthEntryMode } from "@/lib/auth-session";
+import { useAuthStore } from "@/store/auth-store";
 
 // ---------------------------------------------------------------------------
 // Icon map
@@ -180,6 +183,12 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const [newCollectionOpen, setNewCollectionOpen] = React.useState(false);
   const [newTagOpen, setNewTagOpen] = React.useState(false);
   const [newGroupOpen, setNewGroupOpen] = React.useState(false);
+  const [authDialogOpen, setAuthDialogOpen] = React.useState(false);
+  const [authEntryMode, setAuthEntryMode] = React.useState<AuthEntryMode>("login");
+
+  const accessToken = useAuthStore((s) => s.accessToken);
+  const refreshToken = useAuthStore((s) => s.refreshToken);
+  const isGuest = accessToken === null && refreshToken === null;
 
   // Fine-grained selectors — each value has its own subscription
   const selectedCollection = useBookmarksStore(s => s.selectedCollection);
@@ -241,16 +250,24 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const handleToggleCollections = React.useCallback(() => setCollectionsOpen(v => !v), []);
   const handleToggleGroups = React.useCallback(() => setGroupsOpen(v => !v), []);
   const handleToggleTags = React.useCallback(() => setTagsOpen(v => !v), []);
+  const handleOpenLogin = React.useCallback(() => {
+    setAuthEntryMode("login");
+    setAuthDialogOpen(true);
+  }, []);
+  const handleOpenRegistration = React.useCallback(() => {
+    setAuthEntryMode("register");
+    setAuthDialogOpen(true);
+  }, []);
 
   return (
     <>
       <Sidebar collapsible="offcanvas" {...props}>
         <SidebarHeader className="p-0">
-          <UserProfile />
+          <UserProfile onLogin={handleOpenLogin} />
         </SidebarHeader>
 
 
-        <SidebarContent className="px-3 pt-3 pb-72">
+        <SidebarContent className={cn("px-3 pt-3", isGuest ? "pb-24" : "pb-72")}>
           {/* Collections */}
           <SidebarGroup className="p-0">
             <SectionHeader
@@ -497,11 +514,19 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
 
         {/* Floating Quota Card & Sync Status Indicator Overlay */}
         <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-[var(--sidebar)] via-[var(--sidebar)]/98 to-transparent pt-16 pb-4 z-20 pointer-events-none flex flex-col gap-3.5">
-          <div className="pointer-events-auto">
-            <QuotaCard />
-          </div>
+          {!isGuest && (
+            <div className="pointer-events-auto">
+              <QuotaCard />
+            </div>
+          )}
           <div className="pointer-events-auto px-2">
-            <SyncStatusIndicator status={syncStatus} errorMessage={syncErrorMessage} onForceSync={onForceSync} />
+            <SyncStatusIndicator
+              status={syncStatus}
+              errorMessage={syncErrorMessage}
+              onForceSync={onForceSync}
+              isGuest={isGuest}
+              onRegister={handleOpenRegistration}
+            />
           </div>
         </div>
       </Sidebar>
@@ -540,6 +565,12 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
           });
           setNewGroupOpen(false);
         }}
+      />
+
+      <AuthDialog
+        open={authDialogOpen}
+        initialMode={authEntryMode}
+        onOpenChange={setAuthDialogOpen}
       />
     </>
   );

@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SyncStatus } from "@/lib/sync-engine";
@@ -8,10 +8,43 @@ interface SyncStatusProps {
   status: SyncStatus;
   errorMessage?: string | null;
   onForceSync: () => void;
+  isGuest: boolean;
+  onRegister: () => void;
 }
 
-export function SyncStatusIndicator({ status, errorMessage, onForceSync }: SyncStatusProps) {
+export function SyncStatusIndicator({
+  status,
+  errorMessage,
+  onForceSync,
+  isGuest,
+  onRegister,
+}: SyncStatusProps) {
   const { t } = useTranslation();
+
+  if (isGuest) {
+    return (
+      <div className="flex items-center gap-3 px-2 py-1">
+        <div
+          className="flex items-center gap-1.5 text-xs text-muted-foreground w-24 shrink-0"
+          aria-label={t("sync_signedOut")}
+        >
+          <span className="w-2 h-2 rounded-full shrink-0 bg-muted-foreground/50" aria-hidden="true" />
+          <span className="truncate">{t("sync_signedOut")}</span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onRegister}
+          aria-label={t("sync_registerNow")}
+          className="h-6 px-2 text-xs"
+        >
+          <UserPlus className="size-3" />
+          {t("sync_registerNow")}
+        </Button>
+      </div>
+    );
+  }
+
   const dot: Record<SyncStatus, string> = {
     idle:    "bg-green-500",
     syncing: "bg-blue-500 animate-pulse",

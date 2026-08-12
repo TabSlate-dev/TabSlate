@@ -6,10 +6,12 @@ import {
   Award,
   Upload,
   Sparkles,
+  UserRound,
   Zap,
 } from "lucide-react";
 import { useAuthStore } from "@/store/auth-store";
 import { usePlanStore } from "@/store/plan-store";
+import type { ApiUser } from "@/lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -22,13 +24,45 @@ import {
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
 
-export function UserProfile() {
+interface UserProfileProps {
+  onLogin: () => void;
+}
+
+interface AuthenticatedUserProfileProps {
+  user: ApiUser;
+}
+
+function GuestUserProfile({ onLogin }: UserProfileProps) {
   const { t } = useTranslation();
-  const user = useAuthStore((s) => s.user);
+
+  return (
+    <div className="px-3 py-4">
+      <button
+        type="button"
+        onClick={onLogin}
+        className="w-full flex items-center gap-3 p-2.5 rounded-xl border bg-sidebar-accent/40 hover:bg-sidebar-accent text-left transition-colors"
+      >
+        <div className="size-8.5 rounded-full bg-muted flex items-center justify-center text-muted-foreground">
+          <UserRound className="size-4" />
+        </div>
+        <div className="flex flex-1 flex-col truncate">
+          <span className="text-sm font-semibold leading-none">
+            {t("sidebar_guestTitle")}
+          </span>
+          <span className="text-[11px] text-muted-foreground truncate mt-1 leading-none">
+            {t("sidebar_guestDescription")}
+          </span>
+        </div>
+        <ChevronRight className="size-4 text-muted-foreground/50" />
+      </button>
+    </div>
+  );
+}
+
+function AuthenticatedUserProfile({ user }: AuthenticatedUserProfileProps) {
+  const { t } = useTranslation();
   const logout = useAuthStore((s) => s.logout);
   const subscription = usePlanStore((s) => s.subscription);
-
-  if (!user) return null;
 
   const initials = user.name
     .split(" ")
@@ -187,4 +221,12 @@ export function UserProfile() {
       </DropdownMenu>
     </div>
   );
+}
+
+export function UserProfile({ onLogin }: UserProfileProps) {
+  const user = useAuthStore((s) => s.user);
+  if (!user) {
+    return <GuestUserProfile onLogin={onLogin} />;
+  }
+  return <AuthenticatedUserProfile user={user} />;
 }

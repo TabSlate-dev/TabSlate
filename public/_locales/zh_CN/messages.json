@@ -260,6 +260,12 @@
   "auth_verifyHuman": {
     "message": "请完成人机验证"
   },
+  "sidebar_guestTitle": {
+    "message": "未登录"
+  },
+  "sidebar_guestDescription": {
+    "message": "登录或注册以启用同步"
+  },
   "sidebar_userPlanQuotas": {
     "message": "套餐与用量"
   },
@@ -316,6 +322,12 @@
   },
   "sync_syncNow": {
     "message": "立即同步"
+  },
+  "sync_signedOut": {
+    "message": "未登录"
+  },
+  "sync_registerNow": {
+    "message": "立即注册"
   },
   "header_sortDateNewest": {
     "message": "添加时间（最新优先）"

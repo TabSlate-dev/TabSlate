@@ -260,6 +260,12 @@
   "auth_verifyHuman": {
     "message": "Verify you're human"
   },
+  "sidebar_guestTitle": {
+    "message": "Not logged in"
+  },
+  "sidebar_guestDescription": {
+    "message": "Log in or register to sync"
+  },
   "sidebar_userPlanQuotas": {
     "message": "Plan & Quotas"
   },
@@ -316,6 +322,12 @@
   },
   "sync_syncNow": {
     "message": "Sync now"
+  },
+  "sync_signedOut": {
+    "message": "Not logged in"
+  },
+  "sync_registerNow": {
+    "message": "Register now"
   },
   "header_sortDateNewest": {
     "message": "Date Added (Newest)"
