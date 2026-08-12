@@ -56,3 +56,44 @@ export function shouldResetLocalData(
     previousStatus !== "guest" &&
     currentStatus === "guest";
 }
+
+export type AuthEntryMode = "login" | "register";
+export type AuthDialogView = "credentials" | "verify-email";
+
+interface AuthDialogPresentationInput {
+  requestedOpen: boolean;
+  hasUser: boolean;
+  isVerified: boolean;
+}
+
+interface AuthDialogPresentation {
+  open: boolean;
+  view: AuthDialogView;
+  dismissible: boolean;
+}
+
+export function resolveAuthDialogPresentation({
+  requestedOpen,
+  hasUser,
+  isVerified,
+}: AuthDialogPresentationInput): AuthDialogPresentation {
+  if (hasUser && !isVerified) {
+    return {
+      open: true,
+      view: "verify-email",
+      dismissible: false,
+    };
+  }
+  if (hasUser && isVerified) {
+    return {
+      open: false,
+      view: "credentials",
+      dismissible: true,
+    };
+  }
+  return {
+    open: requestedOpen,
+    view: "credentials",
+    dismissible: true,
+  };
+}

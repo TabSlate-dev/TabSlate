@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   canStartSync,
+  resolveAuthDialogPresentation,
   resolveAuthSessionStatus,
   shouldInitializeGuestWorkspace,
   shouldResetLocalData,
@@ -73,5 +74,43 @@ describe("authentication session policy", () => {
     expect(shouldResetLocalData("offline", "verified")).toBe(false);
     expect(shouldResetLocalData("verified", "guest")).toBe(true);
     expect(shouldResetLocalData("unverified", "guest")).toBe(true);
+  });
+});
+
+describe("authentication dialog presentation", () => {
+  test("uses a dismissible credentials view for a guest request", () => {
+    expect(resolveAuthDialogPresentation({
+      requestedOpen: true,
+      hasUser: false,
+      isVerified: false,
+    })).toEqual({
+      open: true,
+      view: "credentials",
+      dismissible: true,
+    });
+  });
+
+  test("forces a non-dismissible OTP view for an unverified user", () => {
+    expect(resolveAuthDialogPresentation({
+      requestedOpen: false,
+      hasUser: true,
+      isVerified: false,
+    })).toEqual({
+      open: true,
+      view: "verify-email",
+      dismissible: false,
+    });
+  });
+
+  test("closes after the user becomes verified", () => {
+    expect(resolveAuthDialogPresentation({
+      requestedOpen: true,
+      hasUser: true,
+      isVerified: true,
+    })).toEqual({
+      open: false,
+      view: "credentials",
+      dismissible: true,
+    });
   });
 });

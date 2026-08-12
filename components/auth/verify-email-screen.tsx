@@ -1,10 +1,4 @@
-/**
- * Full-screen email verification gate shown by AuthGate when the user has a
- * valid access token but has not yet verified their email address.
- *
- * After successful verification the store's user.is_verified flips to true,
- * AuthGate re-renders and the dashboard is shown automatically.
- */
+/** Email verification content embedded in the authentication dialog. */
 import * as React from "react";
 import { Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +17,7 @@ import { useTranslation } from "@/hooks/use-translation";
 
 interface VerifyEmailScreenProps {
   email: string;
+  onUseDifferentAccount: () => Promise<void>;
 }
 
 const PROSOPO_SITE_KEY =
@@ -34,7 +29,10 @@ const PROSOPO_CAPTCHA_TYPE =
     | "image"
     | undefined) ?? undefined;
 
-export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
+export function VerifyEmailScreen({
+  email,
+  onUseDifferentAccount,
+}: VerifyEmailScreenProps) {
   const { t } = useTranslation();
   const [code, setCode] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -47,7 +45,6 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
 
   const verifyEmailOTP = useAuthStore((s) => s.verifyEmailOTP);
   const resendVerification = useAuthStore((s) => s.resendVerification);
-  const logout = useAuthStore((s) => s.logout);
   const serverUrl = useAuthStore((s) => s.serverUrl);
   const otpSentAt = useAuthStore((s) => s.otpSentAt);
 
@@ -158,73 +155,71 @@ export function VerifyEmailScreen({ email }: VerifyEmailScreenProps) {
   }
 
   return (
-    <div className="flex items-center justify-center h-svh bg-background">
-      <div className="w-full max-w-sm px-4">
-        <FieldGroup>
-          <div className="flex flex-col items-center gap-2 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-              <Mail className="h-6 w-6 text-primary" />
-            </div>
-            <h1 className="text-2xl font-bold">{t("auth_checkEmail")}</h1>
-            <p className="text-sm text-balance text-muted-foreground">
-              {t("auth_checkEmailDesc1")} <strong>{email}</strong> {t("auth_checkEmailDesc2")}
-            </p>
+    <div className="w-full max-w-sm mx-auto">
+      <FieldGroup>
+        <div className="flex flex-col items-center gap-2 text-center">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+            <Mail className="h-6 w-6 text-primary" />
+          </div>
+          <h1 className="text-2xl font-bold">{t("auth_checkEmail")}</h1>
+          <p className="text-sm text-balance text-muted-foreground">
+            {t("auth_checkEmailDesc1")} <strong>{email}</strong> {t("auth_checkEmailDesc2")}
+          </p>
+        </div>
+
+        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          <div className="flex justify-center">
+            <InputOTP maxLength={6} value={code} onChange={handleChange} autoFocus>
+              <InputOTPGroup className="gap-2 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border">
+                <InputOTPSlot index={0} />
+                <InputOTPSlot index={1} />
+                <InputOTPSlot index={2} />
+              </InputOTPGroup>
+              <InputOTPSeparator />
+              <InputOTPGroup className="gap-2 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border">
+                <InputOTPSlot index={3} />
+                <InputOTPSlot index={4} />
+                <InputOTPSlot index={5} />
+              </InputOTPGroup>
+            </InputOTP>
           </div>
 
-          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            <div className="flex justify-center">
-              <InputOTP maxLength={6} value={code} onChange={handleChange} autoFocus>
-                <InputOTPGroup className="gap-2 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border">
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                </InputOTPGroup>
-                <InputOTPSeparator />
-                <InputOTPGroup className="gap-2 *:data-[slot=input-otp-slot]:rounded-md *:data-[slot=input-otp-slot]:border">
-                  <InputOTPSlot index={3} />
-                  <InputOTPSlot index={4} />
-                  <InputOTPSlot index={5} />
-                </InputOTPGroup>
-              </InputOTP>
-            </div>
+          {error && (
+            <p role="alert" className="text-sm text-center text-destructive">
+              {error}
+            </p>
+          )}
 
-            {error && (
-              <p role="alert" className="text-sm text-center text-destructive">
-                {error}
-              </p>
-            )}
+          <Button type="submit" disabled={loading || code.length < 6}>
+            {loading ? t("auth_verifying") : t("auth_verifyEmailBtn")}
+          </Button>
+        </form>
 
-            <Button type="submit" disabled={loading || code.length < 6}>
-              {loading ? t("auth_verifying") : t("auth_verifyEmailBtn")}
-            </Button>
-          </form>
+        <FieldDescription className="text-center text-sm">
+          {t("auth_didntReceive")}{" "}
+          <button
+            type="button"
+            disabled={retryAfter > 0 || sending}
+            className="underline underline-offset-4 hover:text-primary disabled:opacity-50 disabled:no-underline"
+            onClick={handleResend}
+          >
+            {retryAfter > 0 ? t("auth_resendIn", retryAfter.toString()) : sending ? t("auth_sending") : t("auth_resendCode")}
+          </button>
+          {resent && (
+            <span className="ml-1 text-muted-foreground">{t("auth_sent")}</span>
+          )}
+        </FieldDescription>
 
-          <FieldDescription className="text-center text-sm">
-            {t("auth_didntReceive")}{" "}
-            <button
-              type="button"
-              disabled={retryAfter > 0 || sending}
-              className="underline underline-offset-4 hover:text-primary disabled:opacity-50 disabled:no-underline"
-              onClick={handleResend}
-            >
-              {retryAfter > 0 ? t("auth_resendIn", retryAfter.toString()) : sending ? t("auth_sending") : t("auth_resendCode")}
-            </button>
-            {resent && (
-              <span className="ml-1 text-muted-foreground">{t("auth_sent")}</span>
-            )}
-          </FieldDescription>
-
-          <FieldDescription className="text-center">
-            <button
-              type="button"
-              className="underline underline-offset-4 hover:text-primary"
-              onClick={() => logout()}
-            >
-              {t("auth_useDifferentAccount")}
-            </button>
-          </FieldDescription>
-        </FieldGroup>
-      </div>
+        <FieldDescription className="text-center">
+          <button
+            type="button"
+            className="underline underline-offset-4 hover:text-primary"
+            onClick={() => void onUseDifferentAccount()}
+          >
+            {t("auth_useDifferentAccount")}
+          </button>
+        </FieldDescription>
+      </FieldGroup>
 
       {PROSOPO_SITE_KEY && (
         <Dialog open={captchaDialogOpen} onOpenChange={setCaptchaDialogOpen}>

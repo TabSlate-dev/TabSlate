@@ -18,12 +18,13 @@ import {
   InputOTPSlot,
 } from "@/components/ui/input-otp";
 import { useTranslation } from "@/hooks/use-translation";
+import type { AuthEntryMode } from "@/lib/auth-session";
 
-type Mode =
-  | "login"
-  | "register"
-  | "forgot-password" // email input to request reset code
-  | "reset-password"; // OTP + new password input
+type Mode = AuthEntryMode | "forgot-password" | "reset-password";
+
+interface LoginFormProps extends React.ComponentProps<"div"> {
+  initialMode?: AuthEntryMode;
+}
 
 /** Prosopo site key — leave empty to disable captcha in dev. */
 const PROSOPO_SITE_KEY =
@@ -36,10 +37,11 @@ const PROSOPO_CAPTCHA_TYPE =
 
 export function LoginForm({
   className,
+  initialMode = "login",
   ...props
-}: React.ComponentProps<"div">) {
+}: LoginFormProps) {
   const { t, language } = useTranslation();
-  const [mode, setMode] = React.useState<Mode>("login");
+  const [mode, setMode] = React.useState<Mode>(initialMode);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [showAdvanced, setShowAdvanced] = React.useState(false);
