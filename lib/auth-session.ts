@@ -60,6 +60,15 @@ export function shouldResetLocalData(
 export type AuthEntryMode = "login" | "register";
 export type AuthDialogView = "credentials" | "verify-email";
 
+export function resolveAuthEntryModeAfterAccountSwitch(
+  currentMode: AuthEntryMode,
+): AuthEntryMode {
+  if (currentMode === "register") {
+    return "login";
+  }
+  return currentMode;
+}
+
 interface AuthDialogPresentationInput {
   requestedOpen: boolean;
   hasUser: boolean;

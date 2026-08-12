@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   canStartSync,
   resolveAuthDialogPresentation,
+  resolveAuthEntryModeAfterAccountSwitch,
   resolveAuthSessionStatus,
   shouldInitializeGuestWorkspace,
   shouldResetLocalData,
@@ -112,5 +113,9 @@ describe("authentication dialog presentation", () => {
       view: "credentials",
       dismissible: true,
     });
+  });
+
+  test("returns to login after switching away from a registration account", () => {
+    expect(resolveAuthEntryModeAfterAccountSwitch("register")).toBe("login");
   });
 });

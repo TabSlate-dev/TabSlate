@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   resolveAuthDialogPresentation,
+  resolveAuthEntryModeAfterAccountSwitch,
   type AuthEntryMode,
 } from "@/lib/auth-session";
 import { useAuthStore } from "@/store/auth-store";
@@ -27,11 +28,20 @@ export function AuthDialog({
   const { t } = useTranslation();
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const [credentialModeOverride, setCredentialModeOverride] =
+    React.useState<AuthEntryMode | null>(null);
+  const credentialMode = credentialModeOverride ?? initialMode;
   const presentation = resolveAuthDialogPresentation({
     requestedOpen: open,
     hasUser: user !== null,
     isVerified: user?.is_verified ?? false,
   });
+
+  React.useEffect(() => {
+    if (!open) {
+      setCredentialModeOverride(null);
+    }
+  }, [open]);
 
   React.useEffect(() => {
     if (open && user?.is_verified) {
@@ -47,9 +57,12 @@ export function AuthDialog({
   }, [onOpenChange, presentation.dismissible]);
 
   const handleUseDifferentAccount = React.useCallback(async () => {
+    setCredentialModeOverride(
+      resolveAuthEntryModeAfterAccountSwitch(credentialMode),
+    );
     await logout();
     onOpenChange(true);
-  }, [logout, onOpenChange]);
+  }, [credentialMode, logout, onOpenChange]);
 
   const handleBlockedDismiss = React.useCallback((event: Event) => {
     if (!presentation.dismissible) {
@@ -69,7 +82,7 @@ export function AuthDialog({
         <DialogTitle className="sr-only">
           {presentation.view === "verify-email"
             ? t("auth_checkEmail")
-            : initialMode === "register"
+            : credentialMode === "register"
               ? t("auth_registerTitle")
               : t("auth_loginTitle")}
         </DialogTitle>
@@ -79,7 +92,7 @@ export function AuthDialog({
             onUseDifferentAccount={handleUseDifferentAccount}
           />
         ) : (
-          <LoginForm key={initialMode} initialMode={initialMode} />
+          <LoginForm key={credentialMode} initialMode={credentialMode} />
         )}
       </DialogContent>
     </Dialog>
