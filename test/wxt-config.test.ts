@@ -26,7 +26,7 @@ describe("wxt cross-browser manifest", () => {
     const manifest = await getManifest("firefox", 3);
 
     expect(manifest.browser_specific_settings?.gecko?.id).toBe("support@cs.tabslate.com");
-    expect(manifest.browser_specific_settings?.gecko?.strict_min_version).toBe("128.0");
+    expect(manifest.browser_specific_settings?.gecko?.strict_min_version).toBe("142.0");
     expect(
       manifest.browser_specific_settings?.gecko?.data_collection_permissions?.required,
     ).toEqual(["none"]);
