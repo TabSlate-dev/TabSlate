@@ -13,11 +13,12 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import pkg from "../package.json" with { type: "json" };
 
 const tempDirs: string[] = [];
 
-const chromeZipPath = join(process.cwd(), ".output", "tab-slate-0.1.5-chrome.zip");
-const edgeZipPath = join(process.cwd(), ".output", "tab-slate-0.1.5-edge.zip");
+const chromeZipPath = join(process.cwd(), ".output", `tab-slate-${pkg.version}-chrome.zip`);
+const edgeZipPath = join(process.cwd(), ".output", `tab-slate-${pkg.version}-edge.zip`);
 const backupChromeZipPath = `${chromeZipPath}.bak-test`;
 const backupEdgeZipPath = `${edgeZipPath}.bak-test`;
 
@@ -55,7 +56,7 @@ const capturePath = process.env.MOCK_CAPTURE_PATH;
 const outputDir = path.join(process.cwd(), ".output");
 fs.mkdirSync(outputDir, { recursive: true });
 fs.writeFileSync(
-  path.join(outputDir, "tab-slate-0.1.5-chrome.zip"),
+  path.join(outputDir, "tab-slate-${pkg.version}-chrome.zip"),
   "mock chrome zip",
 );
 fs.writeFileSync(
@@ -111,6 +112,7 @@ describe("zip-edge helper", () => {
     });
 
     expect(result.status).toBe(0);
+    expect(existsSync(capturePath)).toBeTrue();
 
     const capture = JSON.parse(readFileSync(capturePath, "utf8")) as {
       argv: string[];
