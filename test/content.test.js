@@ -289,7 +289,7 @@ describe("tab group helpers", () => {
 });
 
 describe("background content script sync", () => {
-  test("uses the Firefox storage session access-level API when available", async () => {
+  test("skips the Chromium-only storage session access-level API in Firefox", async () => {
     const browserSetAccessLevel = mock(async () => {});
     const browserGlobals = globalThis;
     browserGlobals.browser = {
@@ -316,7 +316,7 @@ describe("background content script sync", () => {
     });
 
     await expect(importBackgroundModule()).resolves.toBeTruthy();
-    expect(browserSetAccessLevel).toHaveBeenCalledWith("TRUSTED_CONTEXTS");
+    expect(browserSetAccessLevel).not.toHaveBeenCalled();
   });
 
   test("exits early when the scripting API is unavailable", async () => {
