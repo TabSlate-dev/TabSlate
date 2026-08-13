@@ -32,12 +32,6 @@ globalThis.createShadowRootUi = mock(async () => ({
   shadow: document.createElement("div").attachShadow({ mode: "open" }),
 }));
 
-mock.module("react", () => ({
-  default: {
-    createElement: () => null,
-  },
-}));
-
 mock.module("react-dom/client", () => ({
   default: {
     createRoot: () => ({
