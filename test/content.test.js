@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 
 const addListenerCalls = [];
 const removeListenerCalls = [];
@@ -289,34 +292,20 @@ describe("tab group helpers", () => {
 });
 
 describe("background content script sync", () => {
-  test("skips the Chromium-only storage session access-level API in Firefox", async () => {
-    const browserSetAccessLevel = mock(async () => {});
-    const browserGlobals = globalThis;
-    browserGlobals.browser = {
-      storage: {
-        session: {
-          setAccessLevel: browserSetAccessLevel,
-        },
-      },
-    };
-    globalThis.chrome = createBackgroundChrome({
-      storage: {
-        AccessLevel: {
-          TRUSTED_CONTEXTS: "TRUSTED_CONTEXTS",
-        },
-        session: {
-          get: mock(async () => ({})),
-          set: mock(async () => {}),
-        },
-        local: {
-          get: mock(async () => ({})),
-          set: mock(async () => {}),
-        },
-      },
-    });
+  test("omits the Chromium-only storage session access-level API from the Firefox background bundle", () => {
+    const result = spawnSync(
+      "bunx",
+      ["wxt", "build", "-b", "firefox", "--mv3", "--filter-entrypoint", "background"],
+      { cwd: process.cwd(), encoding: "utf8" },
+    );
 
-    await expect(importBackgroundModule()).resolves.toBeTruthy();
-    expect(browserSetAccessLevel).not.toHaveBeenCalled();
+    expect(result.status).toBe(0);
+
+    const backgroundBundle = readFileSync(
+      join(process.cwd(), ".output", "firefox-mv3", "background.js"),
+      "utf8",
+    );
+    expect(backgroundBundle).not.toContain("setAccessLevel");
   });
 
   test("exits early when the scripting API is unavailable", async () => {
