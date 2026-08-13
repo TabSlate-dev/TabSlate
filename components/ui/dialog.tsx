@@ -8,16 +8,20 @@ const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 const DialogClose = DialogPrimitive.Close;
 
+export function getDialogOverlayClassName(overlayClassName?: string) {
+  return cn(
+    "fixed inset-0 z-50 bg-foreground/20 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+    overlayClassName
+  );
+}
+
 function DialogOverlay({
   className,
   ...props
 }: React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
-      className={cn(
-        "fixed inset-0 z-50 bg-foreground/20 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
-        className
-      )}
+      className={getDialogOverlayClassName(className)}
       {...props}
     />
   );
@@ -25,18 +29,20 @@ function DialogOverlay({
 
 interface DialogContentProps
   extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+  overlayClassName?: string;
   showCloseButton?: boolean;
 }
 
 function DialogContent({
   className,
   children,
+  overlayClassName,
   showCloseButton = true,
   ...props
 }: DialogContentProps) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         className={cn(
           "fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 border bg-background p-6 shadow-lg duration-200",

@@ -73,6 +73,7 @@ export function AuthDialog({
     <Dialog open={presentation.open} onOpenChange={handleOpenChange}>
       <DialogContent
         className="sm:max-w-md max-h-[90svh] overflow-y-auto"
+        overlayClassName="backdrop-blur-sm"
         aria-describedby={undefined}
         showCloseButton={presentation.dismissible}
         onEscapeKeyDown={handleBlockedDismiss}
