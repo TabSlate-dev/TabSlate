@@ -1,7 +1,7 @@
 import { api, ApiError, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
 import type { SyncPushEntities } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
-import { SyncQueue, type SyncConflictPolicy } from "@/lib/sync-queue";
+import { SyncQueue, type SyncConflictPolicy, type SyncPushFailure } from "@/lib/sync-queue";
 import { SSEClient } from "@/lib/sse-client";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -11,8 +11,12 @@ export type { SyncConflictPolicy } from "@/lib/sync-queue";
 type Credentials = { baseUrl: string; accessToken: string };
 type GetCredentials = () => Credentials | null;
 type GetLocalSeq = () => number;
-type OnPullSuccess = (resp: SyncPullResponse) => Promise<string | null | void> | string | null | void;
-type OnPushSuccess = (resp: SyncPushResponse) => void;
+export type OnPullSuccess = (resp: SyncPullResponse) => Promise<string | null>;
+export type OnPushSuccess = (
+  resp: SyncPushResponse,
+  confirmedPayload: SyncPushPayload,
+) => Promise<string | null>;
+export type OnLegacyPushFailure = (failure: SyncPushFailure) => Promise<boolean>;
 type OnStatusChange = (status: SyncStatus, errorMessage?: string) => void;
 
 const PERIODIC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -35,7 +39,12 @@ export class SyncEngine {
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private status: SyncStatus = "idle";
   private lastErrorMessage: string | null = null;
-  private isPulling = false;
+  private persistentConflictMessage: string | null = null;
+  private resolutionChain: Promise<void> = Promise.resolve();
+  private pullRequested = false;
+  private pullPromise: Promise<void> | null = null;
+  private lastPulledCount = 0;
+  private destroyed = false;
 
   constructor(
     private readonly getCredentials: GetCredentials,
@@ -43,18 +52,33 @@ export class SyncEngine {
     private readonly onPullSuccess: OnPullSuccess,
     private readonly onPushSuccess: OnPushSuccess,
     private readonly onStatusChange: OnStatusChange,
+    private readonly onLegacyPushFailure: OnLegacyPushFailure,
   ) {
     this.queue = new SyncQueue(
       getCredentials,
-      async (resp) => {
-        await this.onPushSuccess(resp);
-        if (resp.rejected.length > 0) {
-          this.pull();
+      async (resp, confirmedPayload) => {
+        const conflictMessage = await this.serializeResolution(
+          () => this.onPushSuccess(resp, confirmedPayload),
+        );
+        if (this.destroyed) {
+          return;
         }
-        this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
+        if (resp.rejected.length > 0) {
+          this.applyPersistentConflict(conflictMessage);
+          await this.requestPull();
+          return;
+        }
+        this.applyPersistentConflict(conflictMessage);
       },
       async (failure) => {
-        this.setStatus("error", failure.error.message);
+        if (failure.retryable && failure.status >= 500) {
+          const handled = await this.serializeResolution(() => this.onLegacyPushFailure(failure));
+          if (handled) {
+            this.setQueueStatus();
+            return true;
+          }
+        }
+        this.setStatus("error", sanitizeSyncErrorMessage(failure.error.message));
         return false;
       },
     );
@@ -63,7 +87,7 @@ export class SyncEngine {
       getCredentials,
       (serverSeq) => {
         if (serverSeq > this.getLocalSeq()) {
-          this.pull();
+          void this.requestPull();
         }
       },
       (connected) => {
@@ -74,12 +98,11 @@ export class SyncEngine {
           } else {
             // Before the threshold: probe connectivity immediately via pull().
             // If the backend is truly down, pull() will detect TypeError → "offline".
-            // If pull is already in progress the isPulling guard makes this a no-op.
-            this.pull();
+            void this.requestPull();
           }
         } else {
           this.cancelPeriodicPull();
-          if (this.status === "offline") this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
+          if (this.status === "offline") this.setQueueStatus();
         }
       },
     );
@@ -87,12 +110,12 @@ export class SyncEngine {
 
   start() {
     this.sseClient.start();
-    this.pull();
+    void this.requestPull();
     this.ensurePeriodicPull();
   }
 
   enqueue(entities: Partial<SyncPushEntities>, conflictPolicy: SyncConflictPolicy = "clear") {
-    this.setStatus("syncing");
+    this.setQueueStatus("syncing");
     this.queue.enqueue(entities, conflictPolicy);
   }
 
@@ -133,49 +156,71 @@ export class SyncEngine {
   }
 
   async forceSync(): Promise<{ pushed: number; pulled: number }> {
-    this.setStatus("syncing");
-    let pulled = 0;
-
+    this.lastPulledCount = 0;
+    this.setQueueStatus("syncing");
     await this.queue.flush().catch(() => { /* queue handles retries */ });
-
-    try {
-      const resp = await this.pullWithAuthenticationRecovery();
-      if (resp) {
-        await this.onPullSuccess(resp);
-        pulled =
-          resp.entities.workspaces.length +
-          resp.entities.collections.length +
-          resp.entities.bookmarks.length +
-          resp.entities.tags.length +
-          (resp.entities.groups?.length ?? 0);
-      }
-    } catch (err) {
-      // TypeError = network failure (connection refused / offline)
-      if (err instanceof TypeError) {
-        this.setStatus("offline");
-      } else {
-        this.setStatus("error", err instanceof Error ? err.message : "Sync failed");
-      }
-      return { pushed: 1, pulled };
-    }
-
-    // Only reset if no error was already set by the push path (onError callback).
-    if (this.status === "syncing") {
-      this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
-    }
-    return { pushed: 1, pulled };
+    await this.requestPull();
+    return { pushed: 1, pulled: this.lastPulledCount };
   }
 
-  private async pull() {
-    if (this.isPulling) return;
-    this.isPulling = true;
-    const creds = this.getCredentials();
-    if (!creds) { this.isPulling = false; return; }
-    this.setStatus("syncing");
+  private serializeResolution<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const next = this.resolutionChain.then(operation, operation);
+    this.resolutionChain = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  private requestPull(): Promise<void> {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
+    this.pullRequested = true;
+    if (this.pullPromise) {
+      return this.pullPromise;
+    }
+
+    const loop = this.runPullLoop();
+    this.pullPromise = loop;
+    void loop.then(
+      () => this.completePullLoop(loop),
+      () => this.completePullLoop(loop),
+    );
+    return loop;
+  }
+
+  private async runPullLoop(): Promise<void> {
+    while (this.pullRequested && !this.destroyed) {
+      this.pullRequested = false;
+      await this.resolutionChain;
+      if (this.destroyed) {
+        return;
+      }
+
+      // A request received while reconciliation was pending is covered by this
+      // current pull, whose local sequence is read immediately before fetching.
+      this.pullRequested = false;
+      await this.performPull();
+    }
+  }
+
+  private async performPull(): Promise<void> {
+    if (!this.getCredentials()) {
+      return;
+    }
+    this.setQueueStatus("syncing");
     try {
       const resp = await this.pullWithAuthenticationRecovery();
-      if (resp) await this.onPullSuccess(resp);
-      this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
+      if (!resp || this.destroyed) {
+        return;
+      }
+      this.lastPulledCount = this.countPulledEntities(resp);
+      const conflictMessage = await this.serializeResolution(() => this.onPullSuccess(resp));
+      if (this.destroyed) {
+        return;
+      }
+      this.applyPersistentConflict(conflictMessage);
     } catch (err) {
       // TypeError = network failure (connection refused / offline) — mirror forceSync() logic.
       if (err instanceof TypeError) {
@@ -184,8 +229,6 @@ export class SyncEngine {
       } else {
         this.setStatus("error", err instanceof Error ? err.message : "Pull failed");
       }
-    } finally {
-      this.isPulling = false;
     }
   }
 
@@ -226,7 +269,7 @@ export class SyncEngine {
 
   private ensurePeriodicPull() {
     if (this.periodicTimer) return;
-    this.periodicTimer = setInterval(() => this.pull(), PERIODIC_INTERVAL_MS);
+    this.periodicTimer = setInterval(() => { void this.requestPull(); }, PERIODIC_INTERVAL_MS);
   }
 
   private cancelPeriodicPull() {
@@ -261,11 +304,43 @@ export class SyncEngine {
   get currentErrorMessage(): string | null { return this.lastErrorMessage; }
 
   destroy() {
+    this.destroyed = true;
     this.queue.destroy();
     this.sseClient.destroy();
     if (this.periodicTimer) {
       clearInterval(this.periodicTimer);
       this.periodicTimer = null;
+    }
+  }
+
+  private applyPersistentConflict(conflictMessage: string | null) {
+    this.persistentConflictMessage = conflictMessage;
+    this.setQueueStatus();
+  }
+
+  private setQueueStatus(preferredStatus?: "syncing") {
+    if (this.persistentConflictMessage !== null) {
+      this.setStatus("error", this.persistentConflictMessage);
+      return;
+    }
+    this.setStatus(preferredStatus ?? (this.queue.isEmpty() ? "idle" : "syncing"));
+  }
+
+  private countPulledEntities(resp: SyncPullResponse): number {
+    return resp.entities.workspaces.length +
+      resp.entities.collections.length +
+      resp.entities.bookmarks.length +
+      resp.entities.tags.length +
+      (resp.entities.groups?.length ?? 0);
+  }
+
+  private completePullLoop(loop: Promise<void>) {
+    if (this.pullPromise !== loop) {
+      return;
+    }
+    this.pullPromise = null;
+    if (this.pullRequested && !this.destroyed) {
+      void this.requestPull();
     }
   }
 }

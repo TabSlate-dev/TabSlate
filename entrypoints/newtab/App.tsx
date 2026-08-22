@@ -293,8 +293,9 @@ function SyncProvider({
         // A remote pull may change usage without any local create/delete action,
         // so bypass the TTL cache and refresh the authoritative counters.
         usePlanStore.getState().ensureFresh(true);
+        return null;
       },
-      (pushResp) => {
+      async (pushResp) => {
         for (const rejected of pushResp.rejected) {
           if (rejected.reason === "quota_exceeded") {
             const resourceMap: Record<string, QuotaResource> = {
@@ -309,11 +310,13 @@ function SyncProvider({
         if (pushResp.rejected.some((r) => r.reason === "quota_exceeded")) {
           void usePlanStore.getState().fetchPlan();
         }
+        return null;
       },
       (status, errorMessage) => {
         setSyncStatus(status);
         setSyncErrorMessage(status === "error" ? (errorMessage ?? null) : null);
       },
+      async () => false,
     );
 
     initSyncEngine(engine);

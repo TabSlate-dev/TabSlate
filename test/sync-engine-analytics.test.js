@@ -94,11 +94,12 @@ describe("SyncEngine analytics", () => {
     const engine = new SyncEngine(
       () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
       () => 0,
-      () => {},
-      () => {},
+      async () => null,
+      async () => null,
       (status, errorMessage) => {
         statusCalls.push({ status, errorMessage });
       },
+      async () => false,
     );
 
     await engine.forceSync();
@@ -133,11 +134,12 @@ describe("SyncEngine analytics", () => {
     const engine = new SyncEngine(
       () => ({ baseUrl: "http://localhost:8080", accessToken: currentAccessToken }),
       () => 0,
-      () => {},
-      () => {},
+      async () => null,
+      async () => null,
       (status, errorMessage) => {
         statusCalls.push({ status, errorMessage });
       },
+      async () => false,
     );
 
     const result = await engine.forceSync();
@@ -174,13 +176,15 @@ describe("SyncEngine analytics", () => {
     const engine = new SyncEngine(
       () => ({ baseUrl: "http://localhost:8080", accessToken: currentAccessToken }),
       () => 0,
-      (resp) => {
+      async (resp) => {
         pullSuccesses.push(resp.server_seq);
+        return null;
       },
-      () => {},
+      async () => null,
       (status, errorMessage) => {
         statusCalls.push({ status, errorMessage });
       },
+      async () => false,
     );
 
     engine.start();
@@ -213,9 +217,10 @@ describe("SyncEngine analytics", () => {
     const engine = new SyncEngine(
       () => ({ baseUrl: "http://localhost:8080", accessToken: currentAccessToken }),
       () => 0,
+      async () => null,
+      async () => null,
       () => {},
-      () => {},
-      () => {},
+      async () => false,
     );
 
     await engine.forcePush({ bookmarks: [{ id: "bookmark-1" }] });
@@ -238,11 +243,12 @@ describe("SyncEngine analytics", () => {
     const engine = new SyncEngine(
       () => ({ baseUrl: "http://localhost:8080", accessToken: "expired-token" }),
       () => 0,
-      () => {},
-      () => {},
+      async () => null,
+      async () => null,
       (status, errorMessage) => {
         statusCalls.push({ status, errorMessage });
       },
+      async () => false,
     );
 
     await engine.forceSync();
@@ -257,9 +263,10 @@ describe("SyncEngine analytics", () => {
     const engine = new SyncEngine(
       () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
       () => 0,
+      async () => null,
+      async () => null,
       () => {},
-      () => {},
-      () => {},
+      async () => false,
     );
 
     if (!queueErrorHandler) {
@@ -277,6 +284,42 @@ describe("SyncEngine analytics", () => {
 
     expect(trackCalls).toHaveLength(1);
 
+    engine.destroy();
+  });
+
+  test("delegates only retryable 5xx queue failures to the legacy recovery handler", async () => {
+    const legacyFailures = [];
+    const statuses = [];
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => null,
+      async () => null,
+      (status) => statuses.push(status),
+      async (failure) => {
+        legacyFailures.push(failure.status);
+        return true;
+      },
+    );
+
+    if (!queueErrorHandler) {
+      throw new Error("queue error handler was not registered");
+    }
+    const failure = {
+      error: new Error("server failed"),
+      payload: { entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] } },
+      confirmedPayload: { entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] } },
+      retryable: true,
+      status: 503,
+    };
+    expect(await queueErrorHandler(failure)).toBe(true);
+    expect(legacyFailures).toEqual([503]);
+    expect(statuses).not.toContain("error");
+
+    expect(await queueErrorHandler({ ...failure, retryable: false })).toBe(false);
+    expect(await queueErrorHandler({ ...failure, status: 429 })).toBe(false);
+    expect(legacyFailures).toEqual([503]);
+    expect(statuses.at(-1)).toBe("error");
     engine.destroy();
   });
 });
