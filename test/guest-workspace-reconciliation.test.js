@@ -41,6 +41,7 @@ function applyOperations(operations) {
 mock.module("@/lib/idb", () => ({
   idbGet: async (store, key) => stores.get(`${store}:${key}`),
   idbGetAll: async (store) => stores.get(`${store}:all`) ?? [],
+  idbCreateGuestWorkspaceIfEmpty: async () => false,
   idbPut: async (store, value) => stores.set(`${store}:${value.key}`, value),
   idbDelete: async (store, key) => stores.delete(`${store}:${key}`),
   idbBulkWrite: async (operations) => {

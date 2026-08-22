@@ -31,6 +31,10 @@ describe("invalid authenticated session cleanup", () => {
     await runSessionFixture("clears account data before transitioning to guest");
   });
 
+  test("retires running sync work before clearing a definitively expired session", async () => {
+    await runSessionFixture("retires active sync work before clearing a definitively expired session");
+  });
+
   test("retains a newer authenticated session after delayed cleanup", async () => {
     await runSessionFixture("retains a newer authenticated session after delayed cleanup");
   });

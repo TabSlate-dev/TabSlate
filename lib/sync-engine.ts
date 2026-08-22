@@ -9,7 +9,10 @@ export type { SyncConflictPolicy } from "@/lib/sync-queue";
 type Credentials = { baseUrl: string; accessToken: string };
 type GetCredentials = () => Credentials | null;
 type GetLocalSeq = () => number;
-export type OnPullSuccess = (resp: SyncPullResponse) => Promise<string | null>;
+export type OnPullSuccess = (
+  resp: SyncPullResponse,
+  isCurrent: () => boolean,
+) => Promise<string | null>;
 export type OnPushSuccess = (
   resp: SyncPushResponse,
   confirmedPayload: SyncPushPayload,
@@ -75,6 +78,7 @@ export class SyncEngine {
   private pullPromise: Promise<void> | null = null;
   private lastPulledCount = 0;
   private destroyed = false;
+  private retirement: Promise<void> | null = null;
 
   constructor(
     private readonly getCredentials: GetCredentials,
@@ -266,7 +270,9 @@ export class SyncEngine {
         return;
       }
       this.lastPulledCount = this.countPulledEntities(resp);
-      const conflictMessage = await this.serializeResolution(() => this.onPullSuccess(resp));
+      const conflictMessage = await this.serializeResolution(
+        () => this.onPullSuccess(resp, () => !this.destroyed),
+      );
       if (this.destroyed) {
         return;
       }
@@ -354,6 +360,13 @@ export class SyncEngine {
   get currentErrorMessage(): string | null { return this.lastErrorMessage; }
 
   destroy() {
+    void this.retire();
+  }
+
+  async retire(): Promise<void> {
+    if (this.retirement) {
+      return this.retirement;
+    }
     this.destroyed = true;
     this.queue.destroy();
     this.sseClient.destroy();
@@ -361,6 +374,12 @@ export class SyncEngine {
       clearInterval(this.periodicTimer);
       this.periodicTimer = null;
     }
+    const pendingPull = this.pullPromise;
+    this.retirement = Promise.all([
+      this.resolutionChain.catch(() => undefined),
+      pendingPull?.catch(() => undefined) ?? Promise.resolve(),
+    ]).then(() => undefined);
+    return this.retirement;
   }
 
   private applyPersistentConflict(conflictMessage: string | null) {

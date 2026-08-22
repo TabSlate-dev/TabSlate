@@ -235,6 +235,24 @@ describe("sync conflict registry", () => {
     ]));
   });
 
+  test("merges concurrent records from separate registry instances", async () => {
+    const first = new SyncConflictRegistry();
+    const second = new SyncConflictRegistry();
+    await Promise.all([first.ready(), second.ready()]);
+
+    await Promise.all([
+      first.recordRejections([{ id: "first-workspace", type: "workspace", reason: "quota_exceeded" }]),
+      second.recordRejections([{ id: "second-workspace", type: "workspace", reason: "quota_exceeded" }]),
+    ]);
+
+    const rehydrated = new SyncConflictRegistry();
+    await rehydrated.ready();
+    expect(rehydrated.list()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ entityId: "first-workspace" }),
+      expect.objectContaining({ entityId: "second-workspace" }),
+    ]));
+  });
+
   test("ignores stale and structurally invalid rejection records", async () => {
     const registry = new SyncConflictRegistry();
     await registry.ready();

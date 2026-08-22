@@ -9,6 +9,7 @@ const deletedGroups = [];
 let trashCollectionBookmarksImpl;
 let idbBulkWriteImpl;
 let generatedIds;
+let guestSeedCreated = false;
 
 mock.module("@/lib/idb", () => ({
   idbGetAll: async () => [],
@@ -24,6 +25,21 @@ mock.module("@/lib/idb", () => ({
   idbBulkWrite: async (ops) => {
     idbBulkWriteCalls.push(ops);
     return idbBulkWriteImpl(ops);
+  },
+  idbCreateGuestWorkspaceIfEmpty: async (workspace, collection, activeWorkspace, provenance) => {
+    if (guestSeedCreated) {
+      return false;
+    }
+    const ops = [
+      { type: "put", store: "workspaces", value: workspace },
+      { type: "put", store: "collections", value: collection },
+      { type: "put", store: "kv", value: activeWorkspace },
+      { type: "put", store: "kv", value: provenance },
+    ];
+    idbBulkWriteCalls.push(ops);
+    await idbBulkWriteImpl(ops);
+    guestSeedCreated = true;
+    return true;
   },
 }));
 
@@ -87,6 +103,7 @@ describe("workspace deletion", () => {
     trashCollectionBookmarksImpl = async () => {};
     idbBulkWriteImpl = async () => {};
     generatedIds = ["generated-id", "generated-collection-id"];
+    guestSeedCreated = false;
     useWorkspaceStore.setState({
       workspaces: [],
       collections: [],
@@ -176,6 +193,40 @@ describe("workspace deletion", () => {
       "guest-collection-id",
     ]);
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("guest-workspace-id");
+  });
+
+  test("does not apply a delayed guest seed after its session is no longer current", async () => {
+    let resolveBulkWrite;
+    idbBulkWriteImpl = () => new Promise((resolve) => {
+      resolveBulkWrite = resolve;
+    });
+    generatedIds = ["guest-workspace-id", "guest-collection-id"];
+    let sessionCurrent = true;
+
+    const initialization = useWorkspaceStore.getState().initializeGuestWorkspace({
+      isSessionCurrent: () => sessionCurrent,
+    });
+    await Promise.resolve();
+    sessionCurrent = false;
+    useWorkspaceStore.setState({
+      workspaces: [{ id: "account-workspace", name: "Account", color: "blue", position: 0, seq: 4 }],
+      collections: [{
+        id: "account-default", workspaceId: "account-workspace", name: "Default", icon: "inbox",
+        position: 0, isDefault: true, seq: 4,
+      }],
+      activeWorkspaceId: "account-workspace",
+    });
+
+    if (!resolveBulkWrite) {
+      throw new Error("idbBulkWrite was not called");
+    }
+    resolveBulkWrite();
+    await initialization;
+
+    expect(useWorkspaceStore.getState().workspaces.map((workspace) => workspace.id)).toEqual([
+      "account-workspace",
+    ]);
+    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("account-workspace");
   });
 
   test("deleteWorkspace waits for trashCollectionBookmarks before deleting the workspace from IDB", async () => {

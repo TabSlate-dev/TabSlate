@@ -133,6 +133,35 @@ describe("SyncEngine ordering", () => {
     engine.destroy();
   });
 
+  test("retires a running pull callback before resolving teardown", async () => {
+    const pullStarted = deferred();
+    const releasePull = deferred();
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, isCurrent) => {
+        pullStarted.resolve();
+        await releasePull.promise;
+        return isCurrent() ? null : "should not be applied";
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+    engine.start();
+    await pullStarted.promise;
+    let retired = false;
+    const retiring = engine.retire().then(() => {
+      retired = true;
+    });
+    await Promise.resolve();
+    expect(retired).toBe(false);
+    releasePull.resolve();
+    await retiring;
+    expect(retired).toBe(true);
+  });
+
   test("coalesces SSE requests arriving during a pull into a later non-overlapping pass", async () => {
     const firstMerge = deferred();
     const mergeStarts = [];

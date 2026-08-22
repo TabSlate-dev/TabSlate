@@ -6,6 +6,7 @@ let clearDBImpl = async () => {
   clearDBCalls.push("cleared");
   events.push("cleared");
 };
+let retireImpl = async () => {};
 
 class MockApiError extends Error {
   constructor(message, status) {
@@ -43,6 +44,10 @@ mock.module("@/lib/sync-recovery", () => ({
   clearSyncRecoverySnapshot: () => {},
 }));
 
+mock.module("@/lib/sync-lifecycle", () => ({
+  retireActiveSyncLifecycle: () => retireImpl(),
+}));
+
 mock.module("@/store/i18n-store", () => ({
   useI18nStore: { getState: () => ({ language: "en" }) },
   resolveAcceptLanguage: () => "en",
@@ -68,6 +73,7 @@ describe("invalid authenticated session cleanup", () => {
       clearDBCalls.push("cleared");
       events.push("cleared");
     };
+    retireImpl = async () => {};
     useAuthStore.setState({
       user: {
         id: "user-1",
@@ -100,6 +106,24 @@ describe("invalid authenticated session cleanup", () => {
     expect(events).toEqual(["cleared", "guest"]);
     expect(useAuthStore.getState().user).toBeNull();
     expect(useAuthStore.getState().refreshToken).toBeNull();
+  });
+
+  test("retires active sync work before clearing a definitively expired session", async () => {
+    const releaseRetirement = {};
+    let finishRetirement;
+    const retirement = new Promise((resolve) => {
+      finishRetirement = resolve;
+    });
+    retireImpl = async () => {
+      events.push("retire");
+      await retirement;
+    };
+    const refreshed = useAuthStore.getState().silentRefresh();
+    await Promise.resolve();
+    expect(events).toEqual(["retire"]);
+    finishRetirement(releaseRetirement);
+    await refreshed;
+    expect(events).toEqual(["retire", "cleared"]);
   });
 
   test("retains a newer authenticated session after delayed cleanup", async () => {

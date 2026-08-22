@@ -102,6 +102,95 @@ export async function idbPut<T>(store: StoreName, value: T): Promise<void> {
   });
 }
 
+/**
+ * Conditionally creates the first local guest seed.  The read and writes share
+ * one IndexedDB transaction, so separate new-tab JS contexts cannot both seed
+ * an empty database.
+ */
+export function idbCreateGuestWorkspaceIfEmpty(
+  workspace: object,
+  collection: object,
+  activeWorkspace: object,
+  provenance: object,
+): Promise<boolean> {
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(["workspaces", "collections", "kv"], "readwrite");
+    let created = false;
+    tx.oncomplete = () => resolve(created);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+
+    const workspacesRequest = tx.objectStore("workspaces").getAll();
+    const provenanceRequest = tx.objectStore("kv").get("guest-workspace-provenance-v1");
+    workspacesRequest.onerror = () => tx.abort();
+    provenanceRequest.onerror = () => tx.abort();
+    let workspaces: object[] | null = null;
+    let provenanceExists: boolean | null = null;
+    const createIfEmpty = () => {
+      if (workspaces === null || provenanceExists === null || workspaces.length > 0 || provenanceExists) {
+        return;
+      }
+      tx.objectStore("workspaces").put(workspace);
+      tx.objectStore("collections").put(collection);
+      tx.objectStore("kv").put(activeWorkspace);
+      tx.objectStore("kv").put(provenance);
+      created = true;
+    };
+    workspacesRequest.onsuccess = () => {
+      workspaces = workspacesRequest.result as object[];
+      createIfEmpty();
+    };
+    provenanceRequest.onsuccess = () => {
+      provenanceExists = provenanceRequest.result !== undefined;
+      createIfEmpty();
+    };
+  }));
+}
+
+interface LockRecord {
+  key: string;
+  value: { owner: string; expiresAt: number };
+}
+
+/** A lease mutex for browser contexts that do not expose the Web Locks API. */
+export function idbTryAcquireLock(key: string, owner: string, expiresAt: number): Promise<boolean> {
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction("kv", "readwrite");
+    let acquired = false;
+    tx.oncomplete = () => resolve(acquired);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+    const request = tx.objectStore("kv").get(key);
+    request.onerror = () => tx.abort();
+    request.onsuccess = () => {
+      const record = request.result as LockRecord | undefined;
+      const expired = !record || record.value.expiresAt <= Date.now();
+      if (!expired && record.value.owner !== owner) {
+        return;
+      }
+      tx.objectStore("kv").put({ key, value: { owner, expiresAt } });
+      acquired = true;
+    };
+  }));
+}
+
+export function idbReleaseLock(key: string, owner: string): Promise<void> {
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction("kv", "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+    const request = tx.objectStore("kv").get(key);
+    request.onerror = () => tx.abort();
+    request.onsuccess = () => {
+      const record = request.result as LockRecord | undefined;
+      if (record?.value.owner === owner) {
+        tx.objectStore("kv").delete(key);
+      }
+    };
+  }));
+}
+
 export async function idbDelete(store: StoreName, key: IDBValidKey): Promise<void> {
   const db = await getDB();
   return new Promise((resolve, reject) => {

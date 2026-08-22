@@ -6,8 +6,12 @@ import {
   type SyncRejected,
 } from "@/lib/api";
 import { idbBulkWrite, idbDelete, idbGet, type BulkWriteOp } from "@/lib/idb";
+import * as idb from "@/lib/idb";
 
 export const SYNC_CONFLICTS_KEY = "sync-conflicts-v1";
+const SYNC_CONFLICTS_LOCK_NAME = "tabslate-sync-conflicts-v1";
+const SYNC_CONFLICTS_LOCK_LEASE_MS = 30_000;
+let fallbackCrossContextTail: Promise<void> = Promise.resolve();
 
 export interface SyncConflict {
   entityType: SyncEntityType;
@@ -90,8 +94,8 @@ export class SyncConflictRegistry {
 
   async recordRejections(rejections: SyncRejected[]): Promise<void> {
     const generation = this.generation;
-    await this.enqueueMutation(generation, () => {
-      const candidate = this.copyConflicts();
+    await this.enqueueMutation(generation, (current) => {
+      const candidate = new Map(current);
       let changed = false;
       for (const rejection of rejections) {
         if (rejection.reason === "stale" || !isSyncEntityType(rejection.type) || rejection.id.length === 0) {
@@ -118,8 +122,8 @@ export class SyncConflictRegistry {
 
   async recordPayload(payload: SyncPushPayload, status: number): Promise<void> {
     const generation = this.generation;
-    await this.enqueueMutation(generation, () => {
-      const candidate = this.copyConflicts();
+    await this.enqueueMutation(generation, (current) => {
+      const candidate = new Map(current);
       const reason = `http_${status}`;
       const conflicts = [
         ...payload.entities.workspaces.map((entity) => this.createPayloadConflict(
@@ -149,10 +153,10 @@ export class SyncConflictRegistry {
 
   async clearEntities(references: SyncEntityReference[]): Promise<void> {
     const generation = this.generation;
-    await this.enqueueMutation(generation, () => {
+    await this.enqueueMutation(generation, (current) => {
       const keys = new Set(references.map((reference) => conflictKey(reference.entityType, reference.entityId)));
-      const entries = this.list().filter((conflict) => !keys.has(conflictKey(conflict.entityType, conflict.entityId)));
-      return entries.length === this.conflicts.size ? undefined : this.createMutation(entries);
+      const entries = [...current.values()].filter((conflict) => !keys.has(conflictKey(conflict.entityType, conflict.entityId)));
+      return entries.length === current.size ? undefined : this.createMutation(entries);
     });
   }
 
@@ -218,19 +222,23 @@ export class SyncConflictRegistry {
     applyAfterCommit?: () => void,
   ): Promise<boolean> {
     const generation = this.generation;
-    const operation = this.mutationTail.then(async () => {
+    const operation = this.mutationTail.then(async () => this.withCrossContextLock(async () => {
       await this.ready();
       if (generation !== this.generation) {
         return false;
       }
+      await this.refreshFromStorage();
       const mutation = this.prepareClearRootMutation(entityType, entityId);
       await commit(mutation);
       if (!this.applyMutation(mutation)) {
+        // A reset can happen while the caller-owned transaction is in flight.
+        // Its delete must win over that already-committed replacement snapshot.
+        await idbDelete("kv", SYNC_CONFLICTS_KEY);
         return false;
       }
       applyAfterCommit?.();
       return true;
-    });
+    }));
     this.mutationTail = operation.then(
       () => undefined,
       () => undefined,
@@ -240,15 +248,16 @@ export class SyncConflictRegistry {
 
   async clearRoot(entityType: SyncEntityType, entityId: string): Promise<void> {
     const generation = this.generation;
-    await this.enqueueMutation(generation, () => {
+    await this.enqueueMutation(generation, (current) => {
+      this.replaceEntries([...current.values()]);
       const mutation = this.prepareClearRootMutation(entityType, entityId);
-      return mutation.entries.length === this.conflicts.size ? undefined : mutation;
+      return mutation.entries.length === current.size ? undefined : mutation;
     });
   }
 
   async clearAllForManualRetry(): Promise<void> {
     const generation = this.generation;
-    await this.enqueueMutation(generation, () => this.conflicts.size === 0 ? undefined : this.createMutation([]));
+    await this.enqueueMutation(generation, (current) => current.size === 0 ? undefined : this.createMutation([]));
   }
 
   filterPayload(payload: SyncPushPayload): SyncPushPayload {
@@ -267,7 +276,7 @@ export class SyncConflictRegistry {
     this.generation += 1;
     this.revision += 1;
     this.conflicts.clear();
-    const clearPersistedConflicts = this.mutationTail.then(() => idbDelete("kv", SYNC_CONFLICTS_KEY));
+    const clearPersistedConflicts = this.mutationTail.then(() => this.withCrossContextLock(() => idbDelete("kv", SYNC_CONFLICTS_KEY)));
     this.mutationTail = clearPersistedConflicts.catch(() => undefined);
   }
 
@@ -310,20 +319,22 @@ export class SyncConflictRegistry {
 
   private enqueueMutation(
     generation: number,
-    createMutation: () => SyncConflictMutation | undefined,
+    createMutation: (current: ReadonlyMap<string, SyncConflict>) => SyncConflictMutation | undefined,
   ): Promise<void> {
-    const operation = this.mutationTail.then(async () => {
+    const operation = this.mutationTail.then(async () => this.withCrossContextLock(async () => {
       await this.ready();
       if (generation !== this.generation) {
         return;
       }
-      const mutation = createMutation();
+      const current = await this.readStoredConflicts();
+      this.replaceEntries([...current.values()]);
+      const mutation = createMutation(current);
       if (!mutation) {
         return;
       }
       await idbBulkWrite([mutation.operation]);
       this.applyMutation(mutation);
-    });
+    }));
     this.mutationTail = operation.catch(() => undefined);
     return operation;
   }
@@ -343,6 +354,52 @@ export class SyncConflictRegistry {
 
   private copyConflicts(): Map<string, SyncConflict> {
     return new Map([...this.conflicts.entries()].map(([key, conflict]) => [key, copyConflict(conflict)]));
+  }
+
+  private async refreshFromStorage(): Promise<void> {
+    this.replaceEntries([...(await this.readStoredConflicts()).values()]);
+  }
+
+  private async readStoredConflicts(): Promise<Map<string, SyncConflict>> {
+    const record = await idbGet<SyncConflictStorageRecord>("kv", SYNC_CONFLICTS_KEY);
+    const conflicts = new Map<string, SyncConflict>();
+    if (!record || record.key !== SYNC_CONFLICTS_KEY || record.value.version !== 1) {
+      return conflicts;
+    }
+    for (const conflict of record.value.entries) {
+      if (isValidStoredConflict(conflict)) {
+        conflicts.set(conflictKey(conflict.entityType, conflict.entityId), copyConflict(conflict));
+      }
+    }
+    return conflicts;
+  }
+
+  private async withCrossContextLock<Result>(operation: () => Promise<Result>): Promise<Result> {
+    if (typeof navigator !== "undefined" && navigator.locks) {
+      return navigator.locks.request(SYNC_CONFLICTS_LOCK_NAME, { mode: "exclusive" }, operation);
+    }
+    if (typeof idb.idbTryAcquireLock === "function" && typeof idb.idbReleaseLock === "function") {
+      return this.withIndexedDbLock(operation);
+    }
+    const next = fallbackCrossContextTail.then(operation, operation);
+    fallbackCrossContextTail = next.then(() => undefined, () => undefined);
+    return next;
+  }
+
+  private async withIndexedDbLock<Result>(operation: () => Promise<Result>): Promise<Result> {
+    const owner = `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    while (!await idb.idbTryAcquireLock(
+      `${SYNC_CONFLICTS_LOCK_NAME}-fallback`,
+      owner,
+      Date.now() + SYNC_CONFLICTS_LOCK_LEASE_MS,
+    )) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 10));
+    }
+    try {
+      return await operation();
+    } finally {
+      await idb.idbReleaseLock(`${SYNC_CONFLICTS_LOCK_NAME}-fallback`, owner);
+    }
   }
 
   private createPutOperation(entries: SyncConflict[]): BulkWriteOp {

@@ -27,6 +27,7 @@ import type { ExtensionMessage } from "@/lib/messages";
 import { analytics } from "@/lib/analytics";
 import { type SyncStatus, initSyncEngine, syncEngine, releaseSyncEngine } from "@/lib/sync-engine";
 import { createSyncEngine } from "@/lib/sync-engine-runtime";
+import { registerSyncLifecycle, unregisterSyncLifecycle } from "@/lib/sync-lifecycle";
 import { api, type SyncPullResponse } from "@/lib/api";
 import {
   canStartSync,
@@ -219,7 +220,13 @@ function StoreGate({ children }: { children: React.ReactNode }) {
       storesHydrated: hydrated,
       workspaceCount,
     })) {
-      void initializeGuestWorkspace();
+      void initializeGuestWorkspace({
+        isSessionCurrent: () => resolveAuthSessionStatus({
+          accessToken: useAuthStore.getState().accessToken,
+          refreshToken: useAuthStore.getState().refreshToken,
+          isVerified: useAuthStore.getState().user?.is_verified ?? null,
+        }) === "guest",
+      });
     }
   }, [hydrated, initializeGuestWorkspace, sessionStatus, workspaceCount]);
 
@@ -326,27 +333,56 @@ function SyncProvider({
         };
       },
       () => localSeqRef.current,
-      async (resp: SyncPullResponse) => {
+      async (resp: SyncPullResponse, isCurrent) => {
+        if (!isCurrent()) {
+          return null;
+        }
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
         await prepareGuestWorkspaceForPull(resp);
+        if (!isCurrent()) {
+          return null;
+        }
         await mergeWorkspacesRef.current(resp);
+        if (!isCurrent()) {
+          return null;
+        }
         await mergeGroupsRef.current(resp);
+        if (!isCurrent()) {
+          return null;
+        }
         await mergeBookmarksRef.current(resp);
+        if (!isCurrent()) {
+          return null;
+        }
         await confirmGuestWorkspaceFromPull(resp);
-
+        if (!isCurrent()) {
+          return null;
+        }
         await setLocalSeqRef.current(resp.server_seq);
         localSeqRef.current = resp.server_seq;
 
         if (needsInitialPush && useWorkspaceStore.getState().workspaces.length === 0) {
-          await useWorkspaceStore.getState().initializeGuestWorkspace();
+          await useWorkspaceStore.getState().initializeGuestWorkspace({
+            isSessionCurrent: () => isCurrent() && useAuthStore.getState().accessToken === accessToken,
+          });
+        }
+        if (!isCurrent()) {
+          return null;
         }
         await sweepAllUnsynced();
-
+        if (!isCurrent()) {
+          return null;
+        }
         const refreshedPlan = await usePlanStore.getState().fetchPlan();
+        if (!isCurrent()) {
+          return null;
+        }
         if (refreshedPlan && await clearCapacityResolvedConflicts(refreshedPlan)) {
           await sweepAllUnsynced();
         }
-
+        if (!isCurrent()) {
+          return null;
+        }
         const persistentErrorKey = await getPersistentSyncErrorKey();
         return persistentErrorKey ? tRef.current(persistentErrorKey) : null;
       },
@@ -405,6 +441,7 @@ function SyncProvider({
     );
 
     initSyncEngine(engine);
+    registerSyncLifecycle(engine);
     engine.start();
 
     return () => {
@@ -414,6 +451,7 @@ function SyncProvider({
       // Instead, destroy this specific engine instance directly.
       void engine.forceSync().catch(() => {});
       engine.destroy();
+      unregisterSyncLifecycle(engine);
       releaseSyncEngine(engine);
     };
   }, [showRecoveryNotice, syncEnabled, serverUrl]);

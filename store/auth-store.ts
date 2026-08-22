@@ -6,6 +6,7 @@ import { useI18nStore, resolveAcceptLanguage } from "@/store/i18n-store";
 import type { ApiUser } from "@/lib/api";
 import { clearDB } from "@/lib/idb";
 import { clearSyncRecoverySnapshot } from "@/lib/sync-recovery";
+import { retireActiveSyncLifecycle } from "@/lib/sync-lifecycle";
 
 let _refreshPromise: Promise<boolean> | null = null;
 let _refreshRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -117,6 +118,7 @@ export const useAuthStore = create<AuthState>()(
             if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
               clearRefreshRetry();
               clearSyncRecoverySnapshot();
+              await retireActiveSyncLifecycle();
               await clearDB();
               if (refreshGeneration !== _authSessionGeneration) {
                 return false;
@@ -231,6 +233,7 @@ export const useAuthStore = create<AuthState>()(
             // best-effort: clear local state regardless
           }
         }
+        await retireActiveSyncLifecycle();
         await clearDB();
         chrome.storage.local.remove("tabslate-search-engines");
         set({ user: null, accessToken: null, refreshToken: null, otpSentAt: null });

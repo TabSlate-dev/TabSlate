@@ -3,6 +3,7 @@ import type { Workspace, Collection, Tag } from "@/lib/types";
 import type { ImportPlan } from "@/lib/import-types";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
+import * as idb from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import { compareActiveCollections } from "@/lib/collection-utils";
 import type { SyncEntity, SyncPullResponse } from "@/lib/api";
@@ -124,7 +125,7 @@ interface WorkspaceState {
   _hydrated: boolean;
   hydrate: () => Promise<void>;
   reset: () => void;
-  initializeGuestWorkspace: () => Promise<void>;
+  initializeGuestWorkspace: (options?: { isSessionCurrent?: () => boolean }) => Promise<void>;
 
   highlightedCollectionIds: string[];
   setHighlightedCollectionIds: (ids: string[], durationMs?: number) => void;
@@ -238,7 +239,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     });
   },
 
-  initializeGuestWorkspace: () => {
+  initializeGuestWorkspace: (options = {}) => {
     if (_guestWorkspaceInitialization) {
       return _guestWorkspaceInitialization;
     }
@@ -246,6 +247,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     let initialization: Promise<void>;
     initialization = Promise.resolve().then(async () => {
       try {
+        if (options.isSessionCurrent && !options.isSessionCurrent()) {
+          return;
+        }
         const state = get();
         if (state.workspaces.length > 0) {
           return;
@@ -256,21 +260,47 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           generateId(),
           state.workspaces.length,
         );
-        await idbBulkWrite([
-          { type: "put", store: "workspaces", value: seed.workspace },
-          { type: "put", store: "collections", value: seed.collection },
-          { type: "put", store: "kv", value: { key: "activeWorkspaceId", value: seed.workspace.id } },
-          { type: "put", store: "kv", value: seed.provenance },
-        ]);
+        const created = await idb.idbCreateGuestWorkspaceIfEmpty(
+          seed.workspace,
+          seed.collection,
+          { key: "activeWorkspaceId", value: seed.workspace.id },
+          seed.provenance,
+        );
+        if (options.isSessionCurrent && !options.isSessionCurrent()) {
+          return;
+        }
+        const current = get();
+        if (current.workspaces.length > 0) {
+          return;
+        }
+        if (!created) {
+          const [workspaces, collections, activeWorkspace] = await Promise.all([
+            idbGetAll<Workspace>("workspaces"),
+            idbGetAll<Collection>("collections"),
+            idbGet<{ key: string; value: string }>("kv", "activeWorkspaceId"),
+          ]);
+          if (options.isSessionCurrent && !options.isSessionCurrent()) {
+            return;
+          }
+          if (get().workspaces.length === 0 && workspaces.length > 0) {
+            set({ workspaces, collections, activeWorkspaceId: activeWorkspace?.value ?? workspaces[0].id });
+          }
+          return;
+        }
         set({
           workspaces: [seed.workspace],
           collections: [seed.collection],
           activeWorkspaceId: seed.workspace.id,
         });
-        syncEngine?.enqueue({
-          workspaces: [toServerWorkspace(seed.workspace)],
-          collections: [toServerCollection(seed.collection)],
-        });
+        if (options.isSessionCurrent && !options.isSessionCurrent()) {
+          return;
+        }
+        if (get().workspaces.some((workspace) => workspace.id === seed.workspace.id)) {
+          syncEngine?.enqueue({
+            workspaces: [toServerWorkspace(seed.workspace)],
+            collections: [toServerCollection(seed.collection)],
+          });
+        }
       } finally {
         if (_guestWorkspaceInitialization === initialization) {
           _guestWorkspaceInitialization = null;
