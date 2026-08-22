@@ -33,6 +33,7 @@ import {
   type AuthSessionStatus,
 } from "@/lib/auth-session";
 import { Loader2 } from "lucide-react";
+import { syncConflictRegistry } from "@/lib/sync-conflicts";
 
 function PageTracker() {
   const location = useLocation();
@@ -171,6 +172,7 @@ function StoreGate({ children }: { children: React.ReactNode }) {
       useGroupsStore.getState().reset();
       useSettingsStore.getState().reset();
       usePlanStore.getState().clear();
+      syncConflictRegistry.reset();
     }
     prevSessionStatusRef.current = sessionStatus;
   }, [sessionStatus]);
@@ -283,9 +285,9 @@ function SyncProvider({
             await useWorkspaceStore.getState().initializeGuestWorkspace();
           }
         } else {
-          useWorkspaceStore.getState().sweepUnsynced();
-          useBookmarksStore.getState().sweepUnsynced();
-          useGroupsStore.getState().sweepUnsynced();
+          await useWorkspaceStore.getState().sweepUnsynced();
+          await useBookmarksStore.getState().sweepUnsynced();
+          await useGroupsStore.getState().sweepUnsynced();
         }
         // A remote pull may change usage without any local create/delete action,
         // so bypass the TTL cache and refresh the authoritative counters.

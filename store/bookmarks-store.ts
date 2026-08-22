@@ -7,6 +7,7 @@ import type { SyncEntity, SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
+import { syncConflictRegistry } from "@/lib/sync-conflicts";
 
 export type { Bookmark };
 
@@ -239,7 +240,7 @@ interface BookmarksState {
   permanentlyDeleteBatch: (bookmarkIds: string[]) => void;
   mergeFromServer: (resp: SyncPullResponse) => Promise<void>;
   enqueueAllToSync: () => void;
-  sweepUnsynced: () => void;
+  sweepUnsynced: () => Promise<void>;
   archiveCollectionBookmarks: (collectionId: string) => void;
   trashCollectionBookmarks: (collectionId: string) => Promise<void>;
   restoreCollectionBookmarks: (collectionId: string) => void;
@@ -1019,39 +1020,47 @@ export const useBookmarksStore = create<BookmarksState>()(
         assertCountsInvariant(get());
       },
 
-      sweepUnsynced: () => {
-        void (async () => {
-          const s = get();
-          // Load unloaded buckets via the canonical loaders so the data lands in
-          // state (with favicon migration and trash expiry applied). After this,
-          // mergeFromServer and route views use state instead of re-reading IDB.
-          await Promise.all([
-            s._archivedLoaded ? Promise.resolve() : get().loadArchivedBookmarks(),
-            s._trashedLoaded  ? Promise.resolve() : get().loadTrashedBookmarks(),
-          ]);
+      sweepUnsynced: async () => {
+        await syncConflictRegistry.ready();
+        const s = get();
+        // Load unloaded buckets via the canonical loaders so the data lands in
+        // state (with favicon migration and trash expiry applied). After this,
+        // mergeFromServer and route views use state instead of re-reading IDB.
+        await Promise.all([
+          s._archivedLoaded ? Promise.resolve() : get().loadArchivedBookmarks(),
+          s._trashedLoaded  ? Promise.resolve() : get().loadTrashedBookmarks(),
+        ]);
 
-          const current = get();
-          const activeBookmarks = Array.from(current.bookmarks.values());
-          const unsynced = [
-            ...activeBookmarks
-              .filter(b => b.seq === 0)
-              .map(b => toServerBookmark(b)),
-            ...current.archivedBookmarks
-              .filter(b => b.seq === 0)
-              .map(b => toServerBookmark(b, { isArchived: true })),
-            ...current.trashedBookmarks
-              .filter(b => b.seq === 0)
-              .map((bookmark) => {
-                const trashedBookmark = bookmark as TrashedBookmarkRecord;
-                return toServerBookmark(bookmark, {
-                  isTrashed: trashedBookmark.isTrashed === 2 ? 2 : 1,
-                });
-              }),
-          ];
-          if (unsynced.length > 0) {
-            syncEngine?.enqueue({ bookmarks: unsynced });
-          }
-        })();
+        const current = get();
+        const activeBookmarks = Array.from(current.bookmarks.values());
+        const unsynced = [
+          ...activeBookmarks
+            .filter(b => b.seq === 0)
+            .map(b => toServerBookmark(b)),
+          ...current.archivedBookmarks
+            .filter(b => b.seq === 0)
+            .map(b => toServerBookmark(b, { isArchived: true })),
+          ...current.trashedBookmarks
+            .filter(b => b.seq === 0)
+            .map((bookmark) => {
+              const trashedBookmark = bookmark as TrashedBookmarkRecord;
+              return toServerBookmark(bookmark, {
+                isTrashed: trashedBookmark.isTrashed === 2 ? 2 : 1,
+              });
+            }),
+        ];
+        const payload = syncConflictRegistry.filterPayload({
+          entities: {
+            workspaces: [],
+            collections: [],
+            bookmarks: unsynced,
+            tags: [],
+            groups: [],
+          },
+        });
+        if (payload.entities.bookmarks.length > 0) {
+          syncEngine?.enqueue(payload.entities, "respect");
+        }
       },
 
       archiveCollectionBookmarks: (collectionId) => {

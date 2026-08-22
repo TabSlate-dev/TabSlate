@@ -11,6 +11,7 @@ import { useGroupsStore } from "@/store/groups-store";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { analytics } from "@/lib/analytics";
 import { createGuestWorkspaceSeed } from "@/lib/guest-workspace";
+import { syncConflictRegistry } from "@/lib/sync-conflicts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -135,7 +136,7 @@ interface WorkspaceState {
   setLocalSeq: (seq: number) => void;
   mergeFromServer: (resp: SyncPullResponse) => void;
   enqueueAllToSync: () => void;
-  sweepUnsynced: () => void;
+  sweepUnsynced: () => Promise<void>;
 
   // Workspace CRUD
   createWorkspace: (name: string, color: string) => Workspace;
@@ -782,17 +783,27 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     return true;
   },
 
-  sweepUnsynced: () => {
+  sweepUnsynced: async () => {
+    await syncConflictRegistry.ready();
     const { workspaces, collections, tags } = get();
     const ws = workspaces.filter(w => w.seq === 0);
     const cols = collections.filter(c => c.seq === 0);
     const ts = tags.filter(t => t.seq === 0);
-    if (ws.length > 0 || cols.length > 0 || ts.length > 0) {
-      syncEngine?.enqueue({
+    const payload = syncConflictRegistry.filterPayload({
+      entities: {
         workspaces: ws.map(toServerWorkspace),
         collections: cols.map(c => toServerCollection(c)),
         tags: ts.map(toServerTag),
-      });
+        bookmarks: [],
+        groups: [],
+      },
+    });
+    if (
+      payload.entities.workspaces.length > 0 ||
+      payload.entities.collections.length > 0 ||
+      payload.entities.tags.length > 0
+    ) {
+      syncEngine?.enqueue(payload.entities, "respect");
     }
   },
 

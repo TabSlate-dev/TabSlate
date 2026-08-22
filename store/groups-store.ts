@@ -8,6 +8,7 @@ import type { SyncEntity, SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
+import { syncConflictRegistry } from "@/lib/sync-conflicts";
 
 export interface GroupTab {
   id: string;
@@ -87,7 +88,7 @@ interface GroupsState {
 
   // Sync
   mergeFromServer: (resp: SyncPullResponse) => void;
-  sweepUnsynced: () => void;
+  sweepUnsynced: () => Promise<void>;
   enqueueAllToSync: () => void;
 }
 
@@ -457,14 +458,24 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     }
   },
 
-  sweepUnsynced: () => {
+  sweepUnsynced: async () => {
+    await syncConflictRegistry.ready();
     const { groups, groupTabs } = get();
     const unsynced = groups.filter(g => g.seq === 0);
     if (unsynced.length === 0) { return; }
     const tabsByGroup = buildTabsByGroup(groupTabs);
-    syncEngine?.enqueue({
-      groups: unsynced.map(g => toServerGroup(g, tabsByGroup.get(g.id) ?? [])),
+    const payload = syncConflictRegistry.filterPayload({
+      entities: {
+        workspaces: [],
+        collections: [],
+        bookmarks: [],
+        tags: [],
+        groups: unsynced.map(g => toServerGroup(g, tabsByGroup.get(g.id) ?? [])),
+      },
     });
+    if (payload.entities.groups.length > 0) {
+      syncEngine?.enqueue(payload.entities, "respect");
+    }
   },
 
   enqueueAllToSync: () => {

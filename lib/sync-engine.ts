@@ -6,6 +6,7 @@ import { SSEClient } from "@/lib/sse-client";
 import { useAuthStore } from "@/store/auth-store";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
+export type SyncConflictPolicy = "clear" | "respect";
 
 type Credentials = { baseUrl: string; accessToken: string };
 type GetCredentials = () => Credentials | null;
@@ -87,7 +88,8 @@ export class SyncEngine {
     this.ensurePeriodicPull();
   }
 
-  enqueue(entities: Partial<SyncPushEntities>) {
+  enqueue(entities: Partial<SyncPushEntities>, conflictPolicy: SyncConflictPolicy = "clear") {
+    void conflictPolicy;
     this.setStatus("syncing");
     this.queue.enqueue(entities);
   }
