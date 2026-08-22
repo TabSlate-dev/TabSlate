@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 const syncPullCalls = [];
 let syncPullImpl;
@@ -27,55 +27,41 @@ function emptyPayload() {
   };
 }
 
-mock.module("@/lib/api", () => ({
-  api: {
+class OrderingTestQueue {
+  constructor(_getCredentials, onSuccess, onFailure) {
+    queueSuccessHandler = onSuccess;
+    queueFailureHandler = onFailure;
+  }
+
+  enqueue() {}
+  async flush() {}
+  isEmpty() { return true; }
+  destroy() {}
+}
+
+class OrderingTestSSEClient {
+  failureCount = 0;
+
+  constructor(_getCredentials, onSequence) {
+    sseSequenceHandler = onSequence;
+  }
+
+  start() {}
+  destroy() {}
+}
+
+function orderingDependencies() {
+  return {
+    createQueue: (getCredentials, onSuccess, onFailure) =>
+      new OrderingTestQueue(getCredentials, onSuccess, onFailure),
+    createSseClient: (getCredentials, onSequence, onStatusChange) =>
+      new OrderingTestSSEClient(getCredentials, onSequence, onStatusChange),
     syncPull: (...args) => {
       syncPullCalls.push(args);
       return syncPullImpl(...args);
     },
-  },
-  ApiError: class MockApiError extends Error {
-    constructor(message, status) {
-      super(message);
-      this.status = status;
-    }
-  },
-}));
-
-mock.module("@/lib/analytics", () => ({
-  analytics: { track() {} },
-}));
-
-mock.module("@/store/auth-store", () => ({
-  useAuthStore: { getState: () => ({ silentRefresh: async () => true, refreshToken: "refresh" }) },
-}));
-
-mock.module("@/lib/sync-queue", () => ({
-  SyncQueue: class MockSyncQueue {
-    constructor(_getCredentials, onSuccess, onFailure) {
-      queueSuccessHandler = onSuccess;
-      queueFailureHandler = onFailure;
-    }
-
-    enqueue() {}
-    async flush() {}
-    isEmpty() { return true; }
-    destroy() {}
-  },
-}));
-
-mock.module("@/lib/sse-client", () => ({
-  SSEClient: class MockSSEClient {
-    failureCount = 0;
-
-    constructor(_getCredentials, onSequence) {
-      sseSequenceHandler = onSequence;
-    }
-
-    start() {}
-    destroy() {}
-  },
-}));
+  };
+}
 
 const { SyncEngine } = await import(`../lib/sync-engine.ts?ordering=${Date.now()}-${Math.random()}`);
 
@@ -119,6 +105,7 @@ describe("SyncEngine ordering", () => {
       },
       () => {},
       async () => false,
+      orderingDependencies(),
     );
 
     if (!queueSuccessHandler) {
@@ -165,6 +152,7 @@ describe("SyncEngine ordering", () => {
       async () => null,
       () => {},
       async () => false,
+      orderingDependencies(),
     );
 
     engine.start();
@@ -198,6 +186,7 @@ describe("SyncEngine ordering", () => {
       async () => null,
       (status, errorMessage) => statuses.push({ status, errorMessage }),
       async () => false,
+      orderingDependencies(),
     );
 
     engine.start();
@@ -211,6 +200,42 @@ describe("SyncEngine ordering", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(engine.currentStatus).toBe("idle");
     expect(statuses.at(-1)).toEqual({ status: "idle", errorMessage: undefined });
+    engine.destroy();
+  });
+
+  test("treats a failed 5xx legacy diagnosis as retryable queue failure", async () => {
+    const statuses = [];
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => null,
+      async () => null,
+      (status, errorMessage) => statuses.push({ status, errorMessage }),
+      async () => {
+        throw new Error("diagnosis failed access_token=secret-token");
+      },
+      orderingDependencies(),
+    );
+
+    if (!queueFailureHandler) {
+      throw new Error("queue failure handler was not registered");
+    }
+
+    const handled = await queueFailureHandler({
+      error: new Error("push failed"),
+      payload: emptyPayload(),
+      confirmedPayload: emptyPayload(),
+      retryable: true,
+      status: 500,
+    });
+
+    expect(handled).toBe(false);
+    expect(engine.currentStatus).toBe("error");
+    expect(engine.currentErrorMessage).toBe("diagnosis failed access_token=[redacted]");
+    expect(statuses.at(-1)).toEqual({
+      status: "error",
+      errorMessage: "diagnosis failed access_token=[redacted]",
+    });
     engine.destroy();
   });
 });

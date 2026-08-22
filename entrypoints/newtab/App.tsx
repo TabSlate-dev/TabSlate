@@ -23,7 +23,8 @@ import { usePlanStore, type QuotaResource } from "@/store/plan-store";
 import { QuotaAlert } from "@/components/ui/quota-alert";
 import type { ExtensionMessage } from "@/lib/messages";
 import { analytics } from "@/lib/analytics";
-import { SyncEngine, type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine, releaseSyncEngine } from "@/lib/sync-engine";
+import { type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine, releaseSyncEngine } from "@/lib/sync-engine";
+import { createSyncEngine } from "@/lib/sync-engine-runtime";
 import type { SyncPullResponse } from "@/lib/api";
 import {
   canStartSync,
@@ -259,7 +260,7 @@ function SyncProvider({
     // Pull user preferences from server on login
     useSettingsStore.getState().pullFromServer(serverUrl, accessToken);
 
-    const engine = new SyncEngine(
+    const engine = createSyncEngine(
       () => {
         const currentAuth = useAuthStore.getState();
         if (!currentAuth.accessToken || !currentAuth.serverUrl) {

@@ -1,9 +1,7 @@
 import { api, ApiError, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
 import type { SyncPushEntities } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
-import { SyncQueue, type SyncConflictPolicy, type SyncPushFailure } from "@/lib/sync-queue";
-import { SSEClient } from "@/lib/sse-client";
-import { useAuthStore } from "@/store/auth-store";
+import type { SyncConflictPolicy, SyncPushFailure } from "@/lib/sync-queue";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
 export type { SyncConflictPolicy } from "@/lib/sync-queue";
@@ -18,6 +16,35 @@ export type OnPushSuccess = (
 ) => Promise<string | null>;
 export type OnLegacyPushFailure = (failure: SyncPushFailure) => Promise<boolean>;
 type OnStatusChange = (status: SyncStatus, errorMessage?: string) => void;
+
+interface SyncQueueDriver {
+  enqueue(entities: Partial<SyncPushEntities>, conflictPolicy?: SyncConflictPolicy): void;
+  flush(): Promise<void>;
+  isEmpty(): boolean;
+  destroy(): void;
+}
+
+interface SSEClientDriver {
+  readonly failureCount: number;
+  start(): void | Promise<void>;
+  destroy(): void;
+}
+
+export interface SyncEngineDependencies {
+  createQueue?: (
+    getCredentials: GetCredentials,
+    onSuccess: (response: SyncPushResponse, confirmedPayload: SyncPushPayload) => Promise<void>,
+    onFailure: (failure: SyncPushFailure) => Promise<boolean>,
+  ) => SyncQueueDriver;
+  createSseClient?: (
+    getCredentials: GetCredentials,
+    onSequence: (serverSeq: number) => void,
+    onStatusChange: (connected: boolean) => void,
+  ) => SSEClientDriver;
+  syncPull?: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
+  refreshAuthentication?: () => Promise<boolean>;
+  hasRefreshToken?: () => boolean;
+}
 
 const PERIODIC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const SSE_FAILURE_THRESHOLD = 3;
@@ -34,8 +61,11 @@ function sanitizeSyncErrorMessage(errorMessage?: string): string {
  * and periodic pull fallback. Instantiated once in App.tsx after auth hydration.
  */
 export class SyncEngine {
-  private queue: SyncQueue;
-  private sseClient: SSEClient;
+  private queue: SyncQueueDriver;
+  private sseClient: SSEClientDriver;
+  private readonly syncPull: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
+  private readonly refreshAuthentication: () => Promise<boolean>;
+  private readonly hasRefreshToken: () => boolean;
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private status: SyncStatus = "idle";
   private lastErrorMessage: string | null = null;
@@ -53,59 +83,73 @@ export class SyncEngine {
     private readonly onPushSuccess: OnPushSuccess,
     private readonly onStatusChange: OnStatusChange,
     private readonly onLegacyPushFailure: OnLegacyPushFailure,
+    dependencies: SyncEngineDependencies,
   ) {
-    this.queue = new SyncQueue(
-      getCredentials,
-      async (resp, confirmedPayload) => {
-        const conflictMessage = await this.serializeResolution(
-          () => this.onPushSuccess(resp, confirmedPayload),
-        );
-        if (this.destroyed) {
-          return;
-        }
-        if (resp.rejected.length > 0) {
-          this.applyPersistentConflict(conflictMessage);
-          await this.requestPull();
-          return;
-        }
+    this.syncPull = dependencies.syncPull ?? ((baseUrl, accessToken, localSeq) =>
+      api.syncPull(baseUrl, accessToken, localSeq));
+    this.refreshAuthentication = dependencies.refreshAuthentication ?? (async () => false);
+    this.hasRefreshToken = dependencies.hasRefreshToken ?? (() => false);
+
+    const handleQueueSuccess = async (resp: SyncPushResponse, confirmedPayload: SyncPushPayload) => {
+      const conflictMessage = await this.serializeResolution(
+        () => this.onPushSuccess(resp, confirmedPayload),
+      );
+      if (this.destroyed) {
+        return;
+      }
+      if (resp.rejected.length > 0) {
         this.applyPersistentConflict(conflictMessage);
-      },
-      async (failure) => {
-        if (failure.retryable && failure.status >= 500) {
+        await this.requestPull();
+        return;
+      }
+      this.applyPersistentConflict(conflictMessage);
+    };
+    const handleQueueFailure = async (failure: SyncPushFailure) => {
+      if (failure.retryable && failure.status >= 500 && failure.status < 600) {
+        try {
           const handled = await this.serializeResolution(() => this.onLegacyPushFailure(failure));
           if (handled) {
             this.setQueueStatus();
             return true;
           }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Sync recovery failed";
+          this.setStatus("error", sanitizeSyncErrorMessage(message));
+          return false;
         }
-        this.setStatus("error", sanitizeSyncErrorMessage(failure.error.message));
-        return false;
-      },
-    );
+      }
+      this.setStatus("error", sanitizeSyncErrorMessage(failure.error.message));
+      return false;
+    };
+    if (!dependencies.createQueue) {
+      throw new Error("SyncEngine requires a queue factory");
+    }
+    this.queue = dependencies.createQueue(getCredentials, handleQueueSuccess, handleQueueFailure);
 
-    this.sseClient = new SSEClient(
-      getCredentials,
-      (serverSeq) => {
-        if (serverSeq > this.getLocalSeq()) {
+    const handleSequence = (serverSeq: number) => {
+      if (serverSeq > this.getLocalSeq()) {
+        void this.requestPull();
+      }
+    };
+    const handleSseStatus = (connected: boolean) => {
+      if (!connected) {
+        if (this.sseClient.failureCount >= SSE_FAILURE_THRESHOLD) {
+          this.setStatus("offline");
+          this.ensurePeriodicPull();
+        } else {
+          // Before the threshold: probe connectivity immediately via pull().
+          // If the backend is truly down, pull() will detect TypeError → "offline".
           void this.requestPull();
         }
-      },
-      (connected) => {
-        if (!connected) {
-          if (this.sseClient.failureCount >= SSE_FAILURE_THRESHOLD) {
-            this.setStatus("offline");
-            this.ensurePeriodicPull();
-          } else {
-            // Before the threshold: probe connectivity immediately via pull().
-            // If the backend is truly down, pull() will detect TypeError → "offline".
-            void this.requestPull();
-          }
-        } else {
-          this.cancelPeriodicPull();
-          if (this.status === "offline") this.setQueueStatus();
-        }
-      },
-    );
+      } else {
+        this.cancelPeriodicPull();
+        if (this.status === "offline") this.setQueueStatus();
+      }
+    };
+    if (!dependencies.createSseClient) {
+      throw new Error("SyncEngine requires an SSE client factory");
+    }
+    this.sseClient = dependencies.createSseClient(getCredentials, handleSequence, handleSseStatus);
   }
 
   start() {
@@ -145,7 +189,7 @@ export class SyncEngine {
         throw err;
       }
 
-      const refreshed = await useAuthStore.getState().silentRefresh();
+      const refreshed = await this.refreshAuthentication();
       const refreshedCreds = this.getCredentials();
       if (!refreshed || !refreshedCreds) {
         throw err;
@@ -236,10 +280,10 @@ export class SyncEngine {
     const creds = this.getCredentials();
     if (!creds) return null;
     const localSeq = this.getLocalSeq();
-    const resp = await api.syncPull(creds.baseUrl, creds.accessToken, localSeq);
+    const resp = await this.syncPull(creds.baseUrl, creds.accessToken, localSeq);
     // Seq divergence (e.g. after account recovery) — full re-sync from 0.
     if (resp.server_seq < localSeq) {
-      return api.syncPull(creds.baseUrl, creds.accessToken, 0);
+      return this.syncPull(creds.baseUrl, creds.accessToken, 0);
     }
     return resp;
   }
@@ -253,11 +297,11 @@ export class SyncEngine {
         throw err;
       }
 
-      const refreshed = await useAuthStore.getState().silentRefresh();
+      const refreshed = await this.refreshAuthentication();
       if (!refreshed) {
         // silentRefresh clears the refresh token only after a definitive 401/403.
         // Preserve an error for transient refresh failures so they are not mistaken for logout.
-        if (!useAuthStore.getState().refreshToken) {
+        if (!this.hasRefreshToken()) {
           return null;
         }
         throw err;

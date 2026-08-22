@@ -32,17 +32,6 @@ mock.module("@/lib/api", () => ({
   ApiError: MockApiError,
 }));
 
-mock.module("@/store/auth-store", () => ({
-  useAuthStore: {
-    getState: () => ({
-      silentRefresh: async () => {
-        silentRefreshCalls.push("called");
-        return silentRefreshImpl();
-      },
-    }),
-  },
-}));
-
 mock.module("@/lib/analytics", () => ({
   analytics: {
     track: (name, properties) => {
@@ -51,27 +40,40 @@ mock.module("@/lib/analytics", () => ({
   },
 }));
 
-mock.module("@/lib/sync-queue", () => ({
-  SyncQueue: class MockSyncQueue {
-    constructor(_getCredentials, _onSuccess, onError) {
-      queueErrorHandler = onError;
-    }
+class AnalyticsTestQueue {
+  constructor(_getCredentials, _onSuccess, onFailure) {
+    queueErrorHandler = onFailure;
+  }
 
-    enqueue() {}
-    async flush() {}
-    isEmpty() { return true; }
-    destroy() {}
-  },
-}));
+  enqueue() {}
+  async flush() {}
+  isEmpty() { return true; }
+  destroy() {}
+}
 
-mock.module("@/lib/sse-client", () => ({
-  SSEClient: class MockSSEClient {
-    failureCount = 0;
+class AnalyticsTestSSEClient {
+  failureCount = 0;
 
-    start() {}
-    destroy() {}
-  },
-}));
+  start() {}
+  destroy() {}
+}
+
+function analyticsDependencies() {
+  return {
+    createQueue: (getCredentials, onSuccess, onFailure) =>
+      new AnalyticsTestQueue(getCredentials, onSuccess, onFailure),
+    createSseClient: () => new AnalyticsTestSSEClient(),
+    syncPull: (...args) => {
+      syncPullCalls.push(args);
+      return syncPullImpl(...args);
+    },
+    refreshAuthentication: async () => {
+      silentRefreshCalls.push("called");
+      return silentRefreshImpl();
+    },
+    hasRefreshToken: () => true,
+  };
+}
 
 const { SyncEngine } = await import(`../lib/sync-engine.ts?test=${Date.now()}-${Math.random()}`);
 
@@ -100,6 +102,7 @@ describe("SyncEngine analytics", () => {
         statusCalls.push({ status, errorMessage });
       },
       async () => false,
+      analyticsDependencies(),
     );
 
     await engine.forceSync();
@@ -140,6 +143,7 @@ describe("SyncEngine analytics", () => {
         statusCalls.push({ status, errorMessage });
       },
       async () => false,
+      analyticsDependencies(),
     );
 
     const result = await engine.forceSync();
@@ -185,6 +189,7 @@ describe("SyncEngine analytics", () => {
         statusCalls.push({ status, errorMessage });
       },
       async () => false,
+      analyticsDependencies(),
     );
 
     engine.start();
@@ -221,6 +226,7 @@ describe("SyncEngine analytics", () => {
       async () => null,
       () => {},
       async () => false,
+      analyticsDependencies(),
     );
 
     await engine.forcePush({ bookmarks: [{ id: "bookmark-1" }] });
@@ -249,6 +255,7 @@ describe("SyncEngine analytics", () => {
         statusCalls.push({ status, errorMessage });
       },
       async () => false,
+      analyticsDependencies(),
     );
 
     await engine.forceSync();
@@ -267,6 +274,7 @@ describe("SyncEngine analytics", () => {
       async () => null,
       () => {},
       async () => false,
+      analyticsDependencies(),
     );
 
     if (!queueErrorHandler) {
@@ -300,6 +308,7 @@ describe("SyncEngine analytics", () => {
         legacyFailures.push(failure.status);
         return true;
       },
+      analyticsDependencies(),
     );
 
     if (!queueErrorHandler) {
@@ -318,6 +327,7 @@ describe("SyncEngine analytics", () => {
 
     expect(await queueErrorHandler({ ...failure, retryable: false })).toBe(false);
     expect(await queueErrorHandler({ ...failure, status: 429 })).toBe(false);
+    expect(await queueErrorHandler({ ...failure, status: 600 })).toBe(false);
     expect(legacyFailures).toEqual([503]);
     expect(statuses.at(-1)).toBe("error");
     engine.destroy();
