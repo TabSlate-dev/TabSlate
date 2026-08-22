@@ -8,6 +8,7 @@ import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
+import type { GuestBookmarkUpdates } from "@/lib/guest-workspace";
 
 export type { Bookmark };
 
@@ -239,6 +240,7 @@ interface BookmarksState {
   permanentlyDelete: (bookmarkId: string) => void;
   permanentlyDeleteBatch: (bookmarkIds: string[]) => void;
   mergeFromServer: (resp: SyncPullResponse) => Promise<void>;
+  applyGuestBookmarkChanges: (changes: GuestBookmarkUpdates) => void;
   enqueueAllToSync: () => void;
   sweepUnsynced: () => Promise<void>;
   archiveCollectionBookmarks: (collectionId: string) => void;
@@ -1017,6 +1019,33 @@ export const useBookmarksStore = create<BookmarksState>()(
         });
         const recomputedCounts = recomputeCounts(get().bookmarks);
         set({ countsByCollection: recomputedCounts });
+        assertCountsInvariant(get());
+      },
+
+      applyGuestBookmarkChanges: (changes) => {
+        set((state) => {
+          const nextBookmarks = new Map(state.bookmarks);
+          for (const bookmark of changes.active) {
+            nextBookmarks.set(bookmark.id, bookmark);
+          }
+          const mergeBucket = (existing: Bookmark[], updates: Bookmark[]): Bookmark[] => {
+            const byId = new Map(existing.map((bookmark) => [bookmark.id, bookmark]));
+            for (const bookmark of updates) {
+              byId.set(bookmark.id, bookmark);
+            }
+            return [...byId.values()];
+          };
+          return {
+            bookmarks: nextBookmarks,
+            countsByCollection: recomputeCounts(nextBookmarks),
+            archivedBookmarks: state._archivedLoaded
+              ? mergeBucket(state.archivedBookmarks, changes.archived)
+              : state.archivedBookmarks,
+            trashedBookmarks: state._trashedLoaded
+              ? mergeBucket(state.trashedBookmarks, changes.trashed)
+              : state.trashedBookmarks,
+          };
+        });
         assertCountsInvariant(get());
       },
 

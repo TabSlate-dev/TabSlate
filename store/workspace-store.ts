@@ -10,7 +10,7 @@ import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { analytics } from "@/lib/analytics";
-import { createGuestWorkspaceSeed } from "@/lib/guest-workspace";
+import { createGuestWorkspaceSeed, type GuestWorkspaceChanges } from "@/lib/guest-workspace";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
 
 // ---------------------------------------------------------------------------
@@ -133,8 +133,9 @@ interface WorkspaceState {
   setCompactGroupTitles: (val: boolean) => void;
 
   // Sync actions
-  setLocalSeq: (seq: number) => void;
-  mergeFromServer: (resp: SyncPullResponse) => void;
+  setLocalSeq: (seq: number) => Promise<void>;
+  mergeFromServer: (resp: SyncPullResponse) => Promise<void>;
+  applyGuestWorkspaceChanges: (changes: GuestWorkspaceChanges) => void;
   enqueueAllToSync: () => void;
   sweepUnsynced: () => Promise<void>;
 
@@ -302,9 +303,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Sync ──────────────────────────────────────────────────────────────
-  setLocalSeq: (seq) => {
+  setLocalSeq: async (seq) => {
+    await idbPut("kv", { key: "localSeq", value: seq });
     set({ localSeq: seq });
-    idbPut("kv", { key: "localSeq", value: seq });
   },
 
   enqueueAllToSync: () => {
@@ -316,14 +317,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     });
   },
 
-  mergeFromServer: (resp) => {
+  mergeFromServer: async (resp) => {
     const { workspaces: sw, collections: sc, tags: st } = resp.entities;
     if (sw.length === 0 && sc.length === 0 && st.length === 0) {
       const s = get();
       if (!s.activeWorkspaceId && s.workspaces.length > 0) {
         const first = [...s.workspaces].sort((a, b) => a.position - b.position)[0];
         set({ activeWorkspaceId: first.id });
-        idbPut("kv", { key: "activeWorkspaceId", value: first.id });
+        await idbPut("kv", { key: "activeWorkspaceId", value: first.id });
       }
       return;
     }
@@ -495,7 +496,28 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         }
       }
     }
-    void idbBulkWrite(idbOps);
+    await idbBulkWrite(idbOps);
+  },
+
+  applyGuestWorkspaceChanges: (changes) => {
+    const workspaceDeletes = new Set(changes.workspaceDeletes);
+    const collectionDeletes = new Set(changes.collectionDeletes);
+    set((state) => {
+      const collectionPuts = new Map(changes.collectionPuts.map((collection) => [collection.id, collection]));
+      const collections = state.collections
+        .filter((collection) => !collectionDeletes.has(collection.id))
+        .map((collection) => collectionPuts.get(collection.id) ?? collection);
+      for (const collection of changes.collectionPuts) {
+        if (!collections.some((current) => current.id === collection.id)) {
+          collections.push(collection);
+        }
+      }
+      return {
+        workspaces: state.workspaces.filter((workspace) => !workspaceDeletes.has(workspace.id)),
+        collections,
+        ...(changes.activeWorkspaceId === undefined ? {} : { activeWorkspaceId: changes.activeWorkspaceId }),
+      };
+    });
   },
 
   // ── Workspaces ────────────────────────────────────────────────────────

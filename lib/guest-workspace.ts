@@ -53,6 +53,13 @@ export interface GuestBookmarkUpdates {
   trashed: Bookmark[];
 }
 
+export interface GuestWorkspaceChanges {
+  workspaceDeletes: string[];
+  collectionPuts: Collection[];
+  collectionDeletes: string[];
+  activeWorkspaceId?: string;
+}
+
 export interface GuestWorkspaceDiscardPlan {
   kind: "discard";
   workspaceDeletes: string[];

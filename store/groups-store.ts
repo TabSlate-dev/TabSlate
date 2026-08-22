@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { openAsTabGroup } from "@/lib/chrome/tab-groups";
 import { generateId } from "@/lib/id";
-import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
+import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncEntity, SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
@@ -87,7 +87,8 @@ interface GroupsState {
   openGroup: (groupId: string) => Promise<void>;
 
   // Sync
-  mergeFromServer: (resp: SyncPullResponse) => void;
+  mergeFromServer: (resp: SyncPullResponse) => Promise<void>;
+  applyGuestGroupChanges: (groups: SavedGroup[]) => void;
   sweepUnsynced: () => Promise<void>;
   enqueueAllToSync: () => void;
 }
@@ -316,7 +317,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     }
   },
 
-  mergeFromServer: (resp) => {
+  mergeFromServer: async (resp) => {
     const serverGroups = resp.entities.groups;
     if (!serverGroups?.length) { return; }
 
@@ -426,36 +427,48 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       return { groups, groupTabs };
     });
 
-    // Purge null-workspace groups from IDB (fire-and-forget).
-    for (const id of nullWorkspaceIds) {
-      idbDelete("groups", id);
-    }
+    const idbOps: BulkWriteOp[] = [
+      ...[...nullWorkspaceIds].map((id) => ({ type: "delete" as const, store: "groups" as const, key: id })),
+      ...[...permDeletedGroupIds].map((id) => ({ type: "delete" as const, store: "groups" as const, key: id })),
+      ...permDeletedTabIds.map((id) => ({ type: "delete" as const, store: "group-tabs" as const, key: id })),
+    ];
 
-    // Purge permanently-deleted groups and their tabs from IDB (fire-and-forget).
-    for (const id of permDeletedGroupIds) {
-      idbDelete("groups", id);
-    }
-    for (const tabId of permDeletedTabIds) {
-      idbDelete("group-tabs", tabId);
-    }
-
-    // Persist valid groups to IDB (fire-and-forget).
+    // Persist valid groups and their current tab snapshots atomically.
     const state = get();
     for (const sg of serverGroups) {
       if (nullWorkspaceIds.has(sg.id)) { continue; }
       if (permDeletedGroupIds.has(sg.id)) { continue; }
       const group = state.groups.find(g => g.id === sg.id);
-      if (group) { idbPut("groups", group); }
+      if (group) { idbOps.push({ type: "put", store: "groups", value: group }); }
       if (sg.deleted_at) {
         // Local tabs are preserved (see state logic above); only sync IDB if
         // server actually returned tabs for this deleted group.
-        for (const t of sg.tabs) { idbPut("group-tabs", { id: t.id, groupId: t.group_id, title: t.title, url: t.url, favicon: t.favicon, position: t.position }); }
+        for (const t of sg.tabs) {
+          idbOps.push({ type: "put", store: "group-tabs", value: {
+            id: t.id, groupId: t.group_id, title: t.title, url: t.url, favicon: t.favicon, position: t.position,
+          } });
+        }
       } else {
         for (const t of state.groupTabs.filter(t => t.groupId === sg.id)) {
-          idbPut("group-tabs", t);
+          idbOps.push({ type: "put", store: "group-tabs", value: t });
         }
       }
     }
+    await idbBulkWrite(idbOps);
+  },
+
+  applyGuestGroupChanges: (updatedGroups) => {
+    if (updatedGroups.length === 0) { return; }
+    const updates = new Map(updatedGroups.map((group) => [group.id, group]));
+    set((state) => {
+      const groups = state.groups.map((group) => updates.get(group.id) ?? group);
+      for (const group of updatedGroups) {
+        if (!state.groups.some((current) => current.id === group.id)) {
+          groups.push(group);
+        }
+      }
+      return { groups };
+    });
   },
 
   sweepUnsynced: async () => {
