@@ -11,7 +11,7 @@ export type SyncConflictPolicy = "clear" | "respect";
 type Credentials = { baseUrl: string; accessToken: string };
 type GetCredentials = () => Credentials | null;
 type GetLocalSeq = () => number;
-type OnPullSuccess = (resp: SyncPullResponse) => void;
+type OnPullSuccess = (resp: SyncPullResponse) => Promise<string | null | void> | string | null | void;
 type OnPushSuccess = (resp: SyncPushResponse) => void;
 type OnStatusChange = (status: SyncStatus, errorMessage?: string) => void;
 
@@ -139,6 +139,7 @@ export class SyncEngine {
     try {
       const resp = await this.pullWithAuthenticationRecovery();
       if (resp) {
+        await this.onPullSuccess(resp);
         pulled =
           resp.entities.workspaces.length +
           resp.entities.collections.length +
@@ -171,7 +172,7 @@ export class SyncEngine {
     this.setStatus("syncing");
     try {
       const resp = await this.pullWithAuthenticationRecovery();
-      if (resp) this.onPullSuccess(resp);
+      if (resp) await this.onPullSuccess(resp);
       this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
     } catch (err) {
       // TypeError = network failure (connection refused / offline) — mirror forceSync() logic.

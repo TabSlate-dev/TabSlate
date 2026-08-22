@@ -64,7 +64,8 @@ export interface GuestWorkspaceDiscardPlan {
   kind: "discard";
   workspaceDeletes: string[];
   collectionDeletes: string[];
-  activeWorkspaceId: "";
+  /** Empty during a normal pre-pull discard; a confirmed target during legacy recovery. */
+  activeWorkspaceId: string;
 }
 
 export interface GuestWorkspaceMigrationPlan {

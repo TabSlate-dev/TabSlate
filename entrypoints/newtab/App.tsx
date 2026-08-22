@@ -34,6 +34,7 @@ import {
 } from "@/lib/auth-session";
 import { Loader2 } from "lucide-react";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
+import { persistPulledSyncResponse } from "@/lib/sync-pull-persistence";
 
 function PageTracker() {
   const location = useLocation();
@@ -242,6 +243,7 @@ function SyncProvider({
   useEffect(() => { mergeWorkspacesRef.current = mergeWorkspaces; }, [mergeWorkspaces]);
   useEffect(() => { mergeBookmarksRef.current = mergeBookmarks; }, [mergeBookmarks]);
   useEffect(() => { mergeGroupsRef.current = mergeGroups; }, [mergeGroups]);
+  useEffect(() => { setLocalSeqRef.current = setLocalSeq; }, [setLocalSeq]);
 
   useEffect(() => {
     if (syncEnabled) {
@@ -271,24 +273,23 @@ function SyncProvider({
       () => localSeqRef.current,
       async (resp: SyncPullResponse) => {
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
-        mergeWorkspacesRef.current(resp);
-        mergeGroupsRef.current(resp);
-        await mergeBookmarksRef.current(resp);
-        localSeqRef.current = resp.server_seq;
-        setLocalSeqRef.current(resp.server_seq);
-        if (needsInitialPush) {
-          useWorkspaceStore.getState().enqueueAllToSync();
-          useBookmarksStore.getState().enqueueAllToSync();
-          useGroupsStore.getState().enqueueAllToSync();
-          // New account: server is empty and local store is also empty → seed default workspace.
-          if (useWorkspaceStore.getState().workspaces.length === 0) {
-            await useWorkspaceStore.getState().initializeGuestWorkspace();
-          }
-        } else {
-          await useWorkspaceStore.getState().sweepUnsynced();
-          await useBookmarksStore.getState().sweepUnsynced();
-          await useGroupsStore.getState().sweepUnsynced();
-        }
+        await persistPulledSyncResponse(resp, {
+          mergeWorkspaces: mergeWorkspacesRef.current,
+          mergeGroups: mergeGroupsRef.current,
+          mergeBookmarks: mergeBookmarksRef.current,
+          setLocalSeq: setLocalSeqRef.current,
+          setLocalSeqRef: (sequence) => { localSeqRef.current = sequence; },
+          beforeSweep: async () => {
+            if (needsInitialPush && useWorkspaceStore.getState().workspaces.length === 0) {
+              await useWorkspaceStore.getState().initializeGuestWorkspace();
+            }
+          },
+          sweepAll: async () => {
+            await useWorkspaceStore.getState().sweepUnsynced();
+            await useBookmarksStore.getState().sweepUnsynced();
+            await useGroupsStore.getState().sweepUnsynced();
+          },
+        });
         // A remote pull may change usage without any local create/delete action,
         // so bypass the TTL cache and refresh the authoritative counters.
         usePlanStore.getState().ensureFresh(true);

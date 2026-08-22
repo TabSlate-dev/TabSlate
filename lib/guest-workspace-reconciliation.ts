@@ -3,6 +3,7 @@ import type { Bookmark, Collection, Workspace } from "@/lib/types";
 import { idbBulkWrite, idbDelete, idbGet, idbGetAll, type BulkWriteOp } from "@/lib/idb";
 import {
   GUEST_WORKSPACE_PROVENANCE_KEY,
+  type GuestWorkspaceDiscardPlan,
   type GuestWorkspacePlan,
   type GuestWorkspaceProvenanceRecord,
   type GuestWorkspaceSnapshot,
@@ -108,9 +109,13 @@ function planOperations(plan: GuestWorkspacePlan): BulkWriteOp[] {
     ...("collectionPuts" in plan
       ? plan.collectionPuts.map((value) => ({ type: "put" as const, store: "collections" as const, value }))
       : []),
-    { type: "put" as const, store: "kv" as const, value: { key: "activeWorkspaceId", value: plan.activeWorkspaceId } },
     { type: "delete" as const, store: "kv" as const, key: GUEST_WORKSPACE_PROVENANCE_KEY },
   ];
+  if (plan.kind === "discard" && plan.activeWorkspaceId === "") {
+    operations.push({ type: "delete" as const, store: "kv" as const, key: "activeWorkspaceId" });
+  } else {
+    operations.push({ type: "put" as const, store: "kv" as const, value: { key: "activeWorkspaceId", value: plan.activeWorkspaceId } });
+  }
   if (plan.kind !== "migrate") {
     return operations;
   }
@@ -228,6 +233,12 @@ export async function prepareGuestWorkspaceForPull(response: SyncPullResponse): 
   if (!loaded.snapshot) {
     return NONE_RESULT;
   }
+  const markedWorkspaceIsConfirmed = response.entities.workspaces.some((workspace) =>
+    workspace.id === loaded.snapshot?.provenance.workspaceId && isActiveRemoteWorkspace(workspace),
+  );
+  if (markedWorkspaceIsConfirmed) {
+    return { kind: "retained", needsResweep: false };
+  }
   const hasExistingRemoteWorkspace = response.entities.workspaces.some((workspace) =>
     workspace.id !== loaded.snapshot?.provenance.workspaceId && isActiveRemoteWorkspace(workspace),
   );
@@ -323,11 +334,29 @@ export async function resolveLegacyGuestWorkspaceFailure(
     ...(collection.archived_at === undefined ? {} : { archivedAt: collection.archived_at }),
   }));
   const target = selectGuestMigrationTarget(remoteWorkspaces, remoteCollections, "");
+  if (!target) {
+    return { kind: "conflict", needsResweep: false, errorKey: "sync_noMigrationTarget" };
+  }
   const reconciliationPlan = planGuestWorkspaceMigration(loaded.snapshot, target);
   if (reconciliationPlan.kind === "conflict") {
     return { kind: "conflict", needsResweep: false, errorKey: "sync_noMigrationTarget" };
   }
-  return commitPlan(reconciliationPlan, sourceId);
+  if (reconciliationPlan.kind !== "discard") {
+    return commitPlan(reconciliationPlan, sourceId);
+  }
+  const legacyDiscardPlan: GuestWorkspaceDiscardPlan = {
+    ...reconciliationPlan,
+    activeWorkspaceId: target.workspace.id,
+  };
+  const result = await commitPlan(legacyDiscardPlan, sourceId);
+  if (result.kind !== "discarded") {
+    return result;
+  }
+  return {
+    kind: "migrated",
+    needsResweep: true,
+    targetWorkspaceName: target.workspace.name,
+  };
 }
 
 export async function clearCapacityResolvedConflicts(plan: PlanResponse): Promise<boolean> {
