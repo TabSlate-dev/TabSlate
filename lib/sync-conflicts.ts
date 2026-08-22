@@ -182,35 +182,59 @@ export class SyncConflictRegistry {
     };
   }
 
-  applyMutation(mutation: SyncConflictMutation): void {
-    if (mutation.generation !== this.generation || mutation.revision !== this.revision) {
-      return;
+  applyMutation(mutation: SyncConflictMutation): boolean {
+    if (!this.isCurrentMutation(mutation)) {
+      return false;
     }
     this.replaceEntries(mutation.entries);
     this.revision += 1;
+    return true;
   }
 
   /**
    * Commits a root clear with caller-owned IndexedDB writes under the registry's
-   * exclusive mutation queue. The callback must resolve only after its single
-   * atomic transaction, including mutation.operation, has committed.
+   * exclusive mutation queue. `commit` must resolve only after its single atomic
+   * transaction, including mutation.operation, has committed.
+   *
+   * Task 7 must pass its synchronous Zustand updates as `applyAfterCommit` rather
+   * than running them after awaiting this method. The registry runs that callback
+   * immediately after the final generation/revision check and registry memory
+   * apply, while it still owns the exclusive queue. A `false` result means reset
+   * invalidated the transaction: neither registry memory nor the callback ran.
+   *
+   * ```ts
+   * const committed = await syncConflictRegistry.executeClearRootTransaction(
+   *   "workspace",
+   *   sourceWorkspaceId,
+   *   async (mutation) => idbBulkWrite([...operations, mutation.operation]),
+   *   () => applyWorkspaceState(),
+   * );
+   * ```
    */
   async executeClearRootTransaction(
     entityType: SyncEntityType,
     entityId: string,
     commit: (mutation: SyncConflictMutation) => Promise<void>,
-  ): Promise<void> {
+    applyAfterCommit?: () => void,
+  ): Promise<boolean> {
     const generation = this.generation;
     const operation = this.mutationTail.then(async () => {
       await this.ready();
       if (generation !== this.generation) {
-        return;
+        return false;
       }
       const mutation = this.prepareClearRootMutation(entityType, entityId);
       await commit(mutation);
-      this.applyMutation(mutation);
+      if (!this.applyMutation(mutation)) {
+        return false;
+      }
+      applyAfterCommit?.();
+      return true;
     });
-    this.mutationTail = operation.catch(() => undefined);
+    this.mutationTail = operation.then(
+      () => undefined,
+      () => undefined,
+    );
     return operation;
   }
 
@@ -311,6 +335,10 @@ export class SyncConflictRegistry {
       generation: this.generation,
       revision: this.revision,
     };
+  }
+
+  private isCurrentMutation(mutation: SyncConflictMutation): boolean {
+    return mutation.generation === this.generation && mutation.revision === this.revision;
   }
 
   private copyConflicts(): Map<string, SyncConflict> {

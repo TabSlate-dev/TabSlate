@@ -312,6 +312,7 @@ describe("sync conflict registry", () => {
       resolveBulkWriteStarted = resolve;
     });
 
+    let postCommitApplied = false;
     const clearing = registry.executeClearRootTransaction(
       "workspace",
       "workspace-1",
@@ -319,6 +320,9 @@ describe("sync conflict registry", () => {
         { type: "put", store: "workspaces", value: { id: "confirmed-workspace" } },
         mutation.operation,
       ]),
+      () => {
+        postCommitApplied = true;
+      },
     );
     await writeStarted;
     const recording = registry.recordPayload({
@@ -337,6 +341,7 @@ describe("sync conflict registry", () => {
     expect(registry.list()).toEqual(expected);
     expect(kv.get("sync-conflicts-v1").value.entries).toEqual(expected);
     expect(workspaces.get("confirmed-workspace")).toEqual({ id: "confirmed-workspace" });
+    expect(postCommitApplied).toBe(true);
   });
 
   test("does not apply a failed external clear-root transaction and recovers the queue", async () => {
@@ -347,12 +352,17 @@ describe("sync conflict registry", () => {
     ]);
     failNextBulkWrite = true;
 
+    let postCommitApplied = false;
     await expect(registry.executeClearRootTransaction(
       "workspace",
       "workspace-1",
       async (mutation) => writeOperations([mutation.operation]),
+      () => {
+        postCommitApplied = true;
+      },
     )).rejects.toThrow("indexeddb write failed");
 
+    expect(postCommitApplied).toBe(false);
     expect(registry.list()).toEqual([
       expect.objectContaining({ entityType: "workspace", entityId: "workspace-1" }),
     ]);
@@ -377,17 +387,44 @@ describe("sync conflict registry", () => {
       resolveBulkWriteStarted = resolve;
     });
 
+    let postCommitApplied = false;
     const clearing = registry.executeClearRootTransaction(
       "workspace",
       "workspace-1",
       async (mutation) => writeOperations([mutation.operation]),
+      () => {
+        postCommitApplied = true;
+      },
     );
     await writeStarted;
     registry.reset();
     releaseBulkWrite?.();
-    await clearing;
+    expect(await clearing).toBe(false);
 
     expect(registry.list()).toEqual([]);
     expect(kv.get("sync-conflicts-v1")).toBeUndefined();
+    expect(postCommitApplied).toBe(false);
+  });
+
+  test("runs the post-commit callback only after a current external transaction succeeds", async () => {
+    const registry = new SyncConflictRegistry();
+    await registry.ready();
+    await registry.recordRejections([
+      { id: "workspace-1", type: "workspace", reason: "quota_exceeded" },
+    ]);
+    let postCommitApplied = false;
+
+    const committed = await registry.executeClearRootTransaction(
+      "workspace",
+      "workspace-1",
+      async (mutation) => writeOperations([mutation.operation]),
+      () => {
+        postCommitApplied = true;
+      },
+    );
+
+    expect(committed).toBe(true);
+    expect(postCommitApplied).toBe(true);
+    expect(registry.list()).toEqual([]);
   });
 });
