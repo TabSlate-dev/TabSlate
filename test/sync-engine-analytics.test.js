@@ -234,6 +234,35 @@ describe("SyncEngine analytics", () => {
     expect(completed).toBe(true);
   });
 
+  test("ignores a retired raw pull that rejects with unauthorized", async () => {
+    let rejectPull;
+    const pull = new Promise((_resolve, reject) => {
+      rejectPull = reject;
+    });
+    const statusCalls = [];
+    syncPullImpl = async () => pull;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "expired-token" }),
+      () => 0,
+      async () => null,
+      async () => null,
+      (status) => {
+        statusCalls.push(status);
+      },
+      async () => false,
+      analyticsDependencies(),
+    );
+    engine.start();
+    await Promise.resolve();
+    await engine.retire();
+    const statusCountAtRetirement = statusCalls.length;
+    rejectPull(new MockApiError("access token expired", 401));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(silentRefreshCalls).toEqual([]);
+    expect(statusCalls).toHaveLength(statusCountAtRetirement);
+  });
+
   test("retries a force push with refreshed credentials after an expired access token", async () => {
     let currentAccessToken = "expired-token";
     syncPushImpl = async (_baseUrl, accessToken) => {

@@ -288,6 +288,9 @@ export class SyncEngine {
       }
       this.applyPersistentConflict(conflictMessage);
     } catch (err) {
+      if (this.destroyed) {
+        return;
+      }
       // TypeError = network failure (connection refused / offline) — mirror forceSync() logic.
       if (err instanceof TypeError) {
         this.setStatus("offline");
@@ -319,7 +322,16 @@ export class SyncEngine {
         throw err;
       }
 
+      // A transport response can arrive after retirement. It must not restart
+      // auth work or emit a status after the session cleanup boundary.
+      if (this.destroyed) {
+        return null;
+      }
+
       const refreshed = await this.refreshAuthentication();
+      if (this.destroyed) {
+        return null;
+      }
       if (!refreshed) {
         // silentRefresh clears the refresh token only after a definitive 401/403.
         // Preserve an error for transient refresh failures so they are not mistaken for logout.
