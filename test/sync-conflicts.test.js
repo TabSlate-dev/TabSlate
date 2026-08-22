@@ -38,6 +38,10 @@ async function writeOperations(operations) {
 
 mock.module("@/lib/idb", () => ({
   idbGet: async (store, key) => (store === "kv" ? kv.get(key) : undefined),
+  idbGetAll: async (store) => (store === "workspaces" ? [...workspaces.values()] : []),
+  idbCount: async () => 0,
+  idbGetMany: async (_store, keys) => keys.map(() => undefined),
+  idbGetByIndex: async () => [],
   idbBulkWrite: writeOperations,
   idbDelete: async (store, key) => {
     if (store === "kv") {
@@ -49,6 +53,9 @@ mock.module("@/lib/idb", () => ({
       kv.set(value.key, value);
     }
   },
+  idbTransaction: async () => {},
+  clearDB: async () => {},
+  getDB: async () => ({}),
 }));
 
 const { SyncConflictRegistry } = await import("../lib/sync-conflicts");
