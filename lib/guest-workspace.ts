@@ -42,6 +42,47 @@ export interface GuestWorkspaceSnapshot {
   groupTabs: GroupTab[];
 }
 
+export interface GuestMigrationTarget {
+  workspace: Workspace;
+  defaultCollection: Collection;
+}
+
+export interface GuestBookmarkUpdates {
+  active: Bookmark[];
+  archived: Bookmark[];
+  trashed: Bookmark[];
+}
+
+export interface GuestWorkspaceDiscardPlan {
+  kind: "discard";
+  workspaceDeletes: string[];
+  collectionDeletes: string[];
+  activeWorkspaceId: "";
+}
+
+export interface GuestWorkspaceMigrationPlan {
+  kind: "migrate";
+  targetWorkspaceId: string;
+  targetWorkspaceName: string;
+  workspaceDeletes: string[];
+  collectionPuts: Collection[];
+  collectionDeletes: string[];
+  bookmarkPuts: GuestBookmarkUpdates;
+  groupPuts: SavedGroup[];
+  activeWorkspaceId: string;
+}
+
+export interface GuestWorkspaceConflictPlan {
+  kind: "conflict";
+  sourceWorkspaceId: string;
+  reason: "no_valid_target";
+}
+
+export type GuestWorkspacePlan =
+  | GuestWorkspaceDiscardPlan
+  | GuestWorkspaceMigrationPlan
+  | GuestWorkspaceConflictPlan;
+
 export function createGuestWorkspaceSeed(
   workspaceId: string,
   collectionId: string,
@@ -74,5 +115,164 @@ export function createGuestWorkspaceSeed(
         },
       },
     },
+  };
+}
+
+function matchesGuestWorkspaceFingerprint(
+  workspace: Workspace,
+  fingerprint: GuestWorkspaceFingerprint,
+): boolean {
+  return workspace.name === fingerprint.workspaceName &&
+    workspace.color === fingerprint.workspaceColor &&
+    workspace.position === fingerprint.workspacePosition;
+}
+
+function matchesGuestDefaultFingerprint(
+  collection: Collection,
+  fingerprint: GuestWorkspaceFingerprint,
+): boolean {
+  return collection.name === fingerprint.collectionName &&
+    collection.icon === fingerprint.collectionIcon &&
+    collection.position === fingerprint.collectionPosition;
+}
+
+function isActiveUnsyncedWorkspace(workspace: Workspace): boolean {
+  return workspace.seq === 0 && workspace.deletedAt === undefined;
+}
+
+function isActiveUnsyncedDefault(collection: Collection): boolean {
+  return collection.seq === 0 && collection.isDefault === true &&
+    collection.deletedAt === undefined && collection.archivedAt === undefined;
+}
+
+export function isUntouchedGuestWorkspace(snapshot: GuestWorkspaceSnapshot): boolean {
+  const { provenance, workspace } = snapshot;
+  if (!workspace || workspace.id !== provenance.workspaceId) {
+    return false;
+  }
+  if (!isActiveUnsyncedWorkspace(workspace) ||
+    !matchesGuestWorkspaceFingerprint(workspace, provenance.fingerprint)) {
+    return false;
+  }
+
+  const sourceCollections = snapshot.collections.filter(
+    (collection) => collection.workspaceId === workspace.id,
+  );
+  const sourceDefault = sourceCollections.find(
+    (collection) => collection.id === provenance.defaultCollectionId,
+  );
+  if (sourceCollections.length !== 1 || !sourceDefault ||
+    !isActiveUnsyncedDefault(sourceDefault) ||
+    !matchesGuestDefaultFingerprint(sourceDefault, provenance.fingerprint)) {
+    return false;
+  }
+
+  const sourceCollectionIds = new Set(sourceCollections.map((collection) => collection.id));
+  const hasBookmark = [
+    ...snapshot.activeBookmarks,
+    ...snapshot.archivedBookmarks,
+    ...snapshot.trashedBookmarks,
+  ].some((bookmark) => sourceCollectionIds.has(bookmark.collectionId));
+  const hasGroup = snapshot.groups.some((group) => group.workspaceId === workspace.id);
+  return !hasBookmark && !hasGroup;
+}
+
+export function selectGuestMigrationTarget(
+  workspaces: Workspace[],
+  collections: Collection[],
+  activeWorkspaceId: string,
+): GuestMigrationTarget | null {
+  const confirmed = workspaces
+    .filter((workspace) => workspace.seq > 0 && workspace.deletedAt === undefined)
+    .sort((left, right) => left.position - right.position);
+  const selected = confirmed.find((workspace) => workspace.id === activeWorkspaceId) ?? confirmed[0];
+  if (!selected) {
+    return null;
+  }
+  const defaultCollection = collections.find((collection) =>
+    collection.workspaceId === selected.id &&
+    collection.seq > 0 &&
+    collection.isDefault === true &&
+    collection.deletedAt === undefined &&
+    collection.archivedAt === undefined,
+  );
+  if (!defaultCollection) {
+    return null;
+  }
+  return { workspace: selected, defaultCollection };
+}
+
+export function planGuestWorkspaceMigration(
+  snapshot: GuestWorkspaceSnapshot,
+  target: GuestMigrationTarget | null,
+): GuestWorkspacePlan {
+  const sourceWorkspace = snapshot.workspace;
+  if (!sourceWorkspace || !target) {
+    return {
+      kind: "conflict",
+      sourceWorkspaceId: snapshot.provenance.workspaceId,
+      reason: "no_valid_target",
+    };
+  }
+  if (isUntouchedGuestWorkspace(snapshot)) {
+    return {
+      kind: "discard",
+      workspaceDeletes: [sourceWorkspace.id],
+      collectionDeletes: [snapshot.provenance.defaultCollectionId],
+      activeWorkspaceId: "",
+    };
+  }
+
+  const sourceCollections = snapshot.collections.filter(
+    (collection) => collection.workspaceId === sourceWorkspace.id,
+  );
+  const sourceDefault = sourceCollections.find(
+    (collection) => collection.id === snapshot.provenance.defaultCollectionId,
+  );
+  const mergeDefault = sourceDefault !== undefined &&
+    isActiveUnsyncedDefault(sourceDefault) &&
+    matchesGuestDefaultFingerprint(sourceDefault, snapshot.provenance.fingerprint);
+  const maxTargetPosition = snapshot.collections
+    .filter((collection) => collection.workspaceId === target.workspace.id)
+    .reduce((maxPosition, collection) => Math.max(maxPosition, collection.position), -1);
+  const collectionPuts = sourceCollections
+    .filter((collection) => !mergeDefault || collection.id !== sourceDefault?.id)
+    .sort((left, right) => left.position - right.position || left.id.localeCompare(right.id))
+    .map((collection, index) => ({
+      ...collection,
+      workspaceId: target.workspace.id,
+      position: maxTargetPosition + index + 1,
+      isDefault: false,
+      seq: 0,
+    }));
+  const rewriteBucket = (bookmarks: Bookmark[]): Bookmark[] => {
+    if (!mergeDefault || !sourceDefault) {
+      return [];
+    }
+    return bookmarks
+      .filter((bookmark) => bookmark.collectionId === sourceDefault.id)
+      .map((bookmark) => ({
+        ...bookmark,
+        collectionId: target.defaultCollection.id,
+        seq: 0,
+      }));
+  };
+
+  return {
+    kind: "migrate",
+    targetWorkspaceId: target.workspace.id,
+    targetWorkspaceName: target.workspace.name,
+    workspaceDeletes: [sourceWorkspace.id],
+    collectionPuts,
+    collectionDeletes: mergeDefault && sourceDefault ? [sourceDefault.id] : [],
+    bookmarkPuts: {
+      active: rewriteBucket(snapshot.activeBookmarks),
+      archived: rewriteBucket(snapshot.archivedBookmarks),
+      trashed: rewriteBucket(snapshot.trashedBookmarks),
+    },
+    groupPuts: snapshot.groups
+      .filter((group) => group.workspaceId === sourceWorkspace.id)
+      .map((group) => ({ ...group, workspaceId: target.workspace.id, seq: 0 })),
+    activeWorkspaceId: target.workspace.id,
   };
 }
