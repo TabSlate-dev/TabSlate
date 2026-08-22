@@ -26,6 +26,8 @@ export interface SyncEntityReference {
 export interface SyncConflictMutation {
   entries: SyncConflict[];
   operation: BulkWriteOp;
+  generation: number;
+  revision: number;
 }
 
 interface SyncConflictStorageValue {
@@ -67,6 +69,8 @@ export class SyncConflictRegistry {
   private readonly conflicts = new Map<string, SyncConflict>();
   private readonly hydration: Promise<void>;
   private generation = 0;
+  private revision = 0;
+  private mutationTail: Promise<void> = Promise.resolve();
 
   constructor() {
     this.hydration = this.hydrate();
@@ -85,56 +89,58 @@ export class SyncConflictRegistry {
   }
 
   async recordRejections(rejections: SyncRejected[]): Promise<void> {
-    await this.ready();
-    let changed = false;
-    for (const rejection of rejections) {
-      if (rejection.reason === "stale" || !isSyncEntityType(rejection.type) || rejection.id.length === 0) {
-        continue;
+    const generation = this.generation;
+    await this.enqueueMutation(generation, () => {
+      const candidate = this.copyConflicts();
+      let changed = false;
+      for (const rejection of rejections) {
+        if (rejection.reason === "stale" || !isSyncEntityType(rejection.type) || rejection.id.length === 0) {
+          continue;
+        }
+        const parentType = isSyncEntityType(rejection.parent_type) ? rejection.parent_type : undefined;
+        const parentId = parentType !== undefined && rejection.parent_id !== undefined && rejection.parent_id.length > 0
+          ? rejection.parent_id
+          : undefined;
+        const existing = candidate.get(conflictKey(rejection.type, rejection.id));
+        const conflict: SyncConflict = {
+          entityType: rejection.type,
+          entityId: rejection.id,
+          reason: rejection.reason,
+          ...(parentType !== undefined && parentId !== undefined ? { parentType, parentId } : {}),
+          createdAt: existing?.createdAt ?? Date.now(),
+        };
+        candidate.set(conflictKey(conflict.entityType, conflict.entityId), conflict);
+        changed = true;
       }
-      const parentType = isSyncEntityType(rejection.parent_type) ? rejection.parent_type : undefined;
-      const parentId = parentType !== undefined && rejection.parent_id !== undefined && rejection.parent_id.length > 0
-        ? rejection.parent_id
-        : undefined;
-      const existing = this.conflicts.get(conflictKey(rejection.type, rejection.id));
-      const conflict: SyncConflict = {
-        entityType: rejection.type,
-        entityId: rejection.id,
-        reason: rejection.reason,
-        ...(parentType !== undefined && parentId !== undefined ? { parentType, parentId } : {}),
-        createdAt: existing?.createdAt ?? Date.now(),
-      };
-      this.conflicts.set(conflictKey(conflict.entityType, conflict.entityId), conflict);
-      changed = true;
-    }
-    if (changed) {
-      await this.persist();
-    }
+      return changed ? this.createMutation([...candidate.values()]) : undefined;
+    });
   }
 
   async recordPayload(payload: SyncPushPayload, status: number): Promise<void> {
-    await this.ready();
-    const reason = `http_${status}`;
-    const conflicts = [
-      ...payload.entities.workspaces.map((entity) => this.createPayloadConflict("workspace", entity.id, reason)),
-      ...payload.entities.collections.map((entity) => this.createPayloadConflict(
-        "collection", entity.id, reason, stringProperty(entity, "workspace_id"), "workspace",
-      )),
-      ...payload.entities.bookmarks.map((entity) => this.createPayloadConflict(
-        "bookmark", entity.id, reason, stringProperty(entity, "collection_id"), "collection",
-      )),
-      ...payload.entities.tags.map((entity) => this.createPayloadConflict("tag", entity.id, reason)),
-      ...payload.entities.groups.map((entity) => this.createPayloadConflict(
-        "saved_group", entity.id, reason, stringProperty(entity, "workspace_id"), "workspace",
-      )),
-    ];
-    let changed = false;
-    for (const conflict of conflicts) {
-      this.conflicts.set(conflictKey(conflict.entityType, conflict.entityId), conflict);
-      changed = true;
-    }
-    if (changed) {
-      await this.persist();
-    }
+    const generation = this.generation;
+    await this.enqueueMutation(generation, () => {
+      const candidate = this.copyConflicts();
+      const reason = `http_${status}`;
+      const conflicts = [
+        ...payload.entities.workspaces.map((entity) => this.createPayloadConflict(
+          candidate, "workspace", entity.id, reason,
+        )),
+        ...payload.entities.collections.map((entity) => this.createPayloadConflict(
+          candidate, "collection", entity.id, reason, stringProperty(entity, "workspace_id"), "workspace",
+        )),
+        ...payload.entities.bookmarks.map((entity) => this.createPayloadConflict(
+          candidate, "bookmark", entity.id, reason, stringProperty(entity, "collection_id"), "collection",
+        )),
+        ...payload.entities.tags.map((entity) => this.createPayloadConflict(candidate, "tag", entity.id, reason)),
+        ...payload.entities.groups.map((entity) => this.createPayloadConflict(
+          candidate, "saved_group", entity.id, reason, stringProperty(entity, "workspace_id"), "workspace",
+        )),
+      ];
+      for (const conflict of conflicts) {
+        candidate.set(conflictKey(conflict.entityType, conflict.entityId), conflict);
+      }
+      return conflicts.length > 0 ? this.createMutation([...candidate.values()]) : undefined;
+    });
   }
 
   async clearEntity(entityType: SyncEntityType, entityId: string): Promise<void> {
@@ -142,13 +148,12 @@ export class SyncConflictRegistry {
   }
 
   async clearEntities(references: SyncEntityReference[]): Promise<void> {
-    await this.ready();
-    const keys = new Set(references.map((reference) => conflictKey(reference.entityType, reference.entityId)));
-    const entries = this.list().filter((conflict) => !keys.has(conflictKey(conflict.entityType, conflict.entityId)));
-    if (entries.length === this.conflicts.size) {
-      return;
-    }
-    await this.commitEntries(entries);
+    const generation = this.generation;
+    await this.enqueueMutation(generation, () => {
+      const keys = new Set(references.map((reference) => conflictKey(reference.entityType, reference.entityId)));
+      const entries = this.list().filter((conflict) => !keys.has(conflictKey(conflict.entityType, conflict.entityId)));
+      return entries.length === this.conflicts.size ? undefined : this.createMutation(entries);
+    });
   }
 
   prepareClearRootMutation(entityType: SyncEntityType, entityId: string): SyncConflictMutation {
@@ -172,29 +177,30 @@ export class SyncConflictRegistry {
     return {
       entries,
       operation: this.createPutOperation(entries),
+      generation: this.generation,
+      revision: this.revision,
     };
   }
 
   applyMutation(mutation: SyncConflictMutation): void {
+    if (mutation.generation !== this.generation || mutation.revision !== this.revision) {
+      return;
+    }
     this.replaceEntries(mutation.entries);
+    this.revision += 1;
   }
 
   async clearRoot(entityType: SyncEntityType, entityId: string): Promise<void> {
-    await this.ready();
-    const mutation = this.prepareClearRootMutation(entityType, entityId);
-    if (mutation.entries.length === this.conflicts.size) {
-      return;
-    }
-    await idbBulkWrite([mutation.operation]);
-    this.applyMutation(mutation);
+    const generation = this.generation;
+    await this.enqueueMutation(generation, () => {
+      const mutation = this.prepareClearRootMutation(entityType, entityId);
+      return mutation.entries.length === this.conflicts.size ? undefined : mutation;
+    });
   }
 
   async clearAllForManualRetry(): Promise<void> {
-    await this.ready();
-    if (this.conflicts.size === 0) {
-      return;
-    }
-    await this.commitEntries([]);
+    const generation = this.generation;
+    await this.enqueueMutation(generation, () => this.conflicts.size === 0 ? undefined : this.createMutation([]));
   }
 
   filterPayload(payload: SyncPushPayload): SyncPushPayload {
@@ -211,8 +217,10 @@ export class SyncConflictRegistry {
 
   reset(): void {
     this.generation += 1;
+    this.revision += 1;
     this.conflicts.clear();
-    void idbDelete("kv", SYNC_CONFLICTS_KEY);
+    const clearPersistedConflicts = this.mutationTail.then(() => idbDelete("kv", SYNC_CONFLICTS_KEY));
+    this.mutationTail = clearPersistedConflicts.catch(() => undefined);
   }
 
   private async hydrate(): Promise<void> {
@@ -233,13 +241,14 @@ export class SyncConflictRegistry {
   }
 
   private createPayloadConflict(
+    conflicts: ReadonlyMap<string, SyncConflict>,
     entityType: SyncEntityType,
     entityId: string,
     reason: string,
     parentId?: string | null,
     parentType?: SyncEntityType,
   ): SyncConflict {
-    const existing = this.conflicts.get(conflictKey(entityType, entityId));
+    const existing = conflicts.get(conflictKey(entityType, entityId));
     return {
       entityType,
       entityId,
@@ -251,17 +260,37 @@ export class SyncConflictRegistry {
     };
   }
 
-  private async persist(): Promise<void> {
-    await this.commitEntries(this.list());
+  private enqueueMutation(
+    generation: number,
+    createMutation: () => SyncConflictMutation | undefined,
+  ): Promise<void> {
+    const operation = this.mutationTail.then(async () => {
+      await this.ready();
+      if (generation !== this.generation) {
+        return;
+      }
+      const mutation = createMutation();
+      if (!mutation) {
+        return;
+      }
+      await idbBulkWrite([mutation.operation]);
+      this.applyMutation(mutation);
+    });
+    this.mutationTail = operation.catch(() => undefined);
+    return operation;
   }
 
-  private async commitEntries(entries: SyncConflict[]): Promise<void> {
-    const mutation: SyncConflictMutation = {
-      entries,
+  private createMutation(entries: SyncConflict[]): SyncConflictMutation {
+    return {
+      entries: entries.map(copyConflict),
       operation: this.createPutOperation(entries),
+      generation: this.generation,
+      revision: this.revision,
     };
-    await idbBulkWrite([mutation.operation]);
-    this.applyMutation(mutation);
+  }
+
+  private copyConflicts(): Map<string, SyncConflict> {
+    return new Map([...this.conflicts.entries()].map(([key, conflict]) => [key, copyConflict(conflict)]));
   }
 
   private createPutOperation(entries: SyncConflict[]): BulkWriteOp {
