@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 const kv = new Map();
+const workspaces = new Map();
 let failNextBulkWrite = false;
 let delayNextBulkWrite = false;
 let resolveBulkWriteStarted = null;
@@ -8,33 +9,36 @@ let releaseBulkWrite = null;
 
 function applyOperations(operations) {
   for (const operation of operations) {
-    if (operation.store !== "kv") {
+    const store = operation.store === "kv" ? kv : operation.store === "workspaces" ? workspaces : null;
+    if (store === null) {
       continue;
     }
     if (operation.type === "delete") {
-      kv.delete(operation.key);
+      store.delete(operation.key);
     } else {
-      kv.set(operation.value.key, operation.value);
+      store.set(operation.value.key ?? operation.value.id, operation.value);
     }
   }
 }
 
+async function writeOperations(operations) {
+  if (delayNextBulkWrite) {
+    delayNextBulkWrite = false;
+    resolveBulkWriteStarted?.();
+    await new Promise((resolve) => {
+      releaseBulkWrite = resolve;
+    });
+  }
+  if (failNextBulkWrite) {
+    failNextBulkWrite = false;
+    throw new Error("indexeddb write failed");
+  }
+  applyOperations(operations);
+}
+
 mock.module("@/lib/idb", () => ({
   idbGet: async (store, key) => (store === "kv" ? kv.get(key) : undefined),
-  idbBulkWrite: async (operations) => {
-    if (delayNextBulkWrite) {
-      delayNextBulkWrite = false;
-      resolveBulkWriteStarted?.();
-      await new Promise((resolve) => {
-        releaseBulkWrite = resolve;
-      });
-    }
-    if (failNextBulkWrite) {
-      failNextBulkWrite = false;
-      throw new Error("indexeddb write failed");
-    }
-    applyOperations(operations);
-  },
+  idbBulkWrite: writeOperations,
   idbDelete: async (store, key) => {
     if (store === "kv") {
       kv.delete(key);
@@ -52,6 +56,7 @@ const { SyncConflictRegistry } = await import("../lib/sync-conflicts");
 describe("sync conflict registry", () => {
   beforeEach(() => {
     kv.clear();
+    workspaces.clear();
     failNextBulkWrite = false;
     delayNextBulkWrite = false;
     resolveBulkWriteStarted = null;
@@ -294,5 +299,95 @@ describe("sync conflict registry", () => {
       expect.objectContaining({ entityType: "workspace", entityId: "workspace-1" }),
       expect.objectContaining({ entityType: "tag", entityId: "new-tag" }),
     ]));
+  });
+
+  test("serializes an external clear-root transaction ahead of a later conflict record", async () => {
+    const registry = new SyncConflictRegistry();
+    await registry.ready();
+    await registry.recordRejections([
+      { id: "workspace-1", type: "workspace", reason: "quota_exceeded" },
+    ]);
+    delayNextBulkWrite = true;
+    const writeStarted = new Promise((resolve) => {
+      resolveBulkWriteStarted = resolve;
+    });
+
+    const clearing = registry.executeClearRootTransaction(
+      "workspace",
+      "workspace-1",
+      async (mutation) => writeOperations([
+        { type: "put", store: "workspaces", value: { id: "confirmed-workspace" } },
+        mutation.operation,
+      ]),
+    );
+    await writeStarted;
+    const recording = registry.recordPayload({
+      entities: {
+        workspaces: [],
+        collections: [],
+        bookmarks: [],
+        tags: [{ id: "new-tag" }],
+        groups: [],
+      },
+    }, 500);
+    releaseBulkWrite?.();
+    await Promise.all([clearing, recording]);
+
+    const expected = [expect.objectContaining({ entityType: "tag", entityId: "new-tag" })];
+    expect(registry.list()).toEqual(expected);
+    expect(kv.get("sync-conflicts-v1").value.entries).toEqual(expected);
+    expect(workspaces.get("confirmed-workspace")).toEqual({ id: "confirmed-workspace" });
+  });
+
+  test("does not apply a failed external clear-root transaction and recovers the queue", async () => {
+    const registry = new SyncConflictRegistry();
+    await registry.ready();
+    await registry.recordRejections([
+      { id: "workspace-1", type: "workspace", reason: "quota_exceeded" },
+    ]);
+    failNextBulkWrite = true;
+
+    await expect(registry.executeClearRootTransaction(
+      "workspace",
+      "workspace-1",
+      async (mutation) => writeOperations([mutation.operation]),
+    )).rejects.toThrow("indexeddb write failed");
+
+    expect(registry.list()).toEqual([
+      expect.objectContaining({ entityType: "workspace", entityId: "workspace-1" }),
+    ]);
+    expect(kv.get("sync-conflicts-v1").value.entries).toEqual([
+      expect.objectContaining({ entityType: "workspace", entityId: "workspace-1" }),
+    ]);
+
+    await registry.recordRejections([
+      { id: "tag-1", type: "tag", reason: "quota_exceeded" },
+    ]);
+    expect(registry.isBlocked("tag", "tag-1")).toBe(true);
+  });
+
+  test("reset wins over an in-flight external clear-root transaction", async () => {
+    const registry = new SyncConflictRegistry();
+    await registry.ready();
+    await registry.recordRejections([
+      { id: "workspace-1", type: "workspace", reason: "quota_exceeded" },
+    ]);
+    delayNextBulkWrite = true;
+    const writeStarted = new Promise((resolve) => {
+      resolveBulkWriteStarted = resolve;
+    });
+
+    const clearing = registry.executeClearRootTransaction(
+      "workspace",
+      "workspace-1",
+      async (mutation) => writeOperations([mutation.operation]),
+    );
+    await writeStarted;
+    registry.reset();
+    releaseBulkWrite?.();
+    await clearing;
+
+    expect(registry.list()).toEqual([]);
+    expect(kv.get("sync-conflicts-v1")).toBeUndefined();
   });
 });

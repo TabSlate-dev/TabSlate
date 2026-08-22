@@ -190,6 +190,30 @@ export class SyncConflictRegistry {
     this.revision += 1;
   }
 
+  /**
+   * Commits a root clear with caller-owned IndexedDB writes under the registry's
+   * exclusive mutation queue. The callback must resolve only after its single
+   * atomic transaction, including mutation.operation, has committed.
+   */
+  async executeClearRootTransaction(
+    entityType: SyncEntityType,
+    entityId: string,
+    commit: (mutation: SyncConflictMutation) => Promise<void>,
+  ): Promise<void> {
+    const generation = this.generation;
+    const operation = this.mutationTail.then(async () => {
+      await this.ready();
+      if (generation !== this.generation) {
+        return;
+      }
+      const mutation = this.prepareClearRootMutation(entityType, entityId);
+      await commit(mutation);
+      this.applyMutation(mutation);
+    });
+    this.mutationTail = operation.catch(() => undefined);
+    return operation;
+  }
+
   async clearRoot(entityType: SyncEntityType, entityId: string): Promise<void> {
     const generation = this.generation;
     await this.enqueueMutation(generation, () => {
