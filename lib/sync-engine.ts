@@ -108,11 +108,17 @@ export class SyncEngine {
       if (failure.retryable && failure.status >= 500 && failure.status < 600) {
         try {
           const handled = await this.serializeResolution(() => this.onLegacyPushFailure(failure));
+          if (this.destroyed) {
+            return false;
+          }
           if (handled) {
             this.setQueueStatus();
             return true;
           }
         } catch (error) {
+          if (this.destroyed) {
+            return false;
+          }
           const message = error instanceof Error ? error.message : "Sync recovery failed";
           this.setStatus("error", sanitizeSyncErrorMessage(message));
           return false;

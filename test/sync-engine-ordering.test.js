@@ -8,10 +8,12 @@ let sseSequenceHandler = null;
 
 function deferred() {
   let resolve;
-  const promise = new Promise((resolvePromise) => {
+  let reject;
+  const promise = new Promise((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function emptyResponse(sequence = 1) {
@@ -237,5 +239,79 @@ describe("SyncEngine ordering", () => {
       errorMessage: "diagnosis failed access_token=[redacted]",
     });
     engine.destroy();
+  });
+
+  test("does not emit a status after destruction when a legacy diagnosis resolves false", async () => {
+    const statuses = [];
+    const diagnosis = deferred();
+    let diagnosisStarted = false;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => null,
+      async () => null,
+      (status, errorMessage) => statuses.push({ status, errorMessage }),
+      async () => {
+        diagnosisStarted = true;
+        return diagnosis.promise;
+      },
+      orderingDependencies(),
+    );
+
+    if (!queueFailureHandler) {
+      throw new Error("queue failure handler was not registered");
+    }
+
+    const handling = queueFailureHandler({
+      error: new Error("old engine 500"),
+      payload: emptyPayload(),
+      confirmedPayload: emptyPayload(),
+      retryable: true,
+      status: 500,
+    });
+    await Promise.resolve();
+    expect(diagnosisStarted).toBe(true);
+    engine.destroy();
+    diagnosis.resolve(false);
+
+    expect(await handling).toBe(false);
+    expect(statuses).toEqual([]);
+  });
+
+  test("does not emit a status after destruction when a legacy diagnosis rejects", async () => {
+    const statuses = [];
+    const diagnosis = deferred();
+    let diagnosisStarted = false;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => null,
+      async () => null,
+      (status, errorMessage) => statuses.push({ status, errorMessage }),
+      async () => {
+        diagnosisStarted = true;
+        return diagnosis.promise;
+      },
+      orderingDependencies(),
+    );
+
+    if (!queueFailureHandler) {
+      throw new Error("queue failure handler was not registered");
+    }
+
+    const handling = queueFailureHandler({
+      error: new Error("old engine 500"),
+      payload: emptyPayload(),
+      confirmedPayload: emptyPayload(),
+      retryable: true,
+      status: 500,
+    });
+    await Promise.resolve();
+    expect(diagnosisStarted).toBe(true);
+    engine.destroy();
+    diagnosis.reject(new Error("old engine diagnosis failed"));
+
+    expect(await handling).toBe(false);
+    expect(statuses).toEqual([]);
   });
 });
