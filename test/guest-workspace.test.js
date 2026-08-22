@@ -260,4 +260,20 @@ describe("guest workspace migration planning", () => {
       reason: "no_valid_target",
     });
   });
+
+  test("returns a conflict rather than rewriting a workspace that does not match provenance", () => {
+    const targetWorkspace = makeTargetWorkspace("account-workspace", 1);
+    const targetDefault = makeTargetCollection("account-default", targetWorkspace.id, 0);
+    const snapshot = makeSnapshot({ activeBookmark: true });
+    snapshot.workspace = { ...snapshot.workspace, id: "unrelated-workspace" };
+
+    expect(planGuestWorkspaceMigration(snapshot, {
+      workspace: targetWorkspace,
+      defaultCollection: targetDefault,
+    })).toEqual({
+      kind: "conflict",
+      sourceWorkspaceId: "guest-workspace",
+      reason: "no_valid_target",
+    });
+  });
 });

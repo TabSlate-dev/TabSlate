@@ -207,7 +207,7 @@ export function planGuestWorkspaceMigration(
   target: GuestMigrationTarget | null,
 ): GuestWorkspacePlan {
   const sourceWorkspace = snapshot.workspace;
-  if (!sourceWorkspace || !target) {
+  if (!sourceWorkspace || sourceWorkspace.id !== snapshot.provenance.workspaceId || !target) {
     return {
       kind: "conflict",
       sourceWorkspaceId: snapshot.provenance.workspaceId,
