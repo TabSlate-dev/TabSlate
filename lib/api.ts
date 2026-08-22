@@ -144,10 +144,53 @@ export interface SyncEntities {
   groups: ServerGroup[];
 }
 
+export interface SyncEntity {
+  id: string;
+  [key: string]: string | number | boolean | null | string[] | SyncEntity[];
+}
+
+export type SyncEntityType =
+  | "workspace"
+  | "collection"
+  | "bookmark"
+  | "saved_group"
+  | "tag";
+
+export type KnownSyncRejectionReason =
+  | "stale"
+  | "quota_exceeded"
+  | "parent_rejected"
+  | "invalid_parent";
+
 export interface SyncRejected {
   id: string;
-  reason: "stale" | "quota_exceeded";
-  type?: string; // "collection" | "saved_group" | "workspace" when reason is "quota_exceeded"
+  reason: string;
+  type?: string;
+  parent_id?: string;
+  parent_type?: string;
+}
+
+export interface SyncPushEntities {
+  workspaces: SyncEntity[];
+  collections: SyncEntity[];
+  bookmarks: SyncEntity[];
+  tags: SyncEntity[];
+  groups: SyncEntity[];
+}
+
+export function isSyncEntityType(value: string | undefined): value is SyncEntityType {
+  return value === "workspace" ||
+    value === "collection" ||
+    value === "bookmark" ||
+    value === "saved_group" ||
+    value === "tag";
+}
+
+export function isKnownSyncRejectionReason(value: string): value is KnownSyncRejectionReason {
+  return value === "stale" ||
+    value === "quota_exceeded" ||
+    value === "parent_rejected" ||
+    value === "invalid_parent";
 }
 
 export interface SyncPushResponse {
@@ -161,13 +204,7 @@ export interface SyncPullResponse {
 }
 
 export interface SyncPushPayload {
-  entities: {
-    workspaces: object[];
-    collections: object[];
-    bookmarks: object[];
-    tags: object[];
-    groups: object[];
-  };
+  entities: SyncPushEntities;
 }
 
 // ApiError carries the HTTP status code so callers can branch on 401, 409, etc.

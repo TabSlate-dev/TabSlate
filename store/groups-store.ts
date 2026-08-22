@@ -4,7 +4,7 @@ import { openAsTabGroup } from "@/lib/chrome/tab-groups";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut, idbDelete } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
-import type { SyncPullResponse } from "@/lib/api";
+import type { SyncEntity, SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
@@ -29,7 +29,7 @@ export interface SavedGroup {
   workspaceId: string;
 }
 
-function toServerGroup(g: SavedGroup, tabs: GroupTab[], opts?: { isDeleted?: number }): object {
+function toServerGroup(g: SavedGroup, tabs: GroupTab[], opts?: { isDeleted?: number }): SyncEntity {
   return {
     id: g.id,
     name: g.name,
@@ -287,7 +287,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
 
     const fromGroup = groups.find(g => g.id === fromGroupId);
     const toGroup = groups.find(g => g.id === toGroupId);
-    const toEnqueue: object[] = [];
+    const toEnqueue: SyncEntity[] = [];
     if (fromGroup) { toEnqueue.push(toServerGroup(fromGroup, updatedTabs.filter(t => t.groupId === fromGroupId))); }
     if (toGroup) { toEnqueue.push(toServerGroup(toGroup, updatedTabs.filter(t => t.groupId === toGroupId))); }
     if (toEnqueue.length > 0) { syncEngine?.enqueue({ groups: toEnqueue }); }

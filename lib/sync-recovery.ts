@@ -1,4 +1,4 @@
-import type { SyncPushPayload } from "./api";
+import type { SyncEntity, SyncPushPayload } from "./api";
 
 const RECOVERY_KEY = "tabslate-sync-recovery";
 
@@ -18,15 +18,15 @@ function createEmptySnapshot(): SyncPushPayload {
   };
 }
 
-function mergeEntities(current: object[], incoming: object[]): object[] {
-  const merged = new Map<string, object>();
+function mergeEntities(current: SyncEntity[], incoming: SyncEntity[]): SyncEntity[] {
+  const merged = new Map<string, SyncEntity>();
 
   for (const entity of current) {
-    merged.set((entity as { id: string }).id, entity);
+    merged.set(entity.id, entity);
   }
 
   for (const entity of incoming) {
-    merged.set((entity as { id: string }).id, entity);
+    merged.set(entity.id, entity);
   }
 
   return Array.from(merged.values());

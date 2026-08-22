@@ -1,4 +1,5 @@
 import { api, ApiError, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
+import type { SyncPushEntities } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import { SyncQueue } from "@/lib/sync-queue";
 import { SSEClient } from "@/lib/sse-client";
@@ -86,7 +87,7 @@ export class SyncEngine {
     this.ensurePeriodicPull();
   }
 
-  enqueue(entities: Parameters<SyncQueue["enqueue"]>[0]) {
+  enqueue(entities: Partial<SyncPushEntities>) {
     this.setStatus("syncing");
     this.queue.enqueue(entities);
   }
@@ -97,7 +98,7 @@ export class SyncEngine {
    * IDB cleanup, so that a page refresh mid-operation leaves the item in IDB
    * (still visible in trash) rather than creating a server-side orphan.
    */
-  async forcePush(entities: Partial<{ workspaces: object[]; collections: object[]; bookmarks: object[]; tags: object[]; groups: object[] }>): Promise<void> {
+  async forcePush(entities: Partial<SyncPushEntities>): Promise<void> {
     const creds = this.getCredentials();
     if (!creds) { throw new Error("not authenticated"); }
     const payload: SyncPushPayload = {

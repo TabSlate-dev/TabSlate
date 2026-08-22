@@ -5,11 +5,12 @@ import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import { compareActiveCollections } from "@/lib/collection-utils";
-import type { SyncPullResponse } from "@/lib/api";
+import type { SyncEntity, SyncPullResponse } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { analytics } from "@/lib/analytics";
+import { createGuestWorkspaceSeed } from "@/lib/guest-workspace";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -70,7 +71,7 @@ export const SOLID_TAG_COLORS = [
 // ---------------------------------------------------------------------------
 // Sync helpers
 // ---------------------------------------------------------------------------
-function toServerCollection(c: Collection, opts?: { isDeleted?: number }): object {
+function toServerCollection(c: Collection, opts?: { isDeleted?: number }): SyncEntity {
   return {
     id: c.id,
     workspace_id: c.workspaceId !== "" ? c.workspaceId : null,
@@ -85,7 +86,7 @@ function toServerCollection(c: Collection, opts?: { isDeleted?: number }): objec
   };
 }
 
-function toServerWorkspace(w: Workspace): object {
+function toServerWorkspace(w: Workspace): SyncEntity {
   return {
     id: w.id,
     name: w.name,
@@ -97,7 +98,7 @@ function toServerWorkspace(w: Workspace): object {
   };
 }
 
-function toServerTag(t: Tag): object {
+function toServerTag(t: Tag): SyncEntity {
   return {
     id: t.id,
     name: t.name,
@@ -122,6 +123,7 @@ interface WorkspaceState {
   _hydrated: boolean;
   hydrate: () => Promise<void>;
   reset: () => void;
+  initializeGuestWorkspace: () => Promise<void>;
 
   highlightedCollectionIds: string[];
   setHighlightedCollectionIds: (ids: string[], durationMs?: number) => void;
@@ -162,6 +164,7 @@ interface WorkspaceState {
 
 // Module-level timer to avoid referential equality issues with array comparison
 let _collectionHighlightTimer: ReturnType<typeof setTimeout> | null = null;
+let _guestWorkspaceInitialization: Promise<void> | null = null;
 
 // ---------------------------------------------------------------------------
 // Store
@@ -231,6 +234,49 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       localSeq: 0,
       _hydrated: true,
     });
+  },
+
+  initializeGuestWorkspace: () => {
+    if (_guestWorkspaceInitialization) {
+      return _guestWorkspaceInitialization;
+    }
+
+    let initialization: Promise<void>;
+    initialization = Promise.resolve().then(async () => {
+      try {
+        const state = get();
+        if (state.workspaces.length > 0) {
+          return;
+        }
+
+        const seed = createGuestWorkspaceSeed(
+          generateId(),
+          generateId(),
+          state.workspaces.length,
+        );
+        await idbBulkWrite([
+          { type: "put", store: "workspaces", value: seed.workspace },
+          { type: "put", store: "collections", value: seed.collection },
+          { type: "put", store: "kv", value: { key: "activeWorkspaceId", value: seed.workspace.id } },
+          { type: "put", store: "kv", value: seed.provenance },
+        ]);
+        set({
+          workspaces: [seed.workspace],
+          collections: [seed.collection],
+          activeWorkspaceId: seed.workspace.id,
+        });
+        syncEngine?.enqueue({
+          workspaces: [toServerWorkspace(seed.workspace)],
+          collections: [toServerCollection(seed.collection)],
+        });
+      } finally {
+        if (_guestWorkspaceInitialization === initialization) {
+          _guestWorkspaceInitialization = null;
+        }
+      }
+    });
+    _guestWorkspaceInitialization = initialization;
+    return initialization;
   },
 
   highlightedCollectionIds: [],

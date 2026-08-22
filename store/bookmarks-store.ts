@@ -3,7 +3,7 @@ import type { Bookmark } from "@/lib/types";
 import { generateId } from "@/lib/id";
 import { idbGet, idbGetAll, idbGetByIndex, idbGetMany, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
-import type { SyncPullResponse } from "@/lib/api";
+import type { SyncEntity, SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
@@ -102,7 +102,7 @@ function assertCountsInvariant(
 // ---------------------------------------------------------------------------
 // Sync helpers
 // ---------------------------------------------------------------------------
-function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?: number } = {}): object {
+function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?: number } = {}): SyncEntity {
   return {
     id: b.id,
     collection_id: b.collectionId || null,

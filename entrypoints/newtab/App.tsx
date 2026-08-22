@@ -139,7 +139,7 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   const refreshToken = useAuthStore((s) => s.refreshToken);
   const user = useAuthStore((s) => s.user);
   const workspaceCount = useWorkspaceStore((s) => s.workspaces.length);
-  const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
+  const initializeGuestWorkspace = useWorkspaceStore((s) => s.initializeGuestWorkspace);
   const prevSessionStatusRef = useRef<AuthSessionStatus | null>(null);
 
   const hydrated =
@@ -186,9 +186,9 @@ function StoreGate({ children }: { children: React.ReactNode }) {
       storesHydrated: hydrated,
       workspaceCount,
     })) {
-      createWorkspace("My Workspace", "blue");
+      void initializeGuestWorkspace();
     }
-  }, [createWorkspace, hydrated, sessionStatus, workspaceCount]);
+  }, [hydrated, initializeGuestWorkspace, sessionStatus, workspaceCount]);
 
   if (!hydrated) {
     return (
@@ -280,7 +280,7 @@ function SyncProvider({
           useGroupsStore.getState().enqueueAllToSync();
           // New account: server is empty and local store is also empty → seed default workspace.
           if (useWorkspaceStore.getState().workspaces.length === 0) {
-            useWorkspaceStore.getState().createWorkspace("My Workspace", "blue");
+            await useWorkspaceStore.getState().initializeGuestWorkspace();
           }
         } else {
           useWorkspaceStore.getState().sweepUnsynced();

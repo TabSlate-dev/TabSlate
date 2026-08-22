@@ -1,5 +1,5 @@
 import { api, ApiError } from "./api";
-import type { SyncPushPayload, SyncPushResponse } from "./api";
+import type { SyncEntity, SyncPushEntities, SyncPushPayload, SyncPushResponse } from "./api";
 import { bufferSyncRecoverySnapshot, loadSyncRecoverySnapshot } from "./sync-recovery";
 import { useAuthStore } from "../store/auth-store";
 
@@ -9,11 +9,11 @@ import { useAuthStore } from "../store/auth-store";
 const MAX_PER_PUSH = 900;
 
 interface QueuedEntities {
-  workspaces: Map<string, object>;
-  collections: Map<string, object>;
-  bookmarks: Map<string, object>;
-  tags: Map<string, object>;
-  groups: Map<string, object>;
+  workspaces: Map<string, SyncEntity>;
+  collections: Map<string, SyncEntity>;
+  bookmarks: Map<string, SyncEntity>;
+  tags: Map<string, SyncEntity>;
+  groups: Map<string, SyncEntity>;
 }
 
 type OnPushSuccess = (resp: SyncPushResponse) => void;
@@ -49,15 +49,15 @@ export class SyncQueue {
     this.recoveryReady = this.hydrateRecoverySnapshot();
   }
 
-  enqueue(entities: Partial<{ workspaces: object[]; collections: object[]; bookmarks: object[]; tags: object[]; groups: object[] }>) {
-    const set = <T extends { id: string }>(map: Map<string, object>, items?: T[]) => {
+  enqueue(entities: Partial<SyncPushEntities>) {
+    const set = (map: Map<string, SyncEntity>, items?: SyncEntity[]) => {
       items?.forEach(item => map.set(item.id, item));
     };
-    set(this.queue.workspaces, entities.workspaces as Array<{ id: string }>);
-    set(this.queue.collections, entities.collections as Array<{ id: string }>);
-    set(this.queue.bookmarks, entities.bookmarks as Array<{ id: string }>);
-    set(this.queue.tags, entities.tags as Array<{ id: string }>);
-    set(this.queue.groups, entities.groups as Array<{ id: string }>);
+    set(this.queue.workspaces, entities.workspaces);
+    set(this.queue.collections, entities.collections);
+    set(this.queue.bookmarks, entities.bookmarks);
+    set(this.queue.tags, entities.tags);
+    set(this.queue.groups, entities.groups);
 
     this.schedulePush(2000);
   }
@@ -194,9 +194,9 @@ export class SyncQueue {
   }
 
   private requeueSnapshot(snapshot: SyncPushPayload) {
-    const merge = (map: Map<string, object>, entities: object[]) => {
+    const merge = (map: Map<string, SyncEntity>, entities: SyncEntity[]) => {
       for (const entity of entities) {
-        const id = (entity as { id: string }).id;
+        const id = entity.id;
         if (!map.has(id)) {
           map.set(id, entity);
         }
@@ -243,7 +243,7 @@ export class SyncQueue {
 
     // Phase 1: non-bookmark entities in FK-safe order (bookmarks reference collections)
     type NonBmKey = "workspaces" | "collections" | "tags" | "groups";
-    type NonBmEntry = [NonBmKey, object];
+    type NonBmEntry = [NonBmKey, SyncEntity];
     const nonBm: NonBmEntry[] = [
       ...ws.map(e => ["workspaces", e] as NonBmEntry),
       ...col.map(e => ["collections", e] as NonBmEntry),
@@ -253,7 +253,7 @@ export class SyncQueue {
     for (let i = 0; i < nonBm.length; i += MAX_PER_PUSH) {
       const entities = emptyEntities();
       for (const [key, e] of nonBm.slice(i, i + MAX_PER_PUSH)) {
-        (entities[key] as object[]).push(e);
+        entities[key].push(e);
       }
       chunks.push({ entities });
     }
