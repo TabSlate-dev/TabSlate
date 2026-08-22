@@ -329,6 +329,23 @@
   "sync_registerNow": {
     "message": "立即注册"
   },
+  "sync_guestDataMerged": {
+    "message": "离线数据已合并到 $1",
+    "placeholders": {
+      "workspace": {
+        "content": "$1"
+      }
+    }
+  },
+  "sync_noMigrationTarget": {
+    "message": "离线数据已安全保留在本地，但当前没有可用于同步的工作区。"
+  },
+  "sync_invalidParentConflict": {
+    "message": "部分本地数据引用了当前账号中不可用的工作区或收藏集。"
+  },
+  "sync_quotaConflict": {
+    "message": "部分本地数据超出当前套餐容量，现已安全保留在此设备上。"
+  },
   "header_sortDateNewest": {
     "message": "添加时间（最新优先）"
   },

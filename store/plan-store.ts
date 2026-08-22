@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
-import { api, type PlanLimits, type PlanUsage } from "@/lib/api";
+import { api, type PlanLimits, type PlanResponse, type PlanUsage } from "@/lib/api";
 import { useAuthStore } from "@/store/auth-store";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 
@@ -20,7 +20,7 @@ interface PlanState {
   isFetching: boolean;
   quotaAlert: QuotaAlert | null;
 
-  fetchPlan: () => Promise<void>;
+  fetchPlan: () => Promise<PlanResponse | null>;
   ensureFresh: (force?: boolean) => void;
   checkQuota: (resource: QuotaResource, currentCount?: number) => boolean;
   incrementUsage: (resource: QuotaResource, by?: number) => void;
@@ -50,6 +50,15 @@ const USAGE_KEY: Record<QuotaResource, keyof PlanUsage> = {
 let _alertTimer: ReturnType<typeof setTimeout> | null = null;
 let _planRequestGeneration = 0;
 
+interface InFlightPlanRequest {
+  serverUrl: string;
+  accessToken: string;
+  generation: number;
+  promise: Promise<PlanResponse | null>;
+}
+
+let _inFlightPlanRequest: InFlightPlanRequest | null = null;
+
 function hasCurrentAuthCredentials(serverUrl: string, accessToken: string): boolean {
   const currentAuth = useAuthStore.getState();
   return currentAuth.serverUrl === serverUrl && currentAuth.accessToken === accessToken;
@@ -67,39 +76,67 @@ export const usePlanStore = create<PlanState>()(
 
       fetchPlan: async () => {
         const { serverUrl, accessToken } = useAuthStore.getState();
-        if (!serverUrl || !accessToken) { return; }
-        if (get().isFetching) { return; }
+        if (!serverUrl || !accessToken) { return null; }
         const requestGeneration = _planRequestGeneration;
+        if (
+          _inFlightPlanRequest &&
+          _inFlightPlanRequest.serverUrl === serverUrl &&
+          _inFlightPlanRequest.accessToken === accessToken &&
+          _inFlightPlanRequest.generation === requestGeneration
+        ) {
+          return _inFlightPlanRequest.promise;
+        }
+
         set({ isFetching: true });
-        try {
-          const data = await api.getPlan(serverUrl, accessToken);
-          if (
-            requestGeneration !== _planRequestGeneration ||
-            !hasCurrentAuthCredentials(serverUrl, accessToken)
-          ) {
-            if (requestGeneration === _planRequestGeneration) {
+        let inFlightRequest: InFlightPlanRequest | null = null;
+        const request = (async (): Promise<PlanResponse | null> => {
+          try {
+            const data = await api.getPlan(serverUrl, accessToken);
+            if (
+              requestGeneration !== _planRequestGeneration ||
+              !hasCurrentAuthCredentials(serverUrl, accessToken)
+            ) {
+              if (_inFlightPlanRequest === inFlightRequest) {
+                set({ isFetching: false });
+              }
+              return null;
+            }
+            set({
+              subscription: data.subscription,
+              limits: data.limits,
+              usage: data.usage,
+              fetchedAt: Date.now(),
+              isFetching: false,
+            });
+            // Prune expired trash entries now that we have an authoritative grace period.
+            const bmStore = useBookmarksStore.getState();
+            if (bmStore._trashedLoaded && data.limits.trash_grace_days > 0) {
+              bmStore.pruneExpiredTrash(data.limits.trash_grace_days);
+            }
+            return data;
+          } catch {
+            if (
+              requestGeneration === _planRequestGeneration &&
+              hasCurrentAuthCredentials(serverUrl, accessToken) &&
+              _inFlightPlanRequest === inFlightRequest
+            ) {
               set({ isFetching: false });
             }
-            return;
+            return null;
           }
-          set({
-            subscription: data.subscription,
-            limits: data.limits,
-            usage: data.usage,
-            fetchedAt: Date.now(),
-            isFetching: false,
-          });
-          // Prune expired trash entries now that we have an authoritative grace period.
-          const bmStore = useBookmarksStore.getState();
-          if (bmStore._trashedLoaded && data.limits.trash_grace_days > 0) {
-            bmStore.pruneExpiredTrash(data.limits.trash_grace_days);
-          }
-        } catch {
-          if (
-            requestGeneration === _planRequestGeneration &&
-            hasCurrentAuthCredentials(serverUrl, accessToken)
-          ) {
-            set({ isFetching: false });
+        })();
+        inFlightRequest = {
+          serverUrl,
+          accessToken,
+          generation: requestGeneration,
+          promise: request,
+        };
+        _inFlightPlanRequest = inFlightRequest;
+        try {
+          return await request;
+        } finally {
+          if (_inFlightPlanRequest === inFlightRequest) {
+            _inFlightPlanRequest = null;
           }
         }
       },

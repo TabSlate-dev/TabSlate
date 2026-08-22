@@ -329,6 +329,23 @@
   "sync_registerNow": {
     "message": "Register now"
   },
+  "sync_guestDataMerged": {
+    "message": "Offline data was merged into $1",
+    "placeholders": {
+      "workspace": {
+        "content": "$1"
+      }
+    }
+  },
+  "sync_noMigrationTarget": {
+    "message": "Offline data is safe locally, but no workspace is available for synchronization."
+  },
+  "sync_invalidParentConflict": {
+    "message": "Some local data references a workspace or collection that is not available on this account."
+  },
+  "sync_quotaConflict": {
+    "message": "Some local data exceeds the current plan capacity and remains safely stored on this device."
+  },
   "header_sortDateNewest": {
     "message": "Date Added (Newest)"
   },

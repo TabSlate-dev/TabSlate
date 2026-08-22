@@ -21,11 +21,13 @@ import { useTabsStore } from "@/store/tabs-store";
 import { useSettingsStore } from "@/store/settings-store";
 import { usePlanStore, type QuotaResource } from "@/store/plan-store";
 import { QuotaAlert } from "@/components/ui/quota-alert";
+import { SyncRecoveryAlert } from "@/components/ui/sync-recovery-alert";
+import { useTranslation } from "@/hooks/use-translation";
 import type { ExtensionMessage } from "@/lib/messages";
 import { analytics } from "@/lib/analytics";
-import { type SyncStatus, initSyncEngine, syncEngine, destroySyncEngine, releaseSyncEngine } from "@/lib/sync-engine";
+import { type SyncStatus, initSyncEngine, syncEngine, releaseSyncEngine } from "@/lib/sync-engine";
 import { createSyncEngine } from "@/lib/sync-engine-runtime";
-import type { SyncPullResponse } from "@/lib/api";
+import { api, type SyncPullResponse } from "@/lib/api";
 import {
   canStartSync,
   resolveAuthSessionStatus,
@@ -35,7 +37,34 @@ import {
 } from "@/lib/auth-session";
 import { Loader2 } from "lucide-react";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
-import { persistPulledSyncResponse } from "@/lib/sync-pull-persistence";
+import {
+  clearCapacityResolvedConflicts,
+  confirmGuestWorkspaceFromPull,
+  getPersistentSyncErrorKey,
+  prepareGuestWorkspaceForPull,
+  resolveGuestPushRejections,
+  resolveLegacyGuestWorkspaceFailure,
+  sweepAllUnsynced,
+} from "@/lib/guest-workspace-reconciliation";
+
+function quotaResourceForRejectedType(type: string | undefined): QuotaResource | null {
+  if (type === "bookmark") {
+    return "bookmark";
+  }
+  if (type === "collection") {
+    return "collection";
+  }
+  if (type === "tag") {
+    return "tag";
+  }
+  if (type === "workspace") {
+    return "workspace";
+  }
+  if (type === "saved_group") {
+    return "saved_group";
+  }
+  return null;
+}
 
 function PageTracker() {
   const location = useLocation();
@@ -221,9 +250,11 @@ function SyncProvider({
   const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
   const mergeGroups = useGroupsStore((s) => s.mergeFromServer);
   const setLocalSeq = useWorkspaceStore((s) => s.setLocalSeq);
+  const { t } = useTranslation();
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
+  const [recoveryWorkspaceName, setRecoveryWorkspaceName] = useState<string | null>(null);
   const sessionStatus = resolveAuthSessionStatus({
     accessToken,
     refreshToken,
@@ -240,11 +271,34 @@ function SyncProvider({
   const mergeBookmarksRef = useRef(mergeBookmarks);
   const mergeGroupsRef = useRef(mergeGroups);
   const setLocalSeqRef = useRef(setLocalSeq);
+  const tRef = useRef(t);
+  const recoveryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { mergeWorkspacesRef.current = mergeWorkspaces; }, [mergeWorkspaces]);
   useEffect(() => { mergeBookmarksRef.current = mergeBookmarks; }, [mergeBookmarks]);
   useEffect(() => { mergeGroupsRef.current = mergeGroups; }, [mergeGroups]);
   useEffect(() => { setLocalSeqRef.current = setLocalSeq; }, [setLocalSeq]);
+  useEffect(() => { tRef.current = t; }, [t]);
+
+  const showRecoveryNotice = useCallback((targetWorkspaceName: string | undefined) => {
+    if (!targetWorkspaceName) {
+      return;
+    }
+    if (recoveryNoticeTimerRef.current) {
+      clearTimeout(recoveryNoticeTimerRef.current);
+    }
+    setRecoveryWorkspaceName(targetWorkspaceName);
+    recoveryNoticeTimerRef.current = setTimeout(() => {
+      setRecoveryWorkspaceName(null);
+      recoveryNoticeTimerRef.current = null;
+    }, 4000);
+  }, []);
+
+  useEffect(() => () => {
+    if (recoveryNoticeTimerRef.current) {
+      clearTimeout(recoveryNoticeTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (syncEnabled) {
@@ -274,50 +328,80 @@ function SyncProvider({
       () => localSeqRef.current,
       async (resp: SyncPullResponse) => {
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
-        await persistPulledSyncResponse(resp, {
-          mergeWorkspaces: mergeWorkspacesRef.current,
-          mergeGroups: mergeGroupsRef.current,
-          mergeBookmarks: mergeBookmarksRef.current,
-          setLocalSeq: setLocalSeqRef.current,
-          setLocalSeqRef: (sequence) => { localSeqRef.current = sequence; },
-          beforeSweep: async () => {
-            if (needsInitialPush && useWorkspaceStore.getState().workspaces.length === 0) {
-              await useWorkspaceStore.getState().initializeGuestWorkspace();
-            }
-          },
-          sweepAll: async () => {
-            await useWorkspaceStore.getState().sweepUnsynced();
-            await useBookmarksStore.getState().sweepUnsynced();
-            await useGroupsStore.getState().sweepUnsynced();
-          },
-        });
-        // A remote pull may change usage without any local create/delete action,
-        // so bypass the TTL cache and refresh the authoritative counters.
-        usePlanStore.getState().ensureFresh(true);
-        return null;
+        await prepareGuestWorkspaceForPull(resp);
+        await mergeWorkspacesRef.current(resp);
+        await mergeGroupsRef.current(resp);
+        await mergeBookmarksRef.current(resp);
+        await confirmGuestWorkspaceFromPull(resp);
+
+        await setLocalSeqRef.current(resp.server_seq);
+        localSeqRef.current = resp.server_seq;
+
+        if (needsInitialPush && useWorkspaceStore.getState().workspaces.length === 0) {
+          await useWorkspaceStore.getState().initializeGuestWorkspace();
+        }
+        await sweepAllUnsynced();
+
+        const refreshedPlan = await usePlanStore.getState().fetchPlan();
+        if (refreshedPlan && await clearCapacityResolvedConflicts(refreshedPlan)) {
+          await sweepAllUnsynced();
+        }
+
+        const persistentErrorKey = await getPersistentSyncErrorKey();
+        return persistentErrorKey ? tRef.current(persistentErrorKey) : null;
       },
       async (pushResp) => {
+        const reconciliation = await resolveGuestPushRejections(pushResp);
+        const quotaResources = new Set<QuotaResource>();
         for (const rejected of pushResp.rejected) {
-          if (rejected.reason === "quota_exceeded") {
-            const resourceMap: Record<string, QuotaResource> = {
-              collection: "collection",
-              saved_group: "saved_group",
-              workspace: "workspace",
-            };
-            const resource = rejected.type ? resourceMap[rejected.type] : undefined;
-            if (resource) { usePlanStore.getState().showQuotaAlert(resource); }
+          if (rejected.reason !== "quota_exceeded") {
+            continue;
+          }
+          const resource = quotaResourceForRejectedType(rejected.type);
+          if (resource) {
+            quotaResources.add(resource);
           }
         }
-        if (pushResp.rejected.some((r) => r.reason === "quota_exceeded")) {
-          void usePlanStore.getState().fetchPlan();
+        for (const resource of quotaResources) {
+          usePlanStore.getState().showQuotaAlert(resource);
         }
-        return null;
+        if (quotaResources.size > 0) {
+          await usePlanStore.getState().fetchPlan();
+        }
+        if (reconciliation.kind === "migrated") {
+          showRecoveryNotice(reconciliation.targetWorkspaceName);
+          await sweepAllUnsynced();
+        }
+        const persistentErrorKey = await getPersistentSyncErrorKey();
+        return persistentErrorKey ? tRef.current(persistentErrorKey) : null;
       },
       (status, errorMessage) => {
         setSyncStatus(status);
         setSyncErrorMessage(status === "error" ? (errorMessage ?? null) : null);
       },
-      async () => false,
+      async (failure) => {
+        if (failure.status !== 500) {
+          return false;
+        }
+        const currentAuth = useAuthStore.getState();
+        if (!currentAuth.serverUrl || !currentAuth.accessToken) {
+          return false;
+        }
+        const [remote, plan] = await Promise.all([
+          api.syncPull(currentAuth.serverUrl, currentAuth.accessToken, 0),
+          usePlanStore.getState().fetchPlan(),
+        ]);
+        if (!plan) {
+          return false;
+        }
+        const reconciliation = await resolveLegacyGuestWorkspaceFailure(plan, remote);
+        if (reconciliation.kind !== "migrated") {
+          return false;
+        }
+        showRecoveryNotice(reconciliation.targetWorkspaceName);
+        await sweepAllUnsynced();
+        return true;
+      },
     );
 
     initSyncEngine(engine);
@@ -332,7 +416,7 @@ function SyncProvider({
       engine.destroy();
       releaseSyncEngine(engine);
     };
-  }, [syncEnabled, serverUrl]);
+  }, [showRecoveryNotice, syncEnabled, serverUrl]);
 
   const effectiveSyncStatus = useMemo<SyncStatus>(
     () => sessionStatus === "offline" ? "offline" : syncStatus,
@@ -340,17 +424,25 @@ function SyncProvider({
   );
 
   const handleForceSync = useCallback(() => {
-    if (syncEngine) {
-      // Normal path: engine is running, trigger a full sync cycle.
-      syncEngine.forceSync().catch(() => {});
-    } else if (serverUrl) {
-      // No engine = accessToken is absent (silentRefresh failed while backend was unreachable).
-      // Retry the token refresh; on success the SyncProvider effect will (re)create the engine.
-      void useAuthStore.getState().silentRefresh();
-    }
+    void (async () => {
+      await syncConflictRegistry.clearAllForManualRetry();
+      await sweepAllUnsynced();
+      if (syncEngine) {
+        await syncEngine.forceSync();
+        return;
+      }
+      if (serverUrl) {
+        await useAuthStore.getState().silentRefresh();
+      }
+    })();
   }, [serverUrl]);
 
-  return <>{children(effectiveSyncStatus, handleForceSync, syncErrorMessage)}</>;
+  return (
+    <>
+      <SyncRecoveryAlert targetWorkspaceName={recoveryWorkspaceName} />
+      {children(effectiveSyncStatus, handleForceSync, syncErrorMessage)}
+    </>
+  );
 }
 
 export default function App() {

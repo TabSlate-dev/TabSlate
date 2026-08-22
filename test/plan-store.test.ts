@@ -100,6 +100,23 @@ describe("plan store refresh policy", () => {
     expect(getPlanMock).toHaveBeenCalledTimes(1);
   });
 
+  test("shares one authoritative in-flight result for matching credentials", async () => {
+    const deferredPlan = createDeferred<typeof planResponse>();
+    getPlanMock.mockImplementationOnce(() => deferredPlan.promise);
+    const { usePlanStore } = await importPlanStore();
+
+    const first = usePlanStore.getState().fetchPlan();
+    const second = usePlanStore.getState().fetchPlan();
+    await Promise.resolve();
+
+    expect(getPlanMock).toHaveBeenCalledTimes(1);
+
+    deferredPlan.resolve(planResponse);
+
+    await expect(first).resolves.toEqual(planResponse);
+    await expect(second).resolves.toEqual(planResponse);
+  });
+
   test("discards a plan response after the session is cleared", async () => {
     const deferredPlan = createDeferred<typeof planResponse>();
     getPlanMock.mockImplementationOnce(() => deferredPlan.promise);
@@ -131,7 +148,7 @@ describe("plan store refresh policy", () => {
     const currentFetching = usePlanStore.getState().fetchPlan();
     await Promise.resolve();
     stalePlan.resolve(planResponse);
-    await staleFetching;
+    await expect(staleFetching).resolves.toBeNull();
 
     expect(usePlanStore.getState().isFetching).toBe(true);
 
