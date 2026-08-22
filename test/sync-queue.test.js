@@ -23,6 +23,8 @@ let syncPushImpl;
 let loadRecoverySnapshotImpl;
 let silentRefreshImpl;
 let currentRefreshToken;
+let clearEntitiesImpl;
+let conflictRegistryReadyImpl;
 
 mock.module("../lib/api", () => ({
   api: {
@@ -69,9 +71,10 @@ mock.module("../lib/sync-recovery", () => ({
 
 mock.module("../lib/sync-queue-conflicts", () => ({
   syncQueueConflictRegistry: {
-    ready: async () => {},
+    ready: () => conflictRegistryReadyImpl(),
     clearEntities: async (references) => {
       clearedConflicts.push(references);
+      await clearEntitiesImpl(references);
     },
     filterPayload: (payload) => payload,
     recordPayload: async (payload, status) => {
@@ -101,6 +104,8 @@ describe("SyncQueue", () => {
     syncPushImpl = async () => ({ server_seq: 0, rejected: [] });
     silentRefreshImpl = async () => true;
     currentRefreshToken = "refresh-token";
+    clearEntitiesImpl = async () => {};
+    conflictRegistryReadyImpl = async () => {};
   });
 
   test("rehydrates recovery state before normal pushes resume", async () => {
@@ -211,6 +216,8 @@ describe("SyncQueue", () => {
     expect(isRetryablePushError(new MockApiError("invalid", 422))).toBe(false);
     expect(computeRetryDelay(2000, new MockApiError("server", 500), () => 0)).toBe(1600);
     expect(computeRetryDelay(2000, new MockApiError("server", 500), () => 1)).toBe(2400);
+    expect(computeRetryDelay(2000, new MockApiError("rate", 429, 3), () => 0)).toBe(3000);
+    expect(computeRetryDelay(2000, new MockApiError("rate", 429, 1), () => 1)).toBe(2400);
   });
 
   test("keeps an explicit edit clear when a later sweep respects the same conflict", async () => {
@@ -225,6 +232,207 @@ describe("SyncQueue", () => {
     await queue.flush();
 
     expect(clearedConflicts).toEqual([[{ entityType: "bookmark", entityId: "edited-after-conflict" }]]);
+    queue.destroy();
+  });
+
+  test("keeps a clear edit queued when another clear persists first", async () => {
+    let releaseFirstClear;
+    let notifyFirstClear;
+    const firstClearStarted = new Promise((resolve) => {
+      notifyFirstClear = resolve;
+    });
+    let clearCalls = 0;
+    clearEntitiesImpl = async () => {
+      clearCalls += 1;
+      if (clearCalls !== 1) {
+        return;
+      }
+      notifyFirstClear();
+      await new Promise((resolve) => {
+        releaseFirstClear = resolve;
+      });
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "clear-a" }] });
+    const firstFlush = queue.flush();
+    await firstClearStarted;
+    queue.enqueue({ bookmarks: [{ id: "clear-b" }] });
+    if (!releaseFirstClear) {
+      throw new Error("first conflict clear did not start");
+    }
+    releaseFirstClear();
+    await firstFlush;
+
+    expect(syncPushCalls).toHaveLength(1);
+    expect(syncPushCalls[0]?.entities.bookmarks).toEqual([{ id: "clear-a" }]);
+    await queue.flush();
+    expect(syncPushCalls[1]?.entities.bookmarks).toEqual([{ id: "clear-b" }]);
+    expect(clearedConflicts).toEqual([
+      [{ entityType: "bookmark", entityId: "clear-a" }],
+      [{ entityType: "bookmark", entityId: "clear-b" }],
+    ]);
+    queue.destroy();
+  });
+
+  test("retains a newer clear marker for an overlapping entity edit", async () => {
+    let releaseFirstClear;
+    let notifyFirstClear;
+    const firstClearStarted = new Promise((resolve) => {
+      notifyFirstClear = resolve;
+    });
+    let clearCalls = 0;
+    clearEntitiesImpl = async () => {
+      clearCalls += 1;
+      if (clearCalls !== 1) {
+        return;
+      }
+      notifyFirstClear();
+      await new Promise((resolve) => {
+        releaseFirstClear = resolve;
+      });
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "clear-overlap", title: "A" }] });
+    const firstFlush = queue.flush();
+    await firstClearStarted;
+    queue.enqueue({ bookmarks: [{ id: "clear-overlap", title: "B" }] });
+    if (!releaseFirstClear) {
+      throw new Error("first conflict clear did not start");
+    }
+    releaseFirstClear();
+    await firstFlush;
+    await queue.flush();
+
+    expect(syncPushCalls.map((payload) => payload.entities.bookmarks)).toEqual([
+      [{ id: "clear-overlap", title: "A" }],
+      [{ id: "clear-overlap", title: "B" }],
+    ]);
+    expect(clearedConflicts).toEqual([
+      [{ entityType: "bookmark", entityId: "clear-overlap" }],
+      [{ entityType: "bookmark", entityId: "clear-overlap" }],
+    ]);
+    queue.destroy();
+  });
+
+  test("retains a snapshot and clear marker when conflict persistence fails", async () => {
+    let clearCalls = 0;
+    clearEntitiesImpl = async () => {
+      clearCalls += 1;
+      if (clearCalls === 1) {
+        throw new Error("conflict persistence failed");
+      }
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => true,
+      { random: () => 0.5 },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "clear-retry" }] });
+    await queue.flush();
+    expect(syncPushCalls).toHaveLength(0);
+    await queue.flush();
+
+    expect(syncPushCalls[0]?.entities.bookmarks).toEqual([{ id: "clear-retry" }]);
+    expect(clearedConflicts).toEqual([
+      [{ entityType: "bookmark", entityId: "clear-retry" }],
+      [{ entityType: "bookmark", entityId: "clear-retry" }],
+    ]);
+    queue.destroy();
+  });
+
+  test("does not let an older in-flight failure restore over a newer successful edit", async () => {
+    let releaseFirstPush;
+    let notifyFirstPush;
+    const firstPushStarted = new Promise((resolve) => {
+      notifyFirstPush = resolve;
+    });
+    let callCount = 0;
+    syncPushImpl = async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        notifyFirstPush();
+        return new Promise((_, reject) => {
+          releaseFirstPush = reject;
+        });
+      }
+      return { server_seq: 11, rejected: [] };
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+      { random: () => 0.5 },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "serialized-edit", title: "A" }] });
+    const firstFlush = queue.flush();
+    await firstPushStarted;
+    queue.enqueue({ bookmarks: [{ id: "serialized-edit", title: "B" }] });
+    await new Promise((resolve) => setTimeout(resolve, 2_100));
+    expect(syncPushCalls).toHaveLength(1);
+    if (!releaseFirstPush) {
+      throw new Error("first request is not in flight");
+    }
+    releaseFirstPush(new MockApiError("late A failure", 500));
+    await firstFlush;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(syncPushCalls).toHaveLength(2);
+    expect(syncPushCalls[1]?.entities.bookmarks).toEqual([{ id: "serialized-edit", title: "B" }]);
+    queue.destroy();
+  });
+
+  test("waits for a structured rejection callback before sending a queued resweep", async () => {
+    let releaseSuccess;
+    let notifySuccess;
+    const successStarted = new Promise((resolve) => {
+      notifySuccess = resolve;
+    });
+    let callCount = 0;
+    syncPushImpl = async () => {
+      callCount += 1;
+      if (callCount === 1) {
+        return { server_seq: 1, rejected: [{ id: "blocked", type: "bookmark", reason: "stale_parent" }] };
+      }
+      return { server_seq: 2, rejected: [] };
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {
+        notifySuccess();
+        await new Promise((resolve) => {
+          releaseSuccess = resolve;
+        });
+      },
+      async () => false,
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "blocked" }] });
+    const firstFlush = queue.flush();
+    await successStarted;
+    queue.enqueue({ bookmarks: [{ id: "resweep" }] }, "respect");
+    await new Promise((resolve) => setTimeout(resolve, 2_100));
+    expect(syncPushCalls).toHaveLength(1);
+    if (!releaseSuccess) {
+      throw new Error("success callback did not start");
+    }
+    releaseSuccess();
+    await firstFlush;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(syncPushCalls).toHaveLength(2);
+    expect(syncPushCalls[1]?.entities.bookmarks).toEqual([{ id: "resweep" }]);
     queue.destroy();
   });
 
@@ -441,6 +649,135 @@ describe("SyncQueue", () => {
     expect(onErrorCalls).toEqual(["second chunk failed"]);
 
     queue.destroy();
+  });
+
+  test("passes already confirmed chunks to the later failure handler", async () => {
+    let pushCount = 0;
+    let receivedFailure;
+    syncPushImpl = async () => {
+      pushCount += 1;
+      if (pushCount === 1) {
+        return { server_seq: 4, rejected: [] };
+      }
+      throw new MockApiError("later failure", 500);
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async (failure) => {
+        receivedFailure = failure;
+        return true;
+      },
+    );
+
+    queue.enqueue({ bookmarks: Array.from({ length: 901 }, (_, index) => ({ id: `confirmed-${index}` })) });
+    await queue.flush();
+
+    expect(receivedFailure.confirmedPayload.entities.bookmarks).toHaveLength(900);
+    expect(receivedFailure.confirmedPayload.entities.bookmarks[0]).toEqual({ id: "confirmed-0" });
+    expect(receivedFailure.payload.entities.bookmarks).toEqual([{ id: "confirmed-900" }]);
+    queue.destroy();
+  });
+
+  test("does not re-arm a retry after destruction during a network failure", async () => {
+    let rejectPush;
+    let notifyPush;
+    const pushStarted = new Promise((resolve) => {
+      notifyPush = resolve;
+    });
+    syncPushImpl = async () => {
+      notifyPush();
+      return new Promise((_, reject) => {
+        rejectPush = reject;
+      });
+    };
+    const timerSpy = spyOn(globalThis, "setTimeout");
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "destroy-network" }] });
+    const flushPromise = queue.flush();
+    await pushStarted;
+    queue.destroy();
+    const timerCallsAfterDestroy = timerSpy.mock.calls.length;
+    if (!rejectPush) {
+      throw new Error("push did not become in flight");
+    }
+    rejectPush(new MockApiError("network failure", 500));
+    await flushPromise;
+
+    expect(timerSpy.mock.calls).toHaveLength(timerCallsAfterDestroy);
+    expect(syncPushCalls).toHaveLength(1);
+    timerSpy.mockRestore();
+  });
+
+  test("does not push after destruction during recovery hydration", async () => {
+    let releaseRecovery;
+    loadRecoverySnapshotImpl = () => new Promise((resolve) => {
+      releaseRecovery = resolve;
+    });
+    const timerSpy = spyOn(globalThis, "setTimeout");
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "destroy-recovery" }] });
+    const flushPromise = queue.flush();
+    await Promise.resolve();
+    queue.destroy();
+    const timerCallsAfterDestroy = timerSpy.mock.calls.length;
+    if (!releaseRecovery) {
+      throw new Error("recovery hydration did not start");
+    }
+    releaseRecovery(null);
+    await flushPromise;
+
+    expect(syncPushCalls).toHaveLength(0);
+    expect(timerSpy.mock.calls).toHaveLength(timerCallsAfterDestroy);
+    timerSpy.mockRestore();
+  });
+
+  test("does not schedule authentication recovery after destruction", async () => {
+    let releaseRefresh;
+    let notifyRefresh;
+    const refreshStarted = new Promise((resolve) => {
+      notifyRefresh = resolve;
+    });
+    syncPushImpl = async () => {
+      throw new MockApiError("unauthorized", 401);
+    };
+    silentRefreshImpl = () => {
+      notifyRefresh();
+      return new Promise((resolve) => {
+        releaseRefresh = resolve;
+      });
+    };
+    const timerSpy = spyOn(globalThis, "setTimeout");
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "destroy-auth" }] });
+    const flushPromise = queue.flush();
+    await refreshStarted;
+    queue.destroy();
+    const timerCallsAfterDestroy = timerSpy.mock.calls.length;
+    if (!releaseRefresh) {
+      throw new Error("refresh did not start");
+    }
+    releaseRefresh(true);
+    await flushPromise;
+
+    expect(timerSpy.mock.calls).toHaveLength(timerCallsAfterDestroy);
+    expect(syncPushCalls).toHaveLength(1);
+    timerSpy.mockRestore();
   });
 
   test("buffers a 401-failed chunk for recovery", async () => {

@@ -20,6 +20,7 @@ export interface SyncQueueOptions {
 export interface SyncPushFailure {
   error: Error;
   payload: SyncPushPayload;
+  confirmedPayload: SyncPushPayload;
   retryable: boolean;
   status: number;
 }
@@ -30,6 +31,11 @@ interface QueuedEntities {
   bookmarks: Map<string, SyncEntity>;
   tags: Map<string, SyncEntity>;
   groups: Map<string, SyncEntity>;
+}
+
+interface PushSnapshot {
+  payload: SyncPushPayload;
+  conflictClears: Map<string, SyncEntityReference>;
 }
 
 type OnPushSuccess = (response: SyncPushResponse, confirmedPayload: SyncPushPayload) => Promise<void>;
@@ -81,6 +87,9 @@ export class SyncQueue {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryDelay = INITIAL_RETRY_DELAY;
   private readonly recoveryReady: Promise<void>;
+  private pushTail: Promise<void> = Promise.resolve();
+  private pushRequested = false;
+  private destroyed = false;
   private needsRecoveryReplay = false;
   private identicalFailureFingerprint: string | null = null;
   private identicalServerFailureCount = 0;
@@ -98,6 +107,9 @@ export class SyncQueue {
   }
 
   enqueue(entities: Partial<SyncPushEntities>, conflictPolicy: SyncConflictPolicy = "clear") {
+    if (this.destroyed) {
+      return;
+    }
     this.addEntities(this.queue, entities);
     if (conflictPolicy === "clear") {
       this.addPendingConflictClears(entities);
@@ -106,6 +118,9 @@ export class SyncQueue {
   }
 
   flush(): Promise<void> {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
@@ -114,7 +129,7 @@ export class SyncQueue {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
-    return this.doPush();
+    return this.requestPush();
   }
 
   isEmpty(): boolean {
@@ -123,28 +138,60 @@ export class SyncQueue {
   }
 
   destroy() {
+    this.destroyed = true;
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
     }
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
+      this.retryTimer = null;
     }
   }
 
   private schedulePush(delayMs: number) {
+    if (this.destroyed) {
+      return;
+    }
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
-      void this.doPush();
+      void this.requestPush();
     }, delayMs);
+  }
+
+  private requestPush(): Promise<void> {
+    if (this.destroyed) {
+      return Promise.resolve();
+    }
+    if (this.pushRequested) {
+      return this.pushTail;
+    }
+
+    this.pushRequested = true;
+    const requestedPush = this.pushTail.then(async () => {
+      this.pushRequested = false;
+      if (this.destroyed) {
+        return;
+      }
+      await this.doPush();
+    });
+    this.pushTail = requestedPush.catch(() => {});
+    return requestedPush;
   }
 
   private async doPush(): Promise<void> {
     await this.recoveryReady;
+    if (this.destroyed) {
+      return;
+    }
     if (this.needsRecoveryReplay) {
       await this.restoreRecoverySnapshot();
+      if (this.destroyed) {
+        return;
+      }
       this.needsRecoveryReplay = false;
     }
     if (this.isEmpty()) {
@@ -155,8 +202,34 @@ export class SyncQueue {
       return;
     }
 
-    await this.clearPendingConflictClears();
-    const full = syncQueueConflictRegistry.filterPayload(this.takeQueueSnapshot());
+    const snapshot = this.takePushSnapshot();
+    if (isPayloadEmpty(snapshot.payload)) {
+      return;
+    }
+    try {
+      await this.clearSnapshotConflictClears(snapshot.conflictClears);
+    } catch (caught) {
+      if (this.destroyed) {
+        return;
+      }
+      this.requeueSnapshot(snapshot.payload);
+      await this.onFailure({
+        error: asError(caught),
+        payload: snapshot.payload,
+        confirmedPayload: createEmptyPayload(),
+        retryable: true,
+        status: 0,
+      });
+      if (!this.destroyed) {
+        this.scheduleRetry(this.nextRetryDelay(asError(caught), snapshot.payload));
+      }
+      return;
+    }
+    if (this.destroyed) {
+      return;
+    }
+    this.removePersistedConflictClears(snapshot.conflictClears);
+    const full = syncQueueConflictRegistry.filterPayload(snapshot.payload);
     if (isPayloadEmpty(full)) {
       return;
     }
@@ -171,12 +244,18 @@ export class SyncQueue {
       const chunk = chunks[index];
       try {
         const response = await api.syncPush(creds.baseUrl, creds.accessToken, chunk);
+        if (this.destroyed) {
+          return;
+        }
         hadSuccessfulChunk = true;
         finalServerSeq = response.server_seq;
         allRejected.push(...response.rejected);
         if (response.rejected.length > 0) {
           this.resetRetryState();
           await this.onSuccess(response, chunk);
+          if (this.destroyed) {
+            return;
+          }
           return;
         }
         this.mergePayloadInto(confirmedPayload, chunk);
@@ -185,6 +264,9 @@ export class SyncQueue {
         if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
           if (hadSuccessfulChunk) {
             await this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected }, confirmedPayload);
+            if (this.destroyed) {
+              return;
+            }
           }
           await this.handleAuthenticationFailure(chunks, index);
           return;
@@ -193,8 +275,11 @@ export class SyncQueue {
         const failedPayload = this.mergeChunks(chunks.slice(index));
         if (hadSuccessfulChunk) {
           await this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected }, confirmedPayload);
+          if (this.destroyed) {
+            return;
+          }
         }
-        await this.handlePushFailure(error, failedPayload);
+        await this.handlePushFailure(error, failedPayload, confirmedPayload);
         return;
       }
     }
@@ -204,12 +289,21 @@ export class SyncQueue {
   }
 
   private async handleAuthenticationFailure(chunks: SyncPushPayload[], failedIndex: number): Promise<void> {
+    if (this.destroyed) {
+      return;
+    }
     bufferSyncRecoverySnapshot(chunks[failedIndex]);
+    if (this.destroyed) {
+      return;
+    }
     this.needsRecoveryReplay = true;
     for (let index = failedIndex + 1; index < chunks.length; index += 1) {
       this.requeueSnapshot(chunks[index]);
     }
     const refreshed = await useAuthStore.getState().silentRefresh();
+    if (this.destroyed) {
+      return;
+    }
     if (refreshed) {
       this.requeueSnapshot(chunks[failedIndex]);
       this.schedulePush(0);
@@ -220,16 +314,25 @@ export class SyncQueue {
     }
   }
 
-  private async handlePushFailure(error: Error, payload: SyncPushPayload): Promise<void> {
+  private async handlePushFailure(error: Error, payload: SyncPushPayload, confirmedPayload: SyncPushPayload): Promise<void> {
+    if (this.destroyed) {
+      return;
+    }
     const status = pushErrorStatus(error);
     const retryable = isRetryablePushError(error);
-    const handled = await this.onFailure({ error, payload, retryable, status });
+    const handled = await this.onFailure({ error, payload, confirmedPayload, retryable, status });
+    if (this.destroyed) {
+      return;
+    }
     if (handled) {
       this.resetRetryState();
       return;
     }
     if (!retryable) {
       await syncQueueConflictRegistry.recordPayload(payload, status);
+      if (this.destroyed) {
+        return;
+      }
       this.resetRetryState();
       return;
     }
@@ -237,37 +340,66 @@ export class SyncQueue {
     this.scheduleRetry(this.nextRetryDelay(error, payload));
   }
 
-  private async clearPendingConflictClears(): Promise<void> {
-    if (this.pendingConflictClears.size === 0) {
+  private async clearSnapshotConflictClears(references: Map<string, SyncEntityReference>): Promise<void> {
+    if (references.size === 0) {
       return;
     }
-    const references = Array.from(this.pendingConflictClears.values());
-    await syncQueueConflictRegistry.clearEntities(references);
-    for (const reference of references) {
-      this.pendingConflictClears.delete(entityReferenceKey(reference));
+    await syncQueueConflictRegistry.clearEntities(Array.from(references.values()));
+  }
+
+  private removePersistedConflictClears(references: Map<string, SyncEntityReference>) {
+    for (const [key, reference] of references) {
+      if (this.pendingConflictClears.get(key) === reference) {
+        this.pendingConflictClears.delete(key);
+      }
     }
   }
 
   private async hydrateRecoverySnapshot(): Promise<void> {
     try {
-      if (await this.restoreRecoverySnapshot()) {
+      const restored = await this.restoreRecoverySnapshot();
+      if (this.destroyed) {
+        return;
+      }
+      if (restored) {
         this.schedulePush(0);
       }
     } catch (caught) {
-      await this.onFailure({ error: asError(caught), payload: createEmptyPayload(), retryable: false, status: 0 });
+      if (this.destroyed) {
+        return;
+      }
+      await this.onFailure({
+        error: asError(caught),
+        payload: createEmptyPayload(),
+        confirmedPayload: createEmptyPayload(),
+        retryable: false,
+        status: 0,
+      });
     }
   }
 
   private async restoreRecoverySnapshot(): Promise<boolean> {
     try {
       const recoverySnapshot = await loadSyncRecoverySnapshot();
+      if (this.destroyed) {
+        return false;
+      }
       if (!recoverySnapshot) {
         return false;
       }
       this.requeueSnapshot(recoverySnapshot);
       return true;
     } catch (caught) {
-      await this.onFailure({ error: asError(caught), payload: createEmptyPayload(), retryable: false, status: 0 });
+      if (this.destroyed) {
+        return false;
+      }
+      await this.onFailure({
+        error: asError(caught),
+        payload: createEmptyPayload(),
+        confirmedPayload: createEmptyPayload(),
+        retryable: false,
+        status: 0,
+      });
       return false;
     }
   }
@@ -284,6 +416,29 @@ export class SyncQueue {
     };
     this.queue = createQueuedEntities();
     return snapshot;
+  }
+
+  private takePushSnapshot(): PushSnapshot {
+    const payload = this.takeQueueSnapshot();
+    const entityKeys = new Set<string>();
+    const addKeys = (entityType: SyncEntityType, entities: SyncEntity[]) => {
+      for (const entity of entities) {
+        entityKeys.add(entityReferenceKey({ entityType, entityId: entity.id }));
+      }
+    };
+    addKeys("workspace", payload.entities.workspaces);
+    addKeys("collection", payload.entities.collections);
+    addKeys("bookmark", payload.entities.bookmarks);
+    addKeys("tag", payload.entities.tags);
+    addKeys("saved_group", payload.entities.groups);
+
+    const conflictClears = new Map<string, SyncEntityReference>();
+    for (const [key, reference] of this.pendingConflictClears) {
+      if (entityKeys.has(key)) {
+        conflictClears.set(key, reference);
+      }
+    }
+    return { payload, conflictClears };
   }
 
   private requeueSnapshot(snapshot: SyncPushPayload) {
@@ -363,12 +518,15 @@ export class SyncQueue {
   }
 
   private scheduleRetry(delayMs: number) {
+    if (this.destroyed) {
+      return;
+    }
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
     }
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
-      void this.doPush();
+      void this.requestPush();
     }, delayMs);
   }
 
