@@ -206,6 +206,34 @@ describe("SyncEngine analytics", () => {
     engine.destroy();
   });
 
+  test("does not deadlock when definitive refresh retirement originates in the active pull", async () => {
+    syncPullImpl = async () => {
+      throw new MockApiError("access token expired", 401);
+    };
+    let engine;
+    const dependencies = analyticsDependencies();
+    dependencies.refreshAuthentication = async () => {
+      await engine.retire({ awaitCurrentPull: false });
+      return false;
+    };
+    engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "expired-token" }),
+      () => 0,
+      async () => null,
+      async () => null,
+      () => {},
+      async () => false,
+      dependencies,
+    );
+
+    const completed = await Promise.race([
+      engine.forceSync().then(() => true),
+      new Promise((resolve) => setTimeout(() => resolve(false), 50)),
+    ]);
+
+    expect(completed).toBe(true);
+  });
+
   test("retries a force push with refreshed credentials after an expired access token", async () => {
     let currentAccessToken = "expired-token";
     syncPushImpl = async (_baseUrl, accessToken) => {

@@ -118,7 +118,9 @@ export const useAuthStore = create<AuthState>()(
             if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
               clearRefreshRetry();
               clearSyncRecoverySnapshot();
-              await retireActiveSyncLifecycle();
+              // This refresh was awaited by the engine's current pull. Retire it
+              // before clearDB, but do not await that pull from inside itself.
+              await retireActiveSyncLifecycle({ awaitCurrentPull: false });
               await clearDB();
               if (refreshGeneration !== _authSessionGeneration) {
                 return false;

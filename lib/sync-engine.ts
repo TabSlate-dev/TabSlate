@@ -2,6 +2,7 @@ import { api, ApiError, SyncPullResponse, SyncPushResponse, SyncPushPayload } fr
 import type { SyncPushEntities } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import type { SyncConflictPolicy, SyncPushFailure } from "@/lib/sync-queue";
+import type { SyncRetirementOptions } from "@/lib/sync-lifecycle";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
 export type { SyncConflictPolicy } from "@/lib/sync-queue";
@@ -363,7 +364,7 @@ export class SyncEngine {
     void this.retire();
   }
 
-  async retire(): Promise<void> {
+  async retire(options: SyncRetirementOptions = {}): Promise<void> {
     if (this.retirement) {
       return this.retirement;
     }
@@ -374,7 +375,7 @@ export class SyncEngine {
       clearInterval(this.periodicTimer);
       this.periodicTimer = null;
     }
-    const pendingPull = this.pullPromise;
+    const pendingPull = options.awaitCurrentPull === false ? null : this.pullPromise;
     this.retirement = Promise.all([
       this.resolutionChain.catch(() => undefined),
       pendingPull?.catch(() => undefined) ?? Promise.resolve(),
