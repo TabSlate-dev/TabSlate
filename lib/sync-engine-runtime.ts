@@ -35,7 +35,7 @@ export function createSyncEngine(
       createSseClient: (credentials, onSequence, onStatusChange) =>
         new SSEClient(credentials, onSequence, onStatusChange),
       syncPull: (baseUrl, accessToken, localSeq) => api.syncPull(baseUrl, accessToken, localSeq),
-      refreshAuthentication: () => useAuthStore.getState().silentRefresh(),
+      refreshAuthentication: (options) => useAuthStore.getState().silentRefresh(options),
       hasRefreshToken: () => Boolean(useAuthStore.getState().refreshToken),
     },
   );

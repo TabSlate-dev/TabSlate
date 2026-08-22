@@ -35,6 +35,14 @@ describe("invalid authenticated session cleanup", () => {
     await runSessionFixture("retires active sync work before clearing a definitively expired session");
   });
 
+  test("upgrades a queue-started refresh when an active pull joins it", async () => {
+    await runSessionFixture("upgrades a shared refresh when the active pull joins it");
+  });
+
+  test("keeps full retirement when no active pull joins refresh", async () => {
+    await runSessionFixture("keeps full retirement for a refresh with no active pull consumer");
+  });
+
   test("retains a newer authenticated session after delayed cleanup", async () => {
     await runSessionFixture("retains a newer authenticated session after delayed cleanup");
   });

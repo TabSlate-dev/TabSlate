@@ -152,6 +152,111 @@ interface LockRecord {
   value: { owner: string; expiresAt: number };
 }
 
+interface GuestSeedWorkspaceRecord {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+  seq: number;
+  deletedAt?: number;
+}
+
+interface GuestSeedCollectionRecord {
+  id: string;
+  workspaceId: string;
+  name: string;
+  icon: string;
+  position: number;
+  isDefault?: boolean;
+  seq: number;
+  deletedAt?: number;
+  archivedAt?: number;
+}
+
+interface GuestSeedProvenanceRecord {
+  key: string;
+  value: { workspaceId: string; defaultCollectionId: string };
+}
+
+interface GuestSeedChildRecord {
+  collectionId?: string;
+  workspaceId?: string;
+}
+
+/**
+ * Removes a just-created seed only when it is still byte-for-byte the original
+ * untouched guest seed.  This makes a stale initializer cancellable without
+ * deleting data that login/reconciliation or a user has since changed.
+ */
+export function idbRollbackGuestWorkspaceIfUnchanged(
+  workspace: GuestSeedWorkspaceRecord,
+  collection: GuestSeedCollectionRecord,
+  provenance: GuestSeedProvenanceRecord,
+): Promise<boolean> {
+  const stores: StoreName[] = [
+    "workspaces", "collections", "bookmarks", "archived-bookmarks",
+    "trashed-bookmarks", "groups", "kv",
+  ];
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction(stores, "readwrite");
+    let rolledBack = false;
+    tx.oncomplete = () => resolve(rolledBack);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+    const workspaceRequest = tx.objectStore("workspaces").get(workspace.id);
+    const collectionRequest = tx.objectStore("collections").get(collection.id);
+    const provenanceRequest = tx.objectStore("kv").get(provenance.key);
+    const activeRequest = tx.objectStore("kv").get("activeWorkspaceId");
+    const activeBookmarksRequest = tx.objectStore("bookmarks").getAll();
+    const archivedBookmarksRequest = tx.objectStore("archived-bookmarks").getAll();
+    const trashedBookmarksRequest = tx.objectStore("trashed-bookmarks").getAll();
+    const groupsRequest = tx.objectStore("groups").getAll();
+    const requests = [
+      workspaceRequest, collectionRequest, provenanceRequest, activeRequest,
+      activeBookmarksRequest, archivedBookmarksRequest, trashedBookmarksRequest, groupsRequest,
+    ];
+    for (const request of requests) {
+      request.onerror = () => tx.abort();
+    }
+    let completed = 0;
+    const decide = () => {
+      completed += 1;
+      if (completed !== requests.length) {
+        return;
+      }
+      const persistedWorkspace = workspaceRequest.result as GuestSeedWorkspaceRecord | undefined;
+      const persistedCollection = collectionRequest.result as GuestSeedCollectionRecord | undefined;
+      const persistedProvenance = provenanceRequest.result as GuestSeedProvenanceRecord | undefined;
+      const active = activeRequest.result as { key: string; value: string } | undefined;
+      const bookmarks = [
+        ...(activeBookmarksRequest.result as GuestSeedChildRecord[]),
+        ...(archivedBookmarksRequest.result as GuestSeedChildRecord[]),
+        ...(trashedBookmarksRequest.result as GuestSeedChildRecord[]),
+      ];
+      const groups = groupsRequest.result as GuestSeedChildRecord[];
+      const workspaceMatches = JSON.stringify(persistedWorkspace) === JSON.stringify(workspace);
+      const collectionMatches = JSON.stringify(persistedCollection) === JSON.stringify(collection);
+      const provenanceMatches = persistedProvenance?.value.workspaceId === workspace.id &&
+        persistedProvenance.value.defaultCollectionId === collection.id;
+      const hasChildren = bookmarks.some((bookmark) => bookmark.collectionId === collection.id) ||
+        groups.some((group) => group.workspaceId === workspace.id);
+      if (!workspaceMatches || !collectionMatches || !provenanceMatches || hasChildren) {
+        return;
+      }
+      tx.objectStore("workspaces").delete(workspace.id);
+      tx.objectStore("collections").delete(collection.id);
+      tx.objectStore("kv").delete(provenance.key);
+      if (active?.value === workspace.id) {
+        tx.objectStore("kv").delete("activeWorkspaceId");
+      }
+      rolledBack = true;
+    };
+    for (const request of requests) {
+      request.onsuccess = decide;
+    }
+  }));
+}
+
 /** A lease mutex for browser contexts that do not expose the Web Locks API. */
 export function idbTryAcquireLock(key: string, owner: string, expiresAt: number): Promise<boolean> {
   return getDB().then((db) => new Promise((resolve, reject) => {

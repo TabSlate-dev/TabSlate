@@ -253,6 +253,36 @@ describe("sync conflict registry", () => {
     ]));
   });
 
+  test("uses the Web Locks selector when the extension context provides it", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    let lockCalls = 0;
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        locks: {
+          request: async (_name, _options, callback) => {
+            lockCalls += 1;
+            return callback();
+          },
+        },
+      },
+    });
+    try {
+      const registry = new SyncConflictRegistry();
+      await registry.ready();
+      await registry.recordRejections([
+        { id: "web-lock-workspace", type: "workspace", reason: "quota_exceeded" },
+      ]);
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(globalThis, "navigator", descriptor);
+      } else {
+        Reflect.deleteProperty(globalThis, "navigator");
+      }
+    }
+    expect(lockCalls).toBeGreaterThan(0);
+  });
+
   test("ignores stale and structurally invalid rejection records", async () => {
     const registry = new SyncConflictRegistry();
     await registry.ready();

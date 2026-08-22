@@ -7,6 +7,9 @@ let clearDBImpl = async () => {
   events.push("cleared");
 };
 let retireImpl = async () => {};
+let refreshImpl = async () => {
+  throw new MockApiError("invalid refresh token", 401);
+};
 
 class MockApiError extends Error {
   constructor(message, status) {
@@ -16,9 +19,7 @@ class MockApiError extends Error {
   }
 }
 
-const refresh = mock(async () => {
-  throw new MockApiError("invalid refresh token", 401);
-});
+const refresh = mock((...args) => refreshImpl(...args));
 
 const login = mock(async () => ({
   access_token: "new-access",
@@ -45,7 +46,7 @@ mock.module("@/lib/sync-recovery", () => ({
 }));
 
 mock.module("@/lib/sync-lifecycle", () => ({
-  retireActiveSyncLifecycle: () => retireImpl(),
+  retireActiveSyncLifecycle: (options) => retireImpl(options),
 }));
 
 mock.module("@/store/i18n-store", () => ({
@@ -74,6 +75,9 @@ describe("invalid authenticated session cleanup", () => {
       events.push("cleared");
     };
     retireImpl = async () => {};
+    refreshImpl = async () => {
+      throw new MockApiError("invalid refresh token", 401);
+    };
     useAuthStore.setState({
       user: {
         id: "user-1",
@@ -124,6 +128,45 @@ describe("invalid authenticated session cleanup", () => {
     finishRetirement(releaseRetirement);
     await refreshed;
     expect(events).toEqual(["retire", "cleared"]);
+  });
+
+  test("upgrades a shared refresh when the active pull joins it", async () => {
+    let releaseRefresh;
+    let notifyRefreshStarted;
+    const refreshStarted = new Promise((resolve) => {
+      notifyRefreshStarted = resolve;
+    });
+    const refreshRelease = new Promise((resolve) => {
+      releaseRefresh = resolve;
+    });
+    let retirementOptions;
+    refreshImpl = async () => {
+      notifyRefreshStarted();
+      await refreshRelease;
+      throw new MockApiError("invalid refresh token", 401);
+    };
+    retireImpl = async (options) => {
+      retirementOptions = options;
+    };
+
+    const queueLikeRefresh = useAuthStore.getState().silentRefresh();
+    await refreshStarted;
+    const pullLikeRefresh = useAuthStore.getState().silentRefresh({ fromCurrentPull: true });
+    releaseRefresh();
+    await Promise.all([queueLikeRefresh, pullLikeRefresh]);
+
+    expect(retirementOptions).toEqual({ awaitCurrentPull: false });
+  });
+
+  test("keeps full retirement for a refresh with no active pull consumer", async () => {
+    let retirementOptions = "not-called";
+    retireImpl = async (options) => {
+      retirementOptions = options;
+    };
+
+    await useAuthStore.getState().silentRefresh();
+
+    expect(retirementOptions).toBeUndefined();
   });
 
   test("retains a newer authenticated session after delayed cleanup", async () => {

@@ -267,6 +267,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           seed.provenance,
         );
         if (options.isSessionCurrent && !options.isSessionCurrent()) {
+          if (created) {
+            await idb.idbRollbackGuestWorkspaceIfUnchanged(
+              seed.workspace,
+              seed.collection,
+              seed.provenance,
+            );
+          }
           return;
         }
         const current = get();

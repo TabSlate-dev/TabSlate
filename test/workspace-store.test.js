@@ -5,11 +5,13 @@ const idbPutCalls = [];
 const idbBulkWriteCalls = [];
 const trashedCollections = [];
 const deletedGroups = [];
+const guestRollbackCalls = [];
 
 let trashCollectionBookmarksImpl;
 let idbBulkWriteImpl;
 let generatedIds;
 let guestSeedCreated = false;
+let persistedGuestSeed = false;
 
 mock.module("@/lib/idb", () => ({
   idbGetAll: async () => [],
@@ -39,6 +41,12 @@ mock.module("@/lib/idb", () => ({
     idbBulkWriteCalls.push(ops);
     await idbBulkWriteImpl(ops);
     guestSeedCreated = true;
+    persistedGuestSeed = true;
+    return true;
+  },
+  idbRollbackGuestWorkspaceIfUnchanged: async (workspace, collection, provenance) => {
+    guestRollbackCalls.push({ workspace, collection, provenance });
+    persistedGuestSeed = false;
     return true;
   },
 }));
@@ -100,10 +108,12 @@ describe("workspace deletion", () => {
     idbBulkWriteCalls.length = 0;
     trashedCollections.length = 0;
     deletedGroups.length = 0;
+    guestRollbackCalls.length = 0;
     trashCollectionBookmarksImpl = async () => {};
     idbBulkWriteImpl = async () => {};
     generatedIds = ["generated-id", "generated-collection-id"];
     guestSeedCreated = false;
+    persistedGuestSeed = false;
     useWorkspaceStore.setState({
       workspaces: [],
       collections: [],
@@ -227,6 +237,8 @@ describe("workspace deletion", () => {
       "account-workspace",
     ]);
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("account-workspace");
+    expect(guestRollbackCalls).toHaveLength(1);
+    expect(persistedGuestSeed).toBe(false);
   });
 
   test("deleteWorkspace waits for trashCollectionBookmarks before deleting the workspace from IDB", async () => {

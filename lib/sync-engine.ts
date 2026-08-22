@@ -10,6 +10,9 @@ export type { SyncConflictPolicy } from "@/lib/sync-queue";
 type Credentials = { baseUrl: string; accessToken: string };
 type GetCredentials = () => Credentials | null;
 type GetLocalSeq = () => number;
+export interface RefreshAuthenticationOptions {
+  fromCurrentPull?: boolean;
+}
 export type OnPullSuccess = (
   resp: SyncPullResponse,
   isCurrent: () => boolean,
@@ -46,7 +49,7 @@ export interface SyncEngineDependencies {
     onStatusChange: (connected: boolean) => void,
   ) => SSEClientDriver;
   syncPull?: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
-  refreshAuthentication?: () => Promise<boolean>;
+  refreshAuthentication?: (options?: RefreshAuthenticationOptions) => Promise<boolean>;
   hasRefreshToken?: () => boolean;
 }
 
@@ -68,7 +71,7 @@ export class SyncEngine {
   private queue: SyncQueueDriver;
   private sseClient: SSEClientDriver;
   private readonly syncPull: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
-  private readonly refreshAuthentication: () => Promise<boolean>;
+  private readonly refreshAuthentication: (options?: RefreshAuthenticationOptions) => Promise<boolean>;
   private readonly hasRefreshToken: () => boolean;
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private status: SyncStatus = "idle";
@@ -310,7 +313,7 @@ export class SyncEngine {
         throw err;
       }
 
-      const refreshed = await this.refreshAuthentication();
+      const refreshed = await this.refreshAuthentication({ fromCurrentPull: true });
       if (!refreshed) {
         // silentRefresh clears the refresh token only after a definitive 401/403.
         // Preserve an error for transient refresh failures so they are not mistaken for logout.
