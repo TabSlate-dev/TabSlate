@@ -12,6 +12,7 @@ let idbBulkWriteImpl;
 let generatedIds;
 let guestSeedCreated = false;
 let persistedGuestSeed = false;
+let guestSeedHasAdditionalCollection = false;
 
 mock.module("@/lib/idb", () => ({
   idbGetAll: async () => [],
@@ -46,6 +47,9 @@ mock.module("@/lib/idb", () => ({
   },
   idbRollbackGuestWorkspaceIfUnchanged: async (workspace, collection, provenance) => {
     guestRollbackCalls.push({ workspace, collection, provenance });
+    if (guestSeedHasAdditionalCollection) {
+      return false;
+    }
     persistedGuestSeed = false;
     return true;
   },
@@ -114,6 +118,7 @@ describe("workspace deletion", () => {
     generatedIds = ["generated-id", "generated-collection-id"];
     guestSeedCreated = false;
     persistedGuestSeed = false;
+    guestSeedHasAdditionalCollection = false;
     useWorkspaceStore.setState({
       workspaces: [],
       collections: [],
@@ -239,6 +244,29 @@ describe("workspace deletion", () => {
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("account-workspace");
     expect(guestRollbackCalls).toHaveLength(1);
     expect(persistedGuestSeed).toBe(false);
+  });
+
+  test("does not roll back a stale seed after another collection was created in its workspace", async () => {
+    let resolveBulkWrite;
+    idbBulkWriteImpl = () => new Promise((resolve) => {
+      resolveBulkWrite = resolve;
+    });
+    generatedIds = ["guest-workspace-id", "guest-collection-id"];
+    let sessionCurrent = true;
+    const initialization = useWorkspaceStore.getState().initializeGuestWorkspace({
+      isSessionCurrent: () => sessionCurrent,
+    });
+    await Promise.resolve();
+    sessionCurrent = false;
+    guestSeedHasAdditionalCollection = true;
+    if (!resolveBulkWrite) {
+      throw new Error("idbBulkWrite was not called");
+    }
+    resolveBulkWrite();
+    await initialization;
+
+    expect(guestRollbackCalls).toHaveLength(1);
+    expect(persistedGuestSeed).toBe(true);
   });
 
   test("deleteWorkspace waits for trashCollectionBookmarks before deleting the workspace from IDB", async () => {

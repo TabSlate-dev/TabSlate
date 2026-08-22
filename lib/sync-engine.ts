@@ -2,7 +2,6 @@ import { api, ApiError, SyncPullResponse, SyncPushResponse, SyncPushPayload } fr
 import type { SyncPushEntities } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import type { SyncConflictPolicy, SyncPushFailure } from "@/lib/sync-queue";
-import type { SyncRetirementOptions } from "@/lib/sync-lifecycle";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
 export type { SyncConflictPolicy } from "@/lib/sync-queue";
@@ -10,9 +9,6 @@ export type { SyncConflictPolicy } from "@/lib/sync-queue";
 type Credentials = { baseUrl: string; accessToken: string };
 type GetCredentials = () => Credentials | null;
 type GetLocalSeq = () => number;
-export interface RefreshAuthenticationOptions {
-  fromCurrentPull?: boolean;
-}
 export type OnPullSuccess = (
   resp: SyncPullResponse,
   isCurrent: () => boolean,
@@ -49,7 +45,7 @@ export interface SyncEngineDependencies {
     onStatusChange: (connected: boolean) => void,
   ) => SSEClientDriver;
   syncPull?: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
-  refreshAuthentication?: (options?: RefreshAuthenticationOptions) => Promise<boolean>;
+  refreshAuthentication?: () => Promise<boolean>;
   hasRefreshToken?: () => boolean;
 }
 
@@ -71,7 +67,7 @@ export class SyncEngine {
   private queue: SyncQueueDriver;
   private sseClient: SSEClientDriver;
   private readonly syncPull: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
-  private readonly refreshAuthentication: (options?: RefreshAuthenticationOptions) => Promise<boolean>;
+  private readonly refreshAuthentication: () => Promise<boolean>;
   private readonly hasRefreshToken: () => boolean;
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private status: SyncStatus = "idle";
@@ -99,8 +95,11 @@ export class SyncEngine {
     this.hasRefreshToken = dependencies.hasRefreshToken ?? (() => false);
 
     const handleQueueSuccess = async (resp: SyncPushResponse, confirmedPayload: SyncPushPayload) => {
+      if (this.destroyed) {
+        return;
+      }
       const conflictMessage = await this.serializeResolution(
-        () => this.onPushSuccess(resp, confirmedPayload),
+        () => this.destroyed ? Promise.resolve(null) : this.onPushSuccess(resp, confirmedPayload),
       );
       if (this.destroyed) {
         return;
@@ -113,9 +112,14 @@ export class SyncEngine {
       this.applyPersistentConflict(conflictMessage);
     };
     const handleQueueFailure = async (failure: SyncPushFailure) => {
+      if (this.destroyed) {
+        return false;
+      }
       if (failure.retryable && failure.status >= 500 && failure.status < 600) {
         try {
-          const handled = await this.serializeResolution(() => this.onLegacyPushFailure(failure));
+          const handled = await this.serializeResolution(
+            () => this.destroyed ? Promise.resolve(false) : this.onLegacyPushFailure(failure),
+          );
           if (this.destroyed) {
             return false;
           }
@@ -275,7 +279,9 @@ export class SyncEngine {
       }
       this.lastPulledCount = this.countPulledEntities(resp);
       const conflictMessage = await this.serializeResolution(
-        () => this.onPullSuccess(resp, () => !this.destroyed),
+        () => this.destroyed
+          ? Promise.resolve(null)
+          : this.onPullSuccess(resp, () => !this.destroyed),
       );
       if (this.destroyed) {
         return;
@@ -313,7 +319,7 @@ export class SyncEngine {
         throw err;
       }
 
-      const refreshed = await this.refreshAuthentication({ fromCurrentPull: true });
+      const refreshed = await this.refreshAuthentication();
       if (!refreshed) {
         // silentRefresh clears the refresh token only after a definitive 401/403.
         // Preserve an error for transient refresh failures so they are not mistaken for logout.
@@ -367,7 +373,7 @@ export class SyncEngine {
     void this.retire();
   }
 
-  async retire(options: SyncRetirementOptions = {}): Promise<void> {
+  async retire(): Promise<void> {
     if (this.retirement) {
       return this.retirement;
     }
@@ -378,10 +384,8 @@ export class SyncEngine {
       clearInterval(this.periodicTimer);
       this.periodicTimer = null;
     }
-    const pendingPull = options.awaitCurrentPull === false ? null : this.pullPromise;
     this.retirement = Promise.all([
       this.resolutionChain.catch(() => undefined),
-      pendingPull?.catch(() => undefined) ?? Promise.resolve(),
     ]).then(() => undefined);
     return this.retirement;
   }

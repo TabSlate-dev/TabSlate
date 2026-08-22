@@ -12,7 +12,6 @@ let _refreshPromise: Promise<boolean> | null = null;
 let _refreshRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let _refreshRetryDelay = 2000;
 let _authSessionGeneration = 0;
-let _refreshHasCurrentPullConsumer = false;
 const MAX_REFRESH_RETRY_DELAY = 60_000;
 
 function clearRefreshRetry() {
@@ -26,7 +25,6 @@ function clearRefreshRetry() {
 function invalidateRefreshWork() {
   _authSessionGeneration += 1;
   _refreshPromise = null;
-  _refreshHasCurrentPullConsumer = false;
   clearRefreshRetry();
 }
 
@@ -54,7 +52,7 @@ interface AuthState {
   setHydrated: () => void;
 
   setServerUrl: (url: string) => void;
-  silentRefresh: (options?: { fromCurrentPull?: boolean }) => Promise<boolean>;
+  silentRefresh: () => Promise<boolean>;
   login: (
     email: string,
     password: string,
@@ -88,11 +86,8 @@ export const useAuthStore = create<AuthState>()(
 
       setServerUrl: (url) => set({ serverUrl: url }),
 
-      silentRefresh: async (options = {}) => {
+      silentRefresh: async () => {
         if (_refreshPromise) {
-          if (options.fromCurrentPull) {
-            _refreshHasCurrentPullConsumer = true;
-          }
           return _refreshPromise;
         }
 
@@ -102,7 +97,6 @@ export const useAuthStore = create<AuthState>()(
         }
 
         const refreshGeneration = _authSessionGeneration;
-        _refreshHasCurrentPullConsumer = options.fromCurrentPull === true;
         let refreshPromise: Promise<boolean> | null = null;
         refreshPromise = (async () => {
           try {
@@ -124,10 +118,7 @@ export const useAuthStore = create<AuthState>()(
             if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
               clearRefreshRetry();
               clearSyncRecoverySnapshot();
-              const retirementOptions = _refreshHasCurrentPullConsumer
-                ? { awaitCurrentPull: false }
-                : undefined;
-              await retireActiveSyncLifecycle(retirementOptions);
+              await retireActiveSyncLifecycle();
               await clearDB();
               if (refreshGeneration !== _authSessionGeneration) {
                 return false;
@@ -146,7 +137,6 @@ export const useAuthStore = create<AuthState>()(
           } finally {
             if (_refreshPromise === refreshPromise) {
               _refreshPromise = null;
-              _refreshHasCurrentPullConsumer = false;
             }
           }
         })();

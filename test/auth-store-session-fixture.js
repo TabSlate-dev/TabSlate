@@ -130,7 +130,7 @@ describe("invalid authenticated session cleanup", () => {
     expect(events).toEqual(["retire", "cleared"]);
   });
 
-  test("upgrades a shared refresh when the active pull joins it", async () => {
+  test("shares queue-started refresh cleanup with a later pull consumer", async () => {
     let releaseRefresh;
     let notifyRefreshStarted;
     const refreshStarted = new Promise((resolve) => {
@@ -151,14 +151,14 @@ describe("invalid authenticated session cleanup", () => {
 
     const queueLikeRefresh = useAuthStore.getState().silentRefresh();
     await refreshStarted;
-    const pullLikeRefresh = useAuthStore.getState().silentRefresh({ fromCurrentPull: true });
+    const pullLikeRefresh = useAuthStore.getState().silentRefresh();
     releaseRefresh();
     await Promise.all([queueLikeRefresh, pullLikeRefresh]);
 
-    expect(retirementOptions).toEqual({ awaitCurrentPull: false });
+    expect(retirementOptions).toBeUndefined();
   });
 
-  test("keeps full retirement for a refresh with no active pull consumer", async () => {
+  test("keeps full resolution retirement for a refresh with no pull consumer", async () => {
     let retirementOptions = "not-called";
     retireImpl = async (options) => {
       retirementOptions = options;

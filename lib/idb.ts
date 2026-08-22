@@ -205,6 +205,7 @@ export function idbRollbackGuestWorkspaceIfUnchanged(
     tx.onabort = () => reject(tx.error);
     const workspaceRequest = tx.objectStore("workspaces").get(workspace.id);
     const collectionRequest = tx.objectStore("collections").get(collection.id);
+    const workspaceCollectionsRequest = tx.objectStore("collections").getAll();
     const provenanceRequest = tx.objectStore("kv").get(provenance.key);
     const activeRequest = tx.objectStore("kv").get("activeWorkspaceId");
     const activeBookmarksRequest = tx.objectStore("bookmarks").getAll();
@@ -212,7 +213,7 @@ export function idbRollbackGuestWorkspaceIfUnchanged(
     const trashedBookmarksRequest = tx.objectStore("trashed-bookmarks").getAll();
     const groupsRequest = tx.objectStore("groups").getAll();
     const requests = [
-      workspaceRequest, collectionRequest, provenanceRequest, activeRequest,
+      workspaceRequest, collectionRequest, workspaceCollectionsRequest, provenanceRequest, activeRequest,
       activeBookmarksRequest, archivedBookmarksRequest, trashedBookmarksRequest, groupsRequest,
     ];
     for (const request of requests) {
@@ -226,6 +227,7 @@ export function idbRollbackGuestWorkspaceIfUnchanged(
       }
       const persistedWorkspace = workspaceRequest.result as GuestSeedWorkspaceRecord | undefined;
       const persistedCollection = collectionRequest.result as GuestSeedCollectionRecord | undefined;
+      const workspaceCollections = workspaceCollectionsRequest.result as GuestSeedCollectionRecord[];
       const persistedProvenance = provenanceRequest.result as GuestSeedProvenanceRecord | undefined;
       const active = activeRequest.result as { key: string; value: string } | undefined;
       const bookmarks = [
@@ -239,7 +241,10 @@ export function idbRollbackGuestWorkspaceIfUnchanged(
       const provenanceMatches = persistedProvenance?.value.workspaceId === workspace.id &&
         persistedProvenance.value.defaultCollectionId === collection.id;
       const hasChildren = bookmarks.some((bookmark) => bookmark.collectionId === collection.id) ||
-        groups.some((group) => group.workspaceId === workspace.id);
+        groups.some((group) => group.workspaceId === workspace.id) ||
+        workspaceCollections.some((candidate) =>
+          candidate.workspaceId === workspace.id && candidate.id !== collection.id,
+        );
       if (!workspaceMatches || !collectionMatches || !provenanceMatches || hasChildren) {
         return;
       }

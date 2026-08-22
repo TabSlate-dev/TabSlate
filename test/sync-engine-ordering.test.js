@@ -162,6 +162,69 @@ describe("SyncEngine ordering", () => {
     expect(retired).toBe(true);
   });
 
+  test("retires before a transport pull can enter durable callback work", async () => {
+    const pullResponse = deferred();
+    let pullCallbacks = 0;
+    syncPullImpl = async () => pullResponse.promise;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => {
+        pullCallbacks += 1;
+        return null;
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+    engine.start();
+    await Promise.resolve();
+
+    await engine.retire();
+    pullResponse.resolve(emptyResponse());
+    await Promise.resolve();
+
+    expect(pullCallbacks).toBe(0);
+  });
+
+  test("does not start a queued push resolution after retirement", async () => {
+    const pullStarted = deferred();
+    const releasePull = deferred();
+    let pushResolutions = 0;
+    syncPullImpl = async () => emptyResponse();
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => {
+        pullStarted.resolve();
+        await releasePull.promise;
+        return null;
+      },
+      async () => {
+        pushResolutions += 1;
+        return null;
+      },
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+    engine.start();
+    await pullStarted.promise;
+    if (!queueSuccessHandler) {
+      throw new Error("queue success handler was not registered");
+    }
+    const queuedResolution = queueSuccessHandler(
+      { server_seq: 1, rejected: [] },
+      emptyPayload(),
+    );
+    const retiring = engine.retire();
+    releasePull.resolve();
+    await Promise.all([queuedResolution, retiring]);
+
+    expect(pushResolutions).toBe(0);
+  });
+
   test("coalesces SSE requests arriving during a pull into a later non-overlapping pass", async () => {
     const firstMerge = deferred();
     const mergeStarts = [];

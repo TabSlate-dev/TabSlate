@@ -1,11 +1,6 @@
 /** The auth store retires a UI-owned engine through this cycle-free boundary. */
 export interface RetirableSyncLifecycle {
-  retire(options?: SyncRetirementOptions): Promise<void>;
-}
-
-export interface SyncRetirementOptions {
-  /** False when retirement is invoked from the engine's own active pull. */
-  awaitCurrentPull?: boolean;
+  retire(): Promise<void>;
 }
 
 let activeLifecycle: RetirableSyncLifecycle | null = null;
@@ -20,6 +15,6 @@ export function unregisterSyncLifecycle(lifecycle: RetirableSyncLifecycle): void
   }
 }
 
-export async function retireActiveSyncLifecycle(options?: SyncRetirementOptions): Promise<void> {
-  await activeLifecycle?.retire(options);
+export async function retireActiveSyncLifecycle(): Promise<void> {
+  await activeLifecycle?.retire();
 }

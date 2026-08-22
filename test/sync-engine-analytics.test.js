@@ -213,7 +213,7 @@ describe("SyncEngine analytics", () => {
     let engine;
     const dependencies = analyticsDependencies();
     dependencies.refreshAuthentication = async () => {
-      await engine.retire({ awaitCurrentPull: false });
+      await engine.retire();
       return false;
     };
     engine = new SyncEngine(
