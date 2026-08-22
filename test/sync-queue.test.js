@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 
 class MockApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, retryAfter) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -15,6 +16,8 @@ const bufferedSnapshots = [];
 const consumedSnapshots = [];
 const silentRefreshCalls = [];
 const syncPushCredentials = [];
+const clearedConflicts = [];
+const recordedPayloadFailures = [];
 
 let syncPushImpl;
 let loadRecoverySnapshotImpl;
@@ -30,6 +33,8 @@ mock.module("../lib/api", () => ({
     },
   },
   ApiError: MockApiError,
+  isSyncEntityType: (value) => value === "workspace" || value === "collection" ||
+    value === "bookmark" || value === "saved_group" || value === "tag",
   searchBookmarks: mock(async () => []),
 }));
 
@@ -62,7 +67,24 @@ mock.module("../lib/sync-recovery", () => ({
   },
 }));
 
-const { SyncQueue } = await import("../lib/sync-queue");
+mock.module("../lib/sync-queue-conflicts", () => ({
+  syncQueueConflictRegistry: {
+    ready: async () => {},
+    clearEntities: async (references) => {
+      clearedConflicts.push(references);
+    },
+    filterPayload: (payload) => payload,
+    recordPayload: async (payload, status) => {
+      recordedPayloadFailures.push({ payload, status });
+    },
+  },
+}));
+
+const {
+  SyncQueue,
+  computeRetryDelay,
+  isRetryablePushError,
+} = await import("../lib/sync-queue");
 
 describe("SyncQueue", () => {
   beforeEach(() => {
@@ -73,6 +95,8 @@ describe("SyncQueue", () => {
     consumedSnapshots.length = 0;
     silentRefreshCalls.length = 0;
     syncPushCredentials.length = 0;
+    clearedConflicts.length = 0;
+    recordedPayloadFailures.length = 0;
     loadRecoverySnapshotImpl = async () => null;
     syncPushImpl = async () => ({ server_seq: 0, rejected: [] });
     silentRefreshImpl = async () => true;
@@ -101,8 +125,9 @@ describe("SyncQueue", () => {
       (resp) => {
         onSuccessCalls.push(resp);
       },
-      (err) => {
-        onErrorCalls.push(err.message);
+      (failure) => {
+        onErrorCalls.push(failure.error.message);
+        return false;
       },
     );
 
@@ -132,6 +157,181 @@ describe("SyncQueue", () => {
     queue.destroy();
   });
 
+  test("waits for structured rejection resolution and discards unsent chunks", async () => {
+    let releaseResolution;
+    let notifyResolutionStarted;
+    const resolutionStarted = new Promise((resolve) => {
+      notifyResolutionStarted = resolve;
+    });
+    syncPushImpl = async () => ({
+      server_seq: 9,
+      rejected: [{ id: "bookmark-12", type: "bookmark", reason: "quota_exceeded" }],
+    });
+
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {
+        notifyResolutionStarted();
+        await new Promise((resolve) => {
+          releaseResolution = resolve;
+        });
+      },
+      async () => false,
+    );
+
+    queue.enqueue({
+      bookmarks: Array.from({ length: 901 }, (_, index) => ({ id: `stale-bookmark-${index}` })),
+    });
+    const flushPromise = queue.flush();
+    await resolutionStarted;
+
+    let settled = false;
+    void flushPromise.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+
+    expect(syncPushCalls).toHaveLength(1);
+    expect(settled).toBe(false);
+    if (!releaseResolution) {
+      throw new Error("rejection resolution was not started");
+    }
+    releaseResolution();
+    await flushPromise;
+
+    expect(syncPushCalls).toHaveLength(1);
+    expect(queue.isEmpty()).toBe(true);
+    queue.destroy();
+  });
+
+  test("classifies retryable push failures and applies deterministic jitter", () => {
+    expect(isRetryablePushError(new MockApiError("timeout", 408))).toBe(true);
+    expect(isRetryablePushError(new MockApiError("rate", 429))).toBe(true);
+    expect(isRetryablePushError(new MockApiError("server", 500))).toBe(true);
+    expect(isRetryablePushError(new MockApiError("invalid", 422))).toBe(false);
+    expect(computeRetryDelay(2000, new MockApiError("server", 500), () => 0)).toBe(1600);
+    expect(computeRetryDelay(2000, new MockApiError("server", 500), () => 1)).toBe(2400);
+  });
+
+  test("keeps an explicit edit clear when a later sweep respects the same conflict", async () => {
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "edited-after-conflict" }] });
+    queue.enqueue({ bookmarks: [{ id: "edited-after-conflict" }] }, "respect");
+    await queue.flush();
+
+    expect(clearedConflicts).toEqual([[{ entityType: "bookmark", entityId: "edited-after-conflict" }]]);
+    queue.destroy();
+  });
+
+  test("records permanent failures without requeueing their payload", async () => {
+    syncPushImpl = async () => {
+      throw new MockApiError("unprocessable", 422);
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "permanent-bookmark" }] });
+    await queue.flush();
+
+    expect(recordedPayloadFailures).toEqual([{ payload: {
+      entities: {
+        workspaces: [], collections: [], bookmarks: [{ id: "permanent-bookmark" }], tags: [], groups: [],
+      },
+    }, status: 422 }]);
+    expect(queue.isEmpty()).toBe(true);
+    queue.destroy();
+  });
+
+  test("discards a failed snapshot when failure resolution handles it", async () => {
+    syncPushImpl = async () => {
+      throw new MockApiError("legacy failure", 500);
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => true,
+      { random: () => 0.5 },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "handled-bookmark" }] });
+    await queue.flush();
+
+    expect(queue.isEmpty()).toBe(true);
+    expect(recordedPayloadFailures).toEqual([]);
+    queue.destroy();
+  });
+
+  test("keeps a newer edit when a retryable in-flight snapshot is requeued", async () => {
+    let rejectFirstPush;
+    let notifyFirstPush;
+    const firstPushStarted = new Promise((resolve) => {
+      notifyFirstPush = resolve;
+    });
+    let calls = 0;
+    syncPushImpl = async () => {
+      calls += 1;
+      if (calls === 1) {
+        notifyFirstPush();
+        await new Promise((_, reject) => {
+          rejectFirstPush = reject;
+        });
+      }
+      return { server_seq: 3, rejected: [] };
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+      { random: () => 0.5 },
+    );
+
+    queue.enqueue({ bookmarks: [{ id: "edited-bookmark", title: "before failure" }] });
+    const firstFlush = queue.flush();
+    await firstPushStarted;
+    queue.enqueue({ bookmarks: [{ id: "edited-bookmark", title: "after failure" }] });
+    if (!rejectFirstPush) {
+      throw new Error("first push did not become in-flight");
+    }
+    rejectFirstPush(new MockApiError("server", 500));
+    await firstFlush;
+    await queue.flush();
+
+    expect(syncPushCalls.at(-1)?.entities.bookmarks).toEqual([
+      { id: "edited-bookmark", title: "after failure" },
+    ]);
+    queue.destroy();
+  });
+
+  test("uses the capped probe delay after five identical server failures", async () => {
+    const timeoutSpy = spyOn(globalThis, "setTimeout");
+    syncPushImpl = async () => {
+      throw new MockApiError("repeated server failure", 500);
+    };
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+      { random: () => 0.5 },
+    );
+
+    for (let index = 0; index < 5; index += 1) {
+      queue.enqueue({ bookmarks: [{ id: "repeat-bookmark" }] });
+      await queue.flush();
+    }
+
+    expect(timeoutSpy.mock.calls.at(-1)?.[1]).toBe(300000);
+    timeoutSpy.mockRestore();
+    queue.destroy();
+  });
+
   test("surfaces recovery hydration errors and continues pushing new work", async () => {
     loadRecoverySnapshotImpl = async () => {
       throw new Error("recovery load failed");
@@ -142,8 +342,9 @@ describe("SyncQueue", () => {
       (resp) => {
         onSuccessCalls.push(resp);
       },
-      (err) => {
-        onErrorCalls.push(err.message);
+      (failure) => {
+        onErrorCalls.push(failure.error.message);
+        return false;
       },
     );
 
@@ -195,8 +396,8 @@ describe("SyncQueue", () => {
         rejected: [{ id: "bookmark-12", reason: "quota_exceeded", type: "bookmark" }],
       },
     ]);
-    expect(onErrorCalls).toEqual(["second chunk failed"]);
-    expect(queue.isEmpty()).toBe(false);
+    expect(onErrorCalls).toEqual([]);
+    expect(queue.isEmpty()).toBe(true);
 
     queue.destroy();
   });
@@ -220,8 +421,9 @@ describe("SyncQueue", () => {
       (resp) => {
         onSuccessCalls.push(resp);
       },
-      (err) => {
-        onErrorCalls.push(err.message);
+      (failure) => {
+        onErrorCalls.push(failure.error.message);
+        return false;
       },
     );
 

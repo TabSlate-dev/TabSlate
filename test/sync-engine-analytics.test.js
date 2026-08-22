@@ -266,8 +266,14 @@ describe("SyncEngine analytics", () => {
       throw new Error("queue error handler was not registered");
     }
 
-    queueErrorHandler(new Error("push failed access_token=duplicate-secret"));
-    queueErrorHandler(new Error("push failed access_token=duplicate-secret"));
+    const failure = {
+      error: new Error("push failed access_token=duplicate-secret"),
+      payload: { entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] } },
+      retryable: true,
+      status: 0,
+    };
+    queueErrorHandler(failure);
+    queueErrorHandler(failure);
 
     expect(trackCalls).toHaveLength(1);
 

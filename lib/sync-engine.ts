@@ -1,12 +1,12 @@
 import { api, ApiError, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
 import type { SyncPushEntities } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
-import { SyncQueue } from "@/lib/sync-queue";
+import { SyncQueue, type SyncConflictPolicy } from "@/lib/sync-queue";
 import { SSEClient } from "@/lib/sse-client";
 import { useAuthStore } from "@/store/auth-store";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
-export type SyncConflictPolicy = "clear" | "respect";
+export type { SyncConflictPolicy } from "@/lib/sync-queue";
 
 type Credentials = { baseUrl: string; accessToken: string };
 type GetCredentials = () => Credentials | null;
@@ -46,14 +46,17 @@ export class SyncEngine {
   ) {
     this.queue = new SyncQueue(
       getCredentials,
-      (resp) => {
-        this.onPushSuccess(resp);
+      async (resp) => {
+        await this.onPushSuccess(resp);
         if (resp.rejected.length > 0) {
           this.pull();
         }
         this.setStatus(this.queue.isEmpty() ? "idle" : "syncing");
       },
-      (err) => this.setStatus("error", err instanceof Error ? err.message : "Push failed"),
+      async (failure) => {
+        this.setStatus("error", failure.error.message);
+        return false;
+      },
     );
 
     this.sseClient = new SSEClient(
@@ -89,9 +92,8 @@ export class SyncEngine {
   }
 
   enqueue(entities: Partial<SyncPushEntities>, conflictPolicy: SyncConflictPolicy = "clear") {
-    void conflictPolicy;
     this.setStatus("syncing");
-    this.queue.enqueue(entities);
+    this.queue.enqueue(entities, conflictPolicy);
   }
 
   /**

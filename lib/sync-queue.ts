@@ -1,12 +1,28 @@
 import { api, ApiError } from "./api";
-import type { SyncEntity, SyncPushEntities, SyncPushPayload, SyncPushResponse } from "./api";
+import type { SyncEntity, SyncEntityType, SyncPushEntities, SyncPushPayload, SyncPushResponse } from "./api";
+import { syncQueueConflictRegistry } from "./sync-queue-conflicts";
+import type { SyncEntityReference } from "./sync-conflicts";
 import { bufferSyncRecoverySnapshot, loadSyncRecoverySnapshot } from "./sync-recovery";
 import { useAuthStore } from "../store/auth-store";
 
-// Stay well under the server's hard limit of 1000 entities per push.
-// Non-bookmark entities (workspaces, collections, tags, groups) are always
-// pushed first so that collection FK targets exist before bookmarks arrive.
 const MAX_PER_PUSH = 900;
+const INITIAL_RETRY_DELAY = 2_000;
+const MAX_RETRY_DELAY = 60_000;
+const PROBE_RETRY_DELAY = 300_000;
+const IDENTICAL_SERVER_FAILURES_BEFORE_PROBE = 5;
+
+export type SyncConflictPolicy = "clear" | "respect";
+
+export interface SyncQueueOptions {
+  random?: () => number;
+}
+
+export interface SyncPushFailure {
+  error: Error;
+  payload: SyncPushPayload;
+  retryable: boolean;
+  status: number;
+}
 
 interface QueuedEntities {
   workspaces: Map<string, SyncEntity>;
@@ -16,50 +32,77 @@ interface QueuedEntities {
   groups: Map<string, SyncEntity>;
 }
 
-type OnPushSuccess = (resp: SyncPushResponse) => void;
-type OnPushError = (err: Error) => void;
+type OnPushSuccess = (response: SyncPushResponse, confirmedPayload: SyncPushPayload) => Promise<void>;
+type OnPushFailure = (failure: SyncPushFailure) => Promise<boolean>;
 
-/**
- * Batches local changes and pushes them to the server with a 2-second debounce.
- * Retries with exponential backoff (2s → 4s → 8s … max 60s) on network failure.
- * Updates for the same entity ID collapse to the latest value.
- * Large payloads (>MAX_PER_PUSH entities) are automatically split into ordered
- * sequential chunks: non-bookmarks first, then bookmarks.
- */
+function createQueuedEntities(): QueuedEntities {
+  return { workspaces: new Map(), collections: new Map(), bookmarks: new Map(), tags: new Map(), groups: new Map() };
+}
+
+function createEmptyPayload(): SyncPushPayload {
+  return { entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] } };
+}
+
+function isPayloadEmpty(payload: SyncPushPayload): boolean {
+  const { entities } = payload;
+  return entities.workspaces.length === 0 && entities.collections.length === 0 &&
+    entities.bookmarks.length === 0 && entities.tags.length === 0 && entities.groups.length === 0;
+}
+
+function asError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
+function entityReferenceKey(reference: SyncEntityReference): string {
+  return `${reference.entityType}:${reference.entityId}`;
+}
+
+export function pushErrorStatus(error: Error): number {
+  return error instanceof ApiError ? error.status : 0;
+}
+
+export function isRetryablePushError(error: Error): boolean {
+  const status = pushErrorStatus(error);
+  return status === 0 || status === 408 || status === 429 || status >= 500;
+}
+
+export function computeRetryDelay(baseDelay: number, error: Error, random: () => number): number {
+  const jittered = Math.round(baseDelay * (0.8 + random() * 0.4));
+  if (error instanceof ApiError && error.status === 429 && error.retryAfter !== undefined) {
+    return Math.max(error.retryAfter * 1000, jittered);
+  }
+  return jittered;
+}
+
 export class SyncQueue {
-  private queue: QueuedEntities = {
-    workspaces: new Map(),
-    collections: new Map(),
-    bookmarks: new Map(),
-    tags: new Map(),
-    groups: new Map(),
-  };
+  private queue = createQueuedEntities();
+  private readonly pendingConflictClears = new Map<string, SyncEntityReference>();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private retryDelay = 2000;
-  private readonly maxRetryDelay = 60_000;
+  private retryDelay = INITIAL_RETRY_DELAY;
   private readonly recoveryReady: Promise<void>;
   private needsRecoveryReplay = false;
+  private identicalFailureFingerprint: string | null = null;
+  private identicalServerFailureCount = 0;
 
   constructor(
     private readonly getCredentials: () => { baseUrl: string; accessToken: string } | null,
     private readonly onSuccess: OnPushSuccess,
-    private readonly onError: OnPushError,
+    private readonly onFailure: OnPushFailure,
+    private readonly options: SyncQueueOptions = {},
   ) {
-    this.recoveryReady = this.hydrateRecoverySnapshot();
+    this.recoveryReady = Promise.all([
+      syncQueueConflictRegistry.ready(),
+      this.hydrateRecoverySnapshot(),
+    ]).then(() => undefined);
   }
 
-  enqueue(entities: Partial<SyncPushEntities>) {
-    const set = (map: Map<string, SyncEntity>, items?: SyncEntity[]) => {
-      items?.forEach(item => map.set(item.id, item));
-    };
-    set(this.queue.workspaces, entities.workspaces);
-    set(this.queue.collections, entities.collections);
-    set(this.queue.bookmarks, entities.bookmarks);
-    set(this.queue.tags, entities.tags);
-    set(this.queue.groups, entities.groups);
-
-    this.schedulePush(2000);
+  enqueue(entities: Partial<SyncPushEntities>, conflictPolicy: SyncConflictPolicy = "clear") {
+    this.addEntities(this.queue, entities);
+    if (conflictPolicy === "clear") {
+      this.addPendingConflictClears(entities);
+    }
+    this.schedulePush(INITIAL_RETRY_DELAY);
   }
 
   flush(): Promise<void> {
@@ -67,7 +110,25 @@ export class SyncQueue {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     return this.doPush();
+  }
+
+  isEmpty(): boolean {
+    return this.queue.workspaces.size === 0 && this.queue.collections.size === 0 &&
+      this.queue.bookmarks.size === 0 && this.queue.tags.size === 0 && this.queue.groups.size === 0;
+  }
+
+  destroy() {
+    if (this.debounceTimer) {
+      clearTimeout(this.debounceTimer);
+    }
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+    }
   }
 
   private schedulePush(delayMs: number) {
@@ -76,18 +137,8 @@ export class SyncQueue {
     }
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
-      this.doPush();
+      void this.doPush();
     }, delayMs);
-  }
-
-  isEmpty(): boolean {
-    return (
-      this.queue.workspaces.size === 0 &&
-      this.queue.collections.size === 0 &&
-      this.queue.bookmarks.size === 0 &&
-      this.queue.tags.size === 0 &&
-      this.queue.groups.size === 0
-    );
   }
 
   private async doPush(): Promise<void> {
@@ -96,13 +147,133 @@ export class SyncQueue {
       await this.restoreRecoverySnapshot();
       this.needsRecoveryReplay = false;
     }
-    if (this.isEmpty()) return;
+    if (this.isEmpty()) {
+      return;
+    }
     const creds = this.getCredentials();
-    if (!creds) return;
+    if (!creds) {
+      return;
+    }
 
-    // Snapshot and clear the queue before the request so new changes
-    // that arrive during the in-flight request are not lost.
-    const full: SyncPushPayload = {
+    await this.clearPendingConflictClears();
+    const full = syncQueueConflictRegistry.filterPayload(this.takeQueueSnapshot());
+    if (isPayloadEmpty(full)) {
+      return;
+    }
+
+    const chunks = this.splitPayload(full);
+    const confirmedPayload = createEmptyPayload();
+    let finalServerSeq = 0;
+    let hadSuccessfulChunk = false;
+    const allRejected: SyncPushResponse["rejected"] = [];
+
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunk = chunks[index];
+      try {
+        const response = await api.syncPush(creds.baseUrl, creds.accessToken, chunk);
+        hadSuccessfulChunk = true;
+        finalServerSeq = response.server_seq;
+        allRejected.push(...response.rejected);
+        if (response.rejected.length > 0) {
+          this.resetRetryState();
+          await this.onSuccess(response, chunk);
+          return;
+        }
+        this.mergePayloadInto(confirmedPayload, chunk);
+      } catch (caught) {
+        const error = asError(caught);
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          if (hadSuccessfulChunk) {
+            await this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected }, confirmedPayload);
+          }
+          await this.handleAuthenticationFailure(chunks, index);
+          return;
+        }
+
+        const failedPayload = this.mergeChunks(chunks.slice(index));
+        if (hadSuccessfulChunk) {
+          await this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected }, confirmedPayload);
+        }
+        await this.handlePushFailure(error, failedPayload);
+        return;
+      }
+    }
+
+    this.resetRetryState();
+    await this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected }, full);
+  }
+
+  private async handleAuthenticationFailure(chunks: SyncPushPayload[], failedIndex: number): Promise<void> {
+    bufferSyncRecoverySnapshot(chunks[failedIndex]);
+    this.needsRecoveryReplay = true;
+    for (let index = failedIndex + 1; index < chunks.length; index += 1) {
+      this.requeueSnapshot(chunks[index]);
+    }
+    const refreshed = await useAuthStore.getState().silentRefresh();
+    if (refreshed) {
+      this.requeueSnapshot(chunks[failedIndex]);
+      this.schedulePush(0);
+      return;
+    }
+    if (useAuthStore.getState().refreshToken) {
+      this.scheduleRetry(INITIAL_RETRY_DELAY);
+    }
+  }
+
+  private async handlePushFailure(error: Error, payload: SyncPushPayload): Promise<void> {
+    const status = pushErrorStatus(error);
+    const retryable = isRetryablePushError(error);
+    const handled = await this.onFailure({ error, payload, retryable, status });
+    if (handled) {
+      this.resetRetryState();
+      return;
+    }
+    if (!retryable) {
+      await syncQueueConflictRegistry.recordPayload(payload, status);
+      this.resetRetryState();
+      return;
+    }
+    this.requeueSnapshot(payload);
+    this.scheduleRetry(this.nextRetryDelay(error, payload));
+  }
+
+  private async clearPendingConflictClears(): Promise<void> {
+    if (this.pendingConflictClears.size === 0) {
+      return;
+    }
+    const references = Array.from(this.pendingConflictClears.values());
+    await syncQueueConflictRegistry.clearEntities(references);
+    for (const reference of references) {
+      this.pendingConflictClears.delete(entityReferenceKey(reference));
+    }
+  }
+
+  private async hydrateRecoverySnapshot(): Promise<void> {
+    try {
+      if (await this.restoreRecoverySnapshot()) {
+        this.schedulePush(0);
+      }
+    } catch (caught) {
+      await this.onFailure({ error: asError(caught), payload: createEmptyPayload(), retryable: false, status: 0 });
+    }
+  }
+
+  private async restoreRecoverySnapshot(): Promise<boolean> {
+    try {
+      const recoverySnapshot = await loadSyncRecoverySnapshot();
+      if (!recoverySnapshot) {
+        return false;
+      }
+      this.requeueSnapshot(recoverySnapshot);
+      return true;
+    } catch (caught) {
+      await this.onFailure({ error: asError(caught), payload: createEmptyPayload(), retryable: false, status: 0 });
+      return false;
+    }
+  }
+
+  private takeQueueSnapshot(): SyncPushPayload {
+    const snapshot: SyncPushPayload = {
       entities: {
         workspaces: Array.from(this.queue.workspaces.values()),
         collections: Array.from(this.queue.collections.values()),
@@ -111,158 +282,127 @@ export class SyncQueue {
         groups: Array.from(this.queue.groups.values()),
       },
     };
-    this.queue = { workspaces: new Map(), collections: new Map(), bookmarks: new Map(), tags: new Map(), groups: new Map() };
-
-    const chunks = this.splitPayload(full);
-    let finalServerSeq = 0;
-    let hadSuccessfulChunk = false;
-    const allRejected: SyncPushResponse["rejected"] = [];
-
-    for (let i = 0; i < chunks.length; i++) {
-      try {
-        const resp = await api.syncPush(creds.baseUrl, creds.accessToken, chunks[i]);
-        hadSuccessfulChunk = true;
-        finalServerSeq = resp.server_seq;
-        allRejected.push(...resp.rejected);
-      } catch (err) {
-        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-          // Buffer the first unsent chunk for recovery; re-enqueue the rest.
-          bufferSyncRecoverySnapshot(chunks[i]);
-          this.needsRecoveryReplay = true;
-          for (let j = i + 1; j < chunks.length; j++) {
-            this.requeueSnapshot(chunks[j]);
-          }
-
-          const refreshed = await useAuthStore.getState().silentRefresh();
-          if (refreshed) {
-            this.requeueSnapshot(chunks[i]);
-            this.schedulePush(0);
-          } else if (useAuthStore.getState().refreshToken) {
-            // Match auth-store's retry cadence so recovery resumes after a transient refresh failure.
-            this.scheduleRetry();
-          }
-          return;
-        }
-
-        // Re-enqueue all remaining chunks so changes are not lost on failure.
-        for (let j = i; j < chunks.length; j++) {
-          this.requeueSnapshot(chunks[j]);
-        }
-
-        if (hadSuccessfulChunk) {
-          this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected });
-        }
-        this.onError(err instanceof Error ? err : new Error(String(err)));
-        this.scheduleRetry();
-        return;
-      }
-    }
-
-    this.retryDelay = 2000;
-    this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected });
-  }
-
-  private async hydrateRecoverySnapshot() {
-    try {
-      if (await this.restoreRecoverySnapshot()) {
-        this.schedulePush(0);
-      }
-    } catch (err) {
-      this.onError(err instanceof Error ? err : new Error(String(err)));
-    }
-  }
-
-  /** Replays any persisted 401/403 recovery data before the next push attempt. */
-  private async restoreRecoverySnapshot(): Promise<boolean> {
-    try {
-      const recoverySnapshot = await loadSyncRecoverySnapshot();
-      if (!recoverySnapshot) {
-        return false;
-      }
-
-      this.requeueSnapshot(recoverySnapshot);
-      return true;
-    } catch (err) {
-      this.onError(err instanceof Error ? err : new Error(String(err)));
-      return false;
-    }
-  }
-
-  destroy() {
-    if (this.debounceTimer) clearTimeout(this.debounceTimer);
-    if (this.retryTimer) clearTimeout(this.retryTimer);
+    this.queue = createQueuedEntities();
+    return snapshot;
   }
 
   private requeueSnapshot(snapshot: SyncPushPayload) {
-    const merge = (map: Map<string, SyncEntity>, entities: SyncEntity[]) => {
-      for (const entity of entities) {
-        const id = entity.id;
-        if (!map.has(id)) {
-          map.set(id, entity);
+    this.addEntities(this.queue, snapshot.entities, false);
+  }
+
+  private addEntities(target: QueuedEntities, entities: Partial<SyncPushEntities>, overwrite = true) {
+    const merge = (map: Map<string, SyncEntity>, items?: SyncEntity[]) => {
+      for (const entity of items ?? []) {
+        if (overwrite || !map.has(entity.id)) {
+          map.set(entity.id, entity);
         }
       }
     };
-
-    merge(this.queue.workspaces, snapshot.entities.workspaces);
-    merge(this.queue.collections, snapshot.entities.collections);
-    merge(this.queue.bookmarks, snapshot.entities.bookmarks);
-    merge(this.queue.tags, snapshot.entities.tags);
-    merge(this.queue.groups, snapshot.entities.groups);
+    merge(target.workspaces, entities.workspaces);
+    merge(target.collections, entities.collections);
+    merge(target.bookmarks, entities.bookmarks);
+    merge(target.tags, entities.tags);
+    merge(target.groups, entities.groups);
   }
 
-  private scheduleRetry() {
+  private addPendingConflictClears(entities: Partial<SyncPushEntities>) {
+    const add = (entityType: SyncEntityType, items?: SyncEntity[]) => {
+      for (const entity of items ?? []) {
+        const reference = { entityType, entityId: entity.id };
+        this.pendingConflictClears.set(entityReferenceKey(reference), reference);
+      }
+    };
+    add("workspace", entities.workspaces);
+    add("collection", entities.collections);
+    add("bookmark", entities.bookmarks);
+    add("tag", entities.tags);
+    add("saved_group", entities.groups);
+  }
+
+  private mergeChunks(chunks: SyncPushPayload[]): SyncPushPayload {
+    const merged = createEmptyPayload();
+    for (const chunk of chunks) {
+      this.mergePayloadInto(merged, chunk);
+    }
+    return merged;
+  }
+
+  private mergePayloadInto(target: SyncPushPayload, incoming: SyncPushPayload) {
+    const merge = (current: SyncEntity[], additions: SyncEntity[]) => {
+      const byId = new Map(current.map((entity) => [entity.id, entity]));
+      for (const entity of additions) {
+        byId.set(entity.id, entity);
+      }
+      return Array.from(byId.values());
+    };
+    target.entities.workspaces = merge(target.entities.workspaces, incoming.entities.workspaces);
+    target.entities.collections = merge(target.entities.collections, incoming.entities.collections);
+    target.entities.bookmarks = merge(target.entities.bookmarks, incoming.entities.bookmarks);
+    target.entities.tags = merge(target.entities.tags, incoming.entities.tags);
+    target.entities.groups = merge(target.entities.groups, incoming.entities.groups);
+  }
+
+  private nextRetryDelay(error: Error, payload: SyncPushPayload): number {
+    const fingerprint = JSON.stringify(payload.entities);
+    const status = pushErrorStatus(error);
+    if (status >= 500 && this.identicalFailureFingerprint === fingerprint) {
+      this.identicalServerFailureCount += 1;
+    } else if (status >= 500) {
+      this.identicalFailureFingerprint = fingerprint;
+      this.identicalServerFailureCount = 1;
+    } else {
+      this.identicalFailureFingerprint = null;
+      this.identicalServerFailureCount = 0;
+    }
+    const baseDelay = status >= 500 && this.identicalServerFailureCount >= IDENTICAL_SERVER_FAILURES_BEFORE_PROBE
+      ? PROBE_RETRY_DELAY
+      : this.retryDelay;
+    const delay = computeRetryDelay(baseDelay, error, this.options.random ?? Math.random);
+    this.retryDelay = Math.min(baseDelay * 2, MAX_RETRY_DELAY);
+    return delay;
+  }
+
+  private scheduleRetry(delayMs: number) {
     if (this.retryTimer) {
       clearTimeout(this.retryTimer);
     }
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
-      this.doPush();
-    }, this.retryDelay);
-    this.retryDelay = Math.min(this.retryDelay * 2, this.maxRetryDelay);
+      void this.doPush();
+    }, delayMs);
   }
 
-  /**
-   * Splits a payload that exceeds MAX_PER_PUSH into ordered sequential chunks.
-   * Non-bookmark entities (workspaces → collections → tags → groups) come first
-   * so FK targets exist before bookmark references arrive.
-   */
+  private resetRetryState() {
+    this.retryDelay = INITIAL_RETRY_DELAY;
+    this.identicalFailureFingerprint = null;
+    this.identicalServerFailureCount = 0;
+  }
+
   private splitPayload(full: SyncPushPayload): SyncPushPayload[] {
     const { workspaces: ws, collections: col, bookmarks: bm, tags: tag, groups: grp } = full.entities;
     const total = ws.length + col.length + bm.length + tag.length + grp.length;
-    if (total <= MAX_PER_PUSH) return [full];
-
-    const emptyEntities = (): SyncPushPayload["entities"] => ({
-      workspaces: [],
-      collections: [],
-      bookmarks: [],
-      tags: [],
-      groups: [],
-    });
-
+    if (total <= MAX_PER_PUSH) {
+      return [full];
+    }
     const chunks: SyncPushPayload[] = [];
-
-    // Phase 1: non-bookmark entities in FK-safe order (bookmarks reference collections)
-    type NonBmKey = "workspaces" | "collections" | "tags" | "groups";
-    type NonBmEntry = [NonBmKey, SyncEntity];
-    const nonBm: NonBmEntry[] = [
-      ...ws.map(e => ["workspaces", e] as NonBmEntry),
-      ...col.map(e => ["collections", e] as NonBmEntry),
-      ...tag.map(e => ["tags", e] as NonBmEntry),
-      ...grp.map(e => ["groups", e] as NonBmEntry),
+    type NonBookmarkKey = "workspaces" | "collections" | "tags" | "groups";
+    type NonBookmarkEntry = [NonBookmarkKey, SyncEntity];
+    const nonBookmarks: NonBookmarkEntry[] = [
+      ...ws.map((entity) => ["workspaces", entity] as NonBookmarkEntry),
+      ...col.map((entity) => ["collections", entity] as NonBookmarkEntry),
+      ...tag.map((entity) => ["tags", entity] as NonBookmarkEntry),
+      ...grp.map((entity) => ["groups", entity] as NonBookmarkEntry),
     ];
-    for (let i = 0; i < nonBm.length; i += MAX_PER_PUSH) {
-      const entities = emptyEntities();
-      for (const [key, e] of nonBm.slice(i, i + MAX_PER_PUSH)) {
-        entities[key].push(e);
+    for (let index = 0; index < nonBookmarks.length; index += MAX_PER_PUSH) {
+      const entities = createEmptyPayload().entities;
+      for (const [key, entity] of nonBookmarks.slice(index, index + MAX_PER_PUSH)) {
+        entities[key].push(entity);
       }
       chunks.push({ entities });
     }
-
-    // Phase 2: bookmarks in chunks (collection FKs already pushed above)
-    for (let i = 0; i < bm.length; i += MAX_PER_PUSH) {
-      chunks.push({ entities: { ...emptyEntities(), bookmarks: bm.slice(i, i + MAX_PER_PUSH) } });
+    for (let index = 0; index < bm.length; index += MAX_PER_PUSH) {
+      chunks.push({ entities: { ...createEmptyPayload().entities, bookmarks: bm.slice(index, index + MAX_PER_PUSH) } });
     }
-
     return chunks;
   }
 }
