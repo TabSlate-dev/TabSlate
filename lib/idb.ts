@@ -516,19 +516,26 @@ export async function idbGetByIndex<T>(
  * fn must issue all IDB requests synchronously — the transaction auto-commits
  * on the microtask boundary, so any await inside fn will silently drop writes.
  */
-export function idbTransaction(
+export function idbTransaction<Result>(
   stores: StoreName[],
   mode: "readonly" | "readwrite",
-  fn: (tx: IDBTransaction) => void,
-): Promise<void> {
+  fn: (tx: IDBTransaction) => Result,
+): Promise<Result> {
   return getDB().then(
     (db) =>
       new Promise((resolve, reject) => {
         const tx = db.transaction(stores, mode);
-        tx.oncomplete = () => resolve();
+        let result: { value: Result } | undefined;
+        tx.oncomplete = () => {
+          if (!result) {
+            reject(new Error("IndexedDB transaction result is unavailable"));
+            return;
+          }
+          resolve(result.value);
+        };
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error);
-        fn(tx);
+        result = { value: fn(tx) };
       }),
   );
 }
