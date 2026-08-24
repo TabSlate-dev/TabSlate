@@ -8,6 +8,7 @@ import {
   type OnPullSuccess,
   type OnPushSuccess,
   type SyncStatus,
+  type WorkspaceLifecycleSyncGate,
 } from "@/lib/sync-engine";
 
 type Credentials = { baseUrl: string; accessToken: string };
@@ -22,6 +23,7 @@ export function createSyncEngine(
   onPushSuccess: OnPushSuccess,
   onStatusChange: OnStatusChange,
   onLegacyPushFailure: OnLegacyPushFailure,
+  workspaceLifecycleSyncGate?: WorkspaceLifecycleSyncGate,
 ): SyncEngine {
   return new SyncEngine(
     getCredentials,
@@ -31,12 +33,14 @@ export function createSyncEngine(
     onStatusChange,
     onLegacyPushFailure,
     {
-      createQueue: (credentials, onSuccess, onFailure) => new SyncQueue(credentials, onSuccess, onFailure),
+      createQueue: (credentials, onSuccess, onFailure, lifecycleGate) =>
+        new SyncQueue(credentials, onSuccess, onFailure, {}, lifecycleGate),
       createSseClient: (credentials, onSequence, onStatusChange) =>
         new SSEClient(credentials, onSequence, onStatusChange),
       syncPull: (baseUrl, accessToken, localSeq) => api.syncPull(baseUrl, accessToken, localSeq),
       refreshAuthentication: () => useAuthStore.getState().silentRefresh(),
       hasRefreshToken: () => Boolean(useAuthStore.getState().refreshToken),
+      workspaceLifecycleSyncGate,
     },
   );
 }

@@ -335,28 +335,28 @@ function SyncProvider({
       () => localSeqRef.current,
       async (resp: SyncPullResponse, isCurrent) => {
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
         await prepareGuestWorkspaceForPull(resp);
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         await mergeWorkspacesRef.current(resp);
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         await mergeGroupsRef.current(resp);
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         await mergeBookmarksRef.current(resp);
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         await confirmGuestWorkspaceFromPull(resp);
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         await setLocalSeqRef.current(resp.server_seq);
         localSeqRef.current = resp.server_seq;
@@ -367,24 +367,26 @@ function SyncProvider({
           });
         }
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         await sweepAllUnsynced();
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         const refreshedPlan = await usePlanStore.getState().fetchPlan();
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         if (refreshedPlan && await clearCapacityResolvedConflicts(refreshedPlan)) {
           await sweepAllUnsynced();
         }
         if (!isCurrent()) {
-          return null;
+          return { errorMessage: null };
         }
         const persistentErrorKey = await getPersistentSyncErrorKey();
-        return persistentErrorKey ? tRef.current(persistentErrorKey) : null;
+        return {
+          errorMessage: persistentErrorKey ? tRef.current(persistentErrorKey) : null,
+        };
       },
       async (pushResp) => {
         const reconciliation = await resolveGuestPushRejections(pushResp);

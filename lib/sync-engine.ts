@@ -1,7 +1,26 @@
-import { api, ApiError, SyncPullResponse, SyncPushResponse, SyncPushPayload } from "@/lib/api";
-import type { SyncPushEntities } from "@/lib/api";
+import {
+  api,
+  ApiError,
+  SyncPullResponse,
+  SyncPushResponse,
+  SyncPushPayload,
+} from "@/lib/api";
+import type { SyncPushEntities, SyncRejected } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
-import type { SyncConflictPolicy, SyncPushFailure } from "@/lib/sync-queue";
+import type {
+  SyncConflictPolicy,
+  SyncPushFailure,
+  SyncQueueLifecycleGate,
+} from "@/lib/sync-queue";
+import type { SyncEntityReference } from "@/lib/sync-conflicts";
+import {
+  createEmptySyncPushPayload,
+  extractSyncRecoveryEntities,
+  splitSyncPushPayload,
+  SYNC_ENTITY_PAYLOAD_MAPPINGS,
+  syncPayloadEntities,
+} from "@/lib/sync-recovery";
+import { mergeWorkspaceLifecycleDeferredPayload } from "@/lib/workspace-lifecycle-state";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
 export type { SyncConflictPolicy } from "@/lib/sync-queue";
@@ -9,10 +28,31 @@ export type { SyncConflictPolicy } from "@/lib/sync-queue";
 type Credentials = { baseUrl: string; accessToken: string };
 type GetCredentials = () => Credentials | null;
 type GetLocalSeq = () => number;
+export interface SyncResolutionContext {
+  pullConfirmed(afterSeq: number): Promise<SyncPullResponse>;
+  pushConfirmed(payload: SyncPushPayload): Promise<SyncPushResponse>;
+  captureDeferredEntities(
+    workspaceId: string,
+    references: readonly SyncEntityReference[],
+  ): Promise<void>;
+  blockEntities(references: readonly SyncEntityReference[]): void;
+  pruneEntities(references: readonly SyncEntityReference[]): Promise<void>;
+  isCurrent(): boolean;
+}
+
+export interface PullMergeResult {
+  errorMessage: string | null;
+}
+
+export interface WorkspaceLifecycleSyncGate {
+  shouldResolveWorkspaceLifecycleBeforePush(): Promise<boolean>;
+}
+
 export type OnPullSuccess = (
-  resp: SyncPullResponse,
+  response: SyncPullResponse,
   isCurrent: () => boolean,
-) => Promise<string | null>;
+  context: SyncResolutionContext,
+) => Promise<PullMergeResult>;
 export type OnPushSuccess = (
   resp: SyncPushResponse,
   confirmedPayload: SyncPushPayload,
@@ -24,6 +64,10 @@ interface SyncQueueDriver {
   enqueue(entities: Partial<SyncPushEntities>, conflictPolicy?: SyncConflictPolicy): void;
   flush(): Promise<void>;
   isEmpty(): boolean;
+  ready(): Promise<void>;
+  extractEntities(references: readonly SyncEntityReference[]): SyncPushPayload;
+  blockEntities(references: readonly SyncEntityReference[]): void;
+  pruneEntities(references: readonly SyncEntityReference[]): Promise<void>;
   destroy(): void;
 }
 
@@ -38,6 +82,7 @@ export interface SyncEngineDependencies {
     getCredentials: GetCredentials,
     onSuccess: (response: SyncPushResponse, confirmedPayload: SyncPushPayload) => Promise<void>,
     onFailure: (failure: SyncPushFailure) => Promise<boolean>,
+    lifecycleGate: SyncQueueLifecycleGate,
   ) => SyncQueueDriver;
   createSseClient?: (
     getCredentials: GetCredentials,
@@ -45,8 +90,17 @@ export interface SyncEngineDependencies {
     onStatusChange: (connected: boolean) => void,
   ) => SSEClientDriver;
   syncPull?: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
+  syncPush?: (baseUrl: string, accessToken: string, payload: SyncPushPayload) => Promise<SyncPushResponse>;
   refreshAuthentication?: () => Promise<boolean>;
   hasRefreshToken?: () => boolean;
+  workspaceLifecycleSyncGate?: WorkspaceLifecycleSyncGate;
+  extractRecoveryEntities?: (
+    references: readonly SyncEntityReference[],
+  ) => Promise<SyncPushPayload>;
+  mergeDeferredPayload?: (
+    workspaceId: string,
+    payload: SyncPushPayload,
+  ) => Promise<void>;
 }
 
 const PERIODIC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -59,6 +113,37 @@ function sanitizeSyncErrorMessage(errorMessage?: string): string {
     .slice(0, 100);
 }
 
+function mergeSyncPayloads(
+  current: SyncPushPayload,
+  incoming: SyncPushPayload,
+): SyncPushPayload {
+  const merged = createEmptySyncPushPayload();
+  for (const { payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
+    const byId = new Map(
+      syncPayloadEntities(current, payloadKey).map((entity) => [entity.id, entity]),
+    );
+    for (const entity of syncPayloadEntities(incoming, payloadKey)) {
+      byId.set(entity.id, entity);
+    }
+    syncPayloadEntities(merged, payloadKey).push(...byId.values());
+  }
+  return merged;
+}
+
+export class SyncRejectedError extends Error {
+  constructor(readonly rejected: readonly SyncRejected[]) {
+    super("Sync push was rejected");
+    this.name = "SyncRejectedError";
+  }
+}
+
+class AuthenticationSessionEndedError extends Error {
+  constructor() {
+    super("Authentication session ended");
+    this.name = "AuthenticationSessionEndedError";
+  }
+}
+
 /**
  * Orchestrates push (via SyncQueue), SSE real-time pull (via SSEClient),
  * and periodic pull fallback. Instantiated once in App.tsx after auth hydration.
@@ -67,8 +152,17 @@ export class SyncEngine {
   private queue: SyncQueueDriver;
   private sseClient: SSEClientDriver;
   private readonly syncPull: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
+  private readonly syncPush: (baseUrl: string, accessToken: string, payload: SyncPushPayload) => Promise<SyncPushResponse>;
   private readonly refreshAuthentication: () => Promise<boolean>;
   private readonly hasRefreshToken: () => boolean;
+  private readonly workspaceLifecycleSyncGate: WorkspaceLifecycleSyncGate;
+  private readonly extractRecoveryEntities: (
+    references: readonly SyncEntityReference[],
+  ) => Promise<SyncPushPayload>;
+  private readonly mergeDeferredPayload: (
+    workspaceId: string,
+    payload: SyncPushPayload,
+  ) => Promise<void>;
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private status: SyncStatus = "idle";
   private lastErrorMessage: string | null = null;
@@ -91,8 +185,17 @@ export class SyncEngine {
   ) {
     this.syncPull = dependencies.syncPull ?? ((baseUrl, accessToken, localSeq) =>
       api.syncPull(baseUrl, accessToken, localSeq));
+    this.syncPush = dependencies.syncPush ?? ((baseUrl, accessToken, payload) =>
+      api.syncPush(baseUrl, accessToken, payload));
     this.refreshAuthentication = dependencies.refreshAuthentication ?? (async () => false);
     this.hasRefreshToken = dependencies.hasRefreshToken ?? (() => false);
+    this.workspaceLifecycleSyncGate = dependencies.workspaceLifecycleSyncGate ?? {
+      shouldResolveWorkspaceLifecycleBeforePush: async () => false,
+    };
+    this.extractRecoveryEntities = dependencies.extractRecoveryEntities ??
+      extractSyncRecoveryEntities;
+    this.mergeDeferredPayload = dependencies.mergeDeferredPayload ??
+      mergeWorkspaceLifecycleDeferredPayload;
 
     const handleQueueSuccess = async (resp: SyncPushResponse, confirmedPayload: SyncPushPayload) => {
       if (this.destroyed) {
@@ -142,7 +245,15 @@ export class SyncEngine {
     if (!dependencies.createQueue) {
       throw new Error("SyncEngine requires a queue factory");
     }
-    this.queue = dependencies.createQueue(getCredentials, handleQueueSuccess, handleQueueFailure);
+    this.queue = dependencies.createQueue(
+      getCredentials,
+      handleQueueSuccess,
+      handleQueueFailure,
+      {
+        shouldDeferOrdinaryPush: () =>
+          this.workspaceLifecycleSyncGate.shouldResolveWorkspaceLifecycleBeforePush(),
+      },
+    );
 
     const handleSequence = (serverSeq: number) => {
       if (serverSeq > this.getLocalSeq()) {
@@ -172,7 +283,7 @@ export class SyncEngine {
 
   start() {
     this.sseClient.start();
-    void this.requestPull();
+    void this.runInitialSync().catch(() => undefined);
     this.ensurePeriodicPull();
   }
 
@@ -187,9 +298,7 @@ export class SyncEngine {
    * IDB cleanup, so that a page refresh mid-operation leaves the item in IDB
    * (still visible in trash) rather than creating a server-side orphan.
    */
-  async forcePush(entities: Partial<SyncPushEntities>): Promise<void> {
-    const creds = this.getCredentials();
-    if (!creds) { throw new Error("not authenticated"); }
+  async forcePush(entities: Partial<SyncPushEntities>): Promise<SyncPushResponse> {
     const payload: SyncPushPayload = {
       entities: {
         workspaces: entities.workspaces ?? [],
@@ -200,28 +309,39 @@ export class SyncEngine {
       },
     };
 
-    try {
-      await api.syncPush(creds.baseUrl, creds.accessToken, payload);
-    } catch (err) {
-      if (!(err instanceof ApiError) || (err.status !== 401 && err.status !== 403)) {
-        throw err;
-      }
-
-      const refreshed = await this.refreshAuthentication();
-      const refreshedCreds = this.getCredentials();
-      if (!refreshed || !refreshedCreds) {
-        throw err;
-      }
-
-      await api.syncPush(refreshedCreds.baseUrl, refreshedCreds.accessToken, payload);
+    const { response, conflictMessage } = await this.serializeResolutionWithContext(
+      async (context) => {
+        const response = await context.pushConfirmed(payload);
+        this.assertResolutionCurrent(context.isCurrent);
+        const conflictMessage = await this.onPushSuccess(response, payload);
+        return { response, conflictMessage };
+      },
+    );
+    this.applyPersistentConflict(conflictMessage);
+    if (response.rejected.length > 0) {
+      await this.requestPull();
     }
+    const targetRejections = this.targetRejections(payload, response.rejected);
+    if (targetRejections.length > 0) {
+      throw new SyncRejectedError(targetRejections);
+    }
+    return response;
   }
 
   async forceSync(): Promise<{ pushed: number; pulled: number }> {
     this.lastPulledCount = 0;
     this.setQueueStatus("syncing");
+    const lifecyclePending = await this.shouldResolveWorkspaceLifecycleBeforePush();
+    if (lifecyclePending) {
+      await this.requestPull();
+      if (await this.shouldResolveWorkspaceLifecycleBeforePush()) {
+        return { pushed: 0, pulled: this.lastPulledCount };
+      }
+    }
     await this.queue.flush().catch(() => { /* queue handles retries */ });
-    await this.requestPull();
+    if (!lifecyclePending) {
+      await this.requestPull();
+    }
     return { pushed: 1, pulled: this.lastPulledCount };
   }
 
@@ -232,6 +352,58 @@ export class SyncEngine {
       () => undefined,
     );
     return next;
+  }
+
+  private serializeResolutionWithContext<Result>(
+    operation: (context: SyncResolutionContext) => Promise<Result>,
+  ): Promise<Result> {
+    return this.serializeResolution(async () => {
+      let active = true;
+      const isCurrent = () => active && !this.destroyed;
+      const context = this.createResolutionContext(isCurrent);
+      try {
+        return await operation(context);
+      } finally {
+        active = false;
+      }
+    });
+  }
+
+  private createResolutionContext(isCurrent: () => boolean): SyncResolutionContext {
+    return {
+      pullConfirmed: (afterSeq) => this.pullWithRefresh(afterSeq, isCurrent),
+      pushConfirmed: (payload) => this.pushConfirmed(payload, isCurrent),
+      captureDeferredEntities: async (workspaceId, references) => {
+        this.assertResolutionCurrent(isCurrent);
+        await this.queue.ready();
+        this.assertResolutionCurrent(isCurrent);
+        const livePayload = this.queue.extractEntities(references);
+        const recoveryPayload = await this.extractRecoveryEntities(references);
+        this.assertResolutionCurrent(isCurrent);
+        await this.mergeDeferredPayload(
+          workspaceId,
+          mergeSyncPayloads(recoveryPayload, livePayload),
+        );
+        this.assertResolutionCurrent(isCurrent);
+      },
+      blockEntities: (references) => {
+        this.assertResolutionCurrent(isCurrent);
+        this.queue.blockEntities(references);
+      },
+      pruneEntities: async (references) => {
+        this.assertResolutionCurrent(isCurrent);
+        await this.queue.pruneEntities(references);
+        await this.extractRecoveryEntities(references);
+        this.assertResolutionCurrent(isCurrent);
+      },
+      isCurrent,
+    };
+  }
+
+  private assertResolutionCurrent(isCurrent: () => boolean): void {
+    if (!isCurrent()) {
+      throw new Error("Sync resolution is no longer current");
+    }
   }
 
   private requestPull(): Promise<void> {
@@ -273,20 +445,20 @@ export class SyncEngine {
     }
     this.setQueueStatus("syncing");
     try {
-      const resp = await this.pullWithAuthenticationRecovery();
+      const resp = await this.doPull();
       if (!resp || this.destroyed) {
         return;
       }
       this.lastPulledCount = this.countPulledEntities(resp);
-      const conflictMessage = await this.serializeResolution(
-        () => this.destroyed
-          ? Promise.resolve(null)
-          : this.onPullSuccess(resp, () => !this.destroyed),
+      const mergeResult = await this.serializeResolutionWithContext(
+        (context) => this.destroyed
+          ? Promise.resolve({ errorMessage: null })
+          : this.onPullSuccess(resp, context.isCurrent, context),
       );
       if (this.destroyed) {
         return;
       }
-      this.applyPersistentConflict(conflictMessage);
+      this.applyPersistentConflict(mergeResult?.errorMessage ?? null);
     } catch (err) {
       if (this.destroyed) {
         return;
@@ -302,47 +474,159 @@ export class SyncEngine {
   }
 
   private async doPull(): Promise<SyncPullResponse | null> {
-    const creds = this.getCredentials();
-    if (!creds) return null;
-    const localSeq = this.getLocalSeq();
-    const resp = await this.syncPull(creds.baseUrl, creds.accessToken, localSeq);
-    // Seq divergence (e.g. after account recovery) — full re-sync from 0.
-    if (resp.server_seq < localSeq) {
-      return this.syncPull(creds.baseUrl, creds.accessToken, 0);
+    if (!this.getCredentials()) {
+      return null;
     }
-    return resp;
+    const localSeq = this.getLocalSeq();
+    const isCurrent = () => !this.destroyed;
+    try {
+      const resp = await this.pullWithRefresh(localSeq, isCurrent);
+      // Seq divergence (e.g. after account recovery) — full re-sync from 0.
+      if (resp.server_seq < localSeq) {
+        return this.pullWithRefresh(0, isCurrent);
+      }
+      return resp;
+    } catch (error) {
+      if (error instanceof AuthenticationSessionEndedError) {
+        return null;
+      }
+      throw error;
+    }
   }
 
-  /** Refresh a rejected access token once, then retry the pull with current credentials. */
-  private async pullWithAuthenticationRecovery(): Promise<SyncPullResponse | null> {
-    try {
-      return await this.doPull();
-    } catch (err) {
-      if (!(err instanceof ApiError) || (err.status !== 401 && err.status !== 403)) {
-        throw err;
-      }
-
-      // A transport response can arrive after retirement. It must not restart
-      // auth work or emit a status after the session cleanup boundary.
-      if (this.destroyed) {
-        return null;
-      }
-
-      const refreshed = await this.refreshAuthentication();
-      if (this.destroyed) {
-        return null;
-      }
-      if (!refreshed) {
-        // silentRefresh clears the refresh token only after a definitive 401/403.
-        // Preserve an error for transient refresh failures so they are not mistaken for logout.
-        if (!this.hasRefreshToken()) {
-          return null;
-        }
-        throw err;
-      }
-
-      return this.doPull();
+  private async pullWithRefresh(
+    afterSeq: number,
+    isCurrent: () => boolean,
+  ): Promise<SyncPullResponse> {
+    this.assertResolutionCurrent(isCurrent);
+    const creds = this.getCredentials();
+    if (!creds) {
+      throw new Error("not authenticated");
     }
+    try {
+      const response = await this.syncPull(creds.baseUrl, creds.accessToken, afterSeq);
+      this.assertResolutionCurrent(isCurrent);
+      return response;
+    } catch (error) {
+      this.assertResolutionCurrent(isCurrent);
+      if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) {
+        throw error;
+      }
+      const refreshed = await this.refreshAuthentication();
+      this.assertResolutionCurrent(isCurrent);
+      const refreshedCreds = this.getCredentials();
+      if (!refreshed || !refreshedCreds) {
+        if (!this.hasRefreshToken()) {
+          throw new AuthenticationSessionEndedError();
+        }
+        throw error;
+      }
+      const response = await this.syncPull(
+        refreshedCreds.baseUrl,
+        refreshedCreds.accessToken,
+        afterSeq,
+      );
+      this.assertResolutionCurrent(isCurrent);
+      return response;
+    }
+  }
+
+  private async pushWithRefresh(
+    payload: SyncPushPayload,
+    isCurrent: () => boolean,
+  ): Promise<SyncPushResponse> {
+    this.assertResolutionCurrent(isCurrent);
+    const creds = this.getCredentials();
+    if (!creds) {
+      throw new Error("not authenticated");
+    }
+    try {
+      const response = await this.syncPush(creds.baseUrl, creds.accessToken, payload);
+      this.assertResolutionCurrent(isCurrent);
+      return response;
+    } catch (error) {
+      this.assertResolutionCurrent(isCurrent);
+      if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) {
+        throw error;
+      }
+      const refreshed = await this.refreshAuthentication();
+      this.assertResolutionCurrent(isCurrent);
+      const refreshedCreds = this.getCredentials();
+      if (!refreshed || !refreshedCreds) {
+        throw error;
+      }
+      const response = await this.syncPush(
+        refreshedCreds.baseUrl,
+        refreshedCreds.accessToken,
+        payload,
+      );
+      this.assertResolutionCurrent(isCurrent);
+      return response;
+    }
+  }
+
+  private async pushConfirmed(
+    payload: SyncPushPayload,
+    isCurrent: () => boolean,
+  ): Promise<SyncPushResponse> {
+    let serverSeq = 0;
+    const rejected: SyncRejected[] = [];
+    for (const chunk of splitSyncPushPayload(payload)) {
+      const response = await this.pushWithRefresh(chunk, isCurrent);
+      serverSeq = response.server_seq;
+      rejected.push(...response.rejected);
+      if (response.rejected.length > 0) {
+        break;
+      }
+    }
+    return { server_seq: serverSeq, rejected };
+  }
+
+  private async runInitialSync(): Promise<void> {
+    const lifecycleDecision = this.shouldResolveWorkspaceLifecycleBeforePush();
+    const pull = this.requestPull();
+    const lifecyclePending = await lifecycleDecision;
+    await pull;
+    if (this.destroyed || !lifecyclePending) {
+      return;
+    }
+    if (await this.shouldResolveWorkspaceLifecycleBeforePush()) {
+      return;
+    }
+    await this.queue.flush().catch(() => { /* queue handles retries */ });
+  }
+
+  private shouldResolveWorkspaceLifecycleBeforePush(): Promise<boolean> {
+    if (this.destroyed) {
+      return Promise.resolve(false);
+    }
+    return this.workspaceLifecycleSyncGate.shouldResolveWorkspaceLifecycleBeforePush();
+  }
+
+  private targetRejections(
+    payload: SyncPushPayload,
+    rejected: readonly SyncRejected[],
+  ): SyncRejected[] {
+    const targetKeys = new Set<string>();
+    const targetIds = new Set<string>();
+    for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
+      for (const entity of syncPayloadEntities(payload, payloadKey)) {
+        targetKeys.add(`${entityType}:${entity.id}`);
+        targetIds.add(entity.id);
+      }
+    }
+    return rejected.filter((item) => {
+      if (!targetIds.has(item.id)) {
+        return false;
+      }
+      const hasKnownType = SYNC_ENTITY_PAYLOAD_MAPPINGS.some(
+        ({ entityType }) => entityType === item.type,
+      );
+      if (!hasKnownType) {
+        return true;
+      }
+      return targetKeys.has(`${item.type}:${item.id}`);
+    });
   }
 
   private ensurePeriodicPull() {

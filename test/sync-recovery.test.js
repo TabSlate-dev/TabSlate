@@ -126,6 +126,66 @@ describe("sync recovery persistence", () => {
     expect(sessionStore.size).toBe(0);
   });
 
+  test("extracts matching entities from every recovery payload map and persists the remainder", async () => {
+    const snapshot = {
+      entities: {
+        workspaces: [{ id: "workspace-captured" }, { id: "workspace-kept" }],
+        collections: [{ id: "collection-captured" }, { id: "collection-kept" }],
+        bookmarks: [{ id: "bookmark-captured" }, { id: "bookmark-kept" }],
+        tags: [{ id: "tag-captured" }, { id: "tag-kept" }],
+        groups: [{ id: "group-captured" }, { id: "group-kept" }],
+      },
+    };
+    recoveryModule.bufferSyncRecoverySnapshot(snapshot);
+    await waitForStorageWork();
+
+    const extracted = await recoveryModule.extractSyncRecoveryEntities([
+      { entityType: "workspace", entityId: "workspace-captured" },
+      { entityType: "collection", entityId: "collection-captured" },
+      { entityType: "bookmark", entityId: "bookmark-captured" },
+      { entityType: "tag", entityId: "tag-captured" },
+      { entityType: "saved_group", entityId: "group-captured" },
+    ]);
+
+    expect(extracted).toEqual({
+      entities: {
+        workspaces: [{ id: "workspace-captured" }],
+        collections: [{ id: "collection-captured" }],
+        bookmarks: [{ id: "bookmark-captured" }],
+        tags: [{ id: "tag-captured" }],
+        groups: [{ id: "group-captured" }],
+      },
+    });
+    expect(await recoveryModule.loadSyncRecoverySnapshot()).toEqual({
+      entities: {
+        workspaces: [{ id: "workspace-kept" }],
+        collections: [{ id: "collection-kept" }],
+        bookmarks: [{ id: "bookmark-kept" }],
+        tags: [{ id: "tag-kept" }],
+        groups: [{ id: "group-kept" }],
+      },
+    });
+  });
+
+  test("extracts a snapshot loaded after restart and clears an empty session record", async () => {
+    const snapshot = {
+      entities: {
+        workspaces: [],
+        collections: [{ id: "restart-collection" }],
+        bookmarks: [{ id: "restart-bookmark" }],
+        tags: [],
+        groups: [],
+      },
+    };
+    sessionStore.set("tabslate-sync-recovery", JSON.stringify(snapshot));
+
+    expect(await recoveryModule.extractSyncRecoveryEntities([
+      { entityType: "collection", entityId: "restart-collection" },
+      { entityType: "bookmark", entityId: "restart-bookmark" },
+    ])).toEqual(snapshot);
+    expect(sessionStore.has("tabslate-sync-recovery")).toBe(false);
+  });
+
   test("clearSyncRecoverySnapshot clears session storage", async () => {
     const snapshot = {
       entities: {

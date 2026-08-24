@@ -290,6 +290,25 @@ describe("workspace lifecycle state persistence", () => {
     });
   });
 
+  test("keeps the newest deferred snapshot for a repeated entity ID", async () => {
+    const older = payload("bookmark-repeated");
+    older.entities.bookmarks[0].title = "older";
+    const newer = payload("bookmark-repeated");
+    newer.entities.bookmarks[0].title = "newer";
+
+    await mergeWorkspaceLifecycleDeferredPayload("workspace-a", older, storage);
+    await mergeWorkspaceLifecycleDeferredPayload("workspace-b", payload("bookmark-b"), storage);
+    await mergeWorkspaceLifecycleDeferredPayload("workspace-a", newer, storage);
+
+    expect(await readWorkspaceLifecycleDeferredSync(storage)).toEqual({
+      version: 1,
+      payloadsByWorkspaceId: {
+        "workspace-a": newer,
+        "workspace-b": payload("bookmark-b"),
+      },
+    });
+  });
+
   test("concurrent deferred merges preserve both Workspace payloads", async () => {
     const concurrent = createBarrierStorage();
 

@@ -67,6 +67,9 @@ mock.module("../lib/sync-recovery", () => ({
     bufferedSnapshots.length = 0;
     consumedSnapshots.length = 0;
   },
+  extractSyncRecoveryEntities: async () => ({
+    entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] },
+  }),
 }));
 
 mock.module("../lib/sync-queue-conflicts", () => ({
@@ -232,6 +235,132 @@ describe("SyncQueue", () => {
     await queue.flush();
 
     expect(clearedConflicts).toEqual([[{ entityType: "bookmark", entityId: "edited-after-conflict" }]]);
+    queue.destroy();
+  });
+
+  test("extracts only matching live entities and their pending conflict clears", async () => {
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+    queue.enqueue({
+      workspaces: [{ id: "workspace-captured" }, { id: "workspace-kept" }],
+      collections: [{ id: "collection-captured" }, { id: "collection-kept" }],
+      bookmarks: [{ id: "bookmark-captured" }, { id: "bookmark-kept" }],
+      tags: [{ id: "tag-captured" }, { id: "tag-kept" }],
+      groups: [{ id: "group-captured" }, { id: "group-kept" }],
+    });
+    const references = [
+      { entityType: "workspace", entityId: "workspace-captured" },
+      { entityType: "collection", entityId: "collection-captured" },
+      { entityType: "bookmark", entityId: "bookmark-captured" },
+      { entityType: "tag", entityId: "tag-captured" },
+      { entityType: "saved_group", entityId: "group-captured" },
+    ];
+
+    expect(queue.extractEntities(references)).toEqual({
+      entities: {
+        workspaces: [{ id: "workspace-captured" }],
+        collections: [{ id: "collection-captured" }],
+        bookmarks: [{ id: "bookmark-captured" }],
+        tags: [{ id: "tag-captured" }],
+        groups: [{ id: "group-captured" }],
+      },
+    });
+    await queue.flush();
+
+    expect(syncPushCalls).toEqual([{
+      entities: {
+        workspaces: [{ id: "workspace-kept" }],
+        collections: [{ id: "collection-kept" }],
+        bookmarks: [{ id: "bookmark-kept" }],
+        tags: [{ id: "tag-kept" }],
+        groups: [{ id: "group-kept" }],
+      },
+    }]);
+    expect(clearedConflicts).toEqual([[
+      { entityType: "workspace", entityId: "workspace-kept" },
+      { entityType: "collection", entityId: "collection-kept" },
+      { entityType: "bookmark", entityId: "bookmark-kept" },
+      { entityType: "tag", entityId: "tag-kept" },
+      { entityType: "saved_group", entityId: "group-kept" },
+    ]]);
+    queue.destroy();
+  });
+
+  test("prunes idempotently and blocks captured aggregate entities from re-entering", async () => {
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+    const references = [
+      { entityType: "workspace", entityId: "workspace-blocked" },
+      { entityType: "collection", entityId: "collection-blocked" },
+      { entityType: "bookmark", entityId: "bookmark-blocked" },
+      { entityType: "tag", entityId: "tag-blocked" },
+      { entityType: "saved_group", entityId: "group-blocked" },
+    ];
+    const blockedEntities = {
+      workspaces: [{ id: "workspace-blocked" }],
+      collections: [{ id: "collection-blocked" }],
+      bookmarks: [{ id: "bookmark-blocked" }],
+      tags: [{ id: "tag-blocked" }],
+      groups: [{ id: "group-blocked" }],
+    };
+    queue.enqueue(blockedEntities);
+
+    await queue.pruneEntities(references);
+    await queue.pruneEntities(references);
+    queue.blockEntities(references);
+    queue.enqueue(blockedEntities);
+    queue.enqueue({ bookmarks: [{ id: "bookmark-allowed" }] });
+    await queue.flush();
+
+    expect(syncPushCalls).toEqual([{
+      entities: {
+        workspaces: [],
+        collections: [],
+        bookmarks: [{ id: "bookmark-allowed" }],
+        tags: [],
+        groups: [],
+      },
+    }]);
+    expect(clearedConflicts).toEqual([[
+      { entityType: "bookmark", entityId: "bookmark-allowed" },
+    ]]);
+    queue.destroy();
+  });
+
+  test("defers an automatic push without taking the queued snapshot", async () => {
+    const scheduledCallbacks = [];
+    const timerSpy = spyOn(globalThis, "setTimeout").mockImplementation((callback) => {
+      scheduledCallbacks.push(callback);
+      return 1;
+    });
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+      {},
+      { shouldDeferOrdinaryPush: async () => true },
+    );
+    queue.enqueue({ bookmarks: [{ id: "lifecycle-child" }] });
+    await Promise.resolve();
+    const pushCallback = scheduledCallbacks.at(-1);
+    if (!pushCallback) {
+      throw new Error("automatic push was not scheduled");
+    }
+
+    pushCallback();
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(syncPushCalls).toHaveLength(0);
+    expect(queue.isEmpty()).toBe(false);
+    timerSpy.mockRestore();
+    await queue.flush();
+    expect(syncPushCalls[0]?.entities.bookmarks).toEqual([{ id: "lifecycle-child" }]);
     queue.destroy();
   });
 

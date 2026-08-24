@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 const syncPullCalls = [];
+const syncPushCalls = [];
+const queueFlushEvents = [];
 let syncPullImpl;
+let syncPushImpl;
+let queueFlushImpl;
+let queueExtractImpl;
 let queueSuccessHandler = null;
 let queueFailureHandler = null;
 let sseSequenceHandler = null;
@@ -36,7 +41,14 @@ class OrderingTestQueue {
   }
 
   enqueue() {}
-  async flush() {}
+  async flush() {
+    queueFlushEvents.push("queue-flush");
+    await queueFlushImpl();
+  }
+  extractEntities(references) { return queueExtractImpl(references); }
+  blockEntities() {}
+  async pruneEntities() {}
+  async ready() {}
   isEmpty() { return true; }
   destroy() {}
 }
@@ -52,7 +64,7 @@ class OrderingTestSSEClient {
   destroy() {}
 }
 
-function orderingDependencies() {
+function orderingDependencies(overrides = {}) {
   return {
     createQueue: (getCredentials, onSuccess, onFailure) =>
       new OrderingTestQueue(getCredentials, onSuccess, onFailure),
@@ -62,18 +74,32 @@ function orderingDependencies() {
       syncPullCalls.push(args);
       return syncPullImpl(...args);
     },
+    syncPush: (...args) => {
+      syncPushCalls.push(args);
+      return syncPushImpl(...args);
+    },
+    ...overrides,
   };
 }
 
-const { SyncEngine } = await import(`../lib/sync-engine.ts?ordering=${Date.now()}-${Math.random()}`);
+const { ApiError } = await import("../lib/api.ts");
+const {
+  SyncEngine,
+  SyncRejectedError,
+} = await import(`../lib/sync-engine.ts?ordering=${Date.now()}-${Math.random()}`);
 
 describe("SyncEngine ordering", () => {
   beforeEach(() => {
     syncPullCalls.length = 0;
+    syncPushCalls.length = 0;
+    queueFlushEvents.length = 0;
     queueSuccessHandler = null;
     queueFailureHandler = null;
     sseSequenceHandler = null;
     syncPullImpl = async () => emptyResponse();
+    syncPushImpl = async () => ({ server_seq: 1, rejected: [] });
+    queueFlushImpl = async () => {};
+    queueExtractImpl = () => emptyPayload();
   });
 
   afterEach(() => {
@@ -130,6 +156,367 @@ describe("SyncEngine ordering", () => {
       "pull-merge-start",
       "pull-merge-end",
     ]);
+    engine.destroy();
+  });
+
+  test("confirmed push returns the response body inside pull reconciliation", async () => {
+    const expected = { server_seq: 17, rejected: [] };
+    syncPushImpl = async () => expected;
+    let confirmedResponse;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        confirmedResponse = await context.pushConfirmed({
+          entities: {
+            workspaces: [{ id: "workspace-confirmed" }],
+            collections: [], bookmarks: [], tags: [], groups: [],
+          },
+        });
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+
+    engine.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(confirmedResponse).toEqual(expected);
+    expect(syncPushCalls).toEqual([[
+      "http://localhost:8080",
+      "token",
+      {
+        entities: {
+          workspaces: [{ id: "workspace-confirmed" }],
+          collections: [], bookmarks: [], tags: [], groups: [],
+        },
+      },
+    ]]);
+    engine.destroy();
+  });
+
+  test("confirmed push refreshes authentication once after a 401", async () => {
+    let accessToken = "expired-token";
+    let refreshCalls = 0;
+    syncPushImpl = async (_baseUrl, token) => {
+      if (token === "expired-token") {
+        throw new ApiError("expired", 401);
+      }
+      return { server_seq: 23, rejected: [] };
+    };
+    let confirmedResponse;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        confirmedResponse = await context.pushConfirmed(emptyPayload());
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        refreshAuthentication: async () => {
+          refreshCalls += 1;
+          accessToken = "fresh-token";
+          return true;
+        },
+      }),
+    );
+
+    engine.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(refreshCalls).toBe(1);
+    expect(syncPushCalls.map((call) => call[1])).toEqual(["expired-token", "fresh-token"]);
+    expect(confirmedResponse).toEqual({ server_seq: 23, rejected: [] });
+    engine.destroy();
+  });
+
+  test("confirmed push uses dependency-safe 900-entity chunks", async () => {
+    let confirmedResponse;
+    syncPushImpl = async () => ({ server_seq: syncPushCalls.length, rejected: [] });
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        confirmedResponse = await context.pushConfirmed({
+          entities: {
+            workspaces: [{ id: "workspace-root" }],
+            collections: Array.from({ length: 899 }, (_, index) => ({ id: `collection-${index}` })),
+            bookmarks: [{ id: "bookmark-child" }],
+            tags: [],
+            groups: [],
+          },
+        });
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+
+    engine.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(syncPushCalls).toHaveLength(2);
+    expect(syncPushCalls[0]?.[2].entities.workspaces).toEqual([{ id: "workspace-root" }]);
+    expect(syncPushCalls[0]?.[2].entities.collections).toHaveLength(899);
+    expect(syncPushCalls[0]?.[2].entities.bookmarks).toEqual([]);
+    expect(syncPushCalls[1]?.[2].entities.bookmarks).toEqual([{ id: "bookmark-child" }]);
+    expect(confirmedResponse).toEqual({ server_seq: 2, rejected: [] });
+    engine.destroy();
+  });
+
+  test("captures live and restart-recovery entities with the newest snapshot per ID", async () => {
+    const references = [
+      { entityType: "workspace", entityId: "workspace-captured" },
+      { entityType: "collection", entityId: "collection-captured" },
+      { entityType: "bookmark", entityId: "bookmark-captured" },
+    ];
+    queueExtractImpl = (receivedReferences) => {
+      expect(receivedReferences).toEqual(references);
+      return {
+        entities: {
+          workspaces: [{ id: "workspace-captured" }],
+          collections: [],
+          bookmarks: [{ id: "bookmark-captured", title: "live-newest" }],
+          tags: [], groups: [],
+        },
+      };
+    };
+    const deferredMerges = [];
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        await context.captureDeferredEntities("workspace-captured", references);
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        extractRecoveryEntities: async (receivedReferences) => {
+          expect(receivedReferences).toEqual(references);
+          return {
+            entities: {
+              workspaces: [],
+              collections: [{ id: "collection-captured" }],
+              bookmarks: [{ id: "bookmark-captured", title: "recovery-older" }],
+              tags: [], groups: [],
+            },
+          };
+        },
+        mergeDeferredPayload: async (workspaceId, payload) => {
+          deferredMerges.push({ workspaceId, payload });
+        },
+      }),
+    );
+
+    engine.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(deferredMerges).toEqual([{
+      workspaceId: "workspace-captured",
+      payload: {
+        entities: {
+          workspaces: [{ id: "workspace-captured" }],
+          collections: [{ id: "collection-captured" }],
+          bookmarks: [{ id: "bookmark-captured", title: "live-newest" }],
+          tags: [], groups: [],
+        },
+      },
+    }]);
+    engine.destroy();
+  });
+
+  test("resolution context rejects use after its pull merge is no longer current", async () => {
+    let capturedContext;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        capturedContext = context;
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+    engine.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    if (!capturedContext) {
+      throw new Error("pull merge did not receive a resolution context");
+    }
+
+    await expect(capturedContext.pushConfirmed(emptyPayload())).rejects.toThrow(
+      "Sync resolution is no longer current",
+    );
+    expect(syncPushCalls).toHaveLength(0);
+    engine.destroy();
+  });
+
+  test("confirmed push rejects when retirement occurs during transport I/O", async () => {
+    const transport = deferred();
+    const pushStarted = deferred();
+    syncPushImpl = async () => {
+      pushStarted.resolve();
+      return transport.promise;
+    };
+    let contextError;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        try {
+          await context.pushConfirmed(emptyPayload());
+        } catch (error) {
+          contextError = error;
+        }
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+    engine.start();
+    await pushStarted.promise;
+    const retiring = engine.retire();
+    transport.resolve({ server_seq: 3, rejected: [] });
+    await retiring;
+
+    expect(contextError).toBeInstanceOf(Error);
+    expect(contextError.message).toBe("Sync resolution is no longer current");
+  });
+
+  test("forcePush serializes behind an active pull merge and returns its response", async () => {
+    const pullMerge = deferred();
+    const pullMergeStarted = deferred();
+    const response = { server_seq: 31, rejected: [] };
+    syncPushImpl = async () => response;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => {
+        pullMergeStarted.resolve();
+        await pullMerge.promise;
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+    engine.start();
+    await pullMergeStarted.promise;
+
+    const forcing = engine.forcePush({ bookmarks: [{ id: "bookmark-forced" }] });
+    await Promise.resolve();
+    expect(syncPushCalls).toHaveLength(0);
+    pullMerge.resolve();
+
+    expect(await forcing).toEqual(response);
+    engine.destroy();
+  });
+
+  test("forcePush resolves a target rejection and throws SyncRejectedError", async () => {
+    const rejected = [{ id: "collection-root", type: "collection", reason: "last_active_workspace" }];
+    syncPushImpl = async () => ({ server_seq: 41, rejected });
+    const resolvedResponses = [];
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => ({ errorMessage: null }),
+      async (response) => {
+        resolvedResponses.push(response);
+        return null;
+      },
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+
+    const forcing = engine.forcePush({ collections: [{ id: "collection-root" }] });
+
+    await expect(forcing).rejects.toBeInstanceOf(SyncRejectedError);
+    await expect(forcing).rejects.toMatchObject({ rejected });
+    expect(resolvedResponses).toEqual([{ server_seq: 41, rejected }]);
+    engine.destroy();
+  });
+
+  test("startup resolves a lifecycle intent by pull before flushing the ordinary queue", async () => {
+    const events = [];
+    let lifecyclePending = true;
+    syncPullImpl = async () => {
+      events.push("pull-request");
+      return emptyResponse();
+    };
+    queueFlushImpl = async () => {
+      events.push("ordinary-flush");
+    };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => {
+        events.push("lifecycle-resolution");
+        lifecyclePending = false;
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        workspaceLifecycleSyncGate: {
+          shouldResolveWorkspaceLifecycleBeforePush: async () => lifecyclePending,
+        },
+      }),
+    );
+
+    engine.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(events).toEqual(["pull-request", "lifecycle-resolution", "ordinary-flush"]);
+    engine.destroy();
+  });
+
+  test("manual sync resolves a lifecycle intent by pull before flushing the ordinary queue", async () => {
+    const events = [];
+    let lifecyclePending = true;
+    syncPullImpl = async () => {
+      events.push("pull-request");
+      return emptyResponse();
+    };
+    queueFlushImpl = async () => {
+      events.push("ordinary-flush");
+    };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => {
+        events.push("lifecycle-resolution");
+        lifecyclePending = false;
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        workspaceLifecycleSyncGate: {
+          shouldResolveWorkspaceLifecycleBeforePush: async () => lifecyclePending,
+        },
+      }),
+    );
+
+    await engine.forceSync();
+
+    expect(events).toEqual(["pull-request", "lifecycle-resolution", "ordinary-flush"]);
     engine.destroy();
   });
 
@@ -275,7 +662,9 @@ describe("SyncEngine ordering", () => {
       () => 0,
       async () => {
         pullSuccessCount += 1;
-        return pullSuccessCount === 1 ? "Local data needs attention" : null;
+        return {
+          errorMessage: pullSuccessCount === 1 ? "Local data needs attention" : null,
+        };
       },
       async () => null,
       (status, errorMessage) => statuses.push({ status, errorMessage }),

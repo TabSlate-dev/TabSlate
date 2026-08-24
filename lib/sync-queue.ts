@@ -2,10 +2,21 @@ import { api, ApiError } from "./api";
 import type { SyncEntity, SyncEntityType, SyncPushEntities, SyncPushPayload, SyncPushResponse } from "./api";
 import { syncQueueConflictRegistry } from "./sync-queue-conflicts";
 import type { SyncEntityReference } from "./sync-conflicts";
-import { bufferSyncRecoverySnapshot, loadSyncRecoverySnapshot } from "./sync-recovery";
+import {
+  bufferSyncRecoverySnapshot,
+  createEmptySyncPushPayload,
+  isSyncPushPayloadEmpty,
+  loadSyncRecoverySnapshot,
+  splitSyncPushPayload,
+  SYNC_ENTITY_PAYLOAD_MAPPINGS,
+  syncPayloadEntities,
+} from "./sync-recovery";
 import { useAuthStore } from "../store/auth-store";
 
-const MAX_PER_PUSH = 900;
+export {
+  MAX_SYNC_ENTITIES_PER_PUSH,
+  splitSyncPushPayload,
+} from "./sync-recovery";
 const INITIAL_RETRY_DELAY = 2_000;
 const MAX_RETRY_DELAY = 60_000;
 const PROBE_RETRY_DELAY = 300_000;
@@ -15,6 +26,10 @@ export type SyncConflictPolicy = "clear" | "respect";
 
 export interface SyncQueueOptions {
   random?: () => number;
+}
+
+export interface SyncQueueLifecycleGate {
+  shouldDeferOrdinaryPush(): Promise<boolean>;
 }
 
 export interface SyncPushFailure {
@@ -45,16 +60,6 @@ function createQueuedEntities(): QueuedEntities {
   return { workspaces: new Map(), collections: new Map(), bookmarks: new Map(), tags: new Map(), groups: new Map() };
 }
 
-function createEmptyPayload(): SyncPushPayload {
-  return { entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] } };
-}
-
-function isPayloadEmpty(payload: SyncPushPayload): boolean {
-  const { entities } = payload;
-  return entities.workspaces.length === 0 && entities.collections.length === 0 &&
-    entities.bookmarks.length === 0 && entities.tags.length === 0 && entities.groups.length === 0;
-}
-
 function asError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
@@ -83,12 +88,12 @@ export function computeRetryDelay(baseDelay: number, error: Error, random: () =>
 export class SyncQueue {
   private queue = createQueuedEntities();
   private readonly pendingConflictClears = new Map<string, SyncEntityReference>();
+  private readonly blockedEntities = new Set<string>();
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private retryDelay = INITIAL_RETRY_DELAY;
   private readonly recoveryReady: Promise<void>;
   private pushTail: Promise<void> = Promise.resolve();
-  private pushRequested = false;
   private destroyed = false;
   private needsRecoveryReplay = false;
   private identicalFailureFingerprint: string | null = null;
@@ -99,6 +104,7 @@ export class SyncQueue {
     private readonly onSuccess: OnPushSuccess,
     private readonly onFailure: OnPushFailure,
     private readonly options: SyncQueueOptions = {},
+    private readonly lifecycleGate?: SyncQueueLifecycleGate,
   ) {
     this.recoveryReady = Promise.all([
       syncQueueConflictRegistry.ready(),
@@ -129,7 +135,42 @@ export class SyncQueue {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
     }
-    return this.requestPush();
+    return this.requestPush(false);
+  }
+
+  ready(): Promise<void> {
+    return this.recoveryReady;
+  }
+
+  extractEntities(references: readonly SyncEntityReference[]): SyncPushPayload {
+    const extracted = createEmptySyncPushPayload();
+    for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
+      const queueMap = this.queue[payloadKey];
+      const target = syncPayloadEntities(extracted, payloadKey);
+      for (const reference of references) {
+        if (reference.entityType !== entityType) {
+          continue;
+        }
+        const entity = queueMap.get(reference.entityId);
+        if (entity) {
+          target.push(entity);
+          queueMap.delete(reference.entityId);
+        }
+        this.pendingConflictClears.delete(entityReferenceKey(reference));
+      }
+    }
+    return extracted;
+  }
+
+  blockEntities(references: readonly SyncEntityReference[]): void {
+    for (const reference of references) {
+      this.blockedEntities.add(entityReferenceKey(reference));
+    }
+  }
+
+  async pruneEntities(references: readonly SyncEntityReference[]): Promise<void> {
+    await this.recoveryReady;
+    this.extractEntities(references);
   }
 
   isEmpty(): boolean {
@@ -158,31 +199,25 @@ export class SyncQueue {
     }
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
-      void this.requestPush();
+      void this.requestPush(true);
     }, delayMs);
   }
 
-  private requestPush(): Promise<void> {
+  private requestPush(automatic: boolean): Promise<void> {
     if (this.destroyed) {
       return Promise.resolve();
     }
-    if (this.pushRequested) {
-      return this.pushTail;
-    }
-
-    this.pushRequested = true;
     const requestedPush = this.pushTail.then(async () => {
-      this.pushRequested = false;
       if (this.destroyed) {
         return;
       }
-      await this.doPush();
+      await this.doPush(automatic);
     });
     this.pushTail = requestedPush.catch(() => {});
     return requestedPush;
   }
 
-  private async doPush(): Promise<void> {
+  private async doPush(automatic: boolean): Promise<void> {
     await this.recoveryReady;
     if (this.destroyed) {
       return;
@@ -197,13 +232,16 @@ export class SyncQueue {
     if (this.isEmpty()) {
       return;
     }
+    if (automatic && await this.lifecycleGate?.shouldDeferOrdinaryPush()) {
+      return;
+    }
     const creds = this.getCredentials();
     if (!creds) {
       return;
     }
 
     const snapshot = this.takePushSnapshot();
-    if (isPayloadEmpty(snapshot.payload)) {
+    if (isSyncPushPayloadEmpty(snapshot.payload)) {
       return;
     }
     try {
@@ -216,7 +254,7 @@ export class SyncQueue {
       await this.onFailure({
         error: asError(caught),
         payload: snapshot.payload,
-        confirmedPayload: createEmptyPayload(),
+        confirmedPayload: createEmptySyncPushPayload(),
         retryable: true,
         status: 0,
       });
@@ -230,12 +268,12 @@ export class SyncQueue {
     }
     this.removePersistedConflictClears(snapshot.conflictClears);
     const full = syncQueueConflictRegistry.filterPayload(snapshot.payload);
-    if (isPayloadEmpty(full)) {
+    if (isSyncPushPayloadEmpty(full)) {
       return;
     }
 
-    const chunks = this.splitPayload(full);
-    const confirmedPayload = createEmptyPayload();
+    const chunks = splitSyncPushPayload(full);
+    const confirmedPayload = createEmptySyncPushPayload();
     let finalServerSeq = 0;
     let hadSuccessfulChunk = false;
     const allRejected: SyncPushResponse["rejected"] = [];
@@ -370,8 +408,8 @@ export class SyncQueue {
       }
       await this.onFailure({
         error: asError(caught),
-        payload: createEmptyPayload(),
-        confirmedPayload: createEmptyPayload(),
+        payload: createEmptySyncPushPayload(),
+        confirmedPayload: createEmptySyncPushPayload(),
         retryable: false,
         status: 0,
       });
@@ -395,8 +433,8 @@ export class SyncQueue {
       }
       await this.onFailure({
         error: asError(caught),
-        payload: createEmptyPayload(),
-        confirmedPayload: createEmptyPayload(),
+        payload: createEmptySyncPushPayload(),
+        confirmedPayload: createEmptySyncPushPayload(),
         retryable: false,
         status: 0,
       });
@@ -446,24 +484,34 @@ export class SyncQueue {
   }
 
   private addEntities(target: QueuedEntities, entities: Partial<SyncPushEntities>, overwrite = true) {
-    const merge = (map: Map<string, SyncEntity>, items?: SyncEntity[]) => {
+    const merge = (
+      entityType: SyncEntityType,
+      map: Map<string, SyncEntity>,
+      items?: SyncEntity[],
+    ) => {
       for (const entity of items ?? []) {
+        if (this.blockedEntities.has(entityReferenceKey({ entityType, entityId: entity.id }))) {
+          continue;
+        }
         if (overwrite || !map.has(entity.id)) {
           map.set(entity.id, entity);
         }
       }
     };
-    merge(target.workspaces, entities.workspaces);
-    merge(target.collections, entities.collections);
-    merge(target.bookmarks, entities.bookmarks);
-    merge(target.tags, entities.tags);
-    merge(target.groups, entities.groups);
+    merge("workspace", target.workspaces, entities.workspaces);
+    merge("collection", target.collections, entities.collections);
+    merge("bookmark", target.bookmarks, entities.bookmarks);
+    merge("tag", target.tags, entities.tags);
+    merge("saved_group", target.groups, entities.groups);
   }
 
   private addPendingConflictClears(entities: Partial<SyncPushEntities>) {
     const add = (entityType: SyncEntityType, items?: SyncEntity[]) => {
       for (const entity of items ?? []) {
         const reference = { entityType, entityId: entity.id };
+        if (this.blockedEntities.has(entityReferenceKey(reference))) {
+          continue;
+        }
         this.pendingConflictClears.set(entityReferenceKey(reference), reference);
       }
     };
@@ -475,7 +523,7 @@ export class SyncQueue {
   }
 
   private mergeChunks(chunks: SyncPushPayload[]): SyncPushPayload {
-    const merged = createEmptyPayload();
+    const merged = createEmptySyncPushPayload();
     for (const chunk of chunks) {
       this.mergePayloadInto(merged, chunk);
     }
@@ -526,7 +574,7 @@ export class SyncQueue {
     }
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
-      void this.requestPush();
+      void this.requestPush(true);
     }, delayMs);
   }
 
@@ -536,31 +584,4 @@ export class SyncQueue {
     this.identicalServerFailureCount = 0;
   }
 
-  private splitPayload(full: SyncPushPayload): SyncPushPayload[] {
-    const { workspaces: ws, collections: col, bookmarks: bm, tags: tag, groups: grp } = full.entities;
-    const total = ws.length + col.length + bm.length + tag.length + grp.length;
-    if (total <= MAX_PER_PUSH) {
-      return [full];
-    }
-    const chunks: SyncPushPayload[] = [];
-    type NonBookmarkKey = "workspaces" | "collections" | "tags" | "groups";
-    type NonBookmarkEntry = [NonBookmarkKey, SyncEntity];
-    const nonBookmarks: NonBookmarkEntry[] = [
-      ...ws.map((entity) => ["workspaces", entity] as NonBookmarkEntry),
-      ...col.map((entity) => ["collections", entity] as NonBookmarkEntry),
-      ...tag.map((entity) => ["tags", entity] as NonBookmarkEntry),
-      ...grp.map((entity) => ["groups", entity] as NonBookmarkEntry),
-    ];
-    for (let index = 0; index < nonBookmarks.length; index += MAX_PER_PUSH) {
-      const entities = createEmptyPayload().entities;
-      for (const [key, entity] of nonBookmarks.slice(index, index + MAX_PER_PUSH)) {
-        entities[key].push(entity);
-      }
-      chunks.push({ entities });
-    }
-    for (let index = 0; index < bm.length; index += MAX_PER_PUSH) {
-      chunks.push({ entities: { ...createEmptyPayload().entities, bookmarks: bm.slice(index, index + MAX_PER_PUSH) } });
-    }
-    return chunks;
-  }
 }
