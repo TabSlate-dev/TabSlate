@@ -5,6 +5,7 @@ export interface Workspace {
   position: number;
   seq: number;        // 0 = never synced to server
   deletedAt?: number; // unix ms; undefined = alive
+  deletionModel?: 0 | 1;
 }
 
 export interface Collection {

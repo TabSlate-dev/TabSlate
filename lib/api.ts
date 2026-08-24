@@ -48,6 +48,7 @@ export interface PlanResponse {
   subscription: { plan: string; status: string; expires_at: number | null };
   limits: PlanLimits;
   usage: PlanUsage;
+  trash_usage?: PlanUsage;
 }
 
 export interface LoginCaptchaStatusResponse {
@@ -58,13 +59,21 @@ export interface ServerWorkspace {
   id: string;
   user_id: string;
   name: string;
-  icon?: string;
-  color?: string;
+  icon?: string | null;
+  color?: string | null;
   position: number;
   seq: number;
   deleted_at?: number;
+  is_deleted: 0 | 1 | 2;
+  deletion_model: 0 | 1;
   created_at: number;
   updated_at: number;
+}
+
+export type WorkspaceLifecycleAction = "delete" | "restore" | "purge";
+
+export interface SyncWorkspaceMutation extends SyncEntity {
+  lifecycle_action?: WorkspaceLifecycleAction;
 }
 
 export interface ServerCollection {
@@ -146,7 +155,7 @@ export interface SyncEntities {
 
 export interface SyncEntity {
   id: string;
-  [key: string]: string | number | boolean | null | string[] | SyncEntity[];
+  [key: string]: string | number | boolean | null | undefined | string[] | SyncEntity[];
 }
 
 export type SyncEntityType =
@@ -160,7 +169,11 @@ export type KnownSyncRejectionReason =
   | "stale"
   | "quota_exceeded"
   | "parent_rejected"
-  | "invalid_parent";
+  | "invalid_parent"
+  | "last_active_workspace"
+  | "workspace_deleted"
+  | "parent_deleted"
+  | "permanently_deleted";
 
 export interface SyncRejected {
   id: string;
@@ -171,7 +184,7 @@ export interface SyncRejected {
 }
 
 export interface SyncPushEntities {
-  workspaces: SyncEntity[];
+  workspaces: SyncWorkspaceMutation[];
   collections: SyncEntity[];
   bookmarks: SyncEntity[];
   tags: SyncEntity[];
@@ -190,7 +203,11 @@ export function isKnownSyncRejectionReason(value: string): value is KnownSyncRej
   return value === "stale" ||
     value === "quota_exceeded" ||
     value === "parent_rejected" ||
-    value === "invalid_parent";
+    value === "invalid_parent" ||
+    value === "last_active_workspace" ||
+    value === "workspace_deleted" ||
+    value === "parent_deleted" ||
+    value === "permanently_deleted";
 }
 
 export interface SyncPushResponse {
@@ -201,10 +218,60 @@ export interface SyncPushResponse {
 export interface SyncPullResponse {
   entities: SyncEntities;
   server_seq: number;
+  capabilities?: SyncCapabilities;
 }
 
 export interface SyncPushPayload {
   entities: SyncPushEntities;
+}
+
+export interface SyncCapabilities {
+  workspace_parent_tombstone?: boolean;
+}
+
+interface SyncPullWorkspaceWire {
+  id: string;
+  user_id: string;
+  name: string;
+  icon?: string | null;
+  color?: string | null;
+  position: number;
+  seq: number;
+  deleted_at?: number | null;
+  is_deleted?: 0 | 1 | 2;
+  deletion_model?: 0 | 1;
+  created_at: number;
+  updated_at: number;
+}
+
+interface SyncPullEntitiesWire {
+  workspaces: SyncPullWorkspaceWire[];
+  collections: ServerCollection[];
+  bookmarks: ServerBookmark[];
+  tags: ServerTag[];
+  groups: ServerGroup[];
+}
+
+interface SyncPullResponseWire {
+  entities: SyncPullEntitiesWire;
+  server_seq: number;
+  capabilities?: SyncCapabilities;
+}
+
+function normalizeSyncPullResponse(response: SyncPullResponseWire): SyncPullResponse {
+  return {
+    entities: {
+      ...response.entities,
+      workspaces: response.entities.workspaces.map((workspace) => ({
+        ...workspace,
+        deleted_at: workspace.deleted_at ?? undefined,
+        is_deleted: workspace.is_deleted ?? (workspace.deleted_at ? 1 : 0),
+        deletion_model: workspace.deletion_model ?? (workspace.deleted_at ? 0 : 1),
+      })),
+    },
+    server_seq: response.server_seq,
+    capabilities: response.capabilities,
+  };
 }
 
 // ApiError carries the HTTP status code so callers can branch on 401, 409, etc.
@@ -420,7 +487,7 @@ export const api = {
     return request<SyncPushResponse>(baseUrl, "/sync/push", {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, protocol_version: 2 }),
     });
   },
 
@@ -429,14 +496,14 @@ export const api = {
     accessToken: string,
     afterSeq: number,
   ): Promise<SyncPullResponse> {
-    return request<SyncPullResponse>(
+    return request<SyncPullResponseWire>(
       baseUrl,
       `/sync/pull?after_seq=${afterSeq}`,
       {
         method: "GET",
         headers: { Authorization: `Bearer ${accessToken}` },
       },
-    );
+    ).then(normalizeSyncPullResponse);
   },
 
   deleteAccount(

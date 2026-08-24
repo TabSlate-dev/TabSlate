@@ -1,5 +1,12 @@
+import type { Workspace } from "@/lib/types";
+import type {
+  WorkspaceLifecycleIntent,
+  WorkspaceLifecycleIntentRecord,
+} from "@/lib/workspace-lifecycle-state";
+
 const DB_NAME = "tabslate-db";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
+const WORKSPACE_LIFECYCLE_INTENTS_KEY = "workspace-lifecycle-intents-v1";
 
 export type StoreName =
   | "bookmarks"
@@ -66,6 +73,16 @@ export function getDB(): Promise<IDBDatabase> {
           const tbs = (event.target as IDBOpenDBRequest).transaction!.objectStore("trashed-bookmarks");
           tbs.createIndex("collectionId", "collectionId");
         }
+        if (event.oldVersion < 3) {
+          const transaction = req.transaction;
+          if (!transaction) {
+            throw new Error("IndexedDB upgrade transaction is unavailable");
+          }
+          const groupsStore = transaction.objectStore("groups");
+          if (!groupsStore.indexNames.contains("workspaceId")) {
+            groupsStore.createIndex("workspaceId", "workspaceId", { unique: false });
+          }
+        }
       };
       req.onsuccess = () => {
         const db = req.result;
@@ -100,6 +117,88 @@ export async function idbPut<T>(store: StoreName, value: T): Promise<void> {
     req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
   });
+}
+
+export interface CommitWorkspaceLifecycleIntentInput {
+  workspace: Workspace;
+  intent: WorkspaceLifecycleIntent;
+  activeWorkspaceId?: string;
+}
+
+interface WorkspaceLifecycleIntentKVRecord {
+  key: string;
+  value: WorkspaceLifecycleIntentRecord;
+}
+
+function isWorkspaceLifecycleIntent(value: unknown): value is WorkspaceLifecycleIntent {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return "workspaceId" in value && typeof value.workspaceId === "string" &&
+    "action" in value && (value.action === "delete" || value.action === "restore") &&
+    "baseSeq" in value && typeof value.baseSeq === "number" &&
+    "previousActiveWorkspaceId" in value && typeof value.previousActiveWorkspaceId === "string" &&
+    "createdAt" in value && typeof value.createdAt === "number";
+}
+
+function isWorkspaceLifecycleIntentKVRecord(
+  value: unknown,
+): value is WorkspaceLifecycleIntentKVRecord {
+  if (typeof value !== "object" || value === null || !("value" in value)) {
+    return false;
+  }
+  const record = value.value;
+  if (
+    typeof record !== "object" ||
+    record === null ||
+    !("version" in record) ||
+    record.version !== 1 ||
+    !("intents" in record) ||
+    !Array.isArray(record.intents)
+  ) {
+    return false;
+  }
+  return record.intents.every(isWorkspaceLifecycleIntent);
+}
+
+export function idbCommitWorkspaceLifecycleIntent(
+  input: CommitWorkspaceLifecycleIntentInput,
+): Promise<void> {
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const transaction = db.transaction(["workspaces", "kv"], "readwrite");
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+
+    transaction.objectStore("workspaces").put(input.workspace);
+    const intentsRequest = transaction.objectStore("kv").get(
+      WORKSPACE_LIFECYCLE_INTENTS_KEY,
+    );
+    intentsRequest.onerror = () => transaction.abort();
+    intentsRequest.onsuccess = () => {
+      const persisted: unknown = intentsRequest.result;
+      const current = isWorkspaceLifecycleIntentKVRecord(persisted)
+        ? persisted.value.intents
+        : [];
+      const remaining = current.filter(
+        (candidate) => candidate.workspaceId !== input.intent.workspaceId,
+      );
+      const value: WorkspaceLifecycleIntentRecord = {
+        version: 1,
+        intents: [...remaining, input.intent],
+      };
+      transaction.objectStore("kv").put({
+        key: WORKSPACE_LIFECYCLE_INTENTS_KEY,
+        value,
+      });
+      if (input.activeWorkspaceId !== undefined) {
+        transaction.objectStore("kv").put({
+          key: "activeWorkspaceId",
+          value: input.activeWorkspaceId,
+        });
+      }
+    };
+  }));
 }
 
 /**
