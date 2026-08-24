@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { SyncPushPayload } from "@/lib/api";
 import type {
+  WorkspaceLifecycleDeferredSyncRecord,
   WorkspaceLifecycleIntent,
   WorkspaceLifecycleIntentRecord,
   WorkspaceLifecycleStateStorage,
@@ -310,6 +311,33 @@ describe("workspace lifecycle state persistence", () => {
       payloadsByWorkspaceId: {
         "workspace-a": payload("bookmark-a"),
         "workspace-b": payload("bookmark-b"),
+      },
+    });
+  });
+
+  test("concurrent deferred removals preserve only the unrelated Workspace payload", async () => {
+    const retainedPayload = payload("bookmark-c");
+    const initial: WorkspaceLifecycleDeferredSyncRecord = {
+      version: 1,
+      payloadsByWorkspaceId: {
+        "workspace-a": payload("bookmark-a"),
+        "workspace-b": payload("bookmark-b"),
+        "workspace-c": retainedPayload,
+      },
+    };
+    const concurrent = createBarrierStorage(new Map([
+      ["workspace-lifecycle-deferred-sync-v1", initial],
+    ]));
+
+    await Promise.all([
+      removeWorkspaceLifecycleDeferredPayload("workspace-a", concurrent.storage),
+      removeWorkspaceLifecycleDeferredPayload("workspace-b", concurrent.storage),
+    ]);
+
+    expect(concurrent.snapshot("workspace-lifecycle-deferred-sync-v1")).toEqual({
+      version: 1,
+      payloadsByWorkspaceId: {
+        "workspace-c": retainedPayload,
       },
     });
   });
