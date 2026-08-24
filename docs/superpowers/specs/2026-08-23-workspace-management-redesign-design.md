@@ -91,9 +91,11 @@ The server adds two Workspace lifecycle fields:
 - `1`: deleted and retained.
 - `2`: terminal tombstone for a permanently deleted Workspace.
 
-`deleted_at` remains the time the Workspace entered retention. `updated_at` records the latest transition and is the terminal-tombstone clock when state becomes `2`.
+`deleted_at` remains the time the Workspace entered retention. `updated_at` records the latest transition.
 
-The client does not keep a separate permanent state in its normal `Workspace` model. `deletedAt` represents state `1`; a pulled state `2` record triggers local aggregate cleanup and is never persisted as a usable Workspace. The client keeps `deletionModel` only while a retained legacy Workspace still needs compatibility restoration; every new deletion uses the parent model.
+State `2` is a permanent protocol tombstone rather than recoverable user content. When a Workspace becomes state `2`, the server deletes every descendant and scrubs the Workspace row's user-facing fields: `name` becomes an empty string, `icon` and `color` become null, and `position` becomes zero. It retains only the random Workspace ID, owner ID, terminal state, deletion model, sequence, and timestamps. This minimal row remains until account deletion so an arbitrarily stale device can still pull the terminal state and can never recreate the same aggregate ID. It does not count toward quota or appear in normal APIs.
+
+The client does not keep a separate permanent state in its normal `Workspace` model. `deletedAt` represents state `1`; a pulled state `2` record triggers local aggregate cleanup and is never persisted as a usable Workspace. The client keeps `deletionModel` only while a retained legacy Workspace still needs compatibility restoration; every protocol-version-2 deletion uses the parent model.
 
 ### Aggregate ownership
 
@@ -168,12 +170,12 @@ All Workspace Rail and selection consumers use active Workspaces. Quota counts u
 `deleteWorkspace()`:
 
 1. Validates that more than one active Workspace exists.
-2. Writes `{ deletedAt, seq: 0 }` to the Workspace in IndexedDB and state.
+2. Atomically writes `{ deletedAt, seq: 0 }`, a persistent `delete` lifecycle intent, and the replacement `activeWorkspaceId` to IndexedDB before updating state.
 3. Does not call Group, Collection, or Bookmark deletion actions.
-4. Selects the nearest active Workspace by position and persists `activeWorkspaceId`.
-5. Enqueues only the Workspace state `1` representation.
+4. Selects the nearest active Workspace by position.
+5. Requests lifecycle reconciliation; it does not enqueue a state `1` Workspace into the ordinary entity queue.
 
-`restoreWorkspace()` clears `deletedAt`, sets `seq: 0`, persists the root, and enqueues state `0`. The original position is retained. Position ties use the existing stable secondary ID ordering until a later explicit reorder normalizes positions.
+`restoreWorkspace()` atomically clears `deletedAt`, sets `seq: 0`, and persists a `restore` lifecycle intent. It then requests lifecycle reconciliation instead of putting an ordinary state `0` snapshot in the queue. The original position is retained. Position ties use the existing stable secondary ID ordering until a later explicit reorder normalizes positions.
 
 `permanentlyDeleteWorkspace()` is push-first for authenticated sessions. It removes the card optimistically but does not delete local records until the server confirms. Failure restores the card. Guest sessions skip the server and run the local aggregate transaction immediately.
 
@@ -188,9 +190,9 @@ State `2` pull handling and Guest permanent deletion use one transaction spannin
 - `trashed-bookmarks`
 - `groups`
 - `group-tabs`
-- `kv` when `activeWorkspaceId` needs repair
+- `kv` for `activeWorkspaceId`, lifecycle intents, Guest provenance, migration markers, and the synchronized conflict-registry mutation
 
-Collections already have a `workspaceId` index, and Bookmark buckets have `collectionId` indexes. IndexedDB is bumped to add a `workspaceId` index to `groups`, allowing the aggregate cleanup to find Group IDs and then delete Group Tabs through their existing `groupId` index without loading all stores into memory.
+Collections already have a `workspaceId` index, and Bookmark buckets have `collectionId` indexes. IndexedDB is bumped from version 2 to version 3 to add a `workspaceId` index to `groups`, allowing the aggregate cleanup to find Group IDs and then delete Group Tabs through their existing `groupId` index without loading all stores into memory.
 
 State cleanup must work even when archived or trashed Bookmark buckets have never been hydrated. It operates on IndexedDB first and then removes any loaded records from Zustand.
 
@@ -208,17 +210,29 @@ Saved Groups already use the equivalent Workspace filter. Individual trashed Boo
 
 ### Wire model
 
-`ServerWorkspace` and the Go `model.Workspace` add `is_deleted` and `deletion_model`. `toServerWorkspace()` mirrors `toServerCollection()` and accepts an optional terminal-state override.
+Pull and push no longer share one ambiguous Workspace DTO. `ServerWorkspace` and the Go pull model add `is_deleted` and `deletion_model`. Sync push adds an optional top-level `protocol_version`; the new client sends version `2`. Its Workspace mutation DTO adds an optional `lifecycle_action` with the values `delete`, `restore`, and `purge`.
+
+An ordinary version-2 Workspace create or metadata update omits `lifecycle_action` and never changes lifecycle state. A lifecycle transition is accepted only through the explicit action and the centralized Workspace lifecycle service. This prevents a stale client editing a name or position from accidentally restoring a deleted Workspace. State `1` rejects ordinary root updates with `workspace_deleted`; state `2` rejects every mutation with `permanently_deleted`.
+
+Requests without `protocol_version=2` are legacy requests. An existing active Workspace with no `deleted_at` may receive metadata updates, but a legacy update can never restore state `1`. A legacy request with `deleted_at` invokes the server's atomic legacy-delete path described below. Presence-sensitive fields use dedicated push DTOs rather than non-pointer Go integers, so an omitted lifecycle field cannot be decoded as an intentional state `0` transition.
 
 `SyncPullResponse` adds the optional capability `capabilities.workspace_parent_tombstone`. A new authenticated client enables Workspace delete, restore, and permanent delete only after receiving `true`. If an older self-hosted server omits the capability, those actions display an update-server requirement instead of falling back to the unsafe cascaded delete. Guest mode does not depend on a server capability.
 
+The client persists the last observed capability in IndexedDB, keyed by user ID and normalized server origin. A previously confirmed `true` permits offline soft delete and restore after a browser restart. Permanent deletion still requires a live authenticated SyncEngine. A server-origin change, account change, database reset, or later authenticated response that omits or disables the capability invalidates the cached value.
+
 Sync pull continues returning Workspace states `0`, `1`, and `2`. It also continues returning child entities under retained Workspaces during full synchronization, because a new device must store the hidden aggregate in order to restore it later. Normal REST and search endpoints apply active-parent visibility; sync is the recovery channel and must not filter retained descendants.
 
-### Delete and restore ordering
+### Lifecycle intents and ordered reconciliation
 
-Authenticated online delete and restore enqueue only the parent Workspace. Offline delete and restore write `seq=0`; `sweepUnsynced()` later pushes them.
+Offline delete and restore write a versioned lifecycle-intent record in `kv`. Each intent contains `workspaceId`, `action`, `baseSeq`, `previousActiveWorkspaceId`, and `createdAt`. The record is committed in the same IndexedDB transaction as the local Workspace change. It survives restarts and provides enough information to distinguish an unconfirmed new Workspace from an already-confirmed parent and to roll back a late `last_active_workspace` rejection deterministically.
+
+Lifecycle intents are not represented as ordinary queued Workspace snapshots. `SyncEngine` owns one serialized Workspace lifecycle executor on the same retirement/currentness boundary as push reconciliation and pull merging. The executor uses a confirmed-push primitive that returns the `SyncPushResponse`, processes structured rejections, and never treats HTTP 200 alone as confirmation. The existing direct `forcePush()` behavior is replaced or wrapped by this primitive so permanent-delete callers cannot ignore business rejections.
 
 If an offline deletion includes descendant mutations that have not reached the server, synchronization preserves dependency order. When the server does not yet have the Workspace, the coordinator first creates it as state `0`; it then pushes and confirms all unsynced descendants while the server parent is active, and only then pushes the Workspace state `1` transition. When the server already has the Workspace, the coordinator flushes pending descendants before the parent transition. This prevents a parent tombstone from rejecting data that existed before deletion.
+
+The ordinary queue may still collapse multiple snapshots for the same entity, so it is never used to represent both the active parent and its later lifecycle transition. Reconciliation explicitly executes and awaits the phases. `sweepAllUnsynced()` runs lifecycle reconciliation before normal store sweeps and excludes Workspaces with pending lifecycle intents from the ordinary Workspace payload.
+
+Before an authenticated purge is sent, the executor drains relevant pending writes. After the terminal action is confirmed, it prunes the Workspace and all descendants from the live queue and from `tabslate-sync-recovery`, then performs aggregate cleanup. Queue pruning and recovery-snapshot pruning are idempotent. A root that has become terminal is also blocked from re-entry while cleanup is in progress.
 
 After a server Workspace is retained, stale devices may no longer create or update any descendant. The server returns a structured `parent_deleted` rejection. The ordered reconciliation path succeeds because it keeps the server parent at state `0` until every descendant is confirmed; it does not create an exception to the retained-parent rule. A state `2` parent rejects every descendant write and every restore/update attempt.
 
@@ -230,11 +244,13 @@ A local `seq=0` delete or restore is a pending mutation. An older server state `
 
 For state `2`, the Workspace merge path records the terminal ID before entering Zustand's pure updater. After state reconciliation, it executes aggregate IDB cleanup and removes the Workspace, Collections, Bookmarks, Saved Groups, and Group Tabs from any loaded state.
 
+Aggregate cleanup uses `syncConflictRegistry.executeClearRootTransaction("workspace", id, ...)` so removal of local records, lifecycle intent, matching Guest provenance, and the root's descendant conflict tree commits under the registry's cross-context serialization boundary. Live and recovery queues are pruned before the transaction. The pull coordinator never advances `localSeq` until queue pruning, every store merge, aggregate cleanup, and all durable writes have completed.
+
 The terminal parent tombstone represents the entire aggregate, so the server does not need to emit one terminal tombstone per child.
 
 ### Concurrency
 
-- Delete and restore below state `2` use server arrival order through the existing LWW timestamp model.
+- Explicit delete and restore actions below state `2` use server transaction order. Ordinary metadata LWW updates cannot transition lifecycle state.
 - State `2` is terminal and cannot be overwritten by a later state `0` or `1` payload.
 - Restore and automatic purge lock the Workspace row. A committed restore makes cleanup skip it; a committed purge makes restore return `permanently_deleted`.
 - The server checks the final active-Workspace count inside the transaction. Concurrent deletions cannot reduce it below one.
@@ -263,12 +279,12 @@ Manual permanent deletion and automatic expiry call the same transaction:
 
 1. Lock the state `1` Workspace.
 2. Increment the user sequence once.
-3. Set the Workspace to state `2`, with the new sequence and `updated_at=now`.
+3. Set the Workspace to state `2`, with the new sequence and `updated_at=now`, and scrub its user-facing fields.
 4. Delete descendant Bookmarks, Group Tabs, Saved Groups, and Collections in dependency-safe order.
 5. Commit atomically.
 6. Broadcast the sequence and asynchronously delete descendant Bookmark documents from MeiliSearch.
 
-The Workspace terminal row remains for the fixed seven-day tombstone window. Cleanup Phase 2 physically deletes state `2` Workspace rows whose `updated_at` is older than that window. Descendants are already gone, so foreign-key actions cannot create orphans.
+The minimal Workspace terminal row is retained until account deletion. It is the durable anti-resurrection ledger for the delta-sync protocol, contains no recoverable Workspace content, and does not participate in quota or normal reads. Cleanup Phase 2 continues handling existing child tombstones according to their protocol, but it never physically deletes Workspace state `2` rows independently of account deletion.
 
 If any descendant deletion fails, the whole transaction rolls back and the Workspace remains recoverable in state `1`.
 
@@ -314,14 +330,16 @@ Guest usage is derived locally with the same effective-containment rules.
 
 ## Failure Handling
 
-- Soft-delete failure restores the Workspace and previous `activeWorkspaceId`.
-- Restore failure leaves the Workspace in Deleted and displays the structured reason.
+- `last_active_workspace` rolls back the pending delete, restores the Workspace and persisted `previousActiveWorkspaceId`, clears the intent, and displays the action-specific message.
+- A restore rejection leaves the Workspace in Deleted, clears only a rejected restore intent when the rejection is terminal, and displays the structured reason.
 - Authenticated permanent deletion requires a working server connection. When offline, the action is disabled and no local data is removed.
-- Permanent-push failure rolls back the optimistic card removal and retains all IDB data.
+- A purge is successful only when the root is absent from `SyncPushResponse.rejected`. Network failure or any rejection rolls back the optimistic card removal and retains all IDB data.
 - Guest permanent deletion either commits the entire local transaction or changes nothing.
 - Cleanup failures roll back and are retried on the next scheduled run.
 - Search-index failure does not roll back canonical data; PostgreSQL result validation prevents visibility leaks.
-- Deterministic rejections such as `last_active_workspace`, `parent_deleted`, and `permanently_deleted` are not placed into automatic retry loops.
+- `parent_deleted` persists the local child mutation as a blocked conflict until the parent is restored or becomes terminal. `workspace_deleted` never restores the parent implicitly. `permanently_deleted` triggers authoritative aggregate cleanup. None of these deterministic outcomes enters an automatic retry loop.
+
+`KnownSyncRejectionReason` and the server contract include `last_active_workspace`, `workspace_deleted`, `parent_deleted`, and `permanently_deleted`. Lifecycle-specific rejections are resolved before generic quota reconciliation records them.
 
 All messages use Chrome i18n through `useTranslation`. Cross-screen notifications use the existing Alert pattern rather than custom pills.
 
@@ -329,9 +347,11 @@ All messages use Chrome i18n through `useTranslation`. Cross-screen notification
 
 ### Server migration
 
-The schema migration adds `workspaces.is_deleted` and `workspaces.deletion_model` idempotently. It marks every existing `deleted_at IS NOT NULL` Workspace as state `1` with `deletion_model=0`; existing active Workspaces and all future deletions use `deletion_model=1`. Successful legacy restoration changes the marker to `1`, so compatibility logic cannot run twice.
+The schema migration adds `workspaces.is_deleted` and `workspaces.deletion_model` idempotently. It marks every existing `deleted_at IS NOT NULL` Workspace as state `1` with `deletion_model=0`; existing active Workspaces and all protocol-version-2 deletions use `deletion_model=1`. Successful legacy restoration changes the marker to `1`, so compatibility logic cannot run twice.
 
 Authenticated clients set a one-time migration marker in `kv` and perform one full pull from sequence zero after upgrade. This is required because an older client may already have advanced `localSeq` past a Workspace tombstone that it then deleted locally.
+
+The migration does not reset `localSeq` from inside a store. Once capability support is known, the existing `App.tsx` pull coordinator requests an authoritative pull with `after_seq=0`, performs Guest preparation, Workspace/Group/Bookmark merges, aggregate cleanup, conflict updates, and durable persistence in the existing serialized order, and only then commits the migration marker and returned `server_seq`. A failed or retired pull leaves the marker incomplete and retries later.
 
 ### Authenticated legacy restore
 
@@ -345,6 +365,8 @@ The legacy restore is one-time. After it succeeds, the Workspace uses the parent
 
 The old implementation did not preserve whether a cascaded Bookmark came from the archived bucket. That information cannot be reconstructed reliably. Such Bookmarks restore as active, and the Workspace Manager shows a one-time localized notice explaining the limitation.
 
+During the compatibility window, a legacy client deletion is not implemented by accepting unrestricted descendant writes beneath a retained parent. When a versionless request carries `deleted_at`, the server lifecycle service atomically marks the Workspace as `deletion_model=0` and applies the legacy Collection, Bookmark, and Saved Group cascade with one server sequence. Later legacy child pushes are idempotent or rejected; they are not required for correctness. A versionless metadata update against state `1` cannot restore it.
+
 ### Guest orphan recovery
 
 Older Guest clients physically removed the Workspace record. On upgrade, the client groups orphan Collections and Saved Groups by their unresolved `workspaceId` and creates one synthetic retained Workspace per orphan ID. The synthetic Workspace keeps the original ID so all descendants remain attached, uses `Recovered Workspace` as its name, and uses the earliest child deletion time available.
@@ -353,7 +375,9 @@ Guest records have no confirmed server sequence with which to distinguish an old
 
 The user can restore, rename, or permanently delete the synthetic Workspace. An empty legacy Guest Workspace with no remaining children cannot be reconstructed, but it also contains no recoverable user content.
 
-The migration is idempotent and records completion in `kv` only after the IndexedDB transaction commits.
+The migration is idempotent and records completion in the separate `guest-workspace-orphan-recovery-v1` key only after the IndexedDB transaction commits. Synthetic recovered Workspaces do not use `guest-workspace-provenance-v1`, which remains reserved for the single automatic Guest seed.
+
+An automatically seeded Guest Workspace that is already deleted is never eligible for the existing quota-recovery migration into another confirmed Workspace. If the account has no Workspace capacity, the client keeps the entire deleted aggregate and its lifecycle intent locally, records a Workspace quota conflict, and offers only upgrade, permanent deletion of another Workspace, or later retry. Automatic reconciliation never flattens a deleted aggregate into another Workspace. When capacity exists, the lifecycle executor confirms the parent as active, confirms its unsynced descendants, and only then applies its pending delete intent.
 
 ## Testing and Acceptance Criteria
 
@@ -365,8 +389,12 @@ The migration is idempotent and records completion in `kv` only after the Indexe
 - Deleted Workspaces are absent from Rail, normal routes, search targets, popup targets, and content trash.
 - Restore re-exposes the same aggregate without child writes or quota increments.
 - State `2` aggregate cleanup deletes every relevant IDB record even when lazy Bookmark buckets were never hydrated.
+- Aggregate cleanup also prunes live queue and session recovery snapshots and clears lifecycle, provenance, and descendant-conflict records.
 - Guest deletion survives restart indefinitely and never schedules automatic cleanup.
+- A deleted Guest seed rejected by Workspace quota remains intact and is never migrated into another Workspace.
 - Authenticated offline permanent deletion does not remove local data.
+- Offline delete and restore intents survive restart and reconcile in parent-before-children-before-tombstone order.
+- A cached capability enables offline soft lifecycle actions only for the same user and server origin.
 - The plan breakdown satisfies `usage = in use + trash_usage` for all resources.
 - Legacy authenticated and Guest migrations are idempotent and preserve all recoverable content.
 
@@ -377,10 +405,11 @@ The migration is idempotent and records completion in `kv` only after the Indexe
 - Restore does not create new quota usage.
 - Concurrent deletion cannot remove the final active Workspace.
 - Descendant mutations under a retained parent receive `parent_deleted`.
-- State `2` rejects every stale restore or update.
+- State `2` remains as a scrubbed minimal terminal row until account deletion and rejects every stale restore or update, including after a device has been offline longer than the trash retention period.
+- Versionless metadata updates cannot restore state `1`; versionless deletes execute the atomic legacy cascade.
 - Manual purge and retention expiry execute the same atomic descendant deletion.
 - A forced failure at each transaction step leaves the whole aggregate recoverable.
-- Cleanup retains the parent terminal tombstone for the full synchronization window.
+- Cleanup retains the scrubbed parent terminal tombstone until account deletion.
 - Search index delays never make retained content visible through the API.
 
 ### End-to-end scenarios
@@ -389,6 +418,7 @@ The migration is idempotent and records completion in `kv` only after the Indexe
 - Device A restores; Device B receives the root change and re-exposes unchanged child states.
 - Device A permanently deletes; Device B removes the entire local aggregate from every IDB store.
 - An authenticated Workspace expires while a device is offline and disappears correctly on reconnect.
+- A device offline beyond the retention period receives the permanent root tombstone and cannot resurrect the Workspace.
 - A Guest Deleted Workspace survives browser restarts and disappears only after manual permanent deletion.
 - A legacy authenticated Workspace and a synthetic Guest Recovered Workspace can both be restored.
 - TypeScript compilation, production extension build, Go tests, and server race-sensitive lifecycle tests pass.
@@ -403,4 +433,4 @@ Deployment is server-first:
 4. Monitor Workspace restore/purge failures, `parent_deleted` rejections, cleanup counts, search validation drops, and quota discrepancies.
 5. Remove legacy restoration code only after the supported client-upgrade window and retained legacy population have both elapsed.
 
-Old clients remain able to push the existing `deleted_at` field. During the compatibility window, a request that omits the new lifecycle fields and carries `deleted_at` is normalized to state `1` with `deletion_model=0`, because that client still cascades child tombstones. New clients require the server capability before enabling parent-only deletion, preventing a new client from creating a retained parent that an old server would mishandle.
+Old clients remain able to push the existing `deleted_at` field. During the compatibility window, a versionless request that carries `deleted_at` invokes the server's atomic legacy cascade and records `deletion_model=0`; the server does not depend on later child pushes from that client. Versionless metadata updates preserve the current lifecycle state and cannot restore a retained Workspace. New clients require the server capability before enabling parent-only deletion, preventing a new client from creating a retained parent that an old server would mishandle.
