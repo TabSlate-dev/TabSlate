@@ -119,6 +119,51 @@ export async function idbPut<T>(store: StoreName, value: T): Promise<void> {
   });
 }
 
+interface KVRecordValue {
+  value: unknown;
+}
+
+function isKVRecordValue(value: unknown): value is KVRecordValue {
+  return typeof value === "object" && value !== null && "value" in value;
+}
+
+/**
+ * Atomically updates one versioned kv value. The decoder keeps untrusted IDB
+ * data outside the updater, and every read/write remains in one transaction.
+ */
+export function idbUpdateKV<T extends object>(
+  key: string,
+  decode: (value: unknown) => T | undefined,
+  update: (current: T | undefined) => T | undefined,
+): Promise<void> {
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const transaction = db.transaction("kv", "readwrite");
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+
+    const request = transaction.objectStore("kv").get(key);
+    request.onerror = () => transaction.abort();
+    request.onsuccess = () => {
+      try {
+        const persisted: unknown = request.result;
+        const current = isKVRecordValue(persisted)
+          ? decode(persisted.value)
+          : undefined;
+        const next = update(current);
+        if (next) {
+          transaction.objectStore("kv").put({ key, value: next });
+          return;
+        }
+        transaction.objectStore("kv").delete(key);
+      } catch (error) {
+        transaction.abort();
+        reject(error);
+      }
+    };
+  }));
+}
+
 export interface CommitWorkspaceLifecycleIntentInput {
   workspace: Workspace;
   intent: WorkspaceLifecycleIntent;

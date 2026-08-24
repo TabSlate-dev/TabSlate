@@ -2,6 +2,8 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import type { SyncPushPayload } from "@/lib/api";
 import type {
+  WorkspaceLifecycleIntent,
+  WorkspaceLifecycleIntentRecord,
   WorkspaceLifecycleStateStorage,
   WorkspaceLifecycleStoredRecord,
 } from "@/lib/workspace-lifecycle-state";
@@ -17,7 +19,72 @@ const storage: WorkspaceLifecycleStateStorage = {
   async remove(key) {
     records.delete(key);
   },
+  async update(key, mutate) {
+    const next = mutate(records.get(key));
+    if (next) {
+      records.set(key, structuredClone(next));
+      return;
+    }
+    records.delete(key);
+  },
 };
+
+interface BarrierStorageResult {
+  storage: WorkspaceLifecycleStateStorage;
+  snapshot(key: string): WorkspaceLifecycleStoredRecord | undefined;
+}
+
+function createBarrierStorage(
+  initialRecords: ReadonlyMap<string, WorkspaceLifecycleStoredRecord> = new Map(),
+): BarrierStorageResult {
+  const concurrentRecords = new Map(initialRecords);
+  let readCount = 0;
+  let releaseReads: (() => void) | undefined;
+  const readsReady = new Promise<void>((resolve) => {
+    releaseReads = resolve;
+  });
+  let updateQueue = Promise.resolve();
+  const concurrentStorage = {
+    async read(key: string) {
+      readCount += 1;
+      if (readCount === 2) {
+        releaseReads?.();
+      }
+      await readsReady;
+      return concurrentRecords.get(key);
+    },
+    async write(key: string, value: WorkspaceLifecycleStoredRecord) {
+      concurrentRecords.set(key, structuredClone(value));
+    },
+    async remove(key: string) {
+      concurrentRecords.delete(key);
+    },
+    update(
+      key: string,
+      mutate: (
+        current: WorkspaceLifecycleStoredRecord | undefined,
+      ) => WorkspaceLifecycleStoredRecord | undefined,
+    ): Promise<void> {
+      const operation = updateQueue.then(() => {
+        const next = mutate(concurrentRecords.get(key));
+        if (next) {
+          concurrentRecords.set(key, structuredClone(next));
+          return;
+        }
+        concurrentRecords.delete(key);
+      });
+      updateQueue = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      return operation;
+    },
+  };
+  return {
+    storage: concurrentStorage,
+    snapshot: (key) => concurrentRecords.get(key),
+  };
+}
 
 const {
   invalidateWorkspaceFullPull,
@@ -123,6 +190,77 @@ describe("workspace lifecycle state persistence", () => {
     expect(await readWorkspaceLifecycleIntents(storage)).toEqual([]);
   });
 
+  test("concurrent intent merges preserve both Workspaces", async () => {
+    const concurrent = createBarrierStorage();
+    const first: WorkspaceLifecycleIntent = {
+      workspaceId: "workspace-a",
+      action: "delete",
+      baseSeq: 10,
+      previousActiveWorkspaceId: "workspace-b",
+      createdAt: 100,
+    };
+    const second: WorkspaceLifecycleIntent = {
+      workspaceId: "workspace-b",
+      action: "restore",
+      baseSeq: 20,
+      previousActiveWorkspaceId: "workspace-a",
+      createdAt: 200,
+    };
+
+    await Promise.all([
+      mergeWorkspaceLifecycleIntent(first, concurrent.storage),
+      mergeWorkspaceLifecycleIntent(second, concurrent.storage),
+    ]);
+
+    expect(concurrent.snapshot("workspace-lifecycle-intents-v1")).toEqual({
+      version: 1,
+      intents: [first, second],
+    });
+  });
+
+  test("concurrent intent removals do not restore another removed Workspace", async () => {
+    const remaining: WorkspaceLifecycleIntent = {
+      workspaceId: "workspace-c",
+      action: "delete",
+      baseSeq: 30,
+      previousActiveWorkspaceId: "workspace-c",
+      createdAt: 300,
+    };
+    const initial: WorkspaceLifecycleIntentRecord = {
+      version: 1,
+      intents: [
+        {
+          workspaceId: "workspace-a",
+          action: "delete",
+          baseSeq: 10,
+          previousActiveWorkspaceId: "workspace-c",
+          createdAt: 100,
+        },
+        {
+          workspaceId: "workspace-b",
+          action: "restore",
+          baseSeq: 20,
+          previousActiveWorkspaceId: "workspace-c",
+          createdAt: 200,
+        },
+        remaining,
+      ],
+    };
+    const concurrent = createBarrierStorage(new Map([
+      ["workspace-lifecycle-intents-v1", initial],
+    ]));
+
+    await Promise.all([
+      removeWorkspaceLifecycleIntent("workspace-a", concurrent.storage),
+      removeWorkspaceLifecycleIntent("workspace-b", concurrent.storage),
+    ]);
+
+    expect(concurrent.snapshot("workspace-lifecycle-intents-v1")).toEqual({
+      version: 1,
+      intents: [remaining],
+    });
+  });
+
   test("merges and removes deferred payloads without changing another Workspace", async () => {
     await mergeWorkspaceLifecycleDeferredPayload("workspace-a", payload("bookmark-a-old"), storage);
     await mergeWorkspaceLifecycleDeferredPayload("workspace-b", payload("bookmark-b"), storage);
@@ -148,6 +286,31 @@ describe("workspace lifecycle state persistence", () => {
     expect(await readWorkspaceLifecycleDeferredSync(storage)).toEqual({
       version: 1,
       payloadsByWorkspaceId: { "workspace-b": payload("bookmark-b") },
+    });
+  });
+
+  test("concurrent deferred merges preserve both Workspace payloads", async () => {
+    const concurrent = createBarrierStorage();
+
+    await Promise.all([
+      mergeWorkspaceLifecycleDeferredPayload(
+        "workspace-a",
+        payload("bookmark-a"),
+        concurrent.storage,
+      ),
+      mergeWorkspaceLifecycleDeferredPayload(
+        "workspace-b",
+        payload("bookmark-b"),
+        concurrent.storage,
+      ),
+    ]);
+
+    expect(concurrent.snapshot("workspace-lifecycle-deferred-sync-v1")).toEqual({
+      version: 1,
+      payloadsByWorkspaceId: {
+        "workspace-a": payload("bookmark-a"),
+        "workspace-b": payload("bookmark-b"),
+      },
     });
   });
 

@@ -56,6 +56,12 @@ export interface WorkspaceLifecycleStateStorage {
   read(key: string): Promise<WorkspaceLifecycleStoredRecord | undefined>;
   write(key: string, value: WorkspaceLifecycleStoredRecord): Promise<void>;
   remove(key: string): Promise<void>;
+  update(
+    key: string,
+    mutate: (
+      current: WorkspaceLifecycleStoredRecord | undefined,
+    ) => WorkspaceLifecycleStoredRecord | undefined,
+  ): Promise<void>;
 }
 
 interface KVRecord<T> {
@@ -77,30 +83,85 @@ const indexedDBStorage: WorkspaceLifecycleStateStorage = {
     const { idbDelete } = await import("@/lib/idb");
     await idbDelete("kv", key);
   },
+  async update(key, mutate) {
+    const { idbUpdateKV } = await import("@/lib/idb");
+    await idbUpdateKV(
+      key,
+      (value) => isWorkspaceLifecycleStoredRecord(value) ? value : undefined,
+      mutate,
+    );
+  },
 };
 
 function isIntentRecord(
-  value: WorkspaceLifecycleStoredRecord | undefined,
+  value: unknown,
 ): value is WorkspaceLifecycleIntentRecord {
-  return value?.version === 1 && "intents" in value && Array.isArray(value.intents);
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    !("version" in value) ||
+    value.version !== 1 ||
+    !("intents" in value) ||
+    !Array.isArray(value.intents)
+  ) {
+    return false;
+  }
+  return value.intents.every(isWorkspaceLifecycleIntent);
 }
 
 function isCapabilityRecord(
-  value: WorkspaceLifecycleStoredRecord | undefined,
+  value: unknown,
 ): value is WorkspaceLifecycleCapabilityRecord {
-  return value?.version === 1 && "supported" in value && value.supported === true;
+  return typeof value === "object" &&
+    value !== null &&
+    "version" in value && value.version === 1 &&
+    "userId" in value && typeof value.userId === "string" &&
+    "serverOrigin" in value && typeof value.serverOrigin === "string" &&
+    "supported" in value && value.supported === true &&
+    "observedAt" in value && typeof value.observedAt === "number";
 }
 
 function isFullPullRecord(
-  value: WorkspaceLifecycleStoredRecord | undefined,
+  value: unknown,
 ): value is WorkspaceFullPullRecord {
-  return value?.version === 1 && "serverSeq" in value;
+  return typeof value === "object" &&
+    value !== null &&
+    "version" in value && value.version === 1 &&
+    "userId" in value && typeof value.userId === "string" &&
+    "serverOrigin" in value && typeof value.serverOrigin === "string" &&
+    "serverSeq" in value && typeof value.serverSeq === "number" &&
+    "completedAt" in value && typeof value.completedAt === "number";
 }
 
 function isDeferredSyncRecord(
-  value: WorkspaceLifecycleStoredRecord | undefined,
+  value: unknown,
 ): value is WorkspaceLifecycleDeferredSyncRecord {
-  return value?.version === 1 && "payloadsByWorkspaceId" in value;
+  return typeof value === "object" &&
+    value !== null &&
+    "version" in value && value.version === 1 &&
+    "payloadsByWorkspaceId" in value &&
+    typeof value.payloadsByWorkspaceId === "object" &&
+    value.payloadsByWorkspaceId !== null;
+}
+
+function isWorkspaceLifecycleIntent(value: unknown): value is WorkspaceLifecycleIntent {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return "workspaceId" in value && typeof value.workspaceId === "string" &&
+    "action" in value && (value.action === "delete" || value.action === "restore") &&
+    "baseSeq" in value && typeof value.baseSeq === "number" &&
+    "previousActiveWorkspaceId" in value && typeof value.previousActiveWorkspaceId === "string" &&
+    "createdAt" in value && typeof value.createdAt === "number";
+}
+
+function isWorkspaceLifecycleStoredRecord(
+  value: unknown,
+): value is WorkspaceLifecycleStoredRecord {
+  return isIntentRecord(value) ||
+    isCapabilityRecord(value) ||
+    isFullPullRecord(value) ||
+    isDeferredSyncRecord(value);
 }
 
 function normalizedOrigin(serverUrl: string): string {
@@ -136,27 +197,28 @@ export async function mergeWorkspaceLifecycleIntent(
   intent: WorkspaceLifecycleIntent,
   storage: WorkspaceLifecycleStateStorage = indexedDBStorage,
 ): Promise<void> {
-  const current = await readWorkspaceLifecycleIntents(storage);
-  const remaining = current.filter((candidate) => candidate.workspaceId !== intent.workspaceId);
-  const value: WorkspaceLifecycleIntentRecord = {
-    version: 1,
-    intents: [...remaining, intent],
-  };
-  await storage.write(WORKSPACE_LIFECYCLE_INTENTS_KEY, value);
+  await storage.update(WORKSPACE_LIFECYCLE_INTENTS_KEY, (stored) => {
+    const current = isIntentRecord(stored) ? stored.intents : [];
+    const remaining = current.filter((candidate) => candidate.workspaceId !== intent.workspaceId);
+    return {
+      version: 1,
+      intents: [...remaining, intent],
+    };
+  });
 }
 
 export async function removeWorkspaceLifecycleIntent(
   workspaceId: string,
   storage: WorkspaceLifecycleStateStorage = indexedDBStorage,
 ): Promise<void> {
-  const current = await readWorkspaceLifecycleIntents(storage);
-  const intents = current.filter((intent) => intent.workspaceId !== workspaceId);
-  if (intents.length === 0) {
-    await invalidateWorkspaceLifecycleIntents(storage);
-    return;
-  }
-  const value: WorkspaceLifecycleIntentRecord = { version: 1, intents };
-  await storage.write(WORKSPACE_LIFECYCLE_INTENTS_KEY, value);
+  await storage.update(WORKSPACE_LIFECYCLE_INTENTS_KEY, (stored) => {
+    const current = isIntentRecord(stored) ? stored.intents : [];
+    const intents = current.filter((intent) => intent.workspaceId !== workspaceId);
+    if (intents.length === 0) {
+      return undefined;
+    }
+    return { version: 1, intents };
+  });
 }
 
 export function invalidateWorkspaceLifecycleIntents(
@@ -302,35 +364,40 @@ export async function mergeWorkspaceLifecycleDeferredPayload(
   payload: SyncPushPayload,
   storage: WorkspaceLifecycleStateStorage = indexedDBStorage,
 ): Promise<void> {
-  const current = await readWorkspaceLifecycleDeferredSync(storage);
-  const existingPayload = current.payloadsByWorkspaceId[workspaceId];
-  const mergedPayload = existingPayload ? mergeSyncPayloads(existingPayload, payload) : payload;
-  const value: WorkspaceLifecycleDeferredSyncRecord = {
-    version: 1,
-    payloadsByWorkspaceId: {
-      ...current.payloadsByWorkspaceId,
-      [workspaceId]: mergedPayload,
-    },
-  };
-  await storage.write(WORKSPACE_LIFECYCLE_DEFERRED_SYNC_KEY, value);
+  await storage.update(WORKSPACE_LIFECYCLE_DEFERRED_SYNC_KEY, (stored) => {
+    const current: WorkspaceLifecycleDeferredSyncRecord = isDeferredSyncRecord(stored)
+      ? stored
+      : { version: 1, payloadsByWorkspaceId: {} };
+    const existingPayload = current.payloadsByWorkspaceId[workspaceId];
+    const mergedPayload = existingPayload ? mergeSyncPayloads(existingPayload, payload) : payload;
+    return {
+      version: 1,
+      payloadsByWorkspaceId: {
+        ...current.payloadsByWorkspaceId,
+        [workspaceId]: mergedPayload,
+      },
+    };
+  });
 }
 
 export async function removeWorkspaceLifecycleDeferredPayload(
   workspaceId: string,
   storage: WorkspaceLifecycleStateStorage = indexedDBStorage,
 ): Promise<void> {
-  const current = await readWorkspaceLifecycleDeferredSync(storage);
-  const entries = Object.entries(current.payloadsByWorkspaceId)
-    .filter(([candidateId]) => candidateId !== workspaceId);
-  if (entries.length === 0) {
-    await invalidateWorkspaceLifecycleDeferredSync(storage);
-    return;
-  }
-  const value: WorkspaceLifecycleDeferredSyncRecord = {
-    version: 1,
-    payloadsByWorkspaceId: Object.fromEntries(entries),
-  };
-  await storage.write(WORKSPACE_LIFECYCLE_DEFERRED_SYNC_KEY, value);
+  await storage.update(WORKSPACE_LIFECYCLE_DEFERRED_SYNC_KEY, (stored) => {
+    const current = isDeferredSyncRecord(stored)
+      ? stored.payloadsByWorkspaceId
+      : {};
+    const entries = Object.entries(current)
+      .filter(([candidateId]) => candidateId !== workspaceId);
+    if (entries.length === 0) {
+      return undefined;
+    }
+    return {
+      version: 1,
+      payloadsByWorkspaceId: Object.fromEntries(entries),
+    };
+  });
 }
 
 export function invalidateWorkspaceLifecycleDeferredSync(
