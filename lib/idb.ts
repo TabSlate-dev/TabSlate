@@ -535,7 +535,12 @@ export function idbTransaction<Result>(
         };
         tx.onerror = () => reject(tx.error);
         tx.onabort = () => reject(tx.error);
-        result = { value: fn(tx) };
+        try {
+          result = { value: fn(tx) };
+        } catch (error) {
+          reject(error);
+          tx.abort();
+        }
       }),
   );
 }

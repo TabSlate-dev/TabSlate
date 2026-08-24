@@ -105,6 +105,7 @@ class FakeTransaction {
       return;
     }
     this.aborted = true;
+    this.database.notifyTransactionFinished(this.storeNames);
     this.onerror?.();
     this.onabort?.();
   }
@@ -123,6 +124,7 @@ class FakeTransaction {
         this.database.replaceStores(this.workingStores, this.storeNames);
       }
       this.database.notifyTransactionCommitted(this.storeNames);
+      this.database.notifyTransactionFinished(this.storeNames);
       this.oncomplete?.();
     });
   }
@@ -224,6 +226,7 @@ class FakeDatabase {
   onversionchange: (() => void) | null = null;
   private failure: FailureSelector | null = null;
   private commitObserver: ((storeNames: string[]) => void) | null = null;
+  private finishObserver: ((storeNames: string[]) => void) | null = null;
 
   transaction(
     stores: string | string[],
@@ -258,8 +261,24 @@ class FakeDatabase {
     };
   }
 
+  waitForNextAggregateFinish(): Promise<void> {
+    return new Promise((resolve) => {
+      this.finishObserver = (storeNames) => {
+        if (storeNames.includes("workspaces") && storeNames.includes("group-tabs") &&
+          storeNames.includes("kv")) {
+          this.finishObserver = null;
+          resolve();
+        }
+      };
+    });
+  }
+
   notifyTransactionCommitted(storeNames: string[]): void {
     this.commitObserver?.(storeNames);
+  }
+
+  notifyTransactionFinished(storeNames: string[]): void {
+    this.finishObserver?.(storeNames);
   }
 
   replaceStores(
@@ -281,6 +300,7 @@ class FakeDatabase {
     this.stores = new Map(STORE_NAMES.map((name) => [name, new Map()]));
     this.failure = null;
     this.commitObserver = null;
+    this.finishObserver = null;
   }
 }
 
@@ -661,6 +681,22 @@ describe("Workspace aggregate persistence", () => {
       store: "kv",
       value: { key: "sync-conflicts-v1", value: { version: 1, entries: [] } },
     })).rejects.toThrow("Injected group-tabs.delete failure");
+
+    expect(fakeIndexedDB.database.stores).toEqual(before);
+  });
+
+  test("aborts queued aggregate writes when transaction setup throws synchronously", async () => {
+    await seedAggregate();
+    await seedMetadata();
+    const before = cloneStores(fakeIndexedDB.database.stores);
+    const transactionFinished = fakeIndexedDB.database.waitForNextAggregateFinish();
+
+    await expect(permanentlyDeleteWorkspaceAggregate("workspace-target", {
+      type: "delete",
+      store: "tags",
+      key: "missing-tag",
+    })).rejects.toThrow("Store tags is not part of this transaction");
+    await transactionFinished;
 
     expect(fakeIndexedDB.database.stores).toEqual(before);
   });
