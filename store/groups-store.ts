@@ -6,6 +6,7 @@ import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } 
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncEntity, SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
+import { useAuthStore } from "@/store/auth-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
@@ -29,6 +30,11 @@ export interface SavedGroup {
   seq: number;        // 0 = never synced; >0 = server-confirmed
   deletedAt?: number; // unix ms; undefined = alive
   workspaceId: string;
+}
+
+export interface GroupPurgeResult {
+  status: "completed" | "blocked";
+  reason?: "not_deleted" | "offline" | "pending" | "rejected" | "storage";
 }
 
 function toServerGroup(g: SavedGroup, tabs: GroupTab[], opts?: { isDeleted?: number }): SyncEntity {
@@ -107,7 +113,7 @@ interface GroupsState {
   updateGroup: (id: string, patch: Partial<Pick<SavedGroup, "name" | "color" | "isCompact">>) => void;
   deleteGroup: (id: string) => void;
   restoreGroup: (id: string) => void;
-  permanentlyDeleteGroup: (id: string) => void;
+  permanentlyDeleteGroup: (id: string) => Promise<GroupPurgeResult>;
 
   // Tab management
   addTabToGroup: (groupId: string, tab: { title: string; url: string; favicon: string }) => void;
@@ -251,32 +257,54 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     usePlanStore.getState().restoreUsageFromTrash("saved_group");
   },
 
-  permanentlyDeleteGroup: (id) => {
-    if (pendingPermanentGroupIds.has(id)) { return; }
+  permanentlyDeleteGroup: async (id) => {
+    if (pendingPermanentGroupIds.has(id)) {
+      return { status: "blocked", reason: "pending" };
+    }
     const group = get().groups.find(candidate => candidate.id === id);
-    if (!group || !group.deletedAt) { return; }
+    if (!group) {
+      return { status: "completed" };
+    }
+    if (!group.deletedAt) {
+      return { status: "blocked", reason: "not_deleted" };
+    }
+    const { user, accessToken } = useAuthStore.getState();
+    const isAuthenticated = Boolean(user || accessToken);
+    if (isAuthenticated && !syncEngine) {
+      return { status: "blocked", reason: "offline" };
+    }
     const tabs = get().groupTabs.filter(tab => tab.groupId === id);
     pendingPermanentGroupIds.add(id);
-    void (async () => {
-      try {
-        if (syncEngine) {
+    try {
+      if (isAuthenticated && syncEngine) {
+        try {
           await syncEngine.forcePush({ groups: [toServerGroup(group, tabs, { isDeleted: 2 })] });
+        } catch {
+          return { status: "blocked", reason: "rejected" };
         }
-        await Promise.all([
-          ...tabs.map((tab) => idbDelete("group-tabs", tab.id)),
-          idbDelete("groups", id),
-        ]);
-        set((state) => ({
-          groups: state.groups.filter(candidate => candidate.id !== id),
-          groupTabs: state.groupTabs.filter(tab => tab.groupId !== id),
-        }));
-        usePlanStore.getState().decrementUsage("saved_group");
-      } catch {
-        return;
-      } finally {
-        pendingPermanentGroupIds.delete(id);
       }
-    })();
+      const operations: BulkWriteOp[] = [
+        ...tabs.map((tab): BulkWriteOp => ({
+          type: "delete",
+          store: "group-tabs",
+          key: tab.id,
+        })),
+        { type: "delete", store: "groups", key: id },
+      ];
+      try {
+        await idbBulkWrite(operations);
+      } catch {
+        return { status: "blocked", reason: "storage" };
+      }
+      set((state) => ({
+        groups: state.groups.filter(candidate => candidate.id !== id),
+        groupTabs: state.groupTabs.filter(tab => tab.groupId !== id),
+      }));
+      usePlanStore.getState().decrementUsage("saved_group");
+      return { status: "completed" };
+    } finally {
+      pendingPermanentGroupIds.delete(id);
+    }
   },
 
   deleteTabFromTrash: (tabId) => {

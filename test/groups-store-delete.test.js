@@ -6,10 +6,23 @@ const moveUsageToTrashCalls = [];
 const restoreUsageFromTrashCalls = [];
 const idbPutCalls = [];
 const idbDeleteCalls = [];
+const idbBulkWriteCalls = [];
 const enqueueCalls = [];
 const forcePushCalls = [];
 const guardQuotaCalls = [];
 let forcePushImplementation = async () => {};
+let idbBulkWriteImplementation = async () => {};
+const authSession = {
+  user: {
+    id: "user-1",
+    name: "User",
+    email: "user@example.com",
+    is_verified: true,
+    created_at: 0,
+    updated_at: 0,
+  },
+  accessToken: "access-token",
+};
 
 mock.module("@/lib/chrome/tab-groups", () => ({
   openAsTabGroup: async () => {},
@@ -29,14 +42,27 @@ mock.module("@/lib/idb", () => ({
   idbPut: async (store, value) => {
     idbPutCalls.push({ store, value });
   },
-  idbBulkWrite: async () => {},
+  idbBulkWrite: (operations) => {
+    idbBulkWriteCalls.push(operations);
+    return idbBulkWriteImplementation(operations);
+  },
   idbDelete: async (store, id) => {
     idbDeleteCalls.push({ store, id });
   },
 }));
 
 mock.module("@/lib/sync-engine", () => ({
-  syncEngine: {
+  syncEngine: createSyncEngine(),
+}));
+
+mock.module("@/store/auth-store", () => ({
+  useAuthStore: {
+    getState: () => authSession,
+  },
+}));
+
+function createSyncEngine() {
+  return {
     enqueue: (payload) => {
       enqueueCalls.push(payload);
     },
@@ -44,8 +70,8 @@ mock.module("@/lib/sync-engine", () => ({
       forcePushCalls.push(payload);
       return forcePushImplementation(payload);
     },
-  },
-}));
+  };
+}
 
 mock.module("@/store/plan-store", () => ({
   usePlanStore: {
@@ -81,10 +107,21 @@ describe("groups-store deleteGroup", () => {
     restoreUsageFromTrashCalls.length = 0;
     idbPutCalls.length = 0;
     idbDeleteCalls.length = 0;
+    idbBulkWriteCalls.length = 0;
     enqueueCalls.length = 0;
     forcePushCalls.length = 0;
     guardQuotaCalls.length = 0;
     forcePushImplementation = async () => {};
+    idbBulkWriteImplementation = async () => {};
+    authSession.user = {
+      id: "user-1",
+      name: "User",
+      email: "user@example.com",
+      is_verified: true,
+      created_at: 0,
+      updated_at: 0,
+    };
+    authSession.accessToken = "access-token";
     useGroupsStore.setState({ groups: [], groupTabs: [], _hydrated: true });
   });
 
@@ -109,11 +146,6 @@ describe("groups-store deleteGroup", () => {
       reject = innerReject;
     });
     return { promise, resolve, reject };
-  }
-
-  async function flushAsyncAction() {
-    await Promise.resolve();
-    await Promise.resolve();
   }
 
   test("counts active and soft-deleted retained groups at the create capacity gate", () => {
@@ -165,22 +197,29 @@ describe("groups-store deleteGroup", () => {
       _hydrated: true,
     });
 
-    useGroupsStore.getState().permanentlyDeleteGroup("group-1");
+    const deletion = useGroupsStore.getState().permanentlyDeleteGroup("group-1");
     await Promise.resolve();
 
     expect(useGroupsStore.getState().groups.map((candidate) => candidate.id)).toEqual(["group-1"]);
     expect(decrementUsageCalls).toEqual([]);
 
     deferred.resolve();
-    await flushAsyncAction();
+    const result = await deletion;
 
+    expect(result).toEqual({ status: "completed" });
     expect(useGroupsStore.getState().groups).toEqual([]);
     expect(useGroupsStore.getState().groupTabs).toEqual([]);
     expect(decrementUsageCalls).toEqual(["saved_group"]);
-    expect(idbDeleteCalls).toEqual([
-      { store: "group-tabs", id: "tab-1" },
-      { store: "groups", id: "group-1" },
-    ]);
+    expect(idbBulkWriteCalls).toEqual([[{
+      type: "delete",
+      store: "group-tabs",
+      key: "tab-1",
+    }, {
+      type: "delete",
+      store: "groups",
+      key: "group-1",
+    }]]);
+    expect(idbDeleteCalls).toEqual([]);
   });
 
   test("rejected permanent delete never changes retained state or quota", async () => {
@@ -189,13 +228,14 @@ describe("groups-store deleteGroup", () => {
     const retained = group("group-1", 100);
     useGroupsStore.setState({ groups: [retained], groupTabs: [], _hydrated: true });
 
-    useGroupsStore.getState().permanentlyDeleteGroup("group-1");
+    const deletion = useGroupsStore.getState().permanentlyDeleteGroup("group-1");
     await Promise.resolve();
 
     expect(useGroupsStore.getState().groups).toEqual([retained]);
     deferred.reject(new Error("rejected"));
-    await flushAsyncAction();
+    const result = await deletion;
 
+    expect(result).toEqual({ status: "blocked", reason: "rejected" });
     expect(useGroupsStore.getState().groups).toEqual([retained]);
     expect(decrementUsageCalls).toEqual([]);
     expect(idbDeleteCalls).toEqual([]);
@@ -206,15 +246,52 @@ describe("groups-store deleteGroup", () => {
     forcePushImplementation = () => deferred.promise;
     useGroupsStore.setState({ groups: [group("group-1", 100)], groupTabs: [], _hydrated: true });
 
-    useGroupsStore.getState().permanentlyDeleteGroup("group-1");
-    useGroupsStore.getState().permanentlyDeleteGroup("group-1");
+    const firstDeletion = useGroupsStore.getState().permanentlyDeleteGroup("group-1");
+    const secondResult = await useGroupsStore.getState().permanentlyDeleteGroup("group-1");
     await Promise.resolve();
 
     expect(forcePushCalls).toHaveLength(1);
+    expect(secondResult).toEqual({ status: "blocked", reason: "pending" });
 
     deferred.resolve();
-    await flushAsyncAction();
+    expect(await firstDeletion).toEqual({ status: "completed" });
 
+    expect(decrementUsageCalls).toEqual(["saved_group"]);
+  });
+
+  test("transaction failure keeps the group, tabs, and quota retryable after server confirmation", async () => {
+    idbBulkWriteImplementation = async () => {
+      throw new Error("transaction aborted");
+    };
+    const retained = group("group-1", 100);
+    const retainedTab = {
+      id: "tab-1",
+      groupId: "group-1",
+      title: "Tab",
+      url: "https://example.com",
+      favicon: "",
+      position: 0,
+    };
+    useGroupsStore.setState({ groups: [retained], groupTabs: [retainedTab], _hydrated: true });
+
+    const result = await useGroupsStore.getState().permanentlyDeleteGroup("group-1");
+
+    expect(result).toEqual({ status: "blocked", reason: "storage" });
+    expect(forcePushCalls).toHaveLength(1);
+    expect(idbBulkWriteCalls).toHaveLength(1);
+    expect(idbDeleteCalls).toEqual([]);
+    expect(useGroupsStore.getState().groups).toEqual([retained]);
+    expect(useGroupsStore.getState().groupTabs).toEqual([retainedTab]);
+    expect(decrementUsageCalls).toEqual([]);
+
+    idbBulkWriteImplementation = async () => {};
+    const retryResult = await useGroupsStore.getState().permanentlyDeleteGroup("group-1");
+
+    expect(retryResult).toEqual({ status: "completed" });
+    expect(forcePushCalls).toHaveLength(2);
+    expect(idbBulkWriteCalls).toHaveLength(2);
+    expect(useGroupsStore.getState().groups).toEqual([]);
+    expect(useGroupsStore.getState().groupTabs).toEqual([]);
     expect(decrementUsageCalls).toEqual(["saved_group"]);
   });
 
