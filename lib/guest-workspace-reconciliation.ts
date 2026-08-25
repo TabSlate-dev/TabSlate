@@ -15,6 +15,8 @@ import { syncConflictRegistry, type SyncConflict } from "@/lib/sync-conflicts";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { type GroupTab, type SavedGroup, useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
+import { readWorkspaceLifecycleIntents } from "@/lib/workspace-lifecycle-state";
+import { workspaceHasPendingDeleteIntent } from "@/lib/workspace-lifecycle-coordinator";
 
 export type SyncConflictErrorKey =
   | "sync_noMigrationTarget"
@@ -282,6 +284,13 @@ export async function resolveGuestPushRejections(response: SyncPushResponse): Pr
     rejection.id === sourceId && rejection.type === "workspace",
   );
   if (!sourceRejection || sourceRejection.reason !== "quota_exceeded") {
+    return currentPersistentResult();
+  }
+  const pendingDelete = workspaceHasPendingDeleteIntent(
+    await readWorkspaceLifecycleIntents(),
+    sourceId,
+  );
+  if (pendingDelete) {
     return currentPersistentResult();
   }
   const plan = planGuestWorkspaceMigration(loaded.snapshot, targetFromCurrentState());

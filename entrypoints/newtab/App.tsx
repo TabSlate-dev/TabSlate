@@ -47,6 +47,18 @@ import {
   resolveLegacyGuestWorkspaceFailure,
   sweepAllUnsynced,
 } from "@/lib/guest-workspace-reconciliation";
+import {
+  blockPruneAndCleanTerminalAggregates,
+  commitWorkspacePullCheckpoint,
+  reconcileWorkspaceLifecycleIntents,
+  resolveAuthoritativeWorkspacePull,
+} from "@/lib/workspace-lifecycle-coordinator";
+import { confirmSyncPayload } from "@/lib/sync-confirmation";
+import {
+  readWorkspaceLifecycleCapability,
+  readWorkspaceLifecycleIntents,
+} from "@/lib/workspace-lifecycle-state";
+import { loadWorkspaceAggregateIds, toSyncEntityReferences } from "@/lib/workspace-aggregate";
 
 function quotaResourceForRejectedType(type: string | undefined): QuotaResource | null {
   if (type === "bookmark") {
@@ -65,6 +77,60 @@ function quotaResourceForRejectedType(type: string | undefined): QuotaResource |
     return "saved_group";
   }
   return null;
+}
+
+async function reportLifecycleConflict(conflict: {
+  entityType: "workspace" | "collection" | "bookmark" | "saved_group" | "tag";
+  entityId: string;
+  reason: string;
+  parentType?: "workspace" | "collection" | "bookmark" | "saved_group" | "tag";
+  parentId?: string;
+}): Promise<void> {
+  await syncConflictRegistry.recordRejections([{
+    id: conflict.entityId,
+    type: conflict.entityType,
+    reason: conflict.reason,
+    parent_id: conflict.parentId,
+    parent_type: conflict.parentType,
+  }]);
+}
+
+async function quarantineUnsupportedLifecycleIntents(
+  context: Parameters<typeof reconcileWorkspaceLifecycleIntents>[0]["context"],
+): Promise<void> {
+  for (const intent of await readWorkspaceLifecycleIntents()) {
+    const ids = await loadWorkspaceAggregateIds(intent.workspaceId);
+    const references = toSyncEntityReferences(ids);
+    await context.captureDeferredEntities(intent.workspaceId, references);
+    await reportLifecycleConflict({
+      entityType: "workspace",
+      entityId: intent.workspaceId,
+      reason: "unsupported_server",
+    });
+    for (const reference of references) {
+      if (reference.entityType === "workspace") {
+        continue;
+      }
+      await reportLifecycleConflict({
+        entityType: reference.entityType,
+        entityId: reference.entityId,
+        reason: "unsupported_server",
+        parentType: "workspace",
+        parentId: intent.workspaceId,
+      });
+    }
+  }
+}
+
+async function clearReenabledLifecycleConflictTrees(): Promise<void> {
+  const unsupportedRoots = new Set(
+    syncConflictRegistry.list()
+      .filter((conflict) => conflict.entityType === "workspace" && conflict.reason === "unsupported_server")
+      .map((conflict) => conflict.entityId),
+  );
+  for (const workspaceId of unsupportedRoots) {
+    await syncConflictRegistry.clearRoot("workspace", workspaceId);
+  }
 }
 
 function PageTracker() {
@@ -256,7 +322,6 @@ function SyncProvider({
   const mergeWorkspaces = useWorkspaceStore((s) => s.mergeFromServer);
   const mergeBookmarks = useBookmarksStore((s) => s.mergeFromServer);
   const mergeGroups = useGroupsStore((s) => s.mergeFromServer);
-  const setLocalSeq = useWorkspaceStore((s) => s.setLocalSeq);
   const { t } = useTranslation();
 
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
@@ -277,14 +342,12 @@ function SyncProvider({
   const mergeWorkspacesRef = useRef(mergeWorkspaces);
   const mergeBookmarksRef = useRef(mergeBookmarks);
   const mergeGroupsRef = useRef(mergeGroups);
-  const setLocalSeqRef = useRef(setLocalSeq);
   const tRef = useRef(t);
   const recoveryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { mergeWorkspacesRef.current = mergeWorkspaces; }, [mergeWorkspaces]);
   useEffect(() => { mergeBookmarksRef.current = mergeBookmarks; }, [mergeBookmarks]);
   useEffect(() => { mergeGroupsRef.current = mergeGroups; }, [mergeGroups]);
-  useEffect(() => { setLocalSeqRef.current = setLocalSeq; }, [setLocalSeq]);
   useEffect(() => { tRef.current = t; }, [t]);
 
   const showRecoveryNotice = useCallback((targetWorkspaceName: string | undefined) => {
@@ -333,33 +396,80 @@ function SyncProvider({
         };
       },
       () => localSeqRef.current,
-      async (resp: SyncPullResponse, isCurrent) => {
+      async (resp: SyncPullResponse, isCurrent, context) => {
         if (!isCurrent()) {
           return { errorMessage: null };
         }
-        const needsInitialPush = localSeqRef.current === 0 && resp.server_seq === 0;
-        await prepareGuestWorkspaceForPull(resp);
+        const currentUser = useAuthStore.getState().user;
+        const currentServerUrl = useAuthStore.getState().serverUrl;
+        if (!currentUser || !currentServerUrl) {
+          return { errorMessage: null };
+        }
+        const authoritative = await resolveAuthoritativeWorkspacePull({
+          context,
+          response: resp,
+          serverUrl: currentServerUrl,
+          userId: currentUser.id,
+        });
+        const authoritativeResponse = authoritative.response;
+        const capabilitySupported = authoritative.capabilitySupported;
         if (!isCurrent()) {
           return { errorMessage: null };
         }
-        await mergeWorkspacesRef.current(resp);
+        if (!capabilitySupported) {
+          await quarantineUnsupportedLifecycleIntents(context);
+        } else {
+          await clearReenabledLifecycleConflictTrees();
+        }
         if (!isCurrent()) {
           return { errorMessage: null };
         }
-        await mergeGroupsRef.current(resp);
+        const needsInitialPush = localSeqRef.current === 0 && authoritativeResponse.server_seq === 0;
+        await prepareGuestWorkspaceForPull(authoritativeResponse);
         if (!isCurrent()) {
           return { errorMessage: null };
         }
-        await mergeBookmarksRef.current(resp);
+        const workspaceMerge = await mergeWorkspacesRef.current(authoritativeResponse);
         if (!isCurrent()) {
           return { errorMessage: null };
         }
-        await confirmGuestWorkspaceFromPull(resp);
+        await mergeGroupsRef.current(authoritativeResponse);
         if (!isCurrent()) {
           return { errorMessage: null };
         }
-        await setLocalSeqRef.current(resp.server_seq);
-        localSeqRef.current = resp.server_seq;
+        await mergeBookmarksRef.current(authoritativeResponse);
+        if (!isCurrent()) {
+          return { errorMessage: null };
+        }
+        await blockPruneAndCleanTerminalAggregates(
+          context,
+          workspaceMerge.terminalWorkspaceIds,
+        );
+        if (!isCurrent()) {
+          return { errorMessage: null };
+        }
+        for (const workspaceId of workspaceMerge.restoredWorkspaceIds) {
+          await syncConflictRegistry.clearRoot("workspace", workspaceId);
+        }
+        if (!isCurrent()) {
+          return { errorMessage: null };
+        }
+        await confirmGuestWorkspaceFromPull(authoritativeResponse);
+        if (!isCurrent()) {
+          return { errorMessage: null };
+        }
+        if (capabilitySupported) {
+          await reconcileWorkspaceLifecycleIntents({
+            context,
+            userId: currentUser.id,
+            serverOrigin: new URL(currentServerUrl).origin,
+            authoritativeWorkspaces: authoritativeResponse.entities.workspaces,
+            reportConflict: reportLifecycleConflict,
+            notify: (messageKey) => {
+              setSyncErrorMessage(tRef.current(messageKey));
+            },
+          });
+        }
 
         if (needsInitialPush && useWorkspaceStore.getState().workspaces.length === 0) {
           await useWorkspaceStore.getState().initializeGuestWorkspace({
@@ -383,12 +493,23 @@ function SyncProvider({
         if (!isCurrent()) {
           return { errorMessage: null };
         }
+        await commitWorkspacePullCheckpoint({
+          serverUrl: currentServerUrl,
+          userId: currentUser.id,
+          serverSeq: authoritativeResponse.server_seq,
+          capabilitySupported,
+        });
+        if (!isCurrent()) {
+          return { errorMessage: null };
+        }
+        localSeqRef.current = authoritativeResponse.server_seq;
         const persistentErrorKey = await getPersistentSyncErrorKey();
         return {
           errorMessage: persistentErrorKey ? tRef.current(persistentErrorKey) : null,
         };
       },
-      async (pushResp) => {
+      async (pushResp, confirmedPayload) => {
+        await confirmSyncPayload(confirmedPayload, pushResp.server_seq);
         const reconciliation = await resolveGuestPushRejections(pushResp);
         const quotaResources = new Set<QuotaResource>();
         for (const rejected of pushResp.rejected) {
@@ -439,6 +560,30 @@ function SyncProvider({
         showRecoveryNotice(reconciliation.targetWorkspaceName);
         await sweepAllUnsynced();
         return true;
+      },
+      {
+        shouldResolveWorkspaceLifecycleBeforePush: async () => {
+          const currentAuth = useAuthStore.getState();
+          if (!currentAuth.user || !currentAuth.serverUrl) {
+            return false;
+          }
+          const intents = await readWorkspaceLifecycleIntents();
+          if (intents.length === 0 ||
+            !await readWorkspaceLifecycleCapability(currentAuth.serverUrl, currentAuth.user.id)) {
+            return false;
+          }
+          const conflicts = syncConflictRegistry.list();
+          return intents.some((intent) => {
+            const rootConflict = conflicts.find((conflict) =>
+              conflict.entityType === "workspace" &&
+              conflict.entityId === intent.workspaceId,
+            );
+            if (!rootConflict) {
+              return true;
+            }
+            return intent.action === "restore" && rootConflict.reason === "parent_deleted";
+          });
+        },
       },
     );
 

@@ -9,6 +9,7 @@ let queueFlushImpl;
 let queueExtractImpl;
 let queueCopyImpl;
 let queuePruneImpl;
+let queueBlockImpl;
 let queueEnqueueImpl;
 let queueSuccessHandler = null;
 let queueFailureHandler = null;
@@ -50,7 +51,7 @@ class OrderingTestQueue {
   }
   extractEntities(references) { return queueExtractImpl(references); }
   copyEntities(references) { return queueCopyImpl(references); }
-  blockEntities() {}
+  blockEntities(references) { queueBlockImpl(references); }
   async pruneEntities(references, capturedPayload) {
     await queuePruneImpl(references, capturedPayload);
   }
@@ -108,6 +109,7 @@ describe("SyncEngine ordering", () => {
     queueExtractImpl = () => emptyPayload();
     queueCopyImpl = () => emptyPayload();
     queuePruneImpl = async () => {};
+    queueBlockImpl = () => {};
     queueEnqueueImpl = () => {};
   });
 
@@ -812,6 +814,51 @@ describe("SyncEngine ordering", () => {
     await engine.forceSync();
 
     expect(events).toEqual(["pull-request", "lifecycle-resolution", "ordinary-flush"]);
+    engine.destroy();
+  });
+
+  test("purge flushes ordinary work before its serialized action and prunes before cleanup", async () => {
+    const events = [];
+    queueFlushImpl = async () => { events.push("ordinary-flush"); };
+    queueBlockImpl = () => { events.push("block"); };
+    queuePruneImpl = async () => { events.push("prune-live"); };
+    syncPushImpl = async (_baseUrl, _token, payload) => {
+      expect(payload.entities.workspaces).toEqual([{
+        id: "workspace-purge",
+        lifecycle_action: "purge",
+      }]);
+      events.push("purge-push");
+      return { server_seq: 44, rejected: [] };
+    };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => ({ errorMessage: null }),
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        isWorkspaceDeleteConfirmed: async () => true,
+        loadWorkspaceAggregateReferences: async () => [
+          { entityType: "workspace", entityId: "workspace-purge" },
+          { entityType: "collection", entityId: "collection-purge" },
+        ],
+        confirmPayload: async () => { events.push("confirm"); },
+        clearWorkspaceAggregate: async () => { events.push("cleanup"); },
+        extractRecoveryEntities: async () => { events.push("prune-recovery"); return emptyPayload(); },
+      }),
+    );
+
+    expect(await engine.purgeWorkspace("workspace-purge")).toEqual({ status: "completed" });
+    expect(events).toEqual([
+      "ordinary-flush",
+      "purge-push",
+      "confirm",
+      "block",
+      "prune-live",
+      "prune-recovery",
+      "cleanup",
+    ]);
     engine.destroy();
   });
 

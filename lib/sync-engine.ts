@@ -6,6 +6,7 @@ import {
   SyncPushPayload,
 } from "@/lib/api";
 import type { SyncPushEntities, SyncRejected } from "@/lib/api";
+import { isKnownSyncRejectionReason } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import type {
   SyncConflictPolicy,
@@ -23,6 +24,8 @@ import {
   syncPayloadEntities,
 } from "@/lib/sync-recovery";
 import { mergeWorkspaceLifecycleDeferredPayload } from "@/lib/workspace-lifecycle-state";
+import { confirmSyncPayload } from "@/lib/sync-confirmation";
+import type { WorkspacePurgeResult } from "@/lib/sync-lifecycle";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
 export type { SyncConflictPolicy } from "@/lib/sync-queue";
@@ -114,6 +117,12 @@ export interface SyncEngineDependencies {
     workspaceId: string,
     payload: SyncPushPayload,
   ) => Promise<void>;
+  confirmPayload?: (payload: SyncPushPayload, serverSeq: number) => Promise<void>;
+  isWorkspaceDeleteConfirmed?: (workspaceId: string) => Promise<boolean>;
+  loadWorkspaceAggregateReferences?: (
+    workspaceId: string,
+  ) => Promise<SyncEntityReference[]>;
+  clearWorkspaceAggregate?: (workspaceId: string) => Promise<void>;
 }
 
 const PERIODIC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -183,6 +192,15 @@ export class SyncEngine {
     workspaceId: string,
     payload: SyncPushPayload,
   ) => Promise<void>;
+  private readonly confirmPayload: (
+    payload: SyncPushPayload,
+    serverSeq: number,
+  ) => Promise<void>;
+  private readonly isWorkspaceDeleteConfirmed: (workspaceId: string) => Promise<boolean>;
+  private readonly loadWorkspaceAggregateReferences: (
+    workspaceId: string,
+  ) => Promise<SyncEntityReference[]>;
+  private readonly clearWorkspaceAggregate: (workspaceId: string) => Promise<void>;
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private status: SyncStatus = "idle";
   private lastErrorMessage: string | null = null;
@@ -220,6 +238,13 @@ export class SyncEngine {
       pruneSyncRecoveryEntities;
     this.mergeDeferredPayload = dependencies.mergeDeferredPayload ??
       mergeWorkspaceLifecycleDeferredPayload;
+    this.confirmPayload = dependencies.confirmPayload ?? confirmSyncPayload;
+    this.isWorkspaceDeleteConfirmed = dependencies.isWorkspaceDeleteConfirmed ??
+      this.defaultIsWorkspaceDeleteConfirmed;
+    this.loadWorkspaceAggregateReferences = dependencies.loadWorkspaceAggregateReferences ??
+      this.defaultLoadWorkspaceAggregateReferences;
+    this.clearWorkspaceAggregate = dependencies.clearWorkspaceAggregate ??
+      this.defaultClearWorkspaceAggregate;
 
     const handleQueueSuccess = async (resp: SyncPushResponse, confirmedPayload: SyncPushPayload) => {
       if (this.destroyed) {
@@ -367,6 +392,56 @@ export class SyncEngine {
       await this.requestPull();
     }
     return { pushed: 1, pulled: this.lastPulledCount };
+  }
+
+  async wakeWorkspaceLifecycle(_workspaceId: string): Promise<void> {
+    await this.requestPull();
+  }
+
+  async purgeWorkspace(workspaceId: string): Promise<WorkspacePurgeResult> {
+    if (!await this.isWorkspaceDeleteConfirmed(workspaceId)) {
+      await this.requestPull();
+      if (!await this.isWorkspaceDeleteConfirmed(workspaceId)) {
+        return { status: "rejected", reason: "parent_rejected" };
+      }
+    }
+
+    await this.queue.flush();
+    if (!this.queue.isEmpty()) {
+      return { status: "rejected", reason: "parent_rejected" };
+    }
+    return this.serializeResolutionWithContext(async (context) => {
+      const payload: SyncPushPayload = {
+        entities: {
+          workspaces: [{ id: workspaceId, lifecycle_action: "purge" }],
+          collections: [],
+          bookmarks: [],
+          tags: [],
+          groups: [],
+        },
+      };
+      const response = await context.pushConfirmed(payload);
+      this.assertResolutionCurrent(context.isCurrent);
+      const rejection = response.rejected.find((item) => item.id === workspaceId);
+      if (rejection) {
+        return {
+          status: "rejected",
+          reason: isKnownSyncRejectionReason(rejection.reason)
+            ? rejection.reason
+            : "parent_rejected",
+        };
+      }
+      await this.confirmPayload(payload, response.server_seq);
+      this.assertResolutionCurrent(context.isCurrent);
+      const references = await this.loadWorkspaceAggregateReferences(workspaceId);
+      this.assertResolutionCurrent(context.isCurrent);
+      context.blockEntities(references);
+      await context.pruneEntities(references);
+      this.assertResolutionCurrent(context.isCurrent);
+      await this.clearWorkspaceAggregate(workspaceId);
+      this.assertResolutionCurrent(context.isCurrent);
+      return { status: "completed" };
+    });
   }
 
   private serializeResolution<Result>(operation: () => Promise<Result>): Promise<Result> {
@@ -744,6 +819,51 @@ export class SyncEngine {
       void this.requestPull();
     }
   }
+
+  private readonly defaultIsWorkspaceDeleteConfirmed = async (
+    workspaceId: string,
+  ): Promise<boolean> => {
+    const [{ idbGet }, { readWorkspaceLifecycleIntents }] = await Promise.all([
+      import("@/lib/idb"),
+      import("@/lib/workspace-lifecycle-state"),
+    ]);
+    const [workspace, intents] = await Promise.all([
+      idbGet<{ deletedAt?: number }>("workspaces", workspaceId),
+      readWorkspaceLifecycleIntents(),
+    ]);
+    return workspace?.deletedAt !== undefined &&
+      !intents.some((intent) => intent.workspaceId === workspaceId);
+  };
+
+  private readonly defaultLoadWorkspaceAggregateReferences = async (
+    workspaceId: string,
+  ): Promise<SyncEntityReference[]> => {
+    const { loadWorkspaceAggregateIds, toSyncEntityReferences } = await import(
+      "@/lib/workspace-aggregate"
+    );
+    return toSyncEntityReferences(await loadWorkspaceAggregateIds(workspaceId));
+  };
+
+  private readonly defaultClearWorkspaceAggregate = async (
+    workspaceId: string,
+  ): Promise<void> => {
+    const { clearWorkspaceAggregate } = await import("@/lib/workspace-aggregate");
+    let committedIds: Awaited<ReturnType<typeof clearWorkspaceAggregate>>;
+    await clearWorkspaceAggregate(workspaceId, (ids) => {
+      committedIds = ids;
+    });
+    if (!committedIds) {
+      return;
+    }
+    const [{ useWorkspaceStore }, { useBookmarksStore }, { useGroupsStore }] = await Promise.all([
+      import("@/store/workspace-store"),
+      import("@/store/bookmarks-store"),
+      import("@/store/groups-store"),
+    ]);
+    useWorkspaceStore.getState().removeWorkspaceAggregateFromState(committedIds);
+    useBookmarksStore.getState().removeWorkspaceAggregateFromState(committedIds);
+    useGroupsStore.getState().removeWorkspaceAggregateFromState(committedIds);
+  };
 }
 
 export let syncEngine: SyncEngine | null = null;
