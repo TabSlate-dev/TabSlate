@@ -170,6 +170,17 @@ export interface CommitWorkspaceLifecycleIntentInput {
   activeWorkspaceId?: string;
 }
 
+export interface CommitWorkspaceDeleteLifecycleIntentInput {
+  workspaceId: string;
+  createdAt: number;
+}
+
+export interface CommitWorkspaceDeleteLifecycleIntentResult {
+  status: "committed" | "last_active_workspace" | "missing" | "already_deleted";
+  workspaces: Workspace[];
+  activeWorkspaceId: string;
+}
+
 interface WorkspaceLifecycleIntentKVRecord {
   key: string;
   value: WorkspaceLifecycleIntentRecord;
@@ -243,6 +254,163 @@ export function idbCommitWorkspaceLifecycleIntent(
         });
       }
     };
+  }));
+}
+
+function isActiveWorkspace(workspace: Workspace): boolean {
+  return workspace.deletedAt === undefined;
+}
+
+function compareWorkspacePosition(a: Workspace, b: Workspace): number {
+  return a.position - b.position || a.id.localeCompare(b.id);
+}
+
+function chooseDurableActiveWorkspace(workspaces: readonly Workspace[]): Workspace | undefined {
+  return workspaces.filter(isActiveWorkspace).sort(compareWorkspacePosition)[0];
+}
+
+function chooseDurableReplacement(
+  workspaces: readonly Workspace[],
+  target: Workspace,
+): Workspace | undefined {
+  return workspaces
+    .filter((workspace) => workspace.id !== target.id && isActiveWorkspace(workspace))
+    .sort((a, b) =>
+      Math.abs(a.position - target.position) - Math.abs(b.position - target.position) ||
+      compareWorkspacePosition(a, b),
+    )[0];
+}
+
+/**
+ * Validates and commits a workspace tombstone against durable roots in one
+ * readwrite transaction. IndexedDB serializes overlapping transactions, so
+ * independent extension contexts cannot both delete the final active root.
+ */
+export function idbCommitWorkspaceDeleteLifecycleIntent(
+  input: CommitWorkspaceDeleteLifecycleIntentInput,
+): Promise<CommitWorkspaceDeleteLifecycleIntentResult> {
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const transaction = db.transaction(["workspaces", "kv"], "readwrite");
+    let result: CommitWorkspaceDeleteLifecycleIntentResult | undefined;
+    transaction.oncomplete = () => {
+      if (!result) {
+        reject(new Error("Workspace delete transaction completed without a decision"));
+        return;
+      }
+      resolve(result);
+    };
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+
+    const workspacesRequest = transaction.objectStore("workspaces").getAll();
+    const activeRequest = transaction.objectStore("kv").get("activeWorkspaceId");
+    const intentsRequest = transaction.objectStore("kv").get(
+      WORKSPACE_LIFECYCLE_INTENTS_KEY,
+    );
+    const requests = [workspacesRequest, activeRequest, intentsRequest];
+    for (const request of requests) {
+      request.onerror = () => transaction.abort();
+    }
+
+    let completed = 0;
+    const decide = () => {
+      completed += 1;
+      if (completed !== requests.length) {
+        return;
+      }
+      try {
+        const workspaces: Workspace[] = workspacesRequest.result;
+        const persistedActive: unknown = activeRequest.result;
+        const persistedActiveId = isKVRecordValue(persistedActive) &&
+            typeof persistedActive.value === "string"
+          ? persistedActive.value
+          : "";
+        const activeWorkspaces = workspaces.filter(isActiveWorkspace);
+        const selectedActive = activeWorkspaces.find(
+          (workspace) => workspace.id === persistedActiveId,
+        ) ?? chooseDurableActiveWorkspace(workspaces);
+        const selectedActiveId = selectedActive?.id ?? "";
+        const snapshot = (
+          status: Exclude<CommitWorkspaceDeleteLifecycleIntentResult["status"], "committed">,
+        ): CommitWorkspaceDeleteLifecycleIntentResult => ({
+          status,
+          workspaces,
+          activeWorkspaceId: selectedActiveId,
+        });
+        const target = workspaces.find((workspace) => workspace.id === input.workspaceId);
+        if (!target) {
+          result = snapshot("missing");
+          return;
+        }
+        if (!isActiveWorkspace(target)) {
+          result = snapshot("already_deleted");
+          return;
+        }
+        if (activeWorkspaces.length <= 1) {
+          if (persistedActiveId !== selectedActiveId) {
+            transaction.objectStore("kv").put({
+              key: "activeWorkspaceId",
+              value: selectedActiveId,
+            });
+          }
+          result = snapshot("last_active_workspace");
+          return;
+        }
+
+        const replacement = selectedActive?.id !== target.id
+          ? selectedActive
+          : chooseDurableReplacement(workspaces, target);
+        if (!replacement) {
+          result = snapshot("last_active_workspace");
+          return;
+        }
+        const deletedWorkspace: Workspace = {
+          ...target,
+          deletedAt: input.createdAt,
+          seq: 0,
+        };
+        const intent: WorkspaceLifecycleIntent = {
+          workspaceId: target.id,
+          action: "delete",
+          baseSeq: target.seq,
+          previousActiveWorkspaceId: selectedActiveId,
+          createdAt: input.createdAt,
+        };
+        const persistedIntents: unknown = intentsRequest.result;
+        const currentIntents = isWorkspaceLifecycleIntentKVRecord(persistedIntents)
+          ? persistedIntents.value.intents
+          : [];
+        const intentRecord: WorkspaceLifecycleIntentRecord = {
+          version: 1,
+          intents: [
+            ...currentIntents.filter((candidate) => candidate.workspaceId !== target.id),
+            intent,
+          ],
+        };
+        transaction.objectStore("workspaces").put(deletedWorkspace);
+        transaction.objectStore("kv").put({
+          key: WORKSPACE_LIFECYCLE_INTENTS_KEY,
+          value: intentRecord,
+        });
+        transaction.objectStore("kv").put({
+          key: "activeWorkspaceId",
+          value: replacement.id,
+        });
+        result = {
+          status: "committed",
+          workspaces: workspaces.map((workspace) =>
+            workspace.id === target.id ? deletedWorkspace : workspace,
+          ),
+          activeWorkspaceId: replacement.id,
+        };
+      } catch (error) {
+        transaction.abort();
+        reject(error);
+      }
+    };
+    for (const request of requests) {
+      request.onsuccess = decide;
+    }
   }));
 }
 

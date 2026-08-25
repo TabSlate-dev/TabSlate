@@ -8,6 +8,7 @@ const wakeCalls = [];
 const guestRollbackCalls = [];
 const syncEnqueueCalls = [];
 const planCalls = [];
+const lifecycleConcurrencyEvents = [];
 
 let idbBulkWriteImpl;
 let generatedIds;
@@ -25,6 +26,8 @@ let capabilityReadImpl;
 let intentReadImpl;
 let purgeImpl;
 let aggregateCleanupIds;
+let deleteTransactionTail = Promise.resolve();
+let heldLifecycleLocks = new Map();
 
 mock.module("@/lib/idb", () => ({
   idbGetAll: async (store) => {
@@ -78,6 +81,9 @@ mock.module("@/lib/idb", () => ({
   },
   idbCommitWorkspaceLifecycleIntent: async (input) => {
     lifecycleCommitCalls.push(structuredClone(input));
+    if (input.intent.action === "delete") {
+      lifecycleConcurrencyEvents.push(`delete-commit:${input.workspace.id}`);
+    }
     const index = storedWorkspaces.findIndex((item) => item.id === input.workspace.id);
     if (index === -1) {
       storedWorkspaces.push(structuredClone(input.workspace));
@@ -89,6 +95,88 @@ mock.module("@/lib/idb", () => ({
         key: "activeWorkspaceId",
         value: input.activeWorkspaceId,
       });
+    }
+    lifecycleIntents = [
+      ...lifecycleIntents.filter((intent) => intent.workspaceId !== input.intent.workspaceId),
+      structuredClone(input.intent),
+    ];
+  },
+  idbCommitWorkspaceDeleteLifecycleIntent: (input) => {
+    const commit = deleteTransactionTail.then(() => {
+      const target = storedWorkspaces.find((item) => item.id === input.workspaceId);
+      const activeWorkspaces = storedWorkspaces.filter((item) => item.deletedAt === undefined);
+      const persistedActiveId = storedKv.get("activeWorkspaceId")?.value ?? "";
+      const persistedActive = activeWorkspaces.find((item) => item.id === persistedActiveId);
+      const currentActive = persistedActive ?? activeWorkspaces
+        .slice()
+        .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))[0];
+      const currentActiveId = currentActive?.id ?? "";
+      const snapshot = (status) => ({
+        status,
+        workspaces: structuredClone(storedWorkspaces),
+        activeWorkspaceId: currentActiveId,
+      });
+      if (!target) {
+        return snapshot("missing");
+      }
+      if (target.deletedAt !== undefined) {
+        return snapshot("already_deleted");
+      }
+      if (activeWorkspaces.length <= 1) {
+        return snapshot("last_active_workspace");
+      }
+      const replacement = currentActive?.id !== target.id
+        ? currentActive
+        : activeWorkspaces
+          .filter((item) => item.id !== target.id)
+          .sort((a, b) =>
+            Math.abs(a.position - target.position) - Math.abs(b.position - target.position) ||
+            a.position - b.position ||
+            a.id.localeCompare(b.id)
+          )[0];
+      if (!replacement) {
+        return snapshot("last_active_workspace");
+      }
+      const workspace = { ...target, deletedAt: input.createdAt, seq: 0 };
+      const intent = {
+        workspaceId: target.id,
+        action: "delete",
+        baseSeq: target.seq,
+        previousActiveWorkspaceId: currentActiveId,
+        createdAt: input.createdAt,
+      };
+      storedWorkspaces = storedWorkspaces.map((item) => item.id === target.id ? workspace : item);
+      storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: replacement.id });
+      lifecycleIntents = [
+        ...lifecycleIntents.filter((candidate) => candidate.workspaceId !== target.id),
+        intent,
+      ];
+      lifecycleCommitCalls.push(structuredClone({
+        workspace,
+        intent,
+        activeWorkspaceId: replacement.id,
+      }));
+      lifecycleConcurrencyEvents.push(`delete-commit:${target.id}`);
+      return {
+        status: "committed",
+        workspaces: structuredClone(storedWorkspaces),
+        activeWorkspaceId: replacement.id,
+      };
+    });
+    deleteTransactionTail = commit.then(() => undefined, () => undefined);
+    return commit;
+  },
+  idbTryAcquireLock: async (key, owner, expiresAt) => {
+    const current = heldLifecycleLocks.get(key);
+    if (current && current.owner !== owner && current.expiresAt > Date.now()) {
+      return false;
+    }
+    heldLifecycleLocks.set(key, { owner, expiresAt });
+    return true;
+  },
+  idbReleaseLock: async (key, owner) => {
+    if (heldLifecycleLocks.get(key)?.owner === owner) {
+      heldLifecycleLocks.delete(key);
     }
   },
   idbCreateGuestWorkspaceIfEmpty: async (workspace, collection, activeWorkspace, provenance) => {
@@ -121,6 +209,8 @@ mock.module("@/lib/sync-engine", () => ({
   syncEngine: {
     enqueue: (...args) => {
       syncEnqueueCalls.push(structuredClone(args));
+      const workspaceIds = args[0].workspaces?.map((workspace) => workspace.id) ?? [];
+      lifecycleConcurrencyEvents.push(`enqueue:${workspaceIds.join(",")}`);
     },
   },
 }));
@@ -158,6 +248,12 @@ mock.module("@/lib/id", () => ({
 }));
 
 const { useWorkspaceStore } = await import("../store/workspace-store");
+const { useWorkspaceStore: useFirstContextWorkspaceStore } = await import(
+  "../store/workspace-store.ts?test-context=first"
+);
+const { useWorkspaceStore: useSecondContextWorkspaceStore } = await import(
+  "../store/workspace-store.ts?test-context=second"
+);
 const { useBookmarksStore } = await import("../store/bookmarks-store");
 const { useGroupsStore } = await import("../store/groups-store");
 const { registerSyncLifecycle, unregisterSyncLifecycle } = await import("../lib/sync-lifecycle");
@@ -244,6 +340,7 @@ describe("workspace lifecycle store", () => {
     guestRollbackCalls.length = 0;
     syncEnqueueCalls.length = 0;
     planCalls.length = 0;
+    lifecycleConcurrencyEvents.length = 0;
     idbBulkWriteImpl = async () => {};
     generatedIds = ["generated-id", "generated-collection-id"];
     guestSeedCreated = false;
@@ -260,7 +357,23 @@ describe("workspace lifecycle store", () => {
     intentReadImpl = undefined;
     purgeImpl = async () => ({ status: "completed" });
     aggregateCleanupIds = undefined;
+    deleteTransactionTail = Promise.resolve();
+    heldLifecycleLocks = new Map();
     useWorkspaceStore.setState({
+      workspaces: [],
+      collections: [],
+      tags: [],
+      activeWorkspaceId: "",
+      _hydrated: false,
+    });
+    useFirstContextWorkspaceStore.setState({
+      workspaces: [],
+      collections: [],
+      tags: [],
+      activeWorkspaceId: "",
+      _hydrated: false,
+    });
+    useSecondContextWorkspaceStore.setState({
       workspaces: [],
       collections: [],
       tags: [],
@@ -356,6 +469,8 @@ describe("workspace lifecycle store", () => {
       collections: [targetCollection],
       activeWorkspaceId: target.id,
     });
+    storedWorkspaces = structuredClone([target, upper, lower]);
+    storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: target.id });
     const childSnapshot = structuredClone({
       collections: useWorkspaceStore.getState().collections,
       bookmarks: useBookmarksStore.getState().bookmarks,
@@ -398,6 +513,8 @@ describe("workspace lifecycle store", () => {
   test("delete blocks the final active workspace without writing anything", async () => {
     const only = workspace("workspace-only", 0);
     useWorkspaceStore.setState({ workspaces: [only], activeWorkspaceId: only.id });
+    storedWorkspaces = structuredClone([only]);
+    storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: only.id });
     const result = await useWorkspaceStore.getState().deleteWorkspace(only.id);
     expect(result).toEqual({ status: "blocked", reason: "last_active_workspace" });
     expect(lifecycleCommitCalls).toEqual([]);
@@ -415,7 +532,8 @@ describe("workspace lifecycle store", () => {
       accessToken: null,
       serverUrl: "https://server.test",
     };
-    useWorkspaceStore.setState({ workspaces: [first, second], activeWorkspaceId: first.id });
+    useFirstContextWorkspaceStore.setState({ workspaces: [first, second], activeWorkspaceId: first.id });
+    useSecondContextWorkspaceStore.setState({ workspaces: [first, second], activeWorkspaceId: first.id });
     let releaseCapability;
     const capabilityGate = new Promise((resolve) => { releaseCapability = resolve; });
     let capabilityReads = 0;
@@ -437,22 +555,25 @@ describe("workspace lifecycle store", () => {
       };
     };
 
-    const deletingFirst = useWorkspaceStore.getState().deleteWorkspace(first.id);
-    const deletingSecond = useWorkspaceStore.getState().deleteWorkspace(second.id);
+    const deletingFirst = useFirstContextWorkspaceStore.getState().deleteWorkspace(first.id);
+    const deletingSecond = useSecondContextWorkspaceStore.getState().deleteWorkspace(second.id);
     await firstRead;
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(capabilityReads).toBe(1);
+    expect(capabilityReads).toBe(2);
     if (!releaseCapability) { throw new Error("capability read was not blocked"); }
     releaseCapability();
     const results = await Promise.all([deletingFirst, deletingSecond]);
 
     expect(results.map((result) => result.status).sort()).toEqual(["blocked", "queued"]);
     expect(lifecycleCommitCalls).toHaveLength(1);
-    const activeStateRoots = useWorkspaceStore.getState().getActiveWorkspaces();
-    expect(activeStateRoots).toHaveLength(1);
-    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe(activeStateRoots[0]?.id);
+    const firstContextActiveRoots = useFirstContextWorkspaceStore.getState().getActiveWorkspaces();
+    const secondContextActiveRoots = useSecondContextWorkspaceStore.getState().getActiveWorkspaces();
+    expect(firstContextActiveRoots).toHaveLength(1);
+    expect(secondContextActiveRoots).toHaveLength(1);
+    expect(useFirstContextWorkspaceStore.getState().activeWorkspaceId).toBe(firstContextActiveRoots[0]?.id);
+    expect(useSecondContextWorkspaceStore.getState().activeWorkspaceId).toBe(secondContextActiveRoots[0]?.id);
     const activeDurableRoots = storedWorkspaces.filter((item) => item.deletedAt === undefined);
     expect(activeDurableRoots).toHaveLength(1);
     expect(storedKv.get("activeWorkspaceId")?.value).toBe(activeDurableRoots[0]?.id);
@@ -579,6 +700,8 @@ describe("workspace lifecycle store", () => {
       serverUrl: "https://server.test",
     };
     useWorkspaceStore.setState({ workspaces: [target, replacement], activeWorkspaceId: target.id });
+    storedWorkspaces = structuredClone([target, replacement]);
+    storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: target.id });
     capabilitySupported = false;
 
     expect(await useWorkspaceStore.getState().deleteWorkspace(target.id)).toEqual({
@@ -665,10 +788,15 @@ describe("workspace lifecycle store", () => {
   });
 
   test("delete cannot commit between sweep intent and Workspace snapshots", async () => {
-    const target = workspace("workspace-target", 0);
+    const target = workspace("workspace-target", 0, { seq: 0 });
     const replacement = workspace("workspace-replacement", 1);
     storedWorkspaces = structuredClone([target, replacement]);
-    useWorkspaceStore.setState({
+    storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: target.id });
+    useFirstContextWorkspaceStore.setState({
+      workspaces: [target, replacement],
+      activeWorkspaceId: target.id,
+    });
+    useSecondContextWorkspaceStore.setState({
       workspaces: [target, replacement],
       activeWorkspaceId: target.id,
     });
@@ -683,19 +811,22 @@ describe("workspace lifecycle store", () => {
     };
     syncEnqueueCalls.length = 0;
 
-    const sweeping = useWorkspaceStore.getState().sweepUnsynced();
+    const sweeping = useFirstContextWorkspaceStore.getState().sweepUnsynced();
     await intentReadStarted;
-    const deleting = useWorkspaceStore.getState().deleteWorkspace(target.id);
+    const deleting = useSecondContextWorkspaceStore.getState().deleteWorkspace(target.id);
     await Promise.resolve();
     await Promise.resolve();
     if (!resolveIntentRead) { throw new Error("intent read was not blocked"); }
     resolveIntentRead();
-    await Promise.all([sweeping, deleting]);
+    const [, deleteResult] = await Promise.all([sweeping, deleting]);
 
-    const sweptWorkspaceIds = syncEnqueueCalls.flatMap((call) =>
-      call[0].workspaces?.map((entity) => entity.id) ?? []
+    expect(deleteResult).toEqual({ status: "queued" });
+    const deleteCommitIndex = lifecycleConcurrencyEvents.indexOf(`delete-commit:${target.id}`);
+    const targetEnqueueIndex = lifecycleConcurrencyEvents.findIndex((event) =>
+      event.startsWith("enqueue:") && event.split(":")[1]?.split(",").includes(target.id)
     );
-    expect(sweptWorkspaceIds).not.toContain(target.id);
+    expect(deleteCommitIndex).toBeGreaterThanOrEqual(0);
+    expect(targetEnqueueIndex === -1 || targetEnqueueIndex < deleteCommitIndex).toBe(true);
   });
 
   test("authenticated purge is offline-safe and rolls back the optimistic card on failure", async () => {

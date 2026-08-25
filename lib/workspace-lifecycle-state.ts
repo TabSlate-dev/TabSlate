@@ -12,6 +12,10 @@ export const WORKSPACE_FULL_PULL_KEY_PREFIX = "workspace-parent-tombstone-full-p
 export const WORKSPACE_LIFECYCLE_DEFERRED_SYNC_KEY =
   "workspace-lifecycle-deferred-sync-v1";
 
+const WORKSPACE_LIFECYCLE_LOCK_NAME = "tabslate-workspace-lifecycle-v1";
+const WORKSPACE_LIFECYCLE_LOCK_LEASE_MS = 30_000;
+const WORKSPACE_LIFECYCLE_LOCK_RETRY_MS = 10;
+
 export interface WorkspaceLifecycleIntent {
   workspaceId: string;
   action: Exclude<WorkspaceLifecycleAction, "purge">;
@@ -62,6 +66,44 @@ export interface WorkspaceLifecycleStateStorage {
       current: WorkspaceLifecycleStoredRecord | undefined,
     ) => WorkspaceLifecycleStoredRecord | undefined,
   ): Promise<void>;
+}
+
+async function withIndexedDBWorkspaceLifecycleLock<Result>(
+  operation: () => Promise<Result>,
+): Promise<Result> {
+  const idb = await import("@/lib/idb");
+  const owner = typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  const key = `${WORKSPACE_LIFECYCLE_LOCK_NAME}-fallback`;
+  while (!await idb.idbTryAcquireLock(
+    key,
+    owner,
+    Date.now() + WORKSPACE_LIFECYCLE_LOCK_LEASE_MS,
+  )) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, WORKSPACE_LIFECYCLE_LOCK_RETRY_MS);
+    });
+  }
+  try {
+    return await operation();
+  } finally {
+    await idb.idbReleaseLock(key, owner);
+  }
+}
+
+/** Holds lifecycle reads, commits, and synchronous enqueue across contexts. */
+export async function withWorkspaceLifecycleLock<Result>(
+  operation: () => Promise<Result>,
+): Promise<Result> {
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request(
+      WORKSPACE_LIFECYCLE_LOCK_NAME,
+      { mode: "exclusive" },
+      operation,
+    );
+  }
+  return withIndexedDBWorkspaceLifecycleLock(operation);
 }
 
 interface KVRecord<T> {
