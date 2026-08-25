@@ -7,6 +7,8 @@ let syncPullImpl;
 let syncPushImpl;
 let queueFlushImpl;
 let queueExtractImpl;
+let queueCopyImpl;
+let queuePruneImpl;
 let queueSuccessHandler = null;
 let queueFailureHandler = null;
 let sseSequenceHandler = null;
@@ -46,8 +48,9 @@ class OrderingTestQueue {
     await queueFlushImpl();
   }
   extractEntities(references) { return queueExtractImpl(references); }
+  copyEntities(references) { return queueCopyImpl(references); }
   blockEntities() {}
-  async pruneEntities() {}
+  async pruneEntities(references) { await queuePruneImpl(references); }
   async ready() {}
   isEmpty() { return true; }
   destroy() {}
@@ -100,6 +103,8 @@ describe("SyncEngine ordering", () => {
     syncPushImpl = async () => ({ server_seq: 1, rejected: [] });
     queueFlushImpl = async () => {};
     queueExtractImpl = () => emptyPayload();
+    queueCopyImpl = () => emptyPayload();
+    queuePruneImpl = async () => {};
   });
 
   afterEach(() => {
@@ -278,7 +283,8 @@ describe("SyncEngine ordering", () => {
       { entityType: "collection", entityId: "collection-captured" },
       { entityType: "bookmark", entityId: "bookmark-captured" },
     ];
-    queueExtractImpl = (receivedReferences) => {
+    const events = [];
+    queueCopyImpl = (receivedReferences) => {
       expect(receivedReferences).toEqual(references);
       return {
         entities: {
@@ -288,6 +294,10 @@ describe("SyncEngine ordering", () => {
           tags: [], groups: [],
         },
       };
+    };
+    queuePruneImpl = async (receivedReferences) => {
+      expect(receivedReferences).toEqual(references);
+      events.push("queue-pruned");
     };
     const deferredMerges = [];
     const engine = new SyncEngine(
@@ -301,7 +311,7 @@ describe("SyncEngine ordering", () => {
       () => {},
       async () => false,
       orderingDependencies({
-        extractRecoveryEntities: async (receivedReferences) => {
+        copyRecoveryEntities: async (receivedReferences) => {
           expect(receivedReferences).toEqual(references);
           return {
             entities: {
@@ -313,7 +323,12 @@ describe("SyncEngine ordering", () => {
           };
         },
         mergeDeferredPayload: async (workspaceId, payload) => {
+          events.push("deferred-persisted");
           deferredMerges.push({ workspaceId, payload });
+        },
+        pruneRecoveryEntities: async (receivedReferences) => {
+          expect(receivedReferences).toEqual(references);
+          events.push("recovery-pruned");
         },
       }),
     );
@@ -332,6 +347,183 @@ describe("SyncEngine ordering", () => {
         },
       },
     }]);
+    expect(events).toEqual([
+      "deferred-persisted",
+      "queue-pruned",
+      "recovery-pruned",
+    ]);
+    engine.destroy();
+  });
+
+  test("keeps queue and recovery snapshots exact when deferred persistence fails", async () => {
+    const references = [{ entityType: "bookmark", entityId: "bookmark-captured" }];
+    const liveSnapshot = {
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "live" }],
+        tags: [], groups: [],
+      },
+    };
+    const recoverySnapshot = {
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "recovery" }],
+        tags: [], groups: [],
+      },
+    };
+    let liveState = structuredClone(liveSnapshot);
+    let recoveryState = structuredClone(recoverySnapshot);
+    const deferredStorage = {
+      version: 1,
+      payloadsByWorkspaceId: {
+        "workspace-existing": {
+          entities: {
+            workspaces: [{ id: "workspace-existing" }],
+            collections: [], bookmarks: [], tags: [], groups: [],
+          },
+        },
+      },
+    };
+    queueExtractImpl = () => {
+      const extracted = liveState;
+      liveState = emptyPayload();
+      return extracted;
+    };
+    queueCopyImpl = () => structuredClone(liveState);
+    queuePruneImpl = async () => {
+      liveState = emptyPayload();
+    };
+    let captureError;
+    const captureFinished = deferred();
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        try {
+          await context.captureDeferredEntities("workspace-captured", references);
+        } catch (error) {
+          captureError = error;
+        }
+        captureFinished.resolve();
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        extractRecoveryEntities: async () => {
+          const extracted = recoveryState;
+          recoveryState = emptyPayload();
+          return extracted;
+        },
+        copyRecoveryEntities: async () => structuredClone(recoveryState),
+        pruneRecoveryEntities: async () => {
+          recoveryState = emptyPayload();
+        },
+        mergeDeferredPayload: async () => {
+          expect(deferredStorage).toEqual({
+            version: 1,
+            payloadsByWorkspaceId: {
+              "workspace-existing": {
+                entities: {
+                  workspaces: [{ id: "workspace-existing" }],
+                  collections: [], bookmarks: [], tags: [], groups: [],
+                },
+              },
+            },
+          });
+          throw new Error("deferred persistence failed");
+        },
+      }),
+    );
+
+    engine.start();
+    await captureFinished.promise;
+
+    expect(captureError).toEqual(new Error("deferred persistence failed"));
+    expect(liveState).toEqual(liveSnapshot);
+    expect(recoveryState).toEqual(recoverySnapshot);
+    expect(deferredStorage).toEqual({
+      version: 1,
+      payloadsByWorkspaceId: {
+        "workspace-existing": {
+          entities: {
+            workspaces: [{ id: "workspace-existing" }],
+            collections: [], bookmarks: [], tags: [], groups: [],
+          },
+        },
+      },
+    });
+    engine.destroy();
+  });
+
+  test("keeps the live queue exact when recovery snapshot copying fails", async () => {
+    const references = [{ entityType: "bookmark", entityId: "bookmark-captured" }];
+    const liveSnapshot = {
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "live" }],
+        tags: [], groups: [],
+      },
+    };
+    let liveState = structuredClone(liveSnapshot);
+    const recoverySnapshot = {
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "recovery" }],
+        tags: [], groups: [],
+      },
+    };
+    const recoveryState = structuredClone(recoverySnapshot);
+    const deferredStorage = {
+      version: 1,
+      payloadsByWorkspaceId: {},
+    };
+    queueExtractImpl = () => {
+      const extracted = liveState;
+      liveState = emptyPayload();
+      return extracted;
+    };
+    queueCopyImpl = () => structuredClone(liveState);
+    queuePruneImpl = async () => {
+      liveState = emptyPayload();
+    };
+    let captureError;
+    const captureFinished = deferred();
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        try {
+          await context.captureDeferredEntities("workspace-captured", references);
+        } catch (error) {
+          captureError = error;
+        }
+        captureFinished.resolve();
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        extractRecoveryEntities: async () => {
+          throw new Error("recovery read failed");
+        },
+        copyRecoveryEntities: async () => {
+          expect(recoveryState).toEqual(recoverySnapshot);
+          throw new Error("recovery read failed");
+        },
+        mergeDeferredPayload: async () => {},
+      }),
+    );
+
+    engine.start();
+    await captureFinished.promise;
+
+    expect(captureError).toEqual(new Error("recovery read failed"));
+    expect(liveState).toEqual(liveSnapshot);
+    expect(recoveryState).toEqual(recoverySnapshot);
+    expect(deferredStorage).toEqual({ version: 1, payloadsByWorkspaceId: {} });
     engine.destroy();
   });
 

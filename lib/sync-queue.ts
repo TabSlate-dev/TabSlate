@@ -143,6 +143,17 @@ export class SyncQueue {
   }
 
   extractEntities(references: readonly SyncEntityReference[]): SyncPushPayload {
+    return this.selectEntities(references, true);
+  }
+
+  copyEntities(references: readonly SyncEntityReference[]): SyncPushPayload {
+    return this.selectEntities(references, false);
+  }
+
+  private selectEntities(
+    references: readonly SyncEntityReference[],
+    remove: boolean,
+  ): SyncPushPayload {
     const extracted = createEmptySyncPushPayload();
     for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
       const queueMap = this.queue[payloadKey];
@@ -153,10 +164,14 @@ export class SyncQueue {
         }
         const entity = queueMap.get(reference.entityId);
         if (entity) {
-          target.push(entity);
-          queueMap.delete(reference.entityId);
+          target.push(remove ? entity : structuredClone(entity));
+          if (remove) {
+            queueMap.delete(reference.entityId);
+          }
         }
-        this.pendingConflictClears.delete(entityReferenceKey(reference));
+        if (remove) {
+          this.pendingConflictClears.delete(entityReferenceKey(reference));
+        }
       }
     }
     return extracted;

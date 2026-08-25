@@ -15,7 +15,9 @@ import type {
 import type { SyncEntityReference } from "@/lib/sync-conflicts";
 import {
   createEmptySyncPushPayload,
+  copySyncRecoveryEntities,
   extractSyncRecoveryEntities,
+  pruneSyncRecoveryEntities,
   splitSyncPushPayload,
   SYNC_ENTITY_PAYLOAD_MAPPINGS,
   syncPayloadEntities,
@@ -66,6 +68,7 @@ interface SyncQueueDriver {
   isEmpty(): boolean;
   ready(): Promise<void>;
   extractEntities(references: readonly SyncEntityReference[]): SyncPushPayload;
+  copyEntities(references: readonly SyncEntityReference[]): SyncPushPayload;
   blockEntities(references: readonly SyncEntityReference[]): void;
   pruneEntities(references: readonly SyncEntityReference[]): Promise<void>;
   destroy(): void;
@@ -97,6 +100,12 @@ export interface SyncEngineDependencies {
   extractRecoveryEntities?: (
     references: readonly SyncEntityReference[],
   ) => Promise<SyncPushPayload>;
+  copyRecoveryEntities?: (
+    references: readonly SyncEntityReference[],
+  ) => Promise<SyncPushPayload>;
+  pruneRecoveryEntities?: (
+    references: readonly SyncEntityReference[],
+  ) => Promise<void>;
   mergeDeferredPayload?: (
     workspaceId: string,
     payload: SyncPushPayload,
@@ -159,6 +168,12 @@ export class SyncEngine {
   private readonly extractRecoveryEntities: (
     references: readonly SyncEntityReference[],
   ) => Promise<SyncPushPayload>;
+  private readonly copyRecoveryEntities: (
+    references: readonly SyncEntityReference[],
+  ) => Promise<SyncPushPayload>;
+  private readonly pruneRecoveryEntities: (
+    references: readonly SyncEntityReference[],
+  ) => Promise<void>;
   private readonly mergeDeferredPayload: (
     workspaceId: string,
     payload: SyncPushPayload,
@@ -194,6 +209,10 @@ export class SyncEngine {
     };
     this.extractRecoveryEntities = dependencies.extractRecoveryEntities ??
       extractSyncRecoveryEntities;
+    this.copyRecoveryEntities = dependencies.copyRecoveryEntities ??
+      copySyncRecoveryEntities;
+    this.pruneRecoveryEntities = dependencies.pruneRecoveryEntities ??
+      pruneSyncRecoveryEntities;
     this.mergeDeferredPayload = dependencies.mergeDeferredPayload ??
       mergeWorkspaceLifecycleDeferredPayload;
 
@@ -377,13 +396,17 @@ export class SyncEngine {
         this.assertResolutionCurrent(isCurrent);
         await this.queue.ready();
         this.assertResolutionCurrent(isCurrent);
-        const livePayload = this.queue.extractEntities(references);
-        const recoveryPayload = await this.extractRecoveryEntities(references);
+        const livePayload = this.queue.copyEntities(references);
+        const recoveryPayload = await this.copyRecoveryEntities(references);
         this.assertResolutionCurrent(isCurrent);
         await this.mergeDeferredPayload(
           workspaceId,
           mergeSyncPayloads(recoveryPayload, livePayload),
         );
+        this.assertResolutionCurrent(isCurrent);
+        await this.queue.pruneEntities(references);
+        this.assertResolutionCurrent(isCurrent);
+        await this.pruneRecoveryEntities(references);
         this.assertResolutionCurrent(isCurrent);
       },
       blockEntities: (references) => {

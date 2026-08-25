@@ -241,28 +241,19 @@ export async function extractSyncRecoveryEntities(
     const stored = await sessionStorage.get(RECOVERY_KEY);
     snapshot = parseRecoverySnapshot(stored[RECOVERY_KEY]);
   }
-  const extracted = createEmptySyncPushPayload();
+  const extracted = selectSyncPayloadEntities(snapshot, references);
   if (snapshot === null) {
     return extracted;
   }
 
-  const referenceIds = new Map<SyncEntityType, Set<string>>();
-  for (const { entityType } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
-    referenceIds.set(entityType, new Set());
-  }
-  for (const reference of references) {
-    referenceIds.get(reference.entityType)?.add(reference.entityId);
-  }
+  const referenceIds = referenceIdsByType(references);
 
   const remainder = createEmptySyncPushPayload();
   for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
     const matchingIds = referenceIds.get(entityType);
-    const extractedEntities = syncPayloadEntities(extracted, payloadKey);
     const remainingEntities = syncPayloadEntities(remainder, payloadKey);
     for (const entity of syncPayloadEntities(snapshot, payloadKey)) {
-      if (matchingIds?.has(entity.id)) {
-        extractedEntities.push(entity);
-      } else {
+      if (!matchingIds?.has(entity.id)) {
         remainingEntities.push(entity);
       }
     }
@@ -271,6 +262,59 @@ export async function extractSyncRecoveryEntities(
   _pendingRecoverySnapshot = isSyncPushPayloadEmpty(remainder) ? null : remainder;
   await setRecoverySnapshotInStorage(_pendingRecoverySnapshot);
   return extracted;
+}
+
+function referenceIdsByType(
+  references: readonly SyncEntityReference[],
+): Map<SyncEntityType, Set<string>> {
+  const referenceIds = new Map<SyncEntityType, Set<string>>();
+  for (const { entityType } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
+    referenceIds.set(entityType, new Set());
+  }
+  for (const reference of references) {
+    referenceIds.get(reference.entityType)?.add(reference.entityId);
+  }
+  return referenceIds;
+}
+
+function selectSyncPayloadEntities(
+  snapshot: SyncPushPayload | null,
+  references: readonly SyncEntityReference[],
+): SyncPushPayload {
+  const selected = createEmptySyncPushPayload();
+  if (snapshot === null) {
+    return selected;
+  }
+  const referenceIds = referenceIdsByType(references);
+  for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
+    const matchingIds = referenceIds.get(entityType);
+    const selectedEntities = syncPayloadEntities(selected, payloadKey);
+    for (const entity of syncPayloadEntities(snapshot, payloadKey)) {
+      if (matchingIds?.has(entity.id)) {
+        selectedEntities.push(structuredClone(entity));
+      }
+    }
+  }
+  return selected;
+}
+
+export async function copySyncRecoveryEntities(
+  references: readonly SyncEntityReference[],
+): Promise<SyncPushPayload> {
+  await _storagePersistence.catch(() => {});
+  let snapshot = _pendingRecoverySnapshot;
+  const sessionStorage = getSessionStorage();
+  if (snapshot === null && sessionStorage) {
+    const stored = await sessionStorage.get(RECOVERY_KEY);
+    snapshot = parseRecoverySnapshot(stored[RECOVERY_KEY]);
+  }
+  return selectSyncPayloadEntities(snapshot, references);
+}
+
+export async function pruneSyncRecoveryEntities(
+  references: readonly SyncEntityReference[],
+): Promise<void> {
+  await extractSyncRecoveryEntities(references);
 }
 
 export function clearSyncRecoverySnapshot() {
