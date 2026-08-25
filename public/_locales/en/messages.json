@@ -1446,5 +1446,11 @@
   },
   "workspaceManager_deletingPermanently": {
     "message": "Deleting permanently…"
+  },
+  "workspaceManager_loadingData": {
+    "message": "Loading complete Workspace totals…"
+  },
+  "workspaceManager_loadingFailed": {
+    "message": "Workspace totals could not be loaded. Close this window and try again."
   }
 }

@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
 import type { Workspace } from "@/lib/types";
 import { readWorkspaceLifecycleCapability } from "@/lib/workspace-lifecycle-state";
+import type { SyncStatus } from "@/lib/sync-engine";
 import { useAuthStore } from "@/store/auth-store";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
@@ -30,8 +31,9 @@ import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";
 import {
   createDeleteWorkspaceConfirmation,
   createWorkspaceManagerViewModel,
-  getWorkspaceActionResultMessageKey,
+  executeWorkspaceManagerAction,
   getWorkspaceLifecycleActionAvailability,
+  resolveWorkspaceManagerOnlineStatus,
   type WorkspaceManagerCardModel,
   type WorkspaceManagerViewModel,
   type WorkspaceRetention,
@@ -45,6 +47,7 @@ interface WorkspaceManagerAvailability {
   isGuest: boolean;
   isOnline: boolean;
   capabilitySupported: boolean;
+  dataReady: boolean;
 }
 
 export interface WorkspaceManagerContentProps {
@@ -91,6 +94,7 @@ export function WorkspaceManagerContent({
     isGuest: true,
     isOnline: true,
     capabilitySupported: true,
+    dataReady: true,
   },
   onTabChange,
   onCreate,
@@ -126,7 +130,57 @@ export function WorkspaceManagerContent({
     document.getElementById(tabId)?.focus();
   }, [onTabChange, selectedTab]);
 
-  const cards = selectedTab === "in_use" ? model.inUse : model.deleted;
+  const renderCards = (cards: readonly WorkspaceManagerCardModel[]) => cards.map((card) => {
+    const deleteAvailability = getWorkspaceLifecycleActionAvailability({
+      action: "delete",
+      activeWorkspaceCount,
+      ...availability,
+    });
+    const restoreAvailability = getWorkspaceLifecycleActionAvailability({
+      action: "restore",
+      activeWorkspaceCount,
+      ...availability,
+    });
+    const purgeAvailability = getWorkspaceLifecycleActionAvailability({
+      action: "purge",
+      activeWorkspaceCount,
+      ...availability,
+    });
+    const deleteReason = deleteAvailability.messageKey
+      ? t(deleteAvailability.messageKey)
+      : undefined;
+    const restoreReason = restoreAvailability.messageKey
+      ? t(restoreAvailability.messageKey)
+      : undefined;
+    const purgeReason = purgeAvailability.messageKey
+      ? t(purgeAvailability.messageKey)
+      : undefined;
+    return (
+      <WorkspaceCard
+        key={card.workspace.id}
+        workspace={card.workspace}
+        counts={card.counts}
+        retentionLabel={formatRetention(card.retention, t)}
+        canDelete={card.canDelete && deleteAvailability.enabled}
+        isActive={card.workspace.id === activeWorkspaceId}
+        deleteDisabledReason={card.canDelete ? deleteReason : t("workspaceManager_lastActiveGuard")}
+        restoreDisabledReason={restoreReason}
+        purgeDisabledReason={purgeReason}
+        onSwitch={onSwitch}
+        onRename={onRename}
+        onRecolor={onRecolor}
+        onDelete={onDelete}
+        onRestore={onRestore}
+        onPermanentlyDelete={onPermanentlyDelete}
+      />
+    );
+  });
+
+  const loadingMessage = (
+    <p className="py-8 text-center text-sm text-muted-foreground" role="status">
+      {t("workspaceManager_loadingData")}
+    </p>
+  );
 
   return (
     <div className="space-y-4">
@@ -170,78 +224,45 @@ export function WorkspaceManagerContent({
       </div>
 
       <section
-        id={selectedTab === "in_use"
-          ? "workspace-manager-panel-in-use"
-          : "workspace-manager-panel-deleted"}
+        id="workspace-manager-panel-in-use"
         role="tabpanel"
-        aria-labelledby={selectedTab === "in_use"
-          ? "workspace-manager-tab-in-use"
-          : "workspace-manager-tab-deleted"}
-        tabIndex={0}
+        aria-labelledby="workspace-manager-tab-in-use"
+        hidden={selectedTab !== "in_use"}
+        inert={selectedTab !== "in_use"}
+        tabIndex={selectedTab === "in_use" ? 0 : -1}
         className="space-y-3"
       >
-        {selectedTab === "in_use" && (
-          <div className="flex justify-end">
-            <Button type="button" size="sm" onClick={onCreate}>
-              <Plus className="size-4" />
-              {t("workspaceManager_create")}
-            </Button>
-          </div>
-        )}
-
-        {cards.length === 0 && (
+        <div className="flex justify-end">
+          <Button type="button" size="sm" onClick={onCreate}>
+            <Plus className="size-4" />
+            {t("workspaceManager_create")}
+          </Button>
+        </div>
+        {!availability.dataReady && loadingMessage}
+        {availability.dataReady && model.inUse.length === 0 && (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            {selectedTab === "in_use"
-              ? t("workspaceManager_noActive")
-              : t("workspaceManager_noDeleted")}
+            {t("workspaceManager_noActive")}
           </p>
         )}
+        {availability.dataReady && renderCards(model.inUse)}
+      </section>
 
-        {cards.map((card) => {
-          const deleteAvailability = getWorkspaceLifecycleActionAvailability({
-            action: "delete",
-            activeWorkspaceCount,
-            ...availability,
-          });
-          const restoreAvailability = getWorkspaceLifecycleActionAvailability({
-            action: "restore",
-            activeWorkspaceCount,
-            ...availability,
-          });
-          const purgeAvailability = getWorkspaceLifecycleActionAvailability({
-            action: "purge",
-            activeWorkspaceCount,
-            ...availability,
-          });
-          const deleteReason = deleteAvailability.messageKey
-            ? t(deleteAvailability.messageKey)
-            : undefined;
-          const restoreReason = restoreAvailability.messageKey
-            ? t(restoreAvailability.messageKey)
-            : undefined;
-          const purgeReason = purgeAvailability.messageKey
-            ? t(purgeAvailability.messageKey)
-            : undefined;
-          return (
-            <WorkspaceCard
-              key={card.workspace.id}
-              workspace={card.workspace}
-              counts={card.counts}
-              retentionLabel={formatRetention(card.retention, t)}
-              canDelete={card.canDelete && deleteAvailability.enabled}
-              isActive={card.workspace.id === activeWorkspaceId}
-              deleteDisabledReason={card.canDelete ? deleteReason : t("workspaceManager_lastActiveGuard")}
-              restoreDisabledReason={restoreReason}
-              purgeDisabledReason={purgeReason}
-              onSwitch={onSwitch}
-              onRename={onRename}
-              onRecolor={onRecolor}
-              onDelete={onDelete}
-              onRestore={onRestore}
-              onPermanentlyDelete={onPermanentlyDelete}
-            />
-          );
-        })}
+      <section
+        id="workspace-manager-panel-deleted"
+        role="tabpanel"
+        aria-labelledby="workspace-manager-tab-deleted"
+        hidden={selectedTab !== "deleted"}
+        inert={selectedTab !== "deleted"}
+        tabIndex={selectedTab === "deleted" ? 0 : -1}
+        className="space-y-3"
+      >
+        {!availability.dataReady && loadingMessage}
+        {availability.dataReady && model.deleted.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {t("workspaceManager_noDeleted")}
+          </p>
+        )}
+        {availability.dataReady && renderCards(model.deleted)}
       </section>
     </div>
   );
@@ -377,12 +398,14 @@ function WorkspaceFormDialog({
 
 export interface WorkspaceManagerProps {
   open: boolean;
+  syncStatus: SyncStatus;
   returnFocusRef: React.RefObject<HTMLButtonElement | null>;
   onOpenChange(open: boolean): void;
 }
 
 export function WorkspaceManager({
   open,
+  syncStatus,
   returnFocusRef,
   onOpenChange,
 }: WorkspaceManagerProps) {
@@ -401,11 +424,12 @@ export function WorkspaceManager({
   const bookmarks = useBookmarksStore((state) => state.bookmarks);
   const archivedBookmarks = useBookmarksStore((state) => state.archivedBookmarks);
   const trashedBookmarks = useBookmarksStore((state) => state.trashedBookmarks);
+  const archivedLoaded = useBookmarksStore((state) => state._archivedLoaded);
+  const trashedLoaded = useBookmarksStore((state) => state._trashedLoaded);
   const loadArchivedBookmarks = useBookmarksStore((state) => state.loadArchivedBookmarks);
   const loadTrashedBookmarks = useBookmarksStore((state) => state.loadTrashedBookmarks);
   const groups = useGroupsStore((state) => state.groups);
   const user = useAuthStore((state) => state.user);
-  const accessToken = useAuthStore((state) => state.accessToken);
   const serverUrl = useAuthStore((state) => state.serverUrl);
   const trashGraceDays = usePlanStore(
     (state) => state.limits?.trash_grace_days ?? 30,
@@ -421,14 +445,32 @@ export function WorkspaceManager({
   const [purgeTarget, setPurgeTarget] = React.useState<WorkspaceManagerCardModel | null>(null);
   const [actionErrorKey, setActionErrorKey] = React.useState<string | null>(null);
   const [busy, setBusy] = React.useState(false);
+  const [browserOnline, setBrowserOnline] = React.useState(() => navigator.onLine);
   const subdialogReturnFocusRef = React.useRef<HTMLElement | null>(null);
 
   React.useEffect(() => {
     if (!open) {
       return;
     }
-    void Promise.all([loadArchivedBookmarks(), loadTrashedBookmarks()]);
+    void Promise.all([loadArchivedBookmarks(), loadTrashedBookmarks()]).catch(() => {
+      setActionErrorKey("workspaceManager_loadingFailed");
+    });
   }, [loadArchivedBookmarks, loadTrashedBookmarks, open]);
+
+  React.useEffect(() => {
+    const handleOnline = () => {
+      setBrowserOnline(true);
+    };
+    const handleOffline = () => {
+      setBrowserOnline(false);
+    };
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
 
   React.useEffect(() => {
     let current = true;
@@ -447,6 +489,10 @@ export function WorkspaceManager({
     void readWorkspaceLifecycleCapability(serverUrl, user.id).then((supported) => {
       if (current) {
         setCapabilitySupported(Boolean(supported));
+      }
+    }).catch(() => {
+      if (current) {
+        setCapabilitySupported(false);
       }
     });
     return () => {
@@ -479,9 +525,10 @@ export function WorkspaceManager({
 
   const availability = React.useMemo(() => ({
     isGuest: user === null,
-    isOnline: accessToken !== null,
+    isOnline: resolveWorkspaceManagerOnlineStatus(browserOnline, syncStatus),
     capabilitySupported,
-  }), [accessToken, capabilitySupported, user]);
+    dataReady: archivedLoaded && trashedLoaded,
+  }), [archivedLoaded, browserOnline, capabilitySupported, syncStatus, trashedLoaded, user]);
 
   const handleOpenChange = React.useCallback((nextOpen: boolean) => {
     if (!nextOpen && busy) {
@@ -561,31 +608,35 @@ export function WorkspaceManager({
     if (!deleteTarget) {
       return;
     }
-    setBusy(true);
-    const result = await deleteWorkspace(deleteTarget.workspace.id);
-    setBusy(false);
-    if (result.status === "queued" || result.status === "completed") {
+    const outcome = await executeWorkspaceManagerAction({
+      action: "delete",
+      operation: () => deleteWorkspace(deleteTarget.workspace.id),
+      setBusy,
+    });
+    if (outcome.shouldClose) {
       setDeleteTarget(null);
       setActionErrorKey(null);
       setSelectedTab("deleted");
       return;
     }
-    setActionErrorKey(
-      getWorkspaceActionResultMessageKey(result, "delete")
-      ?? "workspaceManager_actionFailed",
-    );
+    setActionErrorKey(outcome.messageKey ?? "workspaceManager_actionFailed");
   }, [deleteTarget, deleteWorkspace]);
 
   const handleRestore = React.useCallback(async (workspaceId: string) => {
     setActionErrorKey(null);
-    const result = await restoreWorkspace(workspaceId);
-    if (result.status === "queued" || result.status === "completed") {
+    const outcome = await executeWorkspaceManagerAction({
+      action: "restore",
+      operation: () => restoreWorkspace(workspaceId),
+      setBusy,
+    });
+    if (outcome.shouldClose) {
+      setSelectedTab("in_use");
+      requestAnimationFrame(() => {
+        document.getElementById("workspace-manager-tab-in-use")?.focus();
+      });
       return;
     }
-    setActionErrorKey(
-      getWorkspaceActionResultMessageKey(result, "restore")
-      ?? "workspaceManager_actionFailed",
-    );
+    setActionErrorKey(outcome.messageKey ?? "workspaceManager_actionFailed");
   }, [restoreWorkspace]);
 
   const handlePurgeRequest = React.useCallback((workspaceId: string) => {
@@ -603,18 +654,17 @@ export function WorkspaceManager({
     if (!purgeTarget) {
       return;
     }
-    setBusy(true);
-    const result = await permanentlyDeleteWorkspace(purgeTarget.workspace.id);
-    setBusy(false);
-    if (result.status === "completed") {
+    const outcome = await executeWorkspaceManagerAction({
+      action: "purge",
+      operation: () => permanentlyDeleteWorkspace(purgeTarget.workspace.id),
+      setBusy,
+    });
+    if (outcome.shouldClose) {
       setPurgeTarget(null);
       setActionErrorKey(null);
       return;
     }
-    setActionErrorKey(
-      getWorkspaceActionResultMessageKey(result, "purge")
-      ?? "workspaceManager_actionFailed",
-    );
+    setActionErrorKey(outcome.messageKey ?? "workspaceManager_actionFailed");
   }, [permanentlyDeleteWorkspace, purgeTarget]);
 
   const purgeAvailability = getWorkspaceLifecycleActionAvailability({

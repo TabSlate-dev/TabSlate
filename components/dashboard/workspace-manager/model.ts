@@ -1,6 +1,7 @@
 import type { Bookmark, Collection, Workspace } from "@/lib/types";
 import type { SavedGroup } from "@/store/groups-store";
 import type { WorkspaceActionResult } from "@/store/workspace-store";
+import type { SyncStatus } from "@/lib/sync-engine";
 
 const DAY_MS = 86_400_000;
 
@@ -44,6 +45,7 @@ export interface WorkspaceLifecycleActionAvailabilityInput {
   isGuest: boolean;
   isOnline: boolean;
   capabilitySupported: boolean;
+  dataReady?: boolean;
 }
 
 export interface WorkspaceLifecycleActionAvailability {
@@ -51,7 +53,19 @@ export interface WorkspaceLifecycleActionAvailability {
   messageKey?:
     | "workspaceManager_lastActiveGuard"
     | "workspaceManager_updateServerRequired"
-    | "workspaceManager_offlinePurge";
+    | "workspaceManager_offlinePurge"
+    | "workspaceManager_loadingData";
+}
+
+export interface WorkspaceManagerActionOutcome {
+  shouldClose: boolean;
+  messageKey: string | null;
+}
+
+export interface ExecuteWorkspaceManagerActionInput {
+  action: WorkspaceLifecycleAction;
+  operation(): Promise<WorkspaceActionResult>;
+  setBusy(busy: boolean): void;
 }
 
 function getRetention(
@@ -115,11 +129,15 @@ export function createWorkspaceManagerViewModel(input: {
   const activeWorkspaceCount = input.workspaces.filter(
     (workspace) => workspace.deletedAt === undefined,
   ).length;
-  const allBookmarks = [
+  const bookmarksById = new Map<string, Bookmark>();
+  for (const bookmark of [
     ...input.bookmarks.active,
     ...input.bookmarks.archived,
     ...input.bookmarks.trashed,
-  ];
+  ]) {
+    bookmarksById.set(bookmark.id, bookmark);
+  }
+  const allBookmarks = Array.from(bookmarksById.values());
   const cards = [...input.workspaces]
     .sort((first, second) => first.position - second.position)
     .map((workspace): WorkspaceManagerCardModel => ({
@@ -155,6 +173,12 @@ export function canConfirmPermanentDelete(
 export function getWorkspaceLifecycleActionAvailability(
   input: WorkspaceLifecycleActionAvailabilityInput,
 ): WorkspaceLifecycleActionAvailability {
+  if (input.dataReady === false) {
+    return {
+      enabled: false,
+      messageKey: "workspaceManager_loadingData",
+    };
+  }
   if (input.action === "delete" && input.activeWorkspaceCount <= 1) {
     return {
       enabled: false,
@@ -213,4 +237,34 @@ export function getWorkspaceActionResultMessageKey(
     return null;
   }
   return "workspaceManager_actionFailed";
+}
+
+export function resolveWorkspaceManagerOnlineStatus(
+  browserOnline: boolean,
+  syncStatus: SyncStatus,
+): boolean {
+  return browserOnline && syncStatus !== "offline";
+}
+
+export async function executeWorkspaceManagerAction({
+  action,
+  operation,
+  setBusy,
+}: ExecuteWorkspaceManagerActionInput): Promise<WorkspaceManagerActionOutcome> {
+  setBusy(true);
+  try {
+    const result = await operation();
+    const messageKey = getWorkspaceActionResultMessageKey(result, action);
+    return {
+      shouldClose: messageKey === null,
+      messageKey,
+    };
+  } catch {
+    return {
+      shouldClose: false,
+      messageKey: "workspaceManager_actionFailed",
+    };
+  } finally {
+    setBusy(false);
+  }
 }

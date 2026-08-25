@@ -199,7 +199,7 @@ function Layout({
   return (
     <div className="flex h-svh overflow-hidden bg-sidebar">
       {/* Far-left workspace rail */}
-      <WorkspaceRail />
+      <WorkspaceRail syncStatus={syncStatus} />
 
       {/* Wrapper constrains SidebarProvider's w-full to remaining width */}
       <div className="flex flex-1 min-w-0 overflow-hidden">

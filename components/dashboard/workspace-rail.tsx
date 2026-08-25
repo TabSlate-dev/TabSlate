@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useTranslation } from "@/hooks/use-translation";
 import { cn } from "@/lib/utils";
+import type { SyncStatus } from "@/lib/sync-engine";
 import {
   useWorkspaceStore,
   WORKSPACE_COLORS,
@@ -33,7 +34,11 @@ function getInitials(name: string): string {
   return name.slice(0, 2).toUpperCase();
 }
 
-export function WorkspaceRail() {
+interface WorkspaceRailProps {
+  syncStatus: SyncStatus;
+}
+
+export function WorkspaceRail({ syncStatus }: WorkspaceRailProps) {
   const { t } = useTranslation();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
@@ -150,6 +155,7 @@ export function WorkspaceRail() {
 
       <WorkspaceManager
         open={managerOpen}
+        syncStatus={syncStatus}
         returnFocusRef={managerButtonRef}
         onOpenChange={setManagerOpen}
       />

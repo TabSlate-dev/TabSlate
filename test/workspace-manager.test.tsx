@@ -4,6 +4,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Bookmark, Collection, Workspace } from "@/lib/types";
 import type { SavedGroup } from "@/store/groups-store";
+import type {
+  WorkspaceLifecycleAction,
+  WorkspaceLifecycleActionAvailabilityInput,
+} from "@/components/dashboard/workspace-manager/model";
 
 mock.module("@/hooks/use-translation", () => ({
   useTranslation: () => ({
@@ -37,8 +41,10 @@ const {
   canConfirmPermanentDelete,
   createDeleteWorkspaceConfirmation,
   createWorkspaceManagerViewModel,
+  executeWorkspaceManagerAction,
   getWorkspaceActionResultMessageKey,
   getWorkspaceLifecycleActionAvailability,
+  resolveWorkspaceManagerOnlineStatus,
 } = await import("../components/dashboard/workspace-manager/model");
 const { WorkspaceManagerContent } = await import(
   `../components/dashboard/workspace-manager/index.tsx?test=${Date.now()}`
@@ -154,6 +160,24 @@ describe("createWorkspaceManagerViewModel", () => {
       isGuest: true,
     }).deleted[0]?.retention).toEqual({ kind: "guest" });
   });
+
+  test("deduplicates one bookmark ID across active, archived, and trashed buckets", () => {
+    const model = createWorkspaceManagerViewModel({
+      workspaces: [workspace("workspace", "Workspace", 0)],
+      collections: [collection("collection", "workspace")],
+      bookmarks: {
+        active: [bookmark("same", "collection")],
+        archived: [bookmark("same", "collection")],
+        trashed: [bookmark("same", "collection")],
+      },
+      groups: [],
+      now: Date.UTC(2026, 7, 11),
+      trashGraceDays: 30,
+      isGuest: false,
+    });
+
+    expect(model.inUse[0]?.counts.bookmarks).toBe(1);
+  });
 });
 
 describe("Workspace lifecycle guards", () => {
@@ -236,6 +260,50 @@ describe("Workspace lifecycle guards", () => {
       "purge",
     )).toBeNull();
   });
+
+  test("uses browser and sync state instead of token presence as connectivity", () => {
+    expect(resolveWorkspaceManagerOnlineStatus(true, "offline")).toBe(false);
+    expect(resolveWorkspaceManagerOnlineStatus(false, "idle")).toBe(false);
+    expect(resolveWorkspaceManagerOnlineStatus(true, "idle")).toBe(true);
+  });
+
+  test("resets busy and returns a visible recoverable failure when any lifecycle action rejects", async () => {
+    const actions: WorkspaceLifecycleAction[] = ["delete", "restore", "purge"];
+    for (const action of actions) {
+      const busyStates: boolean[] = [];
+      const outcome = await executeWorkspaceManagerAction({
+        action,
+        operation: async () => {
+          throw new Error("network down");
+        },
+        setBusy: (busy: boolean) => {
+          busyStates.push(busy);
+        },
+      });
+
+      expect(busyStates).toEqual([true, false]);
+      expect(outcome).toEqual({
+        shouldClose: false,
+        messageKey: "workspaceManager_actionFailed",
+      });
+    }
+  });
+
+  test("blocks lifecycle actions while aggregate buckets are loading", () => {
+    const loadingInput: WorkspaceLifecycleActionAvailabilityInput = {
+      action: "purge",
+      activeWorkspaceCount: 1,
+      isGuest: false,
+      isOnline: true,
+      capabilitySupported: true,
+      dataReady: false,
+    };
+
+    expect(getWorkspaceLifecycleActionAvailability(loadingInput)).toEqual({
+      enabled: false,
+      messageKey: "workspaceManager_loadingData",
+    });
+  });
 });
 
 describe("WorkspaceManagerContent", () => {
@@ -276,6 +344,10 @@ describe("WorkspaceManagerContent", () => {
     expect(markup).toContain('aria-controls="workspace-manager-panel-in-use"');
     expect(markup).toContain('role="tabpanel"');
     expect(markup).toContain('aria-labelledby="workspace-manager-tab-in-use"');
+    expect(markup).toContain('id="workspace-manager-panel-in-use"');
+    expect(markup).toContain('id="workspace-manager-panel-deleted"');
+    expect(markup).toContain("hidden");
+    expect(markup).toContain("inert");
   });
 
   test("puts create, switch, rename, recolor, and delete actions in In use", () => {
@@ -293,7 +365,7 @@ describe("WorkspaceManagerContent", () => {
     expect(markup).toContain("workspaceManager_lastActiveGuard");
   });
 
-  test("shows retained aggregate facts and quota warning only in Deleted", () => {
+  test("shows retained aggregate facts and quota warning in the Deleted panel", () => {
     const markup = renderToStaticMarkup(createElement(WorkspaceManagerContent, {
       model,
       selectedTab: "deleted",
@@ -307,6 +379,23 @@ describe("WorkspaceManagerContent", () => {
     expect(markup).toContain("workspaceManager_stillCountsTowardQuota");
     expect(markup).toContain("workspaceManager_restore");
     expect(markup).toContain("workspaceManager_permanentlyDelete");
-    expect(markup).not.toContain("workspaceManager_create");
+  });
+
+  test("shows loading instead of incomplete aggregate cards until both buckets load", () => {
+    const loadingAvailability = {
+      isGuest: false,
+      isOnline: true,
+      capabilitySupported: true,
+      dataReady: false,
+    };
+    const markup = renderToStaticMarkup(createElement(WorkspaceManagerContent, {
+      model,
+      selectedTab: "deleted",
+      availability: loadingAvailability,
+      ...handlers,
+    }));
+
+    expect(markup).toContain("workspaceManager_loadingData");
+    expect(markup).not.toContain("workspaceManager_stillCountsTowardQuota");
   });
 });

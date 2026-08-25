@@ -1446,5 +1446,11 @@
   },
   "workspaceManager_deletingPermanently": {
     "message": "正在永久删除…"
+  },
+  "workspaceManager_loadingData": {
+    "message": "正在加载完整的 Workspace 数量…"
+  },
+  "workspaceManager_loadingFailed": {
+    "message": "无法加载 Workspace 数量，请关闭此窗口后重试。"
   }
 }
