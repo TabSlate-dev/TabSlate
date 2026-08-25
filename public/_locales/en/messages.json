@@ -1261,5 +1261,190 @@
   },
   "languageSelector_auto": {
     "message": "Auto Detect"
+  },
+  "workspaceManager_title": {
+    "message": "Workspace management"
+  },
+  "workspaceManager_description": {
+    "message": "Manage every Workspace in this account, including retained deleted Workspaces."
+  },
+  "workspaceManager_open": {
+    "message": "Workspace management"
+  },
+  "workspaceManager_tabsLabel": {
+    "message": "Workspace status"
+  },
+  "workspaceManager_inUseTab": {
+    "message": "In use"
+  },
+  "workspaceManager_deletedTab": {
+    "message": "Deleted"
+  },
+  "workspaceManager_create": {
+    "message": "Create Workspace"
+  },
+  "workspaceManager_switch": {
+    "message": "Switch"
+  },
+  "workspaceManager_switchTo": {
+    "message": "Switch to $1",
+    "placeholders": { "workspace": { "content": "$1" } }
+  },
+  "workspaceManager_current": {
+    "message": "Current"
+  },
+  "workspaceManager_rename": {
+    "message": "Rename"
+  },
+  "workspaceManager_recolor": {
+    "message": "Change color"
+  },
+  "workspaceManager_delete": {
+    "message": "Delete"
+  },
+  "workspaceManager_restore": {
+    "message": "Restore"
+  },
+  "workspaceManager_permanentlyDelete": {
+    "message": "Delete permanently"
+  },
+  "workspaceManager_noActive": {
+    "message": "No Workspaces in use."
+  },
+  "workspaceManager_noDeleted": {
+    "message": "No deleted Workspaces."
+  },
+  "workspaceManager_collectionCount_one": {
+    "message": "$1 Collection",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_collectionCount_other": {
+    "message": "$1 Collections",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_bookmarkCount_one": {
+    "message": "$1 Bookmark",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_bookmarkCount_other": {
+    "message": "$1 Bookmarks",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_groupCount_one": {
+    "message": "$1 Saved Group",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_groupCount_other": {
+    "message": "$1 Saved Groups",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_deletedAt": {
+    "message": "Deleted $1",
+    "placeholders": { "date": { "content": "$1" } }
+  },
+  "workspaceManager_retentionRemaining_one": {
+    "message": "$1 day remaining",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_retentionRemaining_other": {
+    "message": "$1 days remaining",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_retentionExpired": {
+    "message": "Retention period expired"
+  },
+  "workspaceManager_retentionUnlimited": {
+    "message": "Not deleted automatically"
+  },
+  "workspaceManager_retentionGuest": {
+    "message": "Guest: not deleted automatically"
+  },
+  "workspaceManager_stillCountsTowardQuota": {
+    "message": "Still counts toward quota"
+  },
+  "workspaceManager_lastActiveGuard": {
+    "message": "Create or restore another Workspace first."
+  },
+  "workspaceManager_updateServerRequired": {
+    "message": "Update your TabSlate server to manage deleted Workspaces safely."
+  },
+  "workspaceManager_offlinePurge": {
+    "message": "Connect to the server before permanently deleting this Workspace."
+  },
+  "workspaceManager_actionFailed": {
+    "message": "This Workspace could not be updated. Try again."
+  },
+  "workspaceManager_purgePending": {
+    "message": "Permanent deletion has not been confirmed by the server. The Workspace was kept."
+  },
+  "workspaceManager_createFailed": {
+    "message": "The Workspace could not be created. Review your quota and try again."
+  },
+  "workspaceManager_createDialogTitle": {
+    "message": "Create Workspace"
+  },
+  "workspaceManager_renameDialogTitle": {
+    "message": "Rename Workspace"
+  },
+  "workspaceManager_recolorDialogTitle": {
+    "message": "Change Workspace color"
+  },
+  "workspaceManager_formDescription": {
+    "message": "Choose a clear name and color for this Workspace."
+  },
+  "workspaceManager_name": {
+    "message": "Name"
+  },
+  "workspaceManager_namePlaceholder": {
+    "message": "My Workspace"
+  },
+  "workspaceManager_color": {
+    "message": "Color"
+  },
+  "workspaceManager_chooseColor": {
+    "message": "Choose $1",
+    "placeholders": { "color": { "content": "$1" } }
+  },
+  "workspaceManager_save": {
+    "message": "Save"
+  },
+  "workspaceManager_cancel": {
+    "message": "Cancel"
+  },
+  "workspaceManager_deleteDialogTitle": {
+    "message": "Delete Workspace?"
+  },
+  "workspaceManager_deleteDialogDescription": {
+    "message": "Delete “$1” with all of its Collections, Bookmarks, and Saved Groups intact?",
+    "placeholders": { "workspace": { "content": "$1" } }
+  },
+  "workspaceManager_deleteDialogDescriptionFallback": {
+    "message": "Delete this Workspace with all of its content intact?"
+  },
+  "workspaceManager_confirmDelete": {
+    "message": "Delete Workspace"
+  },
+  "workspaceManager_deleting": {
+    "message": "Deleting…"
+  },
+  "workspaceManager_permanentDialogTitle": {
+    "message": "Permanently delete Workspace?"
+  },
+  "workspaceManager_permanentDialogDescription": {
+    "message": "“$1” and all of its content will be permanently deleted and cannot be recovered.",
+    "placeholders": { "workspace": { "content": "$1" } }
+  },
+  "workspaceManager_permanentDialogDescriptionFallback": {
+    "message": "This Workspace and all of its content will be permanently deleted and cannot be recovered."
+  },
+  "workspaceManager_typeName": {
+    "message": "Type $1 to confirm",
+    "placeholders": { "workspace": { "content": "$1" } }
+  },
+  "workspaceManager_confirmPermanentDelete": {
+    "message": "Delete permanently"
+  },
+  "workspaceManager_deletingPermanently": {
+    "message": "Deleting permanently…"
   }
 }

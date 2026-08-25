@@ -1261,5 +1261,190 @@
   },
   "languageSelector_auto": {
     "message": "自动检测"
+  },
+  "workspaceManager_title": {
+    "message": "Workspace 管理"
+  },
+  "workspaceManager_description": {
+    "message": "管理此账号中的所有 Workspace，包括保留期内已删除的 Workspace。"
+  },
+  "workspaceManager_open": {
+    "message": "Workspace 管理"
+  },
+  "workspaceManager_tabsLabel": {
+    "message": "Workspace 状态"
+  },
+  "workspaceManager_inUseTab": {
+    "message": "使用中"
+  },
+  "workspaceManager_deletedTab": {
+    "message": "已删除"
+  },
+  "workspaceManager_create": {
+    "message": "创建 Workspace"
+  },
+  "workspaceManager_switch": {
+    "message": "切换"
+  },
+  "workspaceManager_switchTo": {
+    "message": "切换到 $1",
+    "placeholders": { "workspace": { "content": "$1" } }
+  },
+  "workspaceManager_current": {
+    "message": "当前使用"
+  },
+  "workspaceManager_rename": {
+    "message": "重命名"
+  },
+  "workspaceManager_recolor": {
+    "message": "更改颜色"
+  },
+  "workspaceManager_delete": {
+    "message": "删除"
+  },
+  "workspaceManager_restore": {
+    "message": "恢复"
+  },
+  "workspaceManager_permanentlyDelete": {
+    "message": "永久删除"
+  },
+  "workspaceManager_noActive": {
+    "message": "暂无使用中的 Workspace。"
+  },
+  "workspaceManager_noDeleted": {
+    "message": "暂无已删除的 Workspace。"
+  },
+  "workspaceManager_collectionCount_one": {
+    "message": "$1 个 Collection",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_collectionCount_other": {
+    "message": "$1 个 Collections",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_bookmarkCount_one": {
+    "message": "$1 个 Bookmark",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_bookmarkCount_other": {
+    "message": "$1 个 Bookmarks",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_groupCount_one": {
+    "message": "$1 个 Saved Group",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_groupCount_other": {
+    "message": "$1 个 Saved Groups",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_deletedAt": {
+    "message": "删除于 $1",
+    "placeholders": { "date": { "content": "$1" } }
+  },
+  "workspaceManager_retentionRemaining_one": {
+    "message": "剩余 $1 天",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_retentionRemaining_other": {
+    "message": "剩余 $1 天",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceManager_retentionExpired": {
+    "message": "保留期已到期"
+  },
+  "workspaceManager_retentionUnlimited": {
+    "message": "不会自动永久删除"
+  },
+  "workspaceManager_retentionGuest": {
+    "message": "访客模式：不会自动永久删除"
+  },
+  "workspaceManager_stillCountsTowardQuota": {
+    "message": "仍计入配额"
+  },
+  "workspaceManager_lastActiveGuard": {
+    "message": "请先创建或恢复另一个 Workspace。"
+  },
+  "workspaceManager_updateServerRequired": {
+    "message": "请更新 TabSlate 服务端后再安全管理已删除的 Workspace。"
+  },
+  "workspaceManager_offlinePurge": {
+    "message": "请连接服务端后再永久删除此 Workspace。"
+  },
+  "workspaceManager_actionFailed": {
+    "message": "无法更新此 Workspace，请重试。"
+  },
+  "workspaceManager_purgePending": {
+    "message": "服务端尚未确认永久删除，Workspace 已保留。"
+  },
+  "workspaceManager_createFailed": {
+    "message": "无法创建 Workspace，请检查配额后重试。"
+  },
+  "workspaceManager_createDialogTitle": {
+    "message": "创建 Workspace"
+  },
+  "workspaceManager_renameDialogTitle": {
+    "message": "重命名 Workspace"
+  },
+  "workspaceManager_recolorDialogTitle": {
+    "message": "更改 Workspace 颜色"
+  },
+  "workspaceManager_formDescription": {
+    "message": "为此 Workspace 选择清晰的名称和颜色。"
+  },
+  "workspaceManager_name": {
+    "message": "名称"
+  },
+  "workspaceManager_namePlaceholder": {
+    "message": "我的 Workspace"
+  },
+  "workspaceManager_color": {
+    "message": "颜色"
+  },
+  "workspaceManager_chooseColor": {
+    "message": "选择 $1",
+    "placeholders": { "color": { "content": "$1" } }
+  },
+  "workspaceManager_save": {
+    "message": "保存"
+  },
+  "workspaceManager_cancel": {
+    "message": "取消"
+  },
+  "workspaceManager_deleteDialogTitle": {
+    "message": "删除 Workspace？"
+  },
+  "workspaceManager_deleteDialogDescription": {
+    "message": "删除“$1”，并完整保留其中的 Collections、Bookmarks 和 Saved Groups？",
+    "placeholders": { "workspace": { "content": "$1" } }
+  },
+  "workspaceManager_deleteDialogDescriptionFallback": {
+    "message": "删除此 Workspace，并完整保留其中的全部内容？"
+  },
+  "workspaceManager_confirmDelete": {
+    "message": "删除 Workspace"
+  },
+  "workspaceManager_deleting": {
+    "message": "正在删除…"
+  },
+  "workspaceManager_permanentDialogTitle": {
+    "message": "永久删除 Workspace？"
+  },
+  "workspaceManager_permanentDialogDescription": {
+    "message": "“$1”及其中的全部内容将被永久删除且无法恢复。",
+    "placeholders": { "workspace": { "content": "$1" } }
+  },
+  "workspaceManager_permanentDialogDescriptionFallback": {
+    "message": "此 Workspace 及其中的全部内容将被永久删除且无法恢复。"
+  },
+  "workspaceManager_typeName": {
+    "message": "输入 $1 以确认",
+    "placeholders": { "workspace": { "content": "$1" } }
+  },
+  "workspaceManager_confirmPermanentDelete": {
+    "message": "永久删除"
+  },
+  "workspaceManager_deletingPermanently": {
+    "message": "正在永久删除…"
   }
 }
