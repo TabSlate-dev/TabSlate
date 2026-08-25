@@ -2,7 +2,15 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { PlanResponse } from "../lib/api";
 
-const planResponse = {
+const zeroUsage = {
+  bookmarks: 0,
+  collections: 0,
+  tags: 0,
+  workspaces: 0,
+  saved_groups: 0,
+};
+
+const planResponse: PlanResponse = {
   subscription: { plan: "free", status: "active", expires_at: null },
   limits: {
     max_bookmarks: 3000,
@@ -19,9 +27,18 @@ const planResponse = {
     workspaces: 1,
     saved_groups: 0,
   },
+  trash_usage: {
+    bookmarks: 2,
+    collections: 1,
+    tags: 0,
+    workspaces: 1,
+    saved_groups: 0,
+  },
 };
 
-const getPlanMock = mock(async () => planResponse);
+const getPlanMock = mock(async (): Promise<PlanResponse> => planResponse);
+
+let persistedPlanValue: string | null = null;
 
 const authSession = {
   serverUrl: "https://sync.tabslate.com",
@@ -52,9 +69,13 @@ mock.module("@/store/bookmarks-store", () => ({
 
 mock.module("@/lib/chrome-storage-adapter", () => ({
   chromeStorageAdapter: {
-    getItem: async () => null,
-    setItem: async () => {},
-    removeItem: async () => {},
+    getItem: async () => persistedPlanValue,
+    setItem: async (_name: string, value: string) => {
+      persistedPlanValue = value;
+    },
+    removeItem: async () => {
+      persistedPlanValue = null;
+    },
   },
 }));
 
@@ -76,11 +97,14 @@ describe("plan store refresh policy", () => {
     getPlanMock.mockClear();
     authSession.serverUrl = "https://sync.tabslate.com";
     authSession.accessToken = "token";
+    persistedPlanValue = null;
     const { usePlanStore } = await importPlanStore();
     usePlanStore.setState({
       subscription: null,
       limits: null,
       usage: null,
+      trashUsage: null,
+      inUseUsage: null,
       fetchedAt: null,
       isFetching: false,
       quotaAlert: null,
@@ -172,5 +196,66 @@ describe("plan store refresh policy", () => {
     }
 
     expect(observed).toEqual([planResponse]);
+  });
+
+  test("retains the authoritative trash breakdown in state and persistence", async () => {
+    const { usePlanStore } = await importPlanStore();
+
+    await usePlanStore.getState().fetchPlan();
+    await Promise.resolve();
+
+    expect(usePlanStore.getState().trashUsage).toEqual(planResponse.trash_usage);
+    expect(usePlanStore.getState().inUseUsage).toEqual({
+      bookmarks: 1,
+      collections: 1,
+      tags: 0,
+      workspaces: 0,
+      saved_groups: 0,
+    });
+    expect(persistedPlanValue).not.toBeNull();
+    const persisted = JSON.parse(persistedPlanValue ?? "{}");
+    expect(persisted.state.trashUsage).toEqual(planResponse.trash_usage);
+    expect(persisted.state.inUseUsage).toEqual(usePlanStore.getState().inUseUsage);
+  });
+
+  test("defaults an older server's omitted trash snapshot to zero", async () => {
+    const olderResponse: PlanResponse = {
+      subscription: planResponse.subscription,
+      limits: planResponse.limits,
+      usage: planResponse.usage,
+    };
+    getPlanMock.mockImplementationOnce(async () => olderResponse);
+    const { usePlanStore } = await importPlanStore();
+
+    await usePlanStore.getState().fetchPlan();
+
+    expect(usePlanStore.getState().trashUsage).toEqual(zeroUsage);
+    expect(usePlanStore.getState().inUseUsage).toEqual(planResponse.usage);
+  });
+
+  test("clears every quota snapshot on logout without changing total-usage policy", async () => {
+    const { usePlanStore } = await importPlanStore();
+    await usePlanStore.getState().fetchPlan();
+
+    usePlanStore.getState().clear();
+
+    expect(usePlanStore.getState().usage).toBeNull();
+    expect(usePlanStore.getState().trashUsage).toBeNull();
+    expect(usePlanStore.getState().inUseUsage).toBeNull();
+  });
+
+  test("permanent deletion releases retained total and recycle-bin usage together", async () => {
+    const { usePlanStore } = await importPlanStore();
+    usePlanStore.setState({
+      usage: { ...zeroUsage, bookmarks: 5 },
+      trashUsage: { ...zeroUsage, bookmarks: 2 },
+      inUseUsage: { ...zeroUsage, bookmarks: 3 },
+    });
+
+    usePlanStore.getState().decrementUsage("bookmark");
+
+    expect(usePlanStore.getState().usage?.bookmarks).toBe(4);
+    expect(usePlanStore.getState().trashUsage?.bookmarks).toBe(1);
+    expect(usePlanStore.getState().inUseUsage?.bookmarks).toBe(3);
   });
 });

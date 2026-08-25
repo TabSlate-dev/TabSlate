@@ -5,6 +5,11 @@ import { api, type PlanLimits, type PlanResponse, type PlanUsage } from "@/lib/a
 import { useAuthStore } from "@/store/auth-store";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { notifyPlanRefreshObservers } from "@/lib/plan-refresh-observer";
+import {
+  createQuotaBreakdown,
+  createZeroPlanUsage,
+  type QuotaUsageBreakdown,
+} from "@/lib/quota-usage";
 
 export type QuotaResource = "bookmark" | "collection" | "tag" | "workspace" | "saved_group";
 
@@ -17,6 +22,8 @@ interface PlanState {
   subscription: { plan: string; status: string; expires_at: number | null } | null;
   limits: PlanLimits | null;
   usage: PlanUsage | null;
+  trashUsage: PlanUsage | null;
+  inUseUsage: PlanUsage | null;
   fetchedAt: number | null;
   isFetching: boolean;
   quotaAlert: QuotaAlert | null;
@@ -26,6 +33,7 @@ interface PlanState {
   checkQuota: (resource: QuotaResource, currentCount?: number) => boolean;
   incrementUsage: (resource: QuotaResource, by?: number) => void;
   decrementUsage: (resource: QuotaResource, by?: number) => void;
+  setGuestUsage: (breakdown: QuotaUsageBreakdown) => void;
   showQuotaAlert: (resource: QuotaResource) => void;
   clear: () => void;
 }
@@ -71,6 +79,8 @@ export const usePlanStore = create<PlanState>()(
       subscription: null,
       limits: null,
       usage: null,
+      trashUsage: null,
+      inUseUsage: null,
       fetchedAt: null,
       isFetching: false,
       quotaAlert: null,
@@ -102,10 +112,16 @@ export const usePlanStore = create<PlanState>()(
               }
               return null;
             }
+            const breakdown = createQuotaBreakdown(
+              data.usage,
+              data.trash_usage ?? createZeroPlanUsage(),
+            );
             set({
               subscription: data.subscription,
               limits: data.limits,
-              usage: data.usage,
+              usage: breakdown.total,
+              trashUsage: breakdown.trash,
+              inUseUsage: breakdown.inUse,
               fetchedAt: Date.now(),
               isFetching: false,
             });
@@ -167,7 +183,16 @@ export const usePlanStore = create<PlanState>()(
         set((s) => {
           if (!s.usage) { return {}; }
           const key = USAGE_KEY[resource];
-          return { usage: { ...s.usage, [key]: s.usage[key] + by } };
+          const total = { ...s.usage, [key]: s.usage[key] + by };
+          const breakdown = createQuotaBreakdown(
+            total,
+            s.trashUsage ?? createZeroPlanUsage(),
+          );
+          return {
+            usage: breakdown.total,
+            trashUsage: breakdown.trash,
+            inUseUsage: breakdown.inUse,
+          };
         });
       },
 
@@ -175,7 +200,29 @@ export const usePlanStore = create<PlanState>()(
         set((s) => {
           if (!s.usage) { return {}; }
           const key = USAGE_KEY[resource];
-          return { usage: { ...s.usage, [key]: Math.max(0, s.usage[key] - by) } };
+          const total = { ...s.usage, [key]: Math.max(0, s.usage[key] - by) };
+          const currentTrash = s.trashUsage ?? createZeroPlanUsage();
+          const trash = {
+            ...currentTrash,
+            [key]: Math.max(0, currentTrash[key] - by),
+          };
+          const breakdown = createQuotaBreakdown(
+            total,
+            trash,
+          );
+          return {
+            usage: breakdown.total,
+            trashUsage: breakdown.trash,
+            inUseUsage: breakdown.inUse,
+          };
+        });
+      },
+
+      setGuestUsage: (breakdown) => {
+        set({
+          usage: breakdown.total,
+          trashUsage: breakdown.trash,
+          inUseUsage: breakdown.inUse,
         });
       },
 
@@ -197,6 +244,8 @@ export const usePlanStore = create<PlanState>()(
           subscription: null,
           limits: null,
           usage: null,
+          trashUsage: null,
+          inUseUsage: null,
           fetchedAt: null,
           isFetching: false,
           quotaAlert: null,
@@ -210,6 +259,8 @@ export const usePlanStore = create<PlanState>()(
         subscription: state.subscription,
         limits: state.limits,
         usage: state.usage,
+        trashUsage: state.trashUsage,
+        inUseUsage: state.inUseUsage,
         fetchedAt: state.fetchedAt,
       }),
     },

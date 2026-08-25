@@ -12,12 +12,22 @@ import {
 import { usePlanStore } from "@/store/plan-store";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
+import type { PlanUsage } from "@/lib/api";
+
+interface QuotaCardItem {
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  usageKey: keyof PlanUsage;
+  limit: number;
+}
 
 export function QuotaCard() {
   const { t } = useTranslation();
   const subscription = usePlanStore((s) => s.subscription);
   const limits = usePlanStore((s) => s.limits);
   const usage = usePlanStore((s) => s.usage);
+  const trashUsage = usePlanStore((s) => s.trashUsage);
+  const inUseUsage = usePlanStore((s) => s.inUseUsage);
   const ensureFresh = usePlanStore((s) => s.ensureFresh);
 
   const [mounted, setMounted] = React.useState(false);
@@ -73,9 +83,17 @@ export function QuotaCard() {
       progressColor: "bg-gradient-to-r from-amber-400 to-orange-500",
       iconColorClass: "text-amber-600 dark:text-amber-400",
     };
-  }, [plan]);
+  }, [plan, t]);
 
-  if (!limits || !usage) return null;
+  if (!limits || !usage || !trashUsage || !inUseUsage) { return null; }
+
+  const items: QuotaCardItem[] = [
+    { label: t("quota_bookmarks"), Icon: Bookmark, usageKey: "bookmarks", limit: limits.max_bookmarks },
+    { label: t("quota_collections"), Icon: Folder, usageKey: "collections", limit: limits.max_collections },
+    { label: t("quota_tags"), Icon: Tag, usageKey: "tags", limit: limits.max_tags },
+    { label: t("quota_workspaces"), Icon: Monitor, usageKey: "workspaces", limit: limits.max_workspaces },
+    { label: t("quota_savedGroups"), Icon: Sparkles, usageKey: "saved_groups", limit: limits.max_saved_groups },
+  ];
 
   const handleOpenPlan = () => {
     window.dispatchEvent(
@@ -87,14 +105,17 @@ export function QuotaCard() {
 
   const renderQuotaRow = (
     label: string,
-    Icon: React.ComponentType<any>,
-    usageVal: number,
+    Icon: React.ComponentType<{ className?: string }>,
+    usageKey: keyof PlanUsage,
     limitVal: number,
   ) => {
+    const usageVal = usage[usageKey];
     const isUnlimited = limitVal === -1;
     const percentage = isUnlimited
       ? 100
-      : Math.min(100, (usageVal / limitVal) * 100);
+      : limitVal === 0
+        ? (usageVal === 0 ? 0 : 100)
+        : Math.min(100, (usageVal / limitVal) * 100);
 
     return (
       <div className="space-y-1.5 group/row">
@@ -107,6 +128,12 @@ export function QuotaCard() {
             {isUnlimited ? `${usageVal}/∞` : `${usageVal}/${limitVal}`}
           </span>
         </div>
+        <p className="pl-5.5 text-[10px] text-muted-foreground/70">
+          {t("quota_breakdown", [
+            inUseUsage[usageKey].toString(),
+            trashUsage[usageKey].toString(),
+          ])}
+        </p>
         <div className="h-1.5 w-full bg-muted/40 rounded-full overflow-hidden relative">
           {isUnlimited ? (
             <div
@@ -131,32 +158,31 @@ export function QuotaCard() {
   };
 
   const renderCompactStats = () => {
-    const items = [
-      { label: t("quota_bookmarks"), Icon: Bookmark, usageVal: usage.bookmarks, limitVal: limits.max_bookmarks },
-      { label: t("quota_collections"), Icon: Folder, usageVal: usage.collections, limitVal: limits.max_collections },
-      { label: t("quota_tags"), Icon: Tag, usageVal: usage.tags, limitVal: limits.max_tags },
-      { label: t("quota_workspaces"), Icon: Monitor, usageVal: usage.workspaces, limitVal: limits.max_workspaces },
-      { label: t("quota_savedGroups"), Icon: Sparkles, usageVal: usage.saved_groups, limitVal: limits.max_saved_groups },
-    ];
-
     return (
       <div className="space-y-1 text-[11px] text-muted-foreground font-medium">
-        {items.map(({ label, Icon, usageVal, limitVal }) => {
-          const isUnlimited = limitVal === -1;
-          const limitStr = isUnlimited ? "∞" : limitVal.toString();
+        {items.map(({ label, Icon, usageKey, limit }) => {
+          const limitStr = limit === -1 ? "∞" : limit.toString();
 
           return (
             <div
               key={label}
-              className="flex items-center justify-between py-0.5 px-1 rounded-md transition-colors"
+              className="rounded-md px-1 py-0.5 transition-colors"
             >
-              <span className="flex items-center gap-2 text-muted-foreground/80">
-                <Icon className={cn("size-3 shrink-0", cardStyles.iconColorClass)} />
-                <span>{label}</span>
-              </span>
-              <span className="font-semibold text-foreground/80">
-                {usageVal}<span className="text-muted-foreground/30 font-normal mx-0.5">/</span>{limitStr}
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2 text-muted-foreground/80">
+                  <Icon className={cn("size-3 shrink-0", cardStyles.iconColorClass)} />
+                  <span>{label}</span>
+                </span>
+                <span className="font-semibold text-foreground/80">
+                  {usage[usageKey]}<span className="mx-0.5 font-normal text-muted-foreground/30">/</span>{limitStr}
+                </span>
+              </div>
+              <p className="pl-5 text-[9px] font-normal text-muted-foreground/60">
+                {t("quota_breakdown", [
+                  inUseUsage[usageKey].toString(),
+                  trashUsage[usageKey].toString(),
+                ])}
+              </p>
             </div>
           );
         })}
@@ -245,11 +271,11 @@ export function QuotaCard() {
         >
           <div className="overflow-hidden">
             <div className="pt-3 border-t border-muted/50 dark:border-zinc-800/40 space-y-3.5">
-              {renderQuotaRow(t("quota_bookmarks"), Bookmark, usage.bookmarks, limits.max_bookmarks)}
-              {renderQuotaRow(t("quota_collections"), Folder, usage.collections, limits.max_collections)}
-              {renderQuotaRow(t("quota_tags"), Tag, usage.tags, limits.max_tags)}
-              {renderQuotaRow(t("quota_workspaces"), Monitor, usage.workspaces, limits.max_workspaces)}
-              {renderQuotaRow(t("quota_savedGroups"), Sparkles, usage.saved_groups, limits.max_saved_groups)}
+              {items.map(({ label, Icon, usageKey, limit }) => (
+                <React.Fragment key={usageKey}>
+                  {renderQuotaRow(label, Icon, usageKey, limit)}
+                </React.Fragment>
+              ))}
 
               {/* CTA Upgrade Banner */}
               {plan === "free" ? (

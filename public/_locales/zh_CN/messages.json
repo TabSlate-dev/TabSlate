@@ -308,6 +308,45 @@
   "quota_managePlan": {
     "message": "管理套餐与用量"
   },
+  "quota_total": {
+    "message": "共 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "quota_breakdown": {
+    "message": "$1 个使用中 + $2 个在回收站",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "quotaAlert_limitReached": {
+    "message": "$1 已达上限（$3/$2）：$4 个使用中 + $5 个在回收站。请永久删除保留项目或升级套餐以释放容量。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      },
+      "3": {
+        "content": "$3"
+      },
+      "4": {
+        "content": "$4"
+      },
+      "5": {
+        "content": "$5"
+      }
+    }
+  },
   "sync_idle": {
     "message": "已同步"
   },
@@ -1264,6 +1303,9 @@
   },
   "workspaceManager_title": {
     "message": "Workspace 管理"
+  },
+  "workspaceManager_quotaTitle": {
+    "message": "统一配额用量"
   },
   "workspaceManager_description": {
     "message": "管理此账号中的所有 Workspace，包括保留期内已删除的 Workspace。"

@@ -14,6 +14,11 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
+import type { PlanLimits, PlanUsage } from "@/lib/api";
+import {
+  calculateGuestQuotaUsage,
+  type QuotaUsageBreakdown,
+} from "@/lib/quota-usage";
 import type { Workspace } from "@/lib/types";
 import { readWorkspaceLifecycleCapability } from "@/lib/workspace-lifecycle-state";
 import type { SyncStatus } from "@/lib/sync-engine";
@@ -59,6 +64,8 @@ export interface WorkspaceManagerContentProps {
   activeWorkspaceId?: string;
   availability?: WorkspaceManagerAvailability;
   lifecyclePending?: boolean;
+  quotaBreakdown?: QuotaUsageBreakdown | null;
+  quotaLimits?: PlanLimits | null;
   onTabChange(tab: WorkspaceManagerTab): void;
   onCreate(): void;
   onSwitch(workspaceId: string): void;
@@ -101,6 +108,8 @@ export function WorkspaceManagerContent({
     dataReady: true,
   },
   lifecyclePending = false,
+  quotaBreakdown = null,
+  quotaLimits = null,
   onTabChange,
   onCreate,
   onSwitch,
@@ -192,9 +201,53 @@ export function WorkspaceManagerContent({
       {t("workspaceManager_loadingData")}
     </p>
   );
+  const quotaRows: Array<{
+    key: keyof PlanUsage;
+    label: string;
+    limit: number | null;
+  }> = [
+    { key: "workspaces", label: t("quota_workspaces"), limit: quotaLimits?.max_workspaces ?? null },
+    { key: "collections", label: t("quota_collections"), limit: quotaLimits?.max_collections ?? null },
+    { key: "bookmarks", label: t("quota_bookmarks"), limit: quotaLimits?.max_bookmarks ?? null },
+    { key: "saved_groups", label: t("quota_savedGroups"), limit: quotaLimits?.max_saved_groups ?? null },
+    { key: "tags", label: t("quota_tags"), limit: quotaLimits?.max_tags ?? null },
+  ];
 
   return (
     <div className="space-y-4">
+      {quotaBreakdown && (
+        <section
+          aria-label={t("workspaceManager_quotaTitle")}
+          className="rounded-lg border bg-muted/20 p-3"
+        >
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            {t("workspaceManager_quotaTitle")}
+          </h3>
+          <div className="grid gap-x-5 gap-y-2 sm:grid-cols-2">
+            {quotaRows.map((row) => {
+              const limit = row.limit === -1 ? "∞" : row.limit?.toString();
+              return (
+                <div key={row.key} className="text-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">{row.label}</span>
+                    <span className="font-medium text-foreground">
+                      {limit === undefined
+                        ? t("quota_total", [quotaBreakdown.total[row.key].toString()])
+                        : `${quotaBreakdown.total[row.key]}/${limit}`}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/75">
+                    {t("quota_breakdown", [
+                      quotaBreakdown.inUse[row.key].toString(),
+                      quotaBreakdown.trash[row.key].toString(),
+                    ])}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
       <div
         role="tablist"
         aria-label={t("workspaceManager_tabsLabel")}
@@ -423,6 +476,7 @@ export function WorkspaceManager({
   const { t } = useTranslation();
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const collections = useWorkspaceStore((state) => state.collections);
+  const tags = useWorkspaceStore((state) => state.tags);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const setActiveWorkspaceId = useWorkspaceStore((state) => state.setActiveWorkspaceId);
   const createWorkspace = useWorkspaceStore((state) => state.createWorkspace);
@@ -445,6 +499,12 @@ export function WorkspaceManager({
   const trashGraceDays = usePlanStore(
     (state) => state.limits?.trash_grace_days ?? 30,
   );
+  const planLimits = usePlanStore((state) => state.limits);
+  const planUsage = usePlanStore((state) => state.usage);
+  const planTrashUsage = usePlanStore((state) => state.trashUsage);
+  const planInUseUsage = usePlanStore((state) => state.inUseUsage);
+  const setGuestUsage = usePlanStore((state) => state.setGuestUsage);
+  const ensurePlanFresh = usePlanStore((state) => state.ensureFresh);
 
   const [selectedTab, setSelectedTab] = React.useState<WorkspaceManagerTab>("in_use");
   const [capabilitySupported, setCapabilitySupported] = React.useState(user === null);
@@ -492,6 +552,12 @@ export function WorkspaceManager({
     loaderSingleFlight,
     open,
   ]);
+
+  React.useEffect(() => {
+    if (open && user !== null) {
+      ensurePlanFresh();
+    }
+  }, [ensurePlanFresh, open, user]);
 
   React.useEffect(() => {
     const handleOnline = () => {
@@ -558,6 +624,52 @@ export function WorkspaceManager({
     user,
     workspaces,
   ]);
+
+  const guestQuotaBreakdown = React.useMemo(() => {
+    if (user !== null || !archivedLoaded || !trashedLoaded) {
+      return null;
+    }
+    return calculateGuestQuotaUsage({
+      workspaces,
+      collections,
+      bookmarks: Array.from(bookmarks.values()),
+      archivedBookmarks,
+      trashedBookmarks,
+      groups,
+      tags,
+    });
+  }, [
+    archivedBookmarks,
+    archivedLoaded,
+    bookmarks,
+    collections,
+    groups,
+    tags,
+    trashedBookmarks,
+    trashedLoaded,
+    user,
+    workspaces,
+  ]);
+
+  React.useEffect(() => {
+    if (open && guestQuotaBreakdown) {
+      setGuestUsage(guestQuotaBreakdown);
+    }
+  }, [guestQuotaBreakdown, open, setGuestUsage]);
+
+  const authenticatedQuotaBreakdown = React.useMemo<QuotaUsageBreakdown | null>(() => {
+    if (!planLimits || !planUsage || !planTrashUsage || !planInUseUsage) {
+      return null;
+    }
+    return {
+      total: planUsage,
+      trash: planTrashUsage,
+      inUse: planInUseUsage,
+    };
+  }, [planInUseUsage, planLimits, planTrashUsage, planUsage]);
+  const quotaBreakdown = user === null
+    ? guestQuotaBreakdown
+    : authenticatedQuotaBreakdown;
 
   const availability = React.useMemo(() => ({
     isGuest: user === null,
@@ -779,6 +891,8 @@ export function WorkspaceManager({
             activeWorkspaceId={activeWorkspaceId}
             availability={availability}
             lifecyclePending={lifecyclePending}
+            quotaBreakdown={quotaBreakdown}
+            quotaLimits={user === null ? null : planLimits}
             onTabChange={setSelectedTab}
             onCreate={handleCreate}
             onSwitch={setActiveWorkspaceId}

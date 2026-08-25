@@ -308,6 +308,45 @@
   "quota_managePlan": {
     "message": "Manage Plan & Quotas"
   },
+  "quota_total": {
+    "message": "$1 total",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "quota_breakdown": {
+    "message": "$1 in use + $2 in recycle bin",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "quotaAlert_limitReached": {
+    "message": "$1 limit reached ($3/$2): $4 in use + $5 in recycle bin. Permanently delete retained items or upgrade your plan to free capacity.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      },
+      "3": {
+        "content": "$3"
+      },
+      "4": {
+        "content": "$4"
+      },
+      "5": {
+        "content": "$5"
+      }
+    }
+  },
   "sync_idle": {
     "message": "Synced"
   },
@@ -1264,6 +1303,9 @@
   },
   "workspaceManager_title": {
     "message": "Workspace management"
+  },
+  "workspaceManager_quotaTitle": {
+    "message": "Unified quota usage"
   },
   "workspaceManager_description": {
     "message": "Manage every Workspace in this account, including retained deleted Workspaces."
