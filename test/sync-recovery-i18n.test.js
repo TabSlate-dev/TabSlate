@@ -12,5 +12,7 @@ describe("sync recovery messages", () => {
     expect(zhCN.sync_invalidParentConflict.message.length).toBeGreaterThan(0);
     expect(en.sync_quotaConflict.message.length).toBeGreaterThan(0);
     expect(zhCN.sync_quotaConflict.message.length).toBeGreaterThan(0);
+    expect(en.workspaceLifecycle_legacyArchiveStateLimited.message.length).toBeGreaterThan(0);
+    expect(zhCN.workspaceLifecycle_legacyArchiveStateLimited.message.length).toBeGreaterThan(0);
   });
 });

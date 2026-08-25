@@ -39,12 +39,12 @@ import {
 import { Loader2 } from "lucide-react";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
 import {
-  clearCapacityResolvedConflicts,
   confirmGuestWorkspaceFromPull,
   getPersistentSyncErrorKey,
   prepareGuestWorkspaceForPull,
   resolveGuestPushRejections,
   resolveLegacyGuestWorkspaceFailure,
+  registerGuestCapacityReconciliation,
   sweepAllUnsynced,
 } from "@/lib/guest-workspace-reconciliation";
 import {
@@ -62,7 +62,7 @@ import {
 import { loadWorkspaceAggregateIds, toSyncEntityReferences } from "@/lib/workspace-aggregate";
 import {
   GUEST_WORKSPACE_LEGACY_RESTORE_EVENT,
-  recoverLegacyGuestWorkspaceOrphans,
+  recoverLegacyGuestWorkspaceOrphansSafely,
 } from "@/lib/guest-workspace-orphan-recovery";
 
 function quotaResourceForRejectedType(type: string | undefined): QuotaResource | null {
@@ -275,15 +275,22 @@ function StoreGate({ children }: { children: React.ReactNode }) {
     }
     let current = true;
     void (async () => {
-      const recovered = await recoverLegacyGuestWorkspaceOrphans();
-      const workspaceState = useWorkspaceStore.getState();
-      if (recovered.some((record) =>
-        !workspaceState.workspaces.some((workspace) => workspace.id === record.workspaceId),
-      )) {
-        await workspaceState.hydrate();
-      }
-      if (current) {
-        setOrphanRecoveryComplete(true);
+      try {
+        const recovered = await recoverLegacyGuestWorkspaceOrphansSafely({
+          onFailure: () => analytics.track("guest_orphan_recovery_failed"),
+        });
+        const workspaceState = useWorkspaceStore.getState();
+        if (recovered.some((record) =>
+          !workspaceState.workspaces.some((workspace) => workspace.id === record.workspaceId),
+        )) {
+          await workspaceState.hydrate();
+        }
+      } catch {
+        analytics.track("guest_orphan_recovery_refresh_failed");
+      } finally {
+        if (current) {
+          setOrphanRecoveryComplete(true);
+        }
       }
     })();
     return () => {
@@ -355,6 +362,7 @@ function SyncProvider({
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("idle");
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   const [recoveryWorkspaceName, setRecoveryWorkspaceName] = useState<string | null>(null);
+  const [legacyArchiveStateLimited, setLegacyArchiveStateLimited] = useState(false);
   const sessionStatus = resolveAuthSessionStatus({
     accessToken,
     refreshToken,
@@ -372,6 +380,7 @@ function SyncProvider({
   const mergeGroupsRef = useRef(mergeGroups);
   const tRef = useRef(t);
   const recoveryNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const legacyNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { mergeWorkspacesRef.current = mergeWorkspaces; }, [mergeWorkspaces]);
   useEffect(() => { mergeBookmarksRef.current = mergeBookmarks; }, [mergeBookmarks]);
@@ -380,13 +389,22 @@ function SyncProvider({
 
   useEffect(() => {
     const handleLegacyRestore = () => {
-      setSyncErrorMessage(tRef.current("workspaceLifecycle_legacyArchiveStateLimited"));
+      if (legacyNoticeTimerRef.current) {
+        clearTimeout(legacyNoticeTimerRef.current);
+      }
+      setLegacyArchiveStateLimited(true);
+      legacyNoticeTimerRef.current = setTimeout(() => {
+        setLegacyArchiveStateLimited(false);
+        legacyNoticeTimerRef.current = null;
+      }, 4000);
     };
     window.addEventListener(GUEST_WORKSPACE_LEGACY_RESTORE_EVENT, handleLegacyRestore);
     return () => {
       window.removeEventListener(GUEST_WORKSPACE_LEGACY_RESTORE_EVENT, handleLegacyRestore);
     };
   }, []);
+
+  useEffect(() => registerGuestCapacityReconciliation(), []);
 
   const showRecoveryNotice = useCallback((targetWorkspaceName: string | undefined) => {
     if (!targetWorkspaceName) {
@@ -405,6 +423,9 @@ function SyncProvider({
   useEffect(() => () => {
     if (recoveryNoticeTimerRef.current) {
       clearTimeout(recoveryNoticeTimerRef.current);
+    }
+    if (legacyNoticeTimerRef.current) {
+      clearTimeout(legacyNoticeTimerRef.current);
     }
   }, []);
 
@@ -485,13 +506,7 @@ function SyncProvider({
           },
           confirmGuest: () => confirmGuestWorkspaceFromPull(authoritativeResponse),
           reconcileLifecycle: async () => {
-            const refreshedPlan = await usePlanStore.getState().fetchPlan();
-            if (!isCurrent()) {
-              return;
-            }
-            if (refreshedPlan) {
-              await clearCapacityResolvedConflicts(refreshedPlan);
-            }
+            await usePlanStore.getState().fetchPlan();
             if (!isCurrent()) {
               return;
             }
@@ -658,7 +673,10 @@ function SyncProvider({
 
   return (
     <>
-      <SyncRecoveryAlert targetWorkspaceName={recoveryWorkspaceName} />
+      <SyncRecoveryAlert
+        targetWorkspaceName={recoveryWorkspaceName}
+        legacyArchiveStateLimited={legacyArchiveStateLimited}
+      />
       {children(effectiveSyncStatus, handleForceSync, syncErrorMessage)}
     </>
   );

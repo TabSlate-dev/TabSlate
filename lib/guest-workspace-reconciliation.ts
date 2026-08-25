@@ -32,6 +32,7 @@ import {
   workspaceHasPendingDeleteIntent,
 } from "@/lib/workspace-lifecycle-coordinator";
 import { wakeActiveWorkspaceLifecycle } from "@/lib/sync-lifecycle";
+import { registerPlanRefreshObserver } from "@/lib/plan-refresh-observer";
 
 export type SyncConflictErrorKey =
   | "sync_noMigrationTarget"
@@ -472,6 +473,12 @@ export async function clearCapacityResolvedConflicts(plan: PlanResponse): Promis
     }
   }
   return cleared;
+}
+
+export function registerGuestCapacityReconciliation(): () => void {
+  return registerPlanRefreshObserver(async (plan) => {
+    await clearCapacityResolvedConflicts(plan);
+  });
 }
 
 export async function getPersistentSyncErrorKey(): Promise<SyncConflictErrorKey | null> {

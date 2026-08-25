@@ -337,6 +337,9 @@
       }
     }
   },
+  "workspaceLifecycle_legacyArchiveStateLimited": {
+    "message": "部分已恢复书签可能无法保留其原有的归档状态。"
+  },
   "sync_noMigrationTarget": {
     "message": "离线数据已安全保留在本地，但当前没有可用于同步的工作区。"
   },

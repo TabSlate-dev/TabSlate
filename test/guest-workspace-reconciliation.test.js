@@ -102,6 +102,7 @@ const {
   prepareGuestWorkspaceForPull,
   resolveLegacyGuestWorkspaceFailure,
   resolveGuestPushRejections,
+  registerGuestCapacityReconciliation,
 } = await import("../lib/guest-workspace-reconciliation");
 const { createGuestWorkspaceSeed } = await import("../lib/guest-workspace");
 const { syncConflictRegistry } = await import("../lib/sync-conflicts");
@@ -347,7 +348,7 @@ describe("guest workspace reconciliation", () => {
     expect(syncConflictRegistry.isBlocked("tag", "tag-b")).toBe(false);
   });
 
-  test("wakes a quarantined Workspace lifecycle when plan refresh observes capacity", async () => {
+  test("a successful plan refresh wakes a quarantined Workspace lifecycle after capacity returns", async () => {
     stores.set("kv:workspace-lifecycle-intents-v1", {
       key: "workspace-lifecycle-intents-v1",
       value: {
@@ -374,13 +375,49 @@ describe("guest workspace reconciliation", () => {
       },
     };
     registerSyncLifecycle(lifecycle);
+    const unregisterCapacity = registerGuestCapacityReconciliation();
+    const { api } = await import("../lib/api");
+    const { useAuthStore } = await import("../store/auth-store");
+    const { usePlanStore } = await import("../store/plan-store");
+    const originalGetPlan = api.getPlan;
+    const originalAuth = useAuthStore.getState();
+    const originalChrome = globalThis.chrome;
+    const storageArea = {
+      get: (_key, callback) => callback({}),
+      set: (_items, callback) => callback?.(),
+      remove: (_key, callback) => callback?.(),
+    };
+    globalThis.chrome = {
+      storage: {
+        local: storageArea,
+        session: storageArea,
+      },
+    };
+    api.getPlan = async () => ({
+      subscription: { plan: "upgraded", status: "active", expires_at: null },
+      usage: { workspaces: 0, collections: 0, bookmarks: 0, tags: 0, saved_groups: 0 },
+      limits: {
+        max_workspaces: 1,
+        max_collections: 0,
+        max_bookmarks: 0,
+        max_tags: 0,
+        max_saved_groups: 0,
+        trash_grace_days: 30,
+      },
+    });
+    useAuthStore.setState({ serverUrl: "https://sync.test", accessToken: "token" });
     try {
-      await clearCapacityResolvedConflicts({
-        usage: { workspaces: 0, collections: 0, bookmarks: 0, tags: 0, saved_groups: 0 },
-        limits: { max_workspaces: 1, max_collections: 0, max_bookmarks: 0, max_tags: 0, max_saved_groups: 0 },
-      });
+      await usePlanStore.getState().fetchPlan();
       await Promise.resolve();
     } finally {
+      api.getPlan = originalGetPlan;
+      useAuthStore.setState(originalAuth);
+      if (originalChrome) {
+        globalThis.chrome = originalChrome;
+      } else {
+        delete globalThis.chrome;
+      }
+      unregisterCapacity();
       unregisterSyncLifecycle(lifecycle);
     }
 

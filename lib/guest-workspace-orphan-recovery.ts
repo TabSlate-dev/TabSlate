@@ -32,6 +32,26 @@ export interface RecoveredGuestWorkspaceRecord {
   recoveredAt: number;
 }
 
+interface SafeGuestOrphanRecoveryOptions {
+  recover?: () => Promise<RecoveredGuestWorkspaceRecord[]>;
+  onFailure?: () => void;
+}
+
+export async function recoverLegacyGuestWorkspaceOrphansSafely(
+  options: SafeGuestOrphanRecoveryOptions = {},
+): Promise<RecoveredGuestWorkspaceRecord[]> {
+  try {
+    return await (options.recover ?? recoverLegacyGuestWorkspaceOrphans)();
+  } catch {
+    try {
+      options.onFailure?.();
+    } catch {
+      // Recovery remains best-effort even if telemetry is unavailable.
+    }
+    return [];
+  }
+}
+
 interface KVRecord {
   key: string;
   value: unknown;

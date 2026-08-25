@@ -337,6 +337,9 @@
       }
     }
   },
+  "workspaceLifecycle_legacyArchiveStateLimited": {
+    "message": "Some recovered bookmarks may no longer retain their previous archive status."
+  },
   "sync_noMigrationTarget": {
     "message": "Offline data is safe locally, but no workspace is available for synchronization."
   },

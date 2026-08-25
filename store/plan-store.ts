@@ -4,6 +4,7 @@ import { chromeStorageAdapter } from "@/lib/chrome-storage-adapter";
 import { api, type PlanLimits, type PlanResponse, type PlanUsage } from "@/lib/api";
 import { useAuthStore } from "@/store/auth-store";
 import { useBookmarksStore } from "@/store/bookmarks-store";
+import { notifyPlanRefreshObservers } from "@/lib/plan-refresh-observer";
 
 export type QuotaResource = "bookmark" | "collection" | "tag" | "workspace" | "saved_group";
 
@@ -108,6 +109,7 @@ export const usePlanStore = create<PlanState>()(
               fetchedAt: Date.now(),
               isFetching: false,
             });
+            await notifyPlanRefreshObservers(data);
             // Prune expired trash entries now that we have an authoritative grace period.
             const bmStore = useBookmarksStore.getState();
             if (bmStore._trashedLoaded && data.limits.trash_grace_days > 0) {

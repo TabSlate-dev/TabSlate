@@ -257,6 +257,7 @@ const idb = await import(`../lib/idb.ts?guest-orphans=${Date.now()}`);
 const {
   GUEST_WORKSPACE_ORPHAN_RECOVERY_KEY,
   recoverLegacyGuestWorkspaceOrphans,
+  recoverLegacyGuestWorkspaceOrphansSafely,
   restoreRecoveredGuestAggregate,
 } = await import(`../lib/guest-workspace-orphan-recovery.ts?test=${Date.now()}`);
 
@@ -355,6 +356,22 @@ describe("legacy Guest orphan recovery", () => {
     expect(await idb.idbGet("kv", "workspace-lifecycle-intents-v1")).toMatchObject({
       value: { intents: [expect.objectContaining({ workspaceId: "missing" })] },
     });
+  });
+
+  test("resolves a failed recovery attempt so the render gate can continue", async () => {
+    let failures = 0;
+
+    const records = await recoverLegacyGuestWorkspaceOrphansSafely({
+      recover: async () => {
+        throw new Error("IndexedDB unavailable");
+      },
+      onFailure: () => {
+        failures += 1;
+      },
+    });
+
+    expect(records).toEqual([]);
+    expect(failures).toBe(1);
   });
 
   test("restores recorded descendants while retaining Collection archive metadata", async () => {

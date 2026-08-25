@@ -1,5 +1,6 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { PlanResponse } from "../lib/api";
 
 const planResponse = {
   subscription: { plan: "free", status: "active", expires_at: null },
@@ -154,5 +155,22 @@ describe("plan store refresh policy", () => {
 
     currentPlan.resolve(planResponse);
     await currentFetching;
+  });
+
+  test("notifies capacity observers after every successful plan refresh", async () => {
+    const { registerPlanRefreshObserver } = await import("../lib/plan-refresh-observer");
+    const { usePlanStore } = await importPlanStore();
+    const observed: PlanResponse[] = [];
+    const unregister = registerPlanRefreshObserver((plan) => {
+      observed.push(plan);
+    });
+
+    try {
+      await usePlanStore.getState().fetchPlan();
+    } finally {
+      unregister();
+    }
+
+    expect(observed).toEqual([planResponse]);
   });
 });
