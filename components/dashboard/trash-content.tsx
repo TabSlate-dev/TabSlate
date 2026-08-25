@@ -2,7 +2,12 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
-import { useGroupsStore, type SavedGroup, type GroupTab } from "@/store/groups-store";
+import {
+  useGroupsStore,
+  type GroupPurgeResult,
+  type SavedGroup,
+  type GroupTab,
+} from "@/store/groups-store";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Bookmark,
   BookOpen,
@@ -43,10 +49,52 @@ import {
   ChevronRight,
   Check,
   Layers,
+  AlertCircle,
 } from "lucide-react";
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 import { usePlanStore } from "@/store/plan-store";
 import { useTranslation } from "@/hooks/use-translation";
+
+export interface GroupPurgeUiOutcome {
+  shouldClose: boolean;
+  messageKey: string | null;
+}
+
+interface ExecuteGroupPurgeActionInput {
+  operation: () => Promise<GroupPurgeResult>;
+  setPending: (pending: boolean) => void;
+  onCompleted: () => void;
+}
+
+function getGroupPurgeMessageKey(result: GroupPurgeResult): string {
+  if (result.reason === "offline") {
+    return "trashContent_groupPurgeOffline";
+  }
+  if (result.reason === "pending") {
+    return "trashContent_groupPurgePending";
+  }
+  return "trashContent_groupPurgeFailed";
+}
+
+export async function executeGroupPurgeAction({
+  operation,
+  setPending,
+  onCompleted,
+}: ExecuteGroupPurgeActionInput): Promise<GroupPurgeUiOutcome> {
+  setPending(true);
+  try {
+    const result = await operation();
+    if (result.status !== "completed") {
+      return { shouldClose: false, messageKey: getGroupPurgeMessageKey(result) };
+    }
+    onCompleted();
+    return { shouldClose: true, messageKey: null };
+  } catch {
+    return { shouldClose: false, messageKey: "trashContent_groupPurgeFailed" };
+  } finally {
+    setPending(false);
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Icon map (mirrors sidebar)
@@ -282,7 +330,7 @@ function TrashedBookmarkCard({
   );
 }
 
-function TrashedGroupCard({
+export function TrashedGroupCard({
   group,
   tabs,
   isGroupSelected,
@@ -291,6 +339,7 @@ function TrashedGroupCard({
   onToggleTab,
   onPermanentlyDeleteGroup,
   onPermanentlyDeleteTab,
+  actionsDisabled = false,
 }: {
   group: SavedGroup;
   tabs: GroupTab[];
@@ -300,6 +349,7 @@ function TrashedGroupCard({
   onToggleTab: (tabId: string) => void;
   onPermanentlyDeleteGroup: () => void;
   onPermanentlyDeleteTab: (tabId: string) => void;
+  actionsDisabled?: boolean;
 }) {
   const { t } = useTranslation();
   const restoreGroup = useGroupsStore(s => s.restoreGroup);
@@ -351,13 +401,18 @@ function TrashedGroupCard({
           </p>
         </div>
         <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-          <Button variant="outline" size="sm" onClick={() => restoreGroup(group.id)}>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={actionsDisabled}
+            onClick={() => restoreGroup(group.id)}
+          >
             <RotateCcw className="size-4 mr-1" />
             {t("trashContent_restore")}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon-xs">
+              <Button variant="ghost" size="icon-xs" disabled={actionsDisabled}>
                 <MoreHorizontal className="size-4" />
               </Button>
             </DropdownMenuTrigger>
@@ -400,6 +455,7 @@ function TrashedGroupCard({
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={actionsDisabled}
                     onClick={() => handleRestoreTab(tab)}
                   >
                     <RotateCcw className="size-3.5 mr-1" />
@@ -407,7 +463,7 @@ function TrashedGroupCard({
                   </Button>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon-xs">
+                      <Button variant="ghost" size="icon-xs" disabled={actionsDisabled}>
                         <MoreHorizontal className="size-4" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -521,6 +577,8 @@ export function TrashContent() {
   // Individual tab selection across all trashed groups
   const [selectedTabIds, setSelectedTabIds] = React.useState<Set<string>>(new Set());
   const [selectedBmIds, setSelectedBmIds] = React.useState<Set<string>>(new Set());
+  const [groupPurgePending, setGroupPurgePending] = React.useState(false);
+  const [confirmErrorKey, setConfirmErrorKey] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     setSelectedColIds(new Set());
@@ -542,6 +600,7 @@ export function TrashContent() {
   const selectedCount = selectedColIds.size + groupsWithSelection.size + selectedBmIds.size;
 
   const toggleCol = (id: string) => {
+    if (groupPurgePending) { return; }
     setSelectedColIds(prev => {
       const next = new Set(prev);
       const isSelecting = !next.has(id);
@@ -564,6 +623,7 @@ export function TrashContent() {
 
   // Toggle all tabs in a group (group header checkbox)
   const toggleGroup = (groupId: string) => {
+    if (groupPurgePending) { return; }
     const tabs = groupTabsMap[groupId] ?? [];
     const isFullySelected = selectedGroupIds.has(groupId);
     if (isFullySelected) {
@@ -585,6 +645,7 @@ export function TrashContent() {
 
   // Toggle a single tab; auto-promote group to full selection when all tabs selected
   const toggleTab = (tabId: string) => {
+    if (groupPurgePending) { return; }
     const tab = allGroupTabs.find(t => t.id === tabId);
     if (!tab) { return; }
     const groupTabs = groupTabsMap[tab.groupId] ?? [];
@@ -604,6 +665,7 @@ export function TrashContent() {
   };
 
   const toggleBm = (id: string) => {
+    if (groupPurgePending) { return; }
     setSelectedBmIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -615,14 +677,35 @@ export function TrashContent() {
   const [confirmDialog, setConfirmDialog] = React.useState<{
     title: string;
     description: string;
-    onConfirm: () => void;
+    onConfirm: () => void | GroupPurgeUiOutcome | Promise<void | GroupPurgeUiOutcome>;
   } | null>(null);
 
-  const requestConfirm = (title: string, description: string, onConfirm: () => void) => {
+  const requestConfirm = (
+    title: string,
+    description: string,
+    onConfirm: () => void | GroupPurgeUiOutcome | Promise<void | GroupPurgeUiOutcome>,
+  ) => {
+    setConfirmErrorKey(null);
     setConfirmDialog({ title, description, onConfirm });
   };
 
+  const handleConfirm = async () => {
+    if (!confirmDialog || groupPurgePending) { return; }
+    setConfirmErrorKey(null);
+    try {
+      const outcome = await confirmDialog.onConfirm();
+      if (outcome && !outcome.shouldClose) {
+        setConfirmErrorKey(outcome.messageKey ?? "trashContent_groupPurgeFailed");
+        return;
+      }
+      setConfirmDialog(null);
+    } catch {
+      setConfirmErrorKey("trashContent_groupPurgeFailed");
+    }
+  };
+
   const handleSelectAll = () => {
+    if (groupPurgePending) { return; }
     if (selectedCount === totalCount) {
       setSelectedColIds(new Set());
       setSelectedGroupIds(new Set());
@@ -638,7 +721,27 @@ export function TrashContent() {
     }
   };
 
+  const clearSelection = React.useCallback(() => {
+    setSelectedColIds(new Set());
+    setSelectedGroupIds(new Set());
+    setSelectedTabIds(new Set());
+    setSelectedBmIds(new Set());
+  }, []);
+
+  const purgeGroups = React.useCallback(async (
+    groupIds: readonly string[],
+  ): Promise<GroupPurgeResult> => {
+    for (const groupId of groupIds) {
+      const result = await permanentlyDeleteGroup(groupId);
+      if (result.status !== "completed") {
+        return result;
+      }
+    }
+    return { status: "completed" };
+  }, [permanentlyDeleteGroup]);
+
   const handleBatchRestore = () => {
+    if (groupPurgePending) { return; }
     const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
     const active = collections.filter(
       c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
@@ -697,53 +800,45 @@ export function TrashContent() {
       restoreFromTrash(bmId, targetColId);
     }
 
-    setSelectedColIds(new Set());
-    setSelectedGroupIds(new Set());
-    setSelectedTabIds(new Set());
-    setSelectedBmIds(new Set());
+    clearSelection();
   };
 
-  const handleBatchDelete = () => {
-    for (const colId of selectedColIds) {
-      permanentlyDeleteCollection(colId);
-    }
-    // Fully-selected groups → delete entire group (including remaining tabs)
-    for (const groupId of selectedGroupIds) {
-      permanentlyDeleteGroup(groupId);
-    }
-    // Partial tab selections → delete only those individual tabs
-    for (const tabId of selectedTabIds) {
-      const tab = allGroupTabs.find(t => t.id === tabId);
-      if (tab && !selectedGroupIds.has(tab.groupId)) {
-        deleteTabFromTrash(tabId);
+  const handleBatchDelete = () => executeGroupPurgeAction({
+    operation: () => purgeGroups(Array.from(selectedGroupIds)),
+    setPending: setGroupPurgePending,
+    onCompleted: () => {
+      for (const colId of selectedColIds) {
+        permanentlyDeleteCollection(colId);
       }
-    }
-    // Batch all selected bookmarks into one push (≤900 per request) instead of N requests.
-    if (selectedBmIds.size > 0) {
-      permanentlyDeleteBookmarkBatch(Array.from(selectedBmIds));
-    }
-    setSelectedColIds(new Set());
-    setSelectedGroupIds(new Set());
-    setSelectedTabIds(new Set());
-    setSelectedBmIds(new Set());
-  };
+      // Partial tab selections → delete only those individual tabs
+      for (const tabId of selectedTabIds) {
+        const tab = allGroupTabs.find(t => t.id === tabId);
+        if (tab && !selectedGroupIds.has(tab.groupId)) {
+          deleteTabFromTrash(tabId);
+        }
+      }
+      // Batch all selected bookmarks into one push (≤900 per request) instead of N requests.
+      if (selectedBmIds.size > 0) {
+        permanentlyDeleteBookmarkBatch(Array.from(selectedBmIds));
+      }
+      clearSelection();
+    },
+  });
 
-  const handleEmptyTrash = () => {
-    for (const col of trashedCollections) {
-      permanentlyDeleteCollection(col.id);
-    }
-    for (const group of trashedGroups) {
-      permanentlyDeleteGroup(group.id);
-    }
-    // Batch all individual bookmarks into one push (≤900 per request) instead of N requests.
-    if (individualTrashedBookmarks.length > 0) {
-      permanentlyDeleteBookmarkBatch(individualTrashedBookmarks.map((b) => b.id));
-    }
-    setSelectedColIds(new Set());
-    setSelectedGroupIds(new Set());
-    setSelectedTabIds(new Set());
-    setSelectedBmIds(new Set());
-  };
+  const handleEmptyTrash = () => executeGroupPurgeAction({
+    operation: () => purgeGroups(trashedGroups.map(group => group.id)),
+    setPending: setGroupPurgePending,
+    onCompleted: () => {
+      for (const col of trashedCollections) {
+        permanentlyDeleteCollection(col.id);
+      }
+      // Batch all individual bookmarks into one push (≤900 per request) instead of N requests.
+      if (individualTrashedBookmarks.length > 0) {
+        permanentlyDeleteBookmarkBatch(individualTrashedBookmarks.map((b) => b.id));
+      }
+      clearSelection();
+    },
+  });
 
   return (
     <div className="flex-1 w-full overflow-auto">
@@ -767,14 +862,19 @@ export function TrashContent() {
               <p className="text-xs text-muted-foreground hidden md:block mr-2">
                 {t("trashContent_gracePeriod", [trashGraceDays.toString()])}
               </p>
-              <Button variant="destructive" size="sm" onClick={() => requestConfirm(
-                t("trashContent_emptyConfirmTitle"),
-                t("trashContent_emptyConfirmDesc"),
-                handleEmptyTrash
-              )}>
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={groupPurgePending}
+                onClick={() => requestConfirm(
+                  t("trashContent_emptyConfirmTitle"),
+                  t("trashContent_emptyConfirmDesc"),
+                  handleEmptyTrash
+                )}
+              >
                 {t("trashContent_emptyTrash")}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleSelectAll}>
+              <Button variant="outline" size="sm" disabled={groupPurgePending} onClick={handleSelectAll}>
                 {t("trashContent_selectAll")}
               </Button>
             </div>
@@ -783,20 +883,25 @@ export function TrashContent() {
           {selectedCount > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium mr-2 hidden sm:inline-block">{t("trashContent_selectedCount", [selectedCount.toString()])}</span>
-              <Button variant="outline" size="sm" onClick={() => { setSelectedColIds(new Set()); setSelectedGroupIds(new Set()); setSelectedTabIds(new Set()); setSelectedBmIds(new Set()); }}>
+              <Button variant="outline" size="sm" disabled={groupPurgePending} onClick={clearSelection}>
                 {t("trashContent_cancel")}
               </Button>
-              <Button variant="outline" size="sm" onClick={handleSelectAll}>
+              <Button variant="outline" size="sm" disabled={groupPurgePending} onClick={handleSelectAll}>
                 {selectedCount === totalCount ? t("trashContent_deselectAll") : t("trashContent_selectAll")}
               </Button>
-              <Button size="sm" onClick={handleBatchRestore}>
+              <Button size="sm" disabled={groupPurgePending} onClick={handleBatchRestore}>
                 <RotateCcw className="size-4 mr-1" /> {t("trashContent_restore")}
               </Button>
-              <Button size="sm" variant="destructive" onClick={() => requestConfirm(
-                t(selectedCount === 1 ? "trashContent_deleteConfirmTitle_one" : "trashContent_deleteConfirmTitle_other", [selectedCount.toString()]),
-                t("trashContent_deleteConfirmDesc"),
-                handleBatchDelete
-              )}>
+              <Button
+                size="sm"
+                variant="destructive"
+                disabled={groupPurgePending}
+                onClick={() => requestConfirm(
+                  t(selectedCount === 1 ? "trashContent_deleteConfirmTitle_one" : "trashContent_deleteConfirmTitle_other", [selectedCount.toString()]),
+                  t("trashContent_deleteConfirmDesc"),
+                  handleBatchDelete
+                )}
+              >
                 <Trash2 className="size-4 mr-1" /> {t("trashContent_delete")}
               </Button>
             </div>
@@ -835,10 +940,28 @@ export function TrashContent() {
                 onToggleGroup={() => toggleGroup(group.id)}
                 selectedTabIds={selectedTabIds}
                 onToggleTab={toggleTab}
+                actionsDisabled={groupPurgePending}
                 onPermanentlyDeleteGroup={() => requestConfirm(
-                  "Delete group permanently?",
-                  `"${group.name}" and all its tabs will be permanently deleted.`,
-                  () => permanentlyDeleteGroup(group.id)
+                  t("trashContent_groupDeleteConfirmTitle"),
+                  t("trashContent_groupDeleteConfirmDesc", [group.name]),
+                  () => executeGroupPurgeAction({
+                    operation: () => permanentlyDeleteGroup(group.id),
+                    setPending: setGroupPurgePending,
+                    onCompleted: () => {
+                      setSelectedGroupIds(previous => {
+                        const next = new Set(previous);
+                        next.delete(group.id);
+                        return next;
+                      });
+                      setSelectedTabIds(previous => {
+                        const next = new Set(previous);
+                        for (const tab of groupTabsMap[group.id] ?? []) {
+                          next.delete(tab.id);
+                        }
+                        return next;
+                      });
+                    },
+                  })
                 )}
                 onPermanentlyDeleteTab={(tabId) => requestConfirm(
                   "Delete tab permanently?",
@@ -875,19 +998,43 @@ export function TrashContent() {
         )}
       </div>
 
-      <Dialog open={!!confirmDialog} onOpenChange={(open) => { if (!open) { setConfirmDialog(null); } }}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog
+        open={!!confirmDialog}
+        onOpenChange={(open) => {
+          if (!open && !groupPurgePending) {
+            setConfirmDialog(null);
+            setConfirmErrorKey(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" showCloseButton={!groupPurgePending}>
           <DialogHeader>
             <DialogTitle>{confirmDialog?.title}</DialogTitle>
             <DialogDescription>{confirmDialog?.description}</DialogDescription>
           </DialogHeader>
+          {confirmErrorKey && (
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertDescription>{t(confirmErrorKey)}</AlertDescription>
+            </Alert>
+          )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDialog(null)}>Cancel</Button>
+            <Button
+              variant="outline"
+              disabled={groupPurgePending}
+              onClick={() => {
+                setConfirmDialog(null);
+                setConfirmErrorKey(null);
+              }}
+            >
+              {t("trashContent_cancel")}
+            </Button>
             <Button
               variant="destructive"
-              onClick={() => { confirmDialog?.onConfirm(); setConfirmDialog(null); }}
+              disabled={groupPurgePending}
+              onClick={() => { void handleConfirm(); }}
             >
-              Delete
+              {t("trashContent_delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

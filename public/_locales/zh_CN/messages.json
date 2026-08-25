@@ -1133,6 +1133,26 @@
   "trashContent_deletePermanently": {
     "message": "永久删除"
   },
+  "trashContent_groupDeleteConfirmTitle": {
+    "message": "确定永久删除分组？"
+  },
+  "trashContent_groupDeleteConfirmDesc": {
+    "message": "“$1”及其中的所有标签页都将被永久删除。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_groupPurgeOffline": {
+    "message": "请连接服务器后再永久删除此分组。"
+  },
+  "trashContent_groupPurgePending": {
+    "message": "此分组正在永久删除，请稍候。"
+  },
+  "trashContent_groupPurgeFailed": {
+    "message": "无法永久删除此分组，请重试。"
+  },
   "trashContent_openUrl": {
     "message": "打开链接"
   },

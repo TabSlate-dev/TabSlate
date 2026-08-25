@@ -11,6 +11,7 @@ import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
 import type { WorkspaceAggregateIds } from "@/lib/workspace-aggregate";
+import { resolveAuthSessionStatus } from "@/lib/auth-session";
 
 export interface GroupTab {
   id: string;
@@ -268,15 +269,20 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     if (!group.deletedAt) {
       return { status: "blocked", reason: "not_deleted" };
     }
-    const { user, accessToken } = useAuthStore.getState();
-    const isAuthenticated = Boolean(user || accessToken);
-    if (isAuthenticated && !syncEngine) {
+    const { user, accessToken, refreshToken } = useAuthStore.getState();
+    const sessionStatus = resolveAuthSessionStatus({
+      accessToken,
+      refreshToken,
+      isVerified: user?.is_verified ?? null,
+    });
+    const isGuest = sessionStatus === "guest";
+    if (!isGuest && !syncEngine) {
       return { status: "blocked", reason: "offline" };
     }
     const tabs = get().groupTabs.filter(tab => tab.groupId === id);
     pendingPermanentGroupIds.add(id);
     try {
-      if (isAuthenticated && syncEngine) {
+      if (!isGuest && syncEngine) {
         try {
           await syncEngine.forcePush({ groups: [toServerGroup(group, tabs, { isDeleted: 2 })] });
         } catch {

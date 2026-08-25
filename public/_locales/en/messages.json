@@ -1133,6 +1133,26 @@
   "trashContent_deletePermanently": {
     "message": "Delete Permanently"
   },
+  "trashContent_groupDeleteConfirmTitle": {
+    "message": "Delete group permanently?"
+  },
+  "trashContent_groupDeleteConfirmDesc": {
+    "message": "\"$1\" and all its tabs will be permanently deleted.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "trashContent_groupPurgeOffline": {
+    "message": "Connect to the server before permanently deleting this group."
+  },
+  "trashContent_groupPurgePending": {
+    "message": "This group is already being permanently deleted. Please wait."
+  },
+  "trashContent_groupPurgeFailed": {
+    "message": "The group could not be permanently deleted. Please try again."
+  },
   "trashContent_openUrl": {
     "message": "Open URL"
   },

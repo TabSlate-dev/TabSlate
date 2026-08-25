@@ -12,6 +12,7 @@ const authSession = {
     updated_at: 0,
   },
   accessToken: null,
+  refreshToken: "refresh-token",
 };
 
 mock.module("@/lib/chrome/tab-groups", () => ({
@@ -99,10 +100,12 @@ describe("groups-store offline permanent deletion", () => {
       updated_at: 0,
     };
     authSession.accessToken = null;
+    authSession.refreshToken = "refresh-token";
     useGroupsStore.setState({ groups: [group()], groupTabs: [tab()], _hydrated: true });
   });
 
-  test("authenticated offline session retains group, tabs, and quota for retry", async () => {
+  test("refresh-token-only session retains group, tabs, and quota for authenticated retry", async () => {
+    authSession.user = null;
     const result = await useGroupsStore.getState().permanentlyDeleteGroup("group-1");
 
     expect(result).toEqual({ status: "blocked", reason: "offline" });
@@ -115,6 +118,7 @@ describe("groups-store offline permanent deletion", () => {
   test("guest session permanently deletes group and tabs through one transaction", async () => {
     authSession.user = null;
     authSession.accessToken = null;
+    authSession.refreshToken = null;
 
     const result = await useGroupsStore.getState().permanentlyDeleteGroup("group-1");
 
