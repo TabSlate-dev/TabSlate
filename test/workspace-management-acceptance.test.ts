@@ -519,8 +519,10 @@ function stateFileFor(name: string): string {
 async function makeDevice(userId: string, label = "device"): Promise<RpcDevice> {
   deviceCounter += 1;
   const device = new RpcDevice(`${label}-${deviceCounter}`, stateFileFor(`${label}-${deviceCounter}`), server.url, userId);
-  await device.spawn();
+  // Track the device before awaiting readiness so a timed-out handshake still
+  // leaves the already-spawned child process reachable for afterAll cleanup.
   activeDevices.push(device);
+  await device.spawn();
   return device;
 }
 
