@@ -267,6 +267,16 @@ interface WorkspaceState {
 // Module-level timer to avoid referential equality issues with array comparison
 let _collectionHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 let _guestWorkspaceInitialization: Promise<void> | null = null;
+let _workspaceLifecycleStateTail: Promise<void> = Promise.resolve();
+
+function serializeWorkspaceLifecycleState<T>(action: () => Promise<T>): Promise<T> {
+  const running = _workspaceLifecycleStateTail.then(action, action);
+  _workspaceLifecycleStateTail = running.then(
+    () => undefined,
+    () => undefined,
+  );
+  return running;
+}
 
 // ---------------------------------------------------------------------------
 // Store
@@ -703,77 +713,91 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   deleteWorkspace: async (id) => {
-    const state = get();
-    const workspace = state.workspaces.find((candidate) => candidate.id === id);
-    if (!workspace || !isActiveWorkspace(workspace)) {
-      return { status: "completed" };
-    }
-    const activeWorkspaces = state.workspaces.filter(isActiveWorkspace);
-    if (activeWorkspaces.length <= 1) {
-      return { status: "blocked", reason: "last_active_workspace" };
-    }
-    if (!await workspaceLifecycleSupported()) {
-      return { status: "unsupported", reason: "server_capability" };
-    }
+    const result = await serializeWorkspaceLifecycleState(
+      async (): Promise<WorkspaceActionResult> => {
+        const state = get();
+        const workspace = state.workspaces.find((candidate) => candidate.id === id);
+        if (!workspace || !isActiveWorkspace(workspace)) {
+          return { status: "completed" };
+        }
+        const activeWorkspaces = state.workspaces.filter(isActiveWorkspace);
+        if (activeWorkspaces.length <= 1) {
+          return { status: "blocked", reason: "last_active_workspace" };
+        }
+        if (!await workspaceLifecycleSupported()) {
+          return { status: "unsupported", reason: "server_capability" };
+        }
 
-    const replacement = state.activeWorkspaceId === id
-      ? chooseNearestActiveWorkspace(state.workspaces, workspace)
-      : state.workspaces.find(
-          (candidate) => candidate.id === state.activeWorkspaceId && isActiveWorkspace(candidate),
-        ) ?? chooseNearestActiveWorkspace(state.workspaces, workspace);
-    if (!replacement) {
-      return { status: "blocked", reason: "last_active_workspace" };
+        const replacement = state.activeWorkspaceId === id
+          ? chooseNearestActiveWorkspace(state.workspaces, workspace)
+          : state.workspaces.find(
+              (candidate) => candidate.id === state.activeWorkspaceId && isActiveWorkspace(candidate),
+            ) ?? chooseNearestActiveWorkspace(state.workspaces, workspace);
+        if (!replacement) {
+          return { status: "blocked", reason: "last_active_workspace" };
+        }
+        const createdAt = Date.now();
+        const deletedWorkspace: Workspace = { ...workspace, deletedAt: createdAt, seq: 0 };
+        const intent: WorkspaceLifecycleIntent = {
+          workspaceId: id,
+          action: "delete",
+          baseSeq: workspace.seq,
+          previousActiveWorkspaceId: state.activeWorkspaceId,
+          createdAt,
+        };
+        await idb.idbCommitWorkspaceLifecycleIntent({
+          workspace: deletedWorkspace,
+          intent,
+          activeWorkspaceId: replacement.id,
+        });
+        set((current) => ({
+          workspaces: current.workspaces.map((candidate) =>
+            candidate.id === id ? deletedWorkspace : candidate,
+          ),
+          activeWorkspaceId: replacement.id,
+        }));
+        return { status: "queued" };
+      },
+    );
+    if (result.status === "queued") {
+      await wakeActiveWorkspaceLifecycle(id).catch(() => false);
     }
-    const createdAt = Date.now();
-    const deletedWorkspace: Workspace = { ...workspace, deletedAt: createdAt, seq: 0 };
-    const intent: WorkspaceLifecycleIntent = {
-      workspaceId: id,
-      action: "delete",
-      baseSeq: workspace.seq,
-      previousActiveWorkspaceId: state.activeWorkspaceId,
-      createdAt,
-    };
-    await idb.idbCommitWorkspaceLifecycleIntent({
-      workspace: deletedWorkspace,
-      intent,
-      activeWorkspaceId: replacement.id,
-    });
-    set((current) => ({
-      workspaces: current.workspaces.map((candidate) =>
-        candidate.id === id ? deletedWorkspace : candidate,
-      ),
-      activeWorkspaceId: replacement.id,
-    }));
-    await wakeActiveWorkspaceLifecycle(id).catch(() => false);
-    return { status: "queued" };
+    return result;
   },
 
   restoreWorkspace: async (id) => {
-    const state = get();
-    const workspace = state.workspaces.find((candidate) => candidate.id === id);
-    if (!workspace || isActiveWorkspace(workspace)) {
-      return { status: "completed" };
-    }
-    if (!await workspaceLifecycleSupported()) {
-      return { status: "unsupported", reason: "server_capability" };
-    }
+    const result = await serializeWorkspaceLifecycleState(
+      async (): Promise<WorkspaceActionResult> => {
+        const state = get();
+        const workspace = state.workspaces.find((candidate) => candidate.id === id);
+        if (!workspace || isActiveWorkspace(workspace)) {
+          return { status: "completed" };
+        }
+        if (!await workspaceLifecycleSupported()) {
+          return { status: "unsupported", reason: "server_capability" };
+        }
 
-    const restoredWorkspace: Workspace = { ...workspace, deletedAt: undefined, seq: 0 };
-    const intent: WorkspaceLifecycleIntent = {
-      workspaceId: id,
-      action: "restore",
-      baseSeq: workspace.seq,
-      previousActiveWorkspaceId: state.activeWorkspaceId,
-      createdAt: Date.now(),
-    };
-    await idb.idbCommitWorkspaceLifecycleIntent({ workspace: restoredWorkspace, intent });
-    set((current) => ({
-      workspaces: current.workspaces.map((candidate) =>
-        candidate.id === id ? restoredWorkspace : candidate,
-      ),
-    }));
-    await wakeActiveWorkspaceLifecycle(id).catch(() => false);
-    return { status: "queued" };
+        const restoredWorkspace: Workspace = { ...workspace, deletedAt: undefined, seq: 0 };
+        const intent: WorkspaceLifecycleIntent = {
+          workspaceId: id,
+          action: "restore",
+          baseSeq: workspace.seq,
+          previousActiveWorkspaceId: state.activeWorkspaceId,
+          createdAt: Date.now(),
+        };
+        await idb.idbCommitWorkspaceLifecycleIntent({ workspace: restoredWorkspace, intent });
+        set((current) => ({
+          workspaces: current.workspaces.map((candidate) =>
+            candidate.id === id ? restoredWorkspace : candidate,
+          ),
+        }));
+        return { status: "queued" };
+      },
+    );
+    if (result.status === "queued") {
+      await wakeActiveWorkspaceLifecycle(id).catch(() => false);
+    }
+    return result;
   },
 
   permanentlyDeleteWorkspace: async (id) => {
@@ -1026,31 +1050,33 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
   sweepUnsynced: async () => {
     await syncConflictRegistry.ready();
-    const pendingWorkspaceIds = new Set(
-      (await readWorkspaceLifecycleIntents()).map((intent) => intent.workspaceId),
-    );
-    const { workspaces, collections, tags } = get();
-    const ws = workspaces.filter(
-      (workspace) => workspace.seq === 0 && !pendingWorkspaceIds.has(workspace.id),
-    );
-    const cols = collections.filter(c => c.seq === 0);
-    const ts = tags.filter(t => t.seq === 0);
-    const payload = syncConflictRegistry.filterPayload({
-      entities: {
-        workspaces: ws.map(toServerWorkspace),
-        collections: cols.map(c => toServerCollection(c)),
-        tags: ts.map(toServerTag),
-        bookmarks: [],
-        groups: [],
-      },
+    await serializeWorkspaceLifecycleState(async () => {
+      const pendingWorkspaceIds = new Set(
+        (await readWorkspaceLifecycleIntents()).map((intent) => intent.workspaceId),
+      );
+      const { workspaces, collections, tags } = get();
+      const ws = workspaces.filter(
+        (workspace) => workspace.seq === 0 && !pendingWorkspaceIds.has(workspace.id),
+      );
+      const cols = collections.filter(c => c.seq === 0);
+      const ts = tags.filter(t => t.seq === 0);
+      const payload = syncConflictRegistry.filterPayload({
+        entities: {
+          workspaces: ws.map(toServerWorkspace),
+          collections: cols.map(c => toServerCollection(c)),
+          tags: ts.map(toServerTag),
+          bookmarks: [],
+          groups: [],
+        },
+      });
+      if (
+        payload.entities.workspaces.length > 0 ||
+        payload.entities.collections.length > 0 ||
+        payload.entities.tags.length > 0
+      ) {
+        syncEngine?.enqueue(payload.entities, "respect");
+      }
     });
-    if (
-      payload.entities.workspaces.length > 0 ||
-      payload.entities.collections.length > 0 ||
-      payload.entities.tags.length > 0
-    ) {
-      syncEngine?.enqueue(payload.entities, "respect");
-    }
   },
 
   confirmWorkspaceStoreEntitySeqs: (entities, serverSeq) => {

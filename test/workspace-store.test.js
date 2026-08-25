@@ -21,6 +21,8 @@ let storedKv = new Map();
 let lifecycleIntents = [];
 let authState;
 let capabilitySupported = true;
+let capabilityReadImpl;
+let intentReadImpl;
 let purgeImpl;
 let aggregateCleanupIds;
 
@@ -34,12 +36,18 @@ mock.module("@/lib/idb", () => ({
   idbGet: async (store, key) => {
     if (store !== "kv") { return undefined; }
     if (key === "workspace-lifecycle-intents-v1") {
+      if (intentReadImpl) {
+        return intentReadImpl(key);
+      }
       return {
         key,
         value: { version: 1, intents: structuredClone(lifecycleIntents) },
       };
     }
     if (key.startsWith("workspace-parent-tombstone-capability-v1:")) {
+      if (capabilityReadImpl) {
+        return capabilityReadImpl(key);
+      }
       return capabilitySupported
         ? {
             key,
@@ -70,6 +78,18 @@ mock.module("@/lib/idb", () => ({
   },
   idbCommitWorkspaceLifecycleIntent: async (input) => {
     lifecycleCommitCalls.push(structuredClone(input));
+    const index = storedWorkspaces.findIndex((item) => item.id === input.workspace.id);
+    if (index === -1) {
+      storedWorkspaces.push(structuredClone(input.workspace));
+    } else {
+      storedWorkspaces[index] = structuredClone(input.workspace);
+    }
+    if (input.activeWorkspaceId !== undefined) {
+      storedKv.set("activeWorkspaceId", {
+        key: "activeWorkspaceId",
+        value: input.activeWorkspaceId,
+      });
+    }
   },
   idbCreateGuestWorkspaceIfEmpty: async (workspace, collection, activeWorkspace, provenance) => {
     if (guestSeedCreated) {
@@ -236,6 +256,8 @@ describe("workspace lifecycle store", () => {
     lifecycleIntents = [];
     authState = { user: null, accessToken: null, serverUrl: "https://server.test" };
     capabilitySupported = true;
+    capabilityReadImpl = undefined;
+    intentReadImpl = undefined;
     purgeImpl = async () => ({ status: "completed" });
     aggregateCleanupIds = undefined;
     useWorkspaceStore.setState({
@@ -381,6 +403,59 @@ describe("workspace lifecycle store", () => {
     expect(lifecycleCommitCalls).toEqual([]);
     expect(wakeCalls).toEqual([]);
     expect(useWorkspaceStore.getState().workspaces).toEqual([only]);
+  });
+
+  test("concurrent deletes serialize the active-count decision and leave one durable active root", async () => {
+    const first = workspace("workspace-first", 0);
+    const second = workspace("workspace-second", 1);
+    storedWorkspaces = structuredClone([first, second]);
+    storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: first.id });
+    authState = {
+      user: { id: "user-1" },
+      accessToken: null,
+      serverUrl: "https://server.test",
+    };
+    useWorkspaceStore.setState({ workspaces: [first, second], activeWorkspaceId: first.id });
+    let releaseCapability;
+    const capabilityGate = new Promise((resolve) => { releaseCapability = resolve; });
+    let capabilityReads = 0;
+    let observeFirstRead;
+    const firstRead = new Promise((resolve) => { observeFirstRead = resolve; });
+    capabilityReadImpl = async (key) => {
+      capabilityReads += 1;
+      observeFirstRead();
+      await capabilityGate;
+      return {
+        key,
+        value: {
+          version: 1,
+          userId: "user-1",
+          serverOrigin: "https://server.test",
+          supported: true,
+          observedAt: 1,
+        },
+      };
+    };
+
+    const deletingFirst = useWorkspaceStore.getState().deleteWorkspace(first.id);
+    const deletingSecond = useWorkspaceStore.getState().deleteWorkspace(second.id);
+    await firstRead;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(capabilityReads).toBe(1);
+    if (!releaseCapability) { throw new Error("capability read was not blocked"); }
+    releaseCapability();
+    const results = await Promise.all([deletingFirst, deletingSecond]);
+
+    expect(results.map((result) => result.status).sort()).toEqual(["blocked", "queued"]);
+    expect(lifecycleCommitCalls).toHaveLength(1);
+    const activeStateRoots = useWorkspaceStore.getState().getActiveWorkspaces();
+    expect(activeStateRoots).toHaveLength(1);
+    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe(activeStateRoots[0]?.id);
+    const activeDurableRoots = storedWorkspaces.filter((item) => item.deletedAt === undefined);
+    expect(activeDurableRoots).toHaveLength(1);
+    expect(storedKv.get("activeWorkspaceId")?.value).toBe(activeDurableRoots[0]?.id);
   });
 
   test("hydrate retains deleted roots but replaces a deleted active selection", async () => {
@@ -587,6 +662,40 @@ describe("workspace lifecycle store", () => {
 
     expect(syncEnqueueCalls).toHaveLength(1);
     expect(syncEnqueueCalls[0][0].workspaces.map((entity) => entity.id)).toEqual([ordinary.id]);
+  });
+
+  test("delete cannot commit between sweep intent and Workspace snapshots", async () => {
+    const target = workspace("workspace-target", 0);
+    const replacement = workspace("workspace-replacement", 1);
+    storedWorkspaces = structuredClone([target, replacement]);
+    useWorkspaceStore.setState({
+      workspaces: [target, replacement],
+      activeWorkspaceId: target.id,
+    });
+    let resolveIntentRead;
+    let observeIntentRead;
+    const intentReadStarted = new Promise((resolve) => { observeIntentRead = resolve; });
+    intentReadImpl = (key) => {
+      observeIntentRead();
+      return new Promise((resolve) => {
+        resolveIntentRead = () => resolve({ key, value: { version: 1, intents: [] } });
+      });
+    };
+    syncEnqueueCalls.length = 0;
+
+    const sweeping = useWorkspaceStore.getState().sweepUnsynced();
+    await intentReadStarted;
+    const deleting = useWorkspaceStore.getState().deleteWorkspace(target.id);
+    await Promise.resolve();
+    await Promise.resolve();
+    if (!resolveIntentRead) { throw new Error("intent read was not blocked"); }
+    resolveIntentRead();
+    await Promise.all([sweeping, deleting]);
+
+    const sweptWorkspaceIds = syncEnqueueCalls.flatMap((call) =>
+      call[0].workspaces?.map((entity) => entity.id) ?? []
+    );
+    expect(sweptWorkspaceIds).not.toContain(target.id);
   });
 
   test("authenticated purge is offline-safe and rolls back the optimistic card on failure", async () => {
