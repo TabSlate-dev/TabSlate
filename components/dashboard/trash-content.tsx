@@ -54,6 +54,11 @@ import {
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 import { usePlanStore } from "@/store/plan-store";
 import { useTranslation } from "@/hooks/use-translation";
+import {
+  getActiveWorkspaceCollections,
+  getCollectionsUnderActiveWorkspace,
+  isActiveWorkspace,
+} from "@/lib/workspace-visibility";
 
 export interface GroupPurgeUiOutcome {
   shouldClose: boolean;
@@ -138,9 +143,16 @@ function TrashedCollectionCard({
   const { t } = useTranslation();
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const [expanded, setExpanded] = React.useState(false);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   return (
     <div className="flex flex-col rounded-lg border bg-card overflow-hidden">
+      {targetUnavailable && (
+        <Alert variant="destructive" className="m-3 mb-0">
+          <AlertCircle />
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       <div
         className="flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100 cursor-pointer"
         onClick={() => setExpanded(!expanded)}
@@ -176,11 +188,22 @@ function TrashedCollectionCard({
             variant="outline" 
             size="sm" 
             onClick={() => {
+              const state = useWorkspaceStore.getState();
+              const visibleCollection = getCollectionsUnderActiveWorkspace(
+                state.activeWorkspaceId,
+                state.workspaces,
+                state.collections,
+              ).find((candidate) => candidate.id === collection.id && !!candidate.deletedAt);
+              if (!visibleCollection) {
+                setTargetUnavailable(true);
+                return;
+              }
               restoreCollection(collection.id);
               // Restore ALL bookmarks currently in this collection, ignoring selection
               bookmarks.forEach(b => {
                 useBookmarksStore.getState().restoreFromTrash(b.id, collection.id);
               });
+              setTargetUnavailable(false);
             }}
           >
             <RotateCcw className="size-4 mr-1" />
@@ -237,13 +260,26 @@ function TrashedBookmarkCard({
   const { t } = useTranslation();
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDelete = useBookmarksStore(s => s.permanentlyDelete);
-  const collections = useWorkspaceStore(s => s.collections);
-  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   function handleRestore() {
-    const active = collections.filter(
-      c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
+    const state = useWorkspaceStore.getState();
+    const active = getActiveWorkspaceCollections(
+      state.activeWorkspaceId,
+      state.workspaces,
+      state.collections,
     );
+    const scopedIds = new Set(
+      getCollectionsUnderActiveWorkspace(
+        state.activeWorkspaceId,
+        state.workspaces,
+        state.collections,
+      ).map((collection) => collection.id),
+    );
+    if (bookmark.collectionId !== "" && !scopedIds.has(bookmark.collectionId)) {
+      setTargetUnavailable(true);
+      return;
+    }
 
     // 1. collectionId still points to an active collection
     const byId = active.find(c => c.id === bookmark.collectionId);
@@ -253,7 +289,7 @@ function TrashedBookmarkCard({
     }
 
     // 2. Original collection name exists under a different id (e.g. re-created)
-    const srcCol = collections.find(c => c.id === bookmark.collectionId);
+    const srcCol = state.collections.find(c => c.id === bookmark.collectionId);
     const byName = srcCol ? active.find(c => c.name === srcCol.name) : undefined;
     if (byName) {
       restoreFromTrash(bookmark.id, byName.id);
@@ -263,14 +299,21 @@ function TrashedBookmarkCard({
     // 3. Fall back to default collection
     const defaultCol = active.find(c => c.isDefault);
     restoreFromTrash(bookmark.id, defaultCol?.id ?? "");
+    setTargetUnavailable(false);
   }
 
   return (
     <div className={cn(
-      "group flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100",
+      "group relative flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100",
       !isNested && "rounded-lg border bg-card",
       onSelect && "cursor-pointer"
     )} onClick={() => onSelect?.(!selected)}>
+      {targetUnavailable && (
+        <Alert variant="destructive" className="absolute z-10">
+          <AlertCircle />
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       {onSelect && (
         <div
           className={cn(
@@ -357,18 +400,43 @@ export function TrashedGroupCard({
   const addTabToGroup = useGroupsStore(s => s.addTabToGroup);
   const deleteTabFromTrash = useGroupsStore(s => s.deleteTabFromTrash);
   const [expanded, setExpanded] = React.useState(false);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   const handleRestoreTab = (tab: GroupTab) => {
     const activeGroups = useGroupsStore.getState().groups;
-    const { activeWorkspaceId } = useWorkspaceStore.getState();
-    const existing = activeGroups.find(g => g.name === group.name && !g.deletedAt);
-    const targetId = existing ? existing.id : createGroup(group.name, group.color, group.isCompact, activeWorkspaceId);
+    const workspaceState = useWorkspaceStore.getState();
+    const activeWorkspace = workspaceState.workspaces.find(
+      (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+    );
+    const sourceGroup = activeGroups.find(
+      (candidate) => candidate.id === group.id &&
+        candidate.workspaceId === workspaceState.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace) || !sourceGroup) {
+      setTargetUnavailable(true);
+      return;
+    }
+    const existing = activeGroups.find(
+      (candidate) => candidate.name === group.name &&
+        !candidate.deletedAt &&
+        candidate.workspaceId === workspaceState.activeWorkspaceId,
+    );
+    const targetId = existing
+      ? existing.id
+      : createGroup(group.name, group.color, group.isCompact, workspaceState.activeWorkspaceId);
     addTabToGroup(targetId, { title: tab.title, url: tab.url, favicon: tab.favicon });
     deleteTabFromTrash(tab.id);
+    setTargetUnavailable(false);
   };
 
   return (
     <div className="flex flex-col rounded-lg border bg-card overflow-hidden">
+      {targetUnavailable && (
+        <Alert variant="destructive" className="m-3 mb-0">
+          <AlertCircle />
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       <div
         className="flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors opacity-75 hover:opacity-100 cursor-pointer"
         onClick={() => setExpanded(!expanded)}
@@ -405,7 +473,22 @@ export function TrashedGroupCard({
             variant="outline"
             size="sm"
             disabled={actionsDisabled}
-            onClick={() => restoreGroup(group.id)}
+            onClick={() => {
+              const workspaceState = useWorkspaceStore.getState();
+              const activeWorkspace = workspaceState.workspaces.find(
+                (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+              );
+              const currentGroup = useGroupsStore.getState().groups.find(
+                (candidate) => candidate.id === group.id &&
+                  candidate.workspaceId === workspaceState.activeWorkspaceId,
+              );
+              if (!isActiveWorkspace(activeWorkspace) || !currentGroup) {
+                setTargetUnavailable(true);
+                return;
+              }
+              restoreGroup(group.id);
+              setTargetUnavailable(false);
+            }}
           >
             <RotateCcw className="size-4 mr-1" />
             {t("trashContent_restore")}
@@ -513,8 +596,15 @@ export function TrashContent() {
   const addTabToGroup = useGroupsStore(s => s.addTabToGroup);
   const deleteTabFromTrash = useGroupsStore(s => s.deleteTabFromTrash);
   const trashedGroups = React.useMemo(
-    () => allGroups.filter(g => !!g.deletedAt && g.workspaceId === activeWorkspaceId),
-    [allGroups, activeWorkspaceId]
+    () => {
+      const parentIsActive = workspaces.some(
+        (workspace) => workspace.id === activeWorkspaceId && workspace.deletedAt === undefined,
+      );
+      return parentIsActive
+        ? allGroups.filter(g => !!g.deletedAt && g.workspaceId === activeWorkspaceId)
+        : [];
+    },
+    [allGroups, activeWorkspaceId, workspaces]
   );
 
   const groupTabsMap = React.useMemo(() => {
@@ -527,20 +617,17 @@ export function TrashContent() {
   }, [allGroupTabs]);
 
   const wsAllColIds = React.useMemo(
-    () => new Set(collections.filter(c => c.workspaceId === activeWorkspaceId).map(c => c.id)),
-    [collections, activeWorkspaceId]
-  );
-
-  const workspaceIds = React.useMemo(
-    () => new Set(workspaces.map(w => w.id)),
-    [workspaces]
+    () => new Set(
+      getCollectionsUnderActiveWorkspace(activeWorkspaceId, workspaces, collections)
+        .map((collection) => collection.id),
+    ),
+    [activeWorkspaceId, workspaces, collections]
   );
 
   const trashedCollections = React.useMemo(
-    () => collections.filter(
-      c => !!c.deletedAt && (c.workspaceId === activeWorkspaceId || !workspaceIds.has(c.workspaceId))
-    ),
-    [collections, activeWorkspaceId, workspaceIds]
+    () => getCollectionsUnderActiveWorkspace(activeWorkspaceId, workspaces, collections)
+      .filter(c => !!c.deletedAt && c.workspaceId === activeWorkspaceId),
+    [activeWorkspaceId, workspaces, collections]
   );
 
   const individualTrashedBookmarks = React.useMemo(() => {
@@ -579,6 +666,7 @@ export function TrashContent() {
   const [selectedBmIds, setSelectedBmIds] = React.useState<Set<string>>(new Set());
   const [groupPurgePending, setGroupPurgePending] = React.useState(false);
   const [confirmErrorKey, setConfirmErrorKey] = React.useState<string | null>(null);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   React.useEffect(() => {
     setSelectedColIds(new Set());
@@ -742,9 +830,37 @@ export function TrashContent() {
 
   const handleBatchRestore = () => {
     if (groupPurgePending) { return; }
-    const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
-    const active = collections.filter(
-      c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
+    const workspaceState = useWorkspaceStore.getState();
+    const activeWorkspace = workspaceState.workspaces.find(
+      (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+    );
+    const scopedCollections = getCollectionsUnderActiveWorkspace(
+      workspaceState.activeWorkspaceId,
+      workspaceState.workspaces,
+      workspaceState.collections,
+    );
+    const scopedCollectionIds = new Set(scopedCollections.map((collection) => collection.id));
+    const currentGroups = useGroupsStore.getState().groups;
+    const visibleGroupIds = new Set(currentGroups.filter(
+      (candidate) => candidate.workspaceId === workspaceState.activeWorkspaceId,
+    ).map((candidate) => candidate.id));
+    if (
+      !isActiveWorkspace(activeWorkspace) ||
+      Array.from(selectedColIds).some((id) => !scopedCollectionIds.has(id)) ||
+      Array.from(selectedGroupIds).some((id) => !visibleGroupIds.has(id)) ||
+      Array.from(selectedBmIds).some((id) => {
+        const bookmark = trashedBookmarks.find((candidate) => candidate.id === id);
+        return !bookmark || (bookmark.collectionId !== "" && !scopedCollectionIds.has(bookmark.collectionId));
+      })
+    ) {
+      clearSelection();
+      setTargetUnavailable(true);
+      return;
+    }
+    const active = getActiveWorkspaceCollections(
+      workspaceState.activeWorkspaceId,
+      workspaceState.workspaces,
+      workspaceState.collections,
     );
     const defaultCol = active.find(c => c.isDefault);
 
@@ -754,7 +870,7 @@ export function TrashContent() {
       const allBmsInCol = collectionBookmarks[colId] || [];
       for (const bm of allBmsInCol) {
         if (!selectedBmIds.has(bm.id)) {
-          useBookmarksStore.getState().updateBookmark(bm.id, { collectionId: "" });
+          useBookmarksStore.getState().updateBookmark(bm.id, { collectionId: defaultCol?.id ?? bm.collectionId });
         }
       }
     }
@@ -771,8 +887,14 @@ export function TrashContent() {
     const activeGroupsSnap = useGroupsStore.getState().groups;
     for (const group of partialGroups) {
       const tabsToRestore = (groupTabsMap[group.id] ?? []).filter(t => selectedTabIds.has(t.id));
-      const existing = activeGroupsSnap.find(g => g.name === group.name && !g.deletedAt);
-      const targetId = existing ? existing.id : createGroup(group.name, group.color, group.isCompact, activeWorkspaceId);
+      const existing = activeGroupsSnap.find(g =>
+        g.name === group.name &&
+        !g.deletedAt &&
+        g.workspaceId === workspaceState.activeWorkspaceId
+      );
+      const targetId = existing
+        ? existing.id
+        : createGroup(group.name, group.color, group.isCompact, workspaceState.activeWorkspaceId);
       for (const tab of tabsToRestore) {
         addTabToGroup(targetId, { title: tab.title, url: tab.url, favicon: tab.favicon });
         deleteTabFromTrash(tab.id);
@@ -792,7 +914,7 @@ export function TrashContent() {
         if (isAlreadyActive) {
           targetColId = isAlreadyActive.id;
         } else {
-          const srcCol = collections.find(c => c.id === bm.collectionId);
+          const srcCol = workspaceState.collections.find(c => c.id === bm.collectionId);
           const byName = srcCol ? active.find(c => c.name === srcCol.name) : undefined;
           if (byName) { targetColId = byName.id; }
         }
@@ -801,6 +923,7 @@ export function TrashContent() {
     }
 
     clearSelection();
+    setTargetUnavailable(false);
   };
 
   const handleBatchDelete = () => executeGroupPurgeAction({
@@ -843,6 +966,12 @@ export function TrashContent() {
   return (
     <div className="flex-1 w-full overflow-auto">
       <div className="p-4 md:p-6 space-y-6">
+        {targetUnavailable && (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+          </Alert>
+        )}
         <div className="flex items-center justify-between gap-4 p-4 rounded-xl border bg-card">
           <div className="flex items-center gap-3">
             <div className="size-10 rounded-lg bg-destructive/10 text-destructive flex items-center justify-center">

@@ -23,7 +23,13 @@ import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { useTranslation } from "@/hooks/use-translation";
-import { compareActiveCollections } from "@/lib/collection-utils";
+import {
+  getActiveWorkspaceCollections,
+  isActiveWorkspace,
+  resolveActiveWorkspaceCollectionTarget,
+} from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 interface AddBookmarkDialogProps {
   open: boolean;
@@ -34,15 +40,14 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
   const { t } = useTranslation();
   const addBookmark = useBookmarksStore(s => s.addBookmark);
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const createCollection = useWorkspaceStore(s => s.createCollection);
   const tags = useWorkspaceStore(s => s.tags);
 
   const activeCollections = React.useMemo(
-    () => collections
-      .filter(c => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-      .sort(compareActiveCollections),
-    [collections, activeWorkspaceId]
+    () => getActiveWorkspaceCollections(activeWorkspaceId, workspaces, collections),
+    [activeWorkspaceId, workspaces, collections]
   );
 
   const defaultCollectionId = React.useMemo(
@@ -54,12 +59,14 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
   const [selectedTags, setSelectedTags] = React.useState<string[]>([]);
   const [newCollectionOpen, setNewCollectionOpen] = React.useState(false);
   const [collectionMenuOpen, setCollectionMenuOpen] = React.useState(false);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   // Reset form when dialog opens
   React.useEffect(() => {
     if (open) {
       setCollectionId(defaultCollectionId);
       setSelectedTags([]);
+      setTargetUnavailable(false);
     }
   }, [open, defaultCollectionId]);
 
@@ -83,6 +90,25 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
 
     if (!title || !url) { return; }
 
+    const state = useWorkspaceStore.getState();
+    const targetId = collectionId || defaultCollectionId;
+    const currentTarget = resolveActiveWorkspaceCollectionTarget(
+      targetId,
+      state.activeWorkspaceId,
+      state.workspaces,
+      state.collections,
+    );
+    if (!currentTarget) {
+      const refreshed = getActiveWorkspaceCollections(
+        state.activeWorkspaceId,
+        state.workspaces,
+        state.collections,
+      );
+      setCollectionId(refreshed.find((collection) => collection.isDefault)?.id ?? refreshed[0]?.id ?? "");
+      setTargetUnavailable(true);
+      return;
+    }
+
     // Ensure URL has protocol
     let finalUrl = url;
     if (!/^https?:\/\//i.test(finalUrl)) {
@@ -94,7 +120,7 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
       url: finalUrl,
       description,
       favicon: "",
-      collectionId: collectionId || defaultCollectionId,
+      collectionId: currentTarget.id,
       tags: selectedTags,
       seq: 0,
     });
@@ -103,8 +129,17 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
   };
 
   const handleNewCollection = (name: string, icon: string) => {
-    const col = createCollection(activeWorkspaceId, name, icon);
+    const state = useWorkspaceStore.getState();
+    const activeWorkspace = state.workspaces.find(
+      (workspace) => workspace.id === state.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace)) {
+      setTargetUnavailable(true);
+      return;
+    }
+    const col = createCollection(state.activeWorkspaceId, name, icon);
     setCollectionId(col.id);
+    setTargetUnavailable(false);
   };
 
   return (
@@ -118,6 +153,12 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
             </DialogDescription>
           </DialogHeader>
           <form className="space-y-4 pt-1" onSubmit={handleSubmit}>
+            {targetUnavailable && (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+              </Alert>
+            )}
             <Field>
               <FieldLabel htmlFor="bm-title">{t("addBookmark_fieldTitle")}</FieldLabel>
               <Input

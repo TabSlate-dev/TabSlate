@@ -28,10 +28,12 @@ import {
 } from "@/components/ui/select";
 import { useTranslation } from "@/hooks/use-translation";
 import { compareActiveCollections } from "@/lib/collection-utils";
+import { isActiveWorkspace } from "@/lib/workspace-visibility";
 
 type ImportStep = 0 | 1 | 2 | 3;
 type ImportSource = "toby" | "chrome";
 type ValidationPhase = "idle" | "validating" | "complete";
+type Translate = ReturnType<typeof useTranslation>["t"];
 
 interface Props {
   open: boolean;
@@ -91,7 +93,7 @@ function detectMismatchSource(source: ImportSource, file: File): ImportSource | 
   return null;
 }
 
-function getStepDescription(step: ImportStep, source: ImportSource | null, t: any): string {
+function getStepDescription(step: ImportStep, source: ImportSource | null, t: Translate): string {
   if (step === 0) {
     return t("import_step0_desc");
   }
@@ -111,7 +113,7 @@ function getDialogTitle(
   step: ImportStep,
   source: ImportSource | null,
   resultStatus: "success" | "error" | null,
-  t: any,
+  t: Translate,
 ): string {
   if (step === 0) { return t("import_title"); }
   if (step === 1) { return source ? t("import_titleSource", [SOURCE_LABEL[source]]) : t("import_title"); }
@@ -175,7 +177,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
   const activeWorkspaces = React.useMemo(
     () =>
       workspaces
-        .filter((workspace) => !workspace.deletedAt)
+        .filter(isActiveWorkspace)
         .sort((left, right) => left.position - right.position),
     [workspaces],
   );
@@ -183,9 +185,14 @@ export function ImportDialog({ open, onOpenChange }: Props) {
   const activeCollections = React.useMemo(
     () =>
       collections
-        .filter((collection) => !collection.deletedAt && !collection.archivedAt)
+        .filter((collection) => {
+          const parent = workspaces.find(
+            (workspace) => workspace.id === collection.workspaceId,
+          );
+          return isActiveWorkspace(parent) && !collection.deletedAt && !collection.archivedAt;
+        })
         .sort(compareActiveCollections),
-    [collections],
+    [collections, workspaces],
   );
 
   const existingBookmarkUrls = React.useMemo(() => {
@@ -221,6 +228,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
   const [isDragging, setIsDragging] = React.useState(false);
   const [isImporting, setIsImporting] = React.useState(false);
   const [result, setResult] = React.useState<ImportResultState>(null);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const validationRequestRef = React.useRef(0);
@@ -240,6 +248,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     setIsDragging(false);
     setIsImporting(false);
     setResult(null);
+    setTargetUnavailable(false);
   }, []);
 
   const wasOpenRef = React.useRef(false);
@@ -483,16 +492,44 @@ export function ImportDialog({ open, onOpenChange }: Props) {
       return;
     }
 
+    const state = useWorkspaceStore.getState();
+    const targetWorkspace = state.workspaces.find(
+      (workspace) => workspace.id === workspaceId,
+    );
+    if (!isActiveWorkspace(targetWorkspace)) {
+      const refreshedTarget = state.workspaces.find(
+        (workspace) => workspace.id === state.activeWorkspaceId && isActiveWorkspace(workspace),
+      ) ?? state.workspaces.filter(isActiveWorkspace)
+        .sort((left, right) => left.position - right.position)[0];
+      setWorkspaceId(refreshedTarget?.id ?? "");
+      setTargetUnavailable(true);
+      return;
+    }
+
     setIsImporting(true);
+    setTargetUnavailable(false);
 
     // Yield to browser so the spinner renders before the synchronous import runs.
     setTimeout(() => {
       try {
+        const current = useWorkspaceStore.getState();
+        const currentTarget = current.workspaces.find(
+          (workspace) => workspace.id === workspaceId,
+        );
+        if (!isActiveWorkspace(currentTarget)) {
+          const refreshedTarget = current.workspaces.find(
+            (workspace) => workspace.id === current.activeWorkspaceId && isActiveWorkspace(workspace),
+          ) ?? current.workspaces.filter(isActiveWorkspace)
+            .sort((left, right) => left.position - right.position)[0];
+          setWorkspaceId(refreshedTarget?.id ?? "");
+          setTargetUnavailable(true);
+          return;
+        }
         const imported = importFromPlan(importPlan);
         if (!imported) {
           setResult({
             status: "error",
-            message: "Import could not start because the current quota no longer allows it.",
+            message: t("import_failedQuotaChanged"),
           });
           setStep(3);
           return;
@@ -510,14 +547,14 @@ export function ImportDialog({ open, onOpenChange }: Props) {
       } catch {
         setResult({
           status: "error",
-          message: "Import failed unexpectedly. Try again with the same file.",
+          message: t("import_failedUnexpected"),
         });
         setStep(3);
       } finally {
         setIsImporting(false);
       }
     }, 0);
-  }, [canImport, importFromPlan, importPlan]);
+  }, [canImport, importFromPlan, importPlan, t, workspaceId]);
 
   const handleRetry = React.useCallback(() => {
     setResult(null);
@@ -688,6 +725,13 @@ export function ImportDialog({ open, onOpenChange }: Props) {
 
         {step === 2 && source && (
           <div className="space-y-4">
+            {targetUnavailable && (
+              <Alert variant="destructive">
+                <AlertCircle />
+                <AlertTitle>{t("import_unavailable")}</AlertTitle>
+                <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+              </Alert>
+            )}
             <Field>
               <FieldLabel htmlFor="import-workspace">{t("import_workspace")}</FieldLabel>
               <Select value={workspaceId} onValueChange={setWorkspaceId}>

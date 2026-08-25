@@ -11,6 +11,8 @@ import { analytics } from "@/lib/analytics";
 import { runWebSearch } from "@/lib/browser/search";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
+import { useWorkspaceStore } from "@/store/workspace-store";
+import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
 
 interface SearchBoxProps {
   /** When provided, bookmark results are filtered to this collection. */
@@ -30,6 +32,14 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const openTabs = useTabsStore(s => s.openTabs);
   const accessToken = useAuthStore(s => s.accessToken);
   const serverUrl = useAuthStore(s => s.serverUrl);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+
+  const activeCollectionIds = React.useMemo(
+    () => getActiveWorkspaceCollectionIds(activeWorkspaceId, workspaces, collections),
+    [activeWorkspaceId, workspaces, collections],
+  );
 
   React.useEffect(() => {
     const handler = () => {
@@ -59,16 +69,19 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
     const timer = setTimeout(async () => {
       try {
         const res = await searchBookmarks(serverUrl, accessToken, query);
+        const visibleResults = res.bookmarks.filter(
+          (bookmark) => bookmark.collectionId === "" || activeCollectionIds.has(bookmark.collectionId),
+        );
         const results = collectionId !== undefined
-          ? res.bookmarks.filter(bm => bm.collectionId === collectionId)
-          : res.bookmarks;
+          ? visibleResults.filter(bm => bm.collectionId === collectionId)
+          : visibleResults;
         setBookmarkResults(results);
       } catch {
         setBookmarkResults([]);
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [query, accessToken, serverUrl, collectionId]);
+  }, [query, accessToken, serverUrl, collectionId, activeCollectionIds]);
 
   React.useEffect(() => { setActiveIndex(0); }, [bookmarkResults.length, filteredTabs.length]);
 

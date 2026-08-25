@@ -36,13 +36,21 @@ import {
 import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-collection-dialog";
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { generateId } from "@/lib/id";
-import { compareActiveCollections } from "@/lib/collection-utils";
+import {
+  getActiveWorkspaceCollections,
+  isActiveWorkspace,
+  resolveActiveWorkspaceCollectionTarget,
+} from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 
 export function GroupDetail() {
+  const { t } = useTranslation();
   const { groupId } = useParams<{ groupId: string }>();
   const navigate = useNavigate();
 
-  const group = useGroupsStore(s => s.groups.find(g => g.id === groupId && !g.deletedAt));
+  const groups = useGroupsStore(s => s.groups);
   const updateGroup = useGroupsStore(s => s.updateGroup);
   const deleteGroup = useGroupsStore(s => s.deleteGroup);
   const openGroup = useGroupsStore(s => s.openGroup);
@@ -70,14 +78,28 @@ export function GroupDetail() {
   const [collectionDialogTab, setCollectionDialogTab] = React.useState<GroupTab | null>(null);
 
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
-  const createCollection = useWorkspaceStore(s => s.createCollection);
+
+  const group = React.useMemo(() => {
+    const activeWorkspace = workspaces.find(
+      (workspace) => workspace.id === activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace)) {
+      return undefined;
+    }
+    return groups.find(
+      (candidate) => candidate.id === groupId &&
+        !candidate.deletedAt &&
+        candidate.workspaceId === activeWorkspaceId,
+    );
+  }, [activeWorkspaceId, groupId, groups, workspaces]);
 
   const activeCollections = React.useMemo(() => {
-    return collections
-      .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-      .sort(compareActiveCollections);
-  }, [collections, activeWorkspaceId]);
+    return getActiveWorkspaceCollections(activeWorkspaceId, workspaces, collections);
+  }, [activeWorkspaceId, workspaces, collections]);
+
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   // Navigate away when workspace switches and this group doesn't belong to the new workspace
   React.useEffect(() => {
@@ -93,12 +115,20 @@ export function GroupDetail() {
     }
   }, [group, editing]);
 
-  const { isDragOver, dropZoneProps } = useGroupDragDrop(groupId ?? "");
+  const { isDragOver, notification: dropTargetError, dropZoneProps } = useGroupDragDrop(groupId ?? "");
 
   const handleSaveGroup = React.useCallback(async (name: string) => {
     setIsSaving(true);
-    const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
-    const collection = createCollection(activeWorkspaceId, name, "folder");
+    const state = useWorkspaceStore.getState();
+    const activeWorkspace = state.workspaces.find(
+      (workspace) => workspace.id === state.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace)) {
+      setIsSaving(false);
+      setTargetUnavailable(true);
+      return;
+    }
+    const collection = state.createCollection(state.activeWorkspaceId, name, "folder");
     
     const newBookmarks = groupTabs.map(t => ({
       id: generateId(),
@@ -117,22 +147,36 @@ export function GroupDetail() {
     setIsSaving(false);
     setSaveDialogOpen(false);
     setSaveResult({ saved: newBookmarks.length, skipped: 0 });
+    setTargetUnavailable(false);
     setTimeout(() => setSaveResult(null), 3000);
   }, [groupTabs, addBookmarks]);
 
   const handleSaveTab = React.useCallback((tab: GroupTab, collectionId: string) => {
+    const state = useWorkspaceStore.getState();
+    const target = resolveActiveWorkspaceCollectionTarget(
+      collectionId,
+      state.activeWorkspaceId,
+      state.workspaces,
+      state.collections,
+    );
+    if (!target) {
+      setSaveMenuOpenMap({});
+      setTargetUnavailable(true);
+      return;
+    }
     addBookmarks([{
       id: generateId(),
       title: tab.title,
       url: tab.url,
       favicon: tab.favicon,
-      collectionId,
+      collectionId: target.id,
       description: "",
       tags: [],
       createdAt: new Date().toISOString(),
       isFavorite: false,
       seq: 0,
     }]);
+    setTargetUnavailable(false);
     setSavedTabIds(prev => new Set(prev).add(tab.id));
     setTimeout(() => {
       setSavedTabIds(prev => {
@@ -294,6 +338,12 @@ export function GroupDetail() {
 
   return (
     <div className="flex-1 p-4 md:p-6 overflow-auto">
+      {(targetUnavailable || dropTargetError) && (
+        <Alert className="mb-4" variant="destructive">
+          <AlertCircle />
+          <AlertDescription>{dropTargetError ?? t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       <GroupCardBase
         id={group.id}
         name={group.name}
@@ -418,7 +468,15 @@ export function GroupDetail() {
             open={!!collectionDialogTab}
             onOpenChange={(open) => { if (!open) { setCollectionDialogTab(null); } }}
             onSubmit={(name, icon) => {
-              const newCol = createCollection(activeWorkspaceId, name, icon);
+              const state = useWorkspaceStore.getState();
+              const activeWorkspace = state.workspaces.find(
+                (workspace) => workspace.id === state.activeWorkspaceId,
+              );
+              if (!isActiveWorkspace(activeWorkspace)) {
+                setTargetUnavailable(true);
+                return;
+              }
+              const newCol = state.createCollection(state.activeWorkspaceId, name, icon);
               handleSaveTab(collectionDialogTab, newCol.id);
               setCollectionDialogTab(null);
             }}

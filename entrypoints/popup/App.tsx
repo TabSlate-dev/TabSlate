@@ -24,7 +24,13 @@ import {
 import { cn } from "@/lib/utils";
 import type { Collection, Tag } from "@/lib/types";
 import { useTranslation } from "@/hooks/use-translation";
-import { compareActiveCollections } from "@/lib/collection-utils";
+import {
+  getActiveWorkspaceCollections,
+  resolveActiveWorkspaceCollectionTarget,
+} from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
+import { FaviconImage } from "@/components/ui/favicon-image";
 
 interface TabInfo {
   title: string;
@@ -46,6 +52,7 @@ function PopupContent() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [pageInfo, setPageInfo] = useState<{ ogTitle: string; metaDescription: string } | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
+  const [targetUnavailable, setTargetUnavailable] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -81,13 +88,11 @@ function PopupContent() {
         setIsLoggedIn(loggedIn);
       }),
       getWorkspaceState().then((state) => {
-        const cols = state.collections
-          .filter((collection) =>
-            collection.workspaceId === state.activeWorkspaceId &&
-            !collection.deletedAt &&
-            !collection.archivedAt
-          )
-          .sort(compareActiveCollections);
+        const cols = getActiveWorkspaceCollections(
+          state.activeWorkspaceId,
+          state.workspaces,
+          state.collections,
+        );
         setSaveableCollections(cols);
         setAvailableTags(state.tags.map(t => ({ ...t, seq: 0 })));
         if (cols.length > 0) { setSelectedCollectionId(cols[0].id); }
@@ -106,12 +111,41 @@ function PopupContent() {
 
     setSaveState("saving");
     try {
+      const resolveCurrentTarget = async (): Promise<string | null> => {
+        const state = await getWorkspaceState();
+        const target = resolveActiveWorkspaceCollectionTarget(
+          selectedCollectionId,
+          state.activeWorkspaceId,
+          state.workspaces,
+          state.collections,
+        );
+        if (target) {
+          return target.id;
+        }
+        const refreshed = getActiveWorkspaceCollections(
+          state.activeWorkspaceId,
+          state.workspaces,
+          state.collections,
+        );
+        setSaveableCollections(refreshed);
+        setSelectedCollectionId(
+          refreshed.find((collection) => collection.isDefault)?.id ?? refreshed[0]?.id ?? "",
+        );
+        setTargetUnavailable(true);
+        setSaveState("idle");
+        return null;
+      };
+
+      const currentTargetId = await resolveCurrentTarget();
+      if (!currentTargetId) {
+        return;
+      }
       const bookmarkData: BookmarkInput & { tags: string[]; seq: number } = {
         title: pageInfo?.ogTitle || tab.title,
         url: tab.url,
         favicon: tab.favIconUrl,
         description: pageInfo?.metaDescription || "",
-        collectionId: selectedCollectionId,
+        collectionId: currentTargetId,
         tags: selectedTags.map((t) => t.id),
         seq: 0,
       };
@@ -120,7 +154,13 @@ function PopupContent() {
       const [newtabTab] = await chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") });
       if (newtabTab?.id) {
         try {
+          const confirmedTargetId = await resolveCurrentTarget();
+          if (!confirmedTargetId) {
+            return;
+          }
+          bookmarkData.collectionId = confirmedTargetId;
           await chrome.tabs.sendMessage(newtabTab.id, { type: "ADD_BOOKMARK", data: bookmarkData });
+          setTargetUnavailable(false);
           setSaveState("saved");
           return;
         } catch { /* newtab not ready, fall through to storage */ }
@@ -128,6 +168,7 @@ function PopupContent() {
 
       // Fallback: write directly to storage (seq=0 sweep will sync on next newtab open)
       await storageService.addBookmark(bookmarkData);
+      setTargetUnavailable(false);
       setSaveState("saved");
     } catch {
       setSaveState("error");
@@ -223,13 +264,10 @@ function PopupContent() {
           {/* Current page preview */}
           <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/40">
             {tab?.favIconUrl ? (
-              <img
+              <FaviconImage
                 src={tab.favIconUrl}
                 alt=""
                 className="size-8 rounded-md shrink-0 mt-0.5"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
               />
             ) : (
               <div className="size-8 rounded-md bg-muted shrink-0 mt-0.5 flex items-center justify-center">
@@ -245,6 +283,13 @@ function PopupContent() {
               </p>
             </div>
           </div>
+
+          {targetUnavailable && (
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+            </Alert>
+          )}
 
           {/* Collection selector */}
           <div className="flex flex-col gap-1.5">
@@ -397,7 +442,7 @@ function PopupContent() {
           {/* Save button */}
           <Button
             onClick={handleSave}
-            disabled={saveState === "saving"}
+            disabled={saveState === "saving" || saveableCollections.length === 0}
             className="w-full"
           >
             {saveState === "saving" ? (

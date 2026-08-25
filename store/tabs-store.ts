@@ -21,6 +21,16 @@ import { generateId } from "@/lib/id";
 import { normalizeUrl, getNormalizedUrlSet } from "@/lib/bookmark-utils";
 import type { Bookmark } from "@/lib/types";
 import { idbGet, idbGetAll, idbPut, idbDelete } from "@/lib/idb";
+import {
+  getActiveWorkspaceCollectionIds,
+  isActiveWorkspace,
+} from "@/lib/workspace-visibility";
+
+interface SaveTabsToCollectionResult {
+  saved: number;
+  skipped: number;
+  targetUnavailable?: boolean;
+}
 
 interface TabsState {
   openTabs: BrowserTab[];
@@ -49,8 +59,8 @@ interface TabsState {
   closeGroup: (groupId: number) => Promise<void>;
 
   // Session actions
-  saveWindowAsCollection: (name: string, deduplicate: boolean) => Promise<{ saved: number; skipped: number }>;
-  saveGroupAsCollection: (groupId: number, name: string, deduplicate: boolean) => Promise<{ saved: number; skipped: number }>;
+  saveWindowAsCollection: (name: string, deduplicate: boolean) => Promise<SaveTabsToCollectionResult>;
+  saveGroupAsCollection: (groupId: number, name: string, deduplicate: boolean) => Promise<SaveTabsToCollectionResult>;
   openCollectionAsGroup: (collectionId: string, title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
   openCollection: (collectionId: string) => Promise<void>;
   
@@ -81,6 +91,13 @@ async function _saveTabsToCollectionHelper(
   if (!tabsToSave.length) { return { saved: 0, skipped: 0 }; }
 
   const { activeWorkspaceId, collections, createCollection } = useWorkspaceStore.getState();
+  const initialWorkspaceState = useWorkspaceStore.getState();
+  const activeWorkspace = initialWorkspaceState.workspaces.find(
+    (workspace) => workspace.id === activeWorkspaceId,
+  );
+  if (!isActiveWorkspace(activeWorkspace)) {
+    return { saved: 0, skipped: 0, targetUnavailable: true };
+  }
   const { bookmarks: bookmarksMap, addBookmarks } = useBookmarksStore.getState();
   const bookmarks = Array.from(bookmarksMap.values());
 
@@ -91,8 +108,10 @@ async function _saveTabsToCollectionHelper(
 
   const existingUrls = deduplicate
     ? (() => {
-        const wsColIds = new Set(
-          collections.filter((c) => c.workspaceId === activeWorkspaceId).map((c) => c.id)
+        const wsColIds = getActiveWorkspaceCollectionIds(
+          activeWorkspaceId,
+          initialWorkspaceState.workspaces,
+          collections,
         );
         const wsBookmarks = bookmarks.filter(
           (b) => b.collectionId === "" || wsColIds.has(b.collectionId)
@@ -146,6 +165,16 @@ async function _saveTabsToCollectionHelper(
   }
 
   if (newBookmarksData.length > 0) {
+    const currentWorkspaceState = useWorkspaceStore.getState();
+    const currentWorkspace = currentWorkspaceState.workspaces.find(
+      (workspace) => workspace.id === activeWorkspaceId,
+    );
+    if (
+      currentWorkspaceState.activeWorkspaceId !== activeWorkspaceId ||
+      !isActiveWorkspace(currentWorkspace)
+    ) {
+      return { saved: 0, skipped: skippedCount, targetUnavailable: true };
+    }
     const collection = createCollection(activeWorkspaceId, name, "folder");
     const finalBookmarks: Bookmark[] = newBookmarksData.map(b => ({
       ...b,

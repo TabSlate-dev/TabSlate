@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Plus } from "lucide-react";
+import { AlertCircle, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ColorPicker } from "@/components/ui/color-picker";
@@ -7,22 +7,33 @@ import { useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import type { TabGroupColor } from "@/lib/chrome/tab-groups";
 import { useTranslation } from "@/hooks/use-translation";
+import { isActiveWorkspace } from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function CreateGroupBar() {
   const { t } = useTranslation();
   const createGroup = useGroupsStore(s => s.createGroup);
-  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const [name, setName] = React.useState("");
   const [color, setColor] = React.useState<TabGroupColor>("blue");
   const [open, setOpen] = React.useState(false);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   const handleCreate = React.useCallback(() => {
     if (!name.trim()) { return; }
-    createGroup(name.trim(), color, true, activeWorkspaceId);
+    const state = useWorkspaceStore.getState();
+    const activeWorkspace = state.workspaces.find(
+      (workspace) => workspace.id === state.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace)) {
+      setTargetUnavailable(true);
+      return;
+    }
+    createGroup(name.trim(), color, true, state.activeWorkspaceId);
     setName("");
     setColor("blue");
     setOpen(false);
-  }, [createGroup, name, color, activeWorkspaceId]);
+    setTargetUnavailable(false);
+  }, [createGroup, name, color]);
 
   if (!open) {
     return (
@@ -40,6 +51,12 @@ export function CreateGroupBar() {
 
   return (
     <div className="border rounded-lg p-3 space-y-2 bg-card">
+      {targetUnavailable && (
+        <Alert variant="destructive">
+          <AlertCircle />
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       <Input
         autoFocus
         placeholder={t("groupsPanel_groupName")}

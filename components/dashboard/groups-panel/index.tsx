@@ -8,7 +8,7 @@ import {
   type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
-import { Globe } from "lucide-react";
+import { AlertCircle, Globe } from "lucide-react";
 import { useTabsStore } from "@/store/tabs-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
@@ -17,6 +17,8 @@ import { DraggableTabRow, TabRowPreview } from "./draggable-tab-row";
 import { DroppableGroupCard } from "./droppable-group-card";
 import { CreateGroupBar } from "./create-group-bar";
 import { useTranslation } from "@/hooks/use-translation";
+import { isActiveWorkspace } from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function GroupsPanel() {
   const { t } = useTranslation();
@@ -25,15 +27,24 @@ export function GroupsPanel() {
   const groups = useGroupsStore(s => s.groups);
   const groupTabs = useGroupsStore(s => s.groupTabs);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
 
   const activeGroups = React.useMemo(
-    () => groups.filter(g => !g.deletedAt && g.workspaceId === activeWorkspaceId),
-    [groups, activeWorkspaceId]
+    () => {
+      const activeWorkspace = workspaces.find(
+        (workspace) => workspace.id === activeWorkspaceId,
+      );
+      return isActiveWorkspace(activeWorkspace)
+        ? groups.filter(g => !g.deletedAt && g.workspaceId === activeWorkspaceId)
+        : [];
+    },
+    [groups, activeWorkspaceId, workspaces]
   );
   const addTabToGroup = useGroupsStore(s => s.addTabToGroup);
   const moveTab = useGroupsStore(s => s.moveTab);
 
   const [activeTab, setActiveTab] = React.useState<BrowserTab | null>(null);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -58,6 +69,22 @@ export function GroupsPanel() {
 
     if (!overData || overData.type !== "saved-group") { return; }
     const targetGroupId: string = overData.groupId;
+
+    const workspaceState = useWorkspaceStore.getState();
+    const groupState = useGroupsStore.getState();
+    const activeWorkspace = workspaceState.workspaces.find(
+      (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+    );
+    const targetGroup = groupState.groups.find(
+      (candidate) => candidate.id === targetGroupId &&
+        !candidate.deletedAt &&
+        candidate.workspaceId === workspaceState.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace) || !targetGroup) {
+      setTargetUnavailable(true);
+      return;
+    }
+    setTargetUnavailable(false);
 
     if (activeData?.type === "browser-tab") {
       const tab: BrowserTab = activeData.tab;
@@ -102,6 +129,12 @@ export function GroupsPanel() {
 
         {/* Right: saved groups */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {targetUnavailable && (
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+            </Alert>
+          )}
           <CreateGroupBar />
           {activeGroups.length === 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground">

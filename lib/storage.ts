@@ -1,6 +1,7 @@
-import type { Bookmark, Collection } from "@/lib/types";
+import type { Bookmark, Collection, Tag, Workspace } from "@/lib/types";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut } from "@/lib/idb";
+import { resolveActiveWorkspaceCollectionTarget } from "@/lib/workspace-visibility";
 
 export type BookmarkInput = {
   title: string;
@@ -16,17 +17,17 @@ export type BookmarkInput = {
 // ---------------------------------------------------------------------------
 
 interface WorkspaceStorageState {
-  workspaces: Array<{ id: string; name: string; color: string; position: number }>;
+  workspaces: Workspace[];
   collections: Collection[];
-  tags: Array<{ id: string; name: string; color: string }>;
+  tags: Tag[];
   activeWorkspaceId: string;
 }
 
 export async function getWorkspaceState(): Promise<WorkspaceStorageState> {
   const [workspaces, collections, tags, activeWsKv] = await Promise.all([
-    idbGetAll<{ id: string; name: string; color: string; position: number }>("workspaces"),
+    idbGetAll<Workspace>("workspaces"),
     idbGetAll<Collection>("collections"),
-    idbGetAll<{ id: string; name: string; color: string }>("tags"),
+    idbGetAll<Tag>("tags"),
     idbGet<{ key: string; value: string }>("kv", "activeWorkspaceId"),
   ]);
   return {
@@ -43,13 +44,23 @@ export async function getWorkspaceState(): Promise<WorkspaceStorageState> {
 
 export const storageService = {
   async addBookmark(input: BookmarkInput): Promise<Bookmark> {
+    const state = await getWorkspaceState();
+    const target = resolveActiveWorkspaceCollectionTarget(
+      input.collectionId,
+      state.activeWorkspaceId,
+      state.workspaces,
+      state.collections,
+    );
+    if (!target) {
+      throw new Error("active Workspace Collection target is unavailable");
+    }
     const newBookmark: Bookmark = {
       id: generateId(),
       title: input.title,
       url: input.url,
       favicon: input.favicon || "",
       description: input.description ?? "",
-      collectionId: input.collectionId,
+      collectionId: target.id,
       tags: input.tags ?? [],
       createdAt: new Date().toISOString(),
       isFavorite: false,

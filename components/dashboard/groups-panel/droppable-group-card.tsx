@@ -34,7 +34,13 @@ import { SaveCollectionDialog } from "@/components/dashboard/tabs-panel/save-col
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { generateId } from "@/lib/id";
 import { useTranslation } from "@/hooks/use-translation";
-import { compareActiveCollections } from "@/lib/collection-utils";
+import {
+  getActiveWorkspaceCollections,
+  isActiveWorkspace,
+  resolveActiveWorkspaceCollectionTarget,
+} from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 interface DroppableGroupCardProps {
   group: SavedGroup;
@@ -66,14 +72,14 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
   const [collectionDialogTab, setCollectionDialogTab] = React.useState<GroupTab | null>(null);
 
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
-  const createCollection = useWorkspaceStore(s => s.createCollection);
 
   const activeCollections = React.useMemo(() => {
-    return collections
-      .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-      .sort(compareActiveCollections);
-  }, [collections, activeWorkspaceId]);
+    return getActiveWorkspaceCollections(activeWorkspaceId, workspaces, collections);
+  }, [activeWorkspaceId, workspaces, collections]);
+
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   const saveEdit = React.useCallback(() => {
     updateGroup(group.id, { name: nameVal, color: colorVal });
@@ -88,8 +94,16 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
 
   const handleSaveGroup = React.useCallback(async (name: string) => {
     setIsSaving(true);
-    const { activeWorkspaceId, createCollection } = useWorkspaceStore.getState();
-    const collection = createCollection(activeWorkspaceId, name, "folder");
+    const state = useWorkspaceStore.getState();
+    const activeWorkspace = state.workspaces.find(
+      (workspace) => workspace.id === state.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace)) {
+      setIsSaving(false);
+      setTargetUnavailable(true);
+      return;
+    }
+    const collection = state.createCollection(state.activeWorkspaceId, name, "folder");
     
     const newBookmarks = tabs.map(t => ({
       id: generateId(),
@@ -108,22 +122,36 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
     setIsSaving(false);
     setSaveDialogOpen(false);
     setSaveResult({ saved: newBookmarks.length, skipped: 0 });
+    setTargetUnavailable(false);
     setTimeout(() => setSaveResult(null), 3000);
   }, [tabs, addBookmarks]);
 
   const handleSaveTab = React.useCallback((tab: GroupTab, collectionId: string) => {
+    const state = useWorkspaceStore.getState();
+    const target = resolveActiveWorkspaceCollectionTarget(
+      collectionId,
+      state.activeWorkspaceId,
+      state.workspaces,
+      state.collections,
+    );
+    if (!target) {
+      setSaveMenuOpenMap({});
+      setTargetUnavailable(true);
+      return;
+    }
     addBookmarks([{
       id: generateId(),
       title: tab.title,
       url: tab.url,
       favicon: tab.favicon,
-      collectionId,
+      collectionId: target.id,
       description: "",
       tags: [],
       createdAt: new Date().toISOString(),
       isFavorite: false,
       seq: 0,
     }]);
+    setTargetUnavailable(false);
     setSavedTabIds(prev => new Set(prev).add(tab.id));
     setTimeout(() => {
       setSavedTabIds(prev => {
@@ -236,6 +264,13 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
   );
 
   return (
+    <div>
+    {targetUnavailable && (
+      <Alert className="mb-3" variant="destructive">
+        <AlertCircle />
+        <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+      </Alert>
+    )}
     <GroupCardBase
       id={group.id}
       name={group.name}
@@ -359,12 +394,21 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
           open={!!collectionDialogTab}
           onOpenChange={(open) => { if (!open) { setCollectionDialogTab(null); } }}
           onSubmit={(name, icon) => {
-            const newCol = createCollection(activeWorkspaceId, name, icon);
+            const state = useWorkspaceStore.getState();
+            const activeWorkspace = state.workspaces.find(
+              (workspace) => workspace.id === state.activeWorkspaceId,
+            );
+            if (!isActiveWorkspace(activeWorkspace)) {
+              setTargetUnavailable(true);
+              return;
+            }
+            const newCol = state.createCollection(state.activeWorkspaceId, name, icon);
             handleSaveTab(collectionDialogTab, newCol.id);
             setCollectionDialogTab(null);
           }}
         />
       )}
     </GroupCardBase>
+    </div>
   );
 }

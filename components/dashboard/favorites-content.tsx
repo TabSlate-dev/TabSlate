@@ -5,6 +5,7 @@ import { BookmarkCard } from "./bookmark-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Heart } from "lucide-react";
 import { useTranslation } from "@/hooks/use-translation";
+import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
 
 export function FavoritesContent() {
   const { t } = useTranslation();
@@ -12,15 +13,12 @@ export function FavoritesContent() {
   const viewMode = useBookmarksStore(s => s.viewMode);
 
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
   const workspaceCollectionIds = React.useMemo(
-    () => new Set(
-      collections
-        .filter(c => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-        .map(c => c.id)
-    ),
-    [collections, activeWorkspaceId]
+    () => getActiveWorkspaceCollectionIds(activeWorkspaceId, workspaces, collections),
+    [activeWorkspaceId, workspaces, collections]
   );
 
   const favoriteBookmarks = React.useMemo(

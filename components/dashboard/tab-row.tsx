@@ -11,7 +11,6 @@ import {
   Ungroup,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { storageService } from "@/lib/storage";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import type { BrowserTab } from "@/lib/chrome/tabs";
@@ -25,7 +24,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
-import { compareActiveCollections } from "@/lib/collection-utils";
+import {
+  getActiveWorkspaceCollections,
+  isActiveWorkspace,
+  resolveActiveWorkspaceCollectionTarget,
+} from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
+import { useTranslation } from "@/hooks/use-translation";
 interface TabRowProps {
   tab: BrowserTab;
   selected?: boolean;
@@ -49,6 +55,7 @@ export const TabRow = React.memo(function TabRow({
   onJoinGroup,
   isUngrouped,
 }: TabRowProps) {
+  const { t } = useTranslation();
   // Fine-grained selectors
   const isHighlighted = useTabsStore(s => s.highlightedTabIds.includes(tab.id));
   const closeTab = useTabsStore(s => s.closeTab);
@@ -56,30 +63,42 @@ export const TabRow = React.memo(function TabRow({
   const addBookmark = useBookmarksStore(s => s.addBookmark);
 
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
-  const createCollection = useWorkspaceStore(s => s.createCollection);
 
   const activeCollections = React.useMemo(() => {
-    return collections
-      .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-      .sort(compareActiveCollections);
-  }, [collections, activeWorkspaceId]);
+    return getActiveWorkspaceCollections(activeWorkspaceId, workspaces, collections);
+  }, [activeWorkspaceId, workspaces, collections]);
 
   const [saved, setSaved] = useState(false);
   const [saveMenuOpen, setSaveMenuOpen] = useState(false);
   const [collectionDialogOpen, setCollectionDialogOpen] = useState(false);
+  const [targetUnavailable, setTargetUnavailable] = useState(false);
 
   const handleSaveToCollection = useCallback((collectionId: string) => {
+    const state = useWorkspaceStore.getState();
+    const target = resolveActiveWorkspaceCollectionTarget(
+      collectionId,
+      state.activeWorkspaceId,
+      state.workspaces,
+      state.collections,
+    );
+    if (!target) {
+      setSaveMenuOpen(false);
+      setTargetUnavailable(true);
+      return;
+    }
     addBookmark({
       title: tab.title,
       url: tab.url,
       favicon: tab.favIconUrl,
-      collectionId,
+      collectionId: target.id,
       description: "",
       tags: [],
       seq: 0,
     });
     setSaved(true);
+    setTargetUnavailable(false);
     setTimeout(() => setSaved(false), 2000);
   }, [tab.title, tab.url, tab.favIconUrl, addBookmark]);
 
@@ -107,6 +126,13 @@ export const TabRow = React.memo(function TabRow({
   }, [variant, showCheckbox, onSelect, selected, handleFocus]);
 
   // Actions for the row
+  const targetAlert = targetUnavailable ? (
+    <Alert className="fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg" variant="destructive">
+      <AlertCircle />
+      <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+    </Alert>
+  ) : null;
+
   const actionsContent = !hideActions && (
     <div className="flex items-center gap-0.5">
       {tab.groupId !== -1 ? (
@@ -195,6 +221,7 @@ export const TabRow = React.memo(function TabRow({
         )}
         onClick={handleCardClick}
       >
+        {targetAlert}
         {showCheckbox && (
           <div
             className="absolute top-0 right-0 z-10 p-2 cursor-pointer"
@@ -305,7 +332,15 @@ export const TabRow = React.memo(function TabRow({
             open={collectionDialogOpen}
             onOpenChange={setCollectionDialogOpen}
             onSubmit={(name, icon) => {
-              const newCol = createCollection(activeWorkspaceId, name, icon);
+              const state = useWorkspaceStore.getState();
+              const activeWorkspace = state.workspaces.find(
+                (workspace) => workspace.id === state.activeWorkspaceId,
+              );
+              if (!isActiveWorkspace(activeWorkspace)) {
+                setTargetUnavailable(true);
+                return;
+              }
+              const newCol = state.createCollection(state.activeWorkspaceId, name, icon);
               handleSaveToCollection(newCol.id);
             }}
           />
@@ -318,6 +353,7 @@ export const TabRow = React.memo(function TabRow({
   // Use shared BaseTabRow for the standard "list" variant
   return (
     <>
+      {targetAlert}
       <BaseTabRow
         title={tab.title}
         url={tab.url}
@@ -337,7 +373,15 @@ export const TabRow = React.memo(function TabRow({
             open={collectionDialogOpen}
             onOpenChange={setCollectionDialogOpen}
             onSubmit={(name, icon) => {
-              const newCol = createCollection(activeWorkspaceId, name, icon);
+              const state = useWorkspaceStore.getState();
+              const activeWorkspace = state.workspaces.find(
+                (workspace) => workspace.id === state.activeWorkspaceId,
+              );
+              if (!isActiveWorkspace(activeWorkspace)) {
+                setTargetUnavailable(true);
+                return;
+              }
+              const newCol = state.createCollection(state.activeWorkspaceId, name, icon);
               handleSaveToCollection(newCol.id);
             }}
           />

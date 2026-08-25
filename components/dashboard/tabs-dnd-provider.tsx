@@ -16,12 +16,18 @@ import { generateId } from "@/lib/id";
 import { TAB_GROUP_COLOR_KEYS, type TabGroupColor } from "@/lib/chrome/tab-groups";
 import { findDuplicateBookmark } from "@/lib/bookmark-utils";
 import type { BrowserTab } from "@/lib/chrome/tabs";
-import type { Bookmark } from "@/lib/types";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { BookmarkCard } from "@/components/dashboard/bookmark-card";
+import {
+  getActiveWorkspaceCollectionIds,
+  getActiveWorkspaceCollections,
+  isActiveWorkspace,
+  resolveActiveWorkspaceCollectionTarget,
+} from "@/lib/workspace-visibility";
+import { useTranslation } from "@/hooks/use-translation";
 
 export type TabDragData = {
   type: "tab";
@@ -62,6 +68,7 @@ export function useTabsDndContext() {
 }
 
 export function TabsDndProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [activeData, setActiveData] = useState<DragData | null>(null);
   const [notification, setNotification] = useState<{ text: string; type: "duplicate" } | null>(null);
 
@@ -102,18 +109,45 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
       const collectionId = collectionDropId.startsWith("sidebar-collection-")
         ? collectionDropId.replace("sidebar-collection-", "")
         : collectionDropId.replace("content-collection-", "");
+      const workspaceState = useWorkspaceStore.getState();
+      const activeWorkspace = workspaceState.workspaces.find(
+        (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+      );
+      if (!isActiveWorkspace(activeWorkspace)) {
+        showNotification(t("workspaceVisibility_targetUnavailable"));
+        return;
+      }
       let targetCollectionId = collectionId;
       if (collectionId === "all") {
-        const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
-        const defaultCol = collections.find(
-          (c) => c.workspaceId === activeWorkspaceId && c.isDefault
+        const activeCollections = getActiveWorkspaceCollections(
+          workspaceState.activeWorkspaceId,
+          workspaceState.workspaces,
+          workspaceState.collections,
         );
+        const defaultCol = activeCollections.find((candidate) => candidate.isDefault);
         targetCollectionId = defaultCol?.id || "";
       }
 
-      if (targetCollectionId) {
+      const target = resolveActiveWorkspaceCollectionTarget(
+        targetCollectionId,
+        workspaceState.activeWorkspaceId,
+        workspaceState.workspaces,
+        workspaceState.collections,
+      );
+      if (!target) {
+        showNotification(t("workspaceVisibility_targetUnavailable"));
+        return;
+      }
+
+      if (target.id) {
         const now = new Date().toISOString();
-        const existing = bookmarksAsArray(useBookmarksStore.getState().bookmarks);
+        const activeCollectionIds = getActiveWorkspaceCollectionIds(
+          workspaceState.activeWorkspaceId,
+          workspaceState.workspaces,
+          workspaceState.collections,
+        );
+        const existing = bookmarksAsArray(useBookmarksStore.getState().bookmarks)
+          .filter((bookmark) => bookmark.collectionId === "" || activeCollectionIds.has(bookmark.collectionId));
 
         const duplicates: number[] = [];
         const existingCollectionIds = new Set<string>();
@@ -134,7 +168,12 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         if (duplicates.length > 0) {
           useTabsStore.getState().setHighlightedTabs(duplicates);
           useWorkspaceStore.getState().setHighlightedCollectionIds(Array.from(existingCollectionIds));
-          showNotification(`Duplicate tab${duplicates.length > 1 ? "s" : ""} detected`);
+          showNotification(t(
+            duplicates.length === 1
+              ? "workspaceVisibility_duplicateTab_one"
+              : "workspaceVisibility_duplicateTab_other",
+            [duplicates.length.toString()],
+          ));
         }
 
         const newBookmarks = uniqueTabs.map((tab) => ({
@@ -143,7 +182,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
           url: tab.url,
           favicon: tab.favIconUrl || "",
           description: "",
-          collectionId: targetCollectionId,
+          collectionId: target.id,
           tags: [] as string[],
           createdAt: now,
           isFavorite: false,
@@ -151,20 +190,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         }));
 
         if (newBookmarks.length > 0) {
-          useBookmarksStore.setState((state) => ({
-            bookmarks: (() => {
-              const nextBookmarks = new Map<string, Bookmark>();
-              for (const bookmark of newBookmarks) {
-                nextBookmarks.set(bookmark.id, bookmark);
-              }
-              for (const [existingId, existingBookmark] of state.bookmarks) {
-                if (!nextBookmarks.has(existingId)) {
-                  nextBookmarks.set(existingId, existingBookmark);
-                }
-              }
-              return nextBookmarks;
-            })(),
-          }));
+          useBookmarksStore.getState().addBookmarks(newBookmarks);
         }
       }
     };
@@ -192,21 +218,37 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         const rawId = dropId.startsWith("sidebar-collection-")
           ? dropId.replace("sidebar-collection-", "")
           : dropId.replace("content-collection-", "");
+        const workspaceState = useWorkspaceStore.getState();
         let targetCollectionId = rawId;
         if (rawId === "all") {
-          const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
-          const defaultCol = collections.find(c => c.workspaceId === activeWorkspaceId && c.isDefault);
+          const activeCollections = getActiveWorkspaceCollections(
+            workspaceState.activeWorkspaceId,
+            workspaceState.workspaces,
+            workspaceState.collections,
+          );
+          const defaultCol = activeCollections.find((candidate) => candidate.isDefault);
           targetCollectionId = defaultCol?.id ?? "";
         }
 
+        const target = resolveActiveWorkspaceCollectionTarget(
+          targetCollectionId,
+          workspaceState.activeWorkspaceId,
+          workspaceState.workspaces,
+          workspaceState.collections,
+        );
+        if (!target) {
+          showNotification(t("workspaceVisibility_targetUnavailable"));
+          return;
+        }
+
         const bookmark = useBookmarksStore.getState().bookmarks.get(dragData.bookmarkId);
-        if (bookmark && bookmark.collectionId === targetCollectionId) {
-          showNotification("Already in this collection");
+        if (bookmark && bookmark.collectionId === target.id) {
+          showNotification(t("workspaceVisibility_alreadyInCollection"));
           return;
         }
 
         useBookmarksStore.getState().updateBookmark(dragData.bookmarkId, {
-          collectionId: targetCollectionId,
+          collectionId: target.id,
         });
       }
     }
@@ -214,12 +256,19 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     if (dragData.type === "tab-group") {
       if (dropId === "sidebar-groups") {
         const { createGroup, addTabToGroup } = useGroupsStore.getState();
-        const { activeWorkspaceId } = useWorkspaceStore.getState();
+        const workspaceState = useWorkspaceStore.getState();
+        const activeWorkspace = workspaceState.workspaces.find(
+          (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+        );
+        if (!isActiveWorkspace(activeWorkspace)) {
+          showNotification(t("workspaceVisibility_targetUnavailable"));
+          return;
+        }
         const savedGroupId = createGroup(
           dragData.groupName || "Unnamed",
           dragData.groupColor,
           true,
-          activeWorkspaceId
+          workspaceState.activeWorkspaceId
         );
         dragData.tabs.forEach((tab) => {
           addTabToGroup(savedGroupId, {

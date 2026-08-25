@@ -1517,5 +1517,58 @@
   },
   "workspaceManager_actionInProgress": {
     "message": "另一个 Workspace 操作正在进行中。"
+  },
+  "workspaceVisibility_targetUnavailable": {
+    "message": "该目标已不可用，已刷新你的选择。"
+  },
+  "workspaceVisibility_duplicateTab_one": {
+    "message": "检测到 $1 个重复标签页。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceVisibility_duplicateTab_other": {
+    "message": "检测到 $1 个重复标签页。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceVisibility_alreadyInCollection": {
+    "message": "已在此 Collection 中。"
+  },
+  "workspaceVisibility_dropDefault": {
+    "message": "拖放以保存到默认 Collection"
+  },
+  "workspaceVisibility_dropCollection": {
+    "message": "拖放以保存到“$1”",
+    "placeholders": { "collection": { "content": "$1" } }
+  },
+  "workspaceVisibility_duplicateInCollection": {
+    "message": "已保存到“$1”",
+    "placeholders": { "collection": { "content": "$1" } }
+  },
+  "workspaceVisibility_savedTo": {
+    "message": "已保存到 $1",
+    "placeholders": { "collection": { "content": "$1" } }
+  },
+  "tabsPanel_saveCollectionDesc": {
+    "message": "将 $1 个标签页保存为新的书签 Collection。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "tabsPanel_saveCollectionCount_one": {
+    "message": "$1 个标签页将保存为书签。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "tabsPanel_saveCollectionCount_other": {
+    "message": "$1 个标签页将保存为书签。",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "tabsPanel_collectionNamePlaceholder": {
+    "message": "Collection 名称…"
+  },
+  "tabsPanel_save": {
+    "message": "保存"
+  },
+  "import_failedQuotaChanged": {
+    "message": "当前配额已不允许执行此次导入。"
+  },
+  "import_failedUnexpected": {
+    "message": "导入意外失败，请使用同一文件重试。"
   }
 }

@@ -1,11 +1,17 @@
 import * as React from "react";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
-import { normalizeUrl, findDuplicateBookmark } from "@/lib/bookmark-utils";
+import { findDuplicateBookmark } from "@/lib/bookmark-utils";
+import {
+  getActiveWorkspaceCollectionIds,
+  getActiveWorkspaceCollections,
+  resolveActiveWorkspaceCollectionTarget,
+} from "@/lib/workspace-visibility";
+import { useTranslation } from "@/hooks/use-translation";
 
 export interface DropNotification {
   text: string;
-  type: "success" | "duplicate";
+  type: "success" | "duplicate" | "unavailable";
 }
 
 interface UseTabDragDropResult {
@@ -27,30 +33,47 @@ const DRAG_TYPE = "application/tabslate-tab";
 
 
 export function useTabDragDrop(): UseTabDragDropResult {
-  const { addBookmark, bookmarks, selectedCollection, setSelectedCollection } =
-    useBookmarksStore();
-  const { collections, activeWorkspaceId, setHighlightedCollectionIds } = useWorkspaceStore();
+  const { t } = useTranslation();
+  const addBookmark = useBookmarksStore((state) => state.addBookmark);
+  const bookmarks = useBookmarksStore((state) => bookmarksAsArray(state.bookmarks));
+  const selectedCollection = useBookmarksStore((state) => state.selectedCollection);
+  const setSelectedCollection = useBookmarksStore((state) => state.setSelectedCollection);
+  const collections = useWorkspaceStore((state) => state.collections);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
+  const setHighlightedCollectionIds = useWorkspaceStore(
+    (state) => state.setHighlightedCollectionIds,
+  );
 
   const dragCounter = React.useRef(0);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [notification, setNotification] = React.useState<DropNotification | null>(null);
   const [highlightedBookmarkId, setHighlightedBookmarkId] = React.useState<string | null>(null);
 
-  function resolveTargetCollection(): { id: string; name: string } {
+  function resolveTargetCollection(): { id: string; name: string } | undefined {
     if (selectedCollection !== "all") {
-      const col = collections.find((c) => c.id === selectedCollection);
-      return { id: selectedCollection, name: col?.name ?? "collection" };
+      const collection = resolveActiveWorkspaceCollectionTarget(
+        selectedCollection,
+        activeWorkspaceId,
+        workspaces,
+        collections,
+      );
+      return collection ? { id: collection.id, name: collection.name } : undefined;
     }
-    const defaultCol = collections.find(
-      (c) => c.workspaceId === activeWorkspaceId && c.isDefault
+    const activeCollections = getActiveWorkspaceCollections(
+      activeWorkspaceId,
+      workspaces,
+      collections,
     );
-    return { id: defaultCol?.id ?? "", name: "Default collection" };
+    const defaultCol = activeCollections.find((collection) => collection.isDefault) ?? activeCollections[0];
+    return defaultCol ? { id: defaultCol.id, name: defaultCol.name } : undefined;
   }
 
+  const resolvedTarget = resolveTargetCollection();
   const targetDropLabel =
     selectedCollection === "all"
-      ? "Drop to save to Default collection"
-      : `Drop to save to "${resolveTargetCollection().name}"`;
+      ? t("workspaceVisibility_dropDefault")
+      : t("workspaceVisibility_dropCollection", [resolvedTarget?.name ?? ""]);
 
   function isTabDrag(e: React.DragEvent) {
     return e.dataTransfer.types.includes(DRAG_TYPE);
@@ -94,15 +117,15 @@ export function useTabDragDrop(): UseTabDragDropResult {
       };
 
       // ── Duplicate detection (current workspace only) ─────────────────────
-      if (Array.isArray(bookmarks)) {
-        const workspaceColIds = new Set(
-          collections
-            .filter((c) => c.workspaceId === activeWorkspaceId)
-            .map((c) => c.id)
+      if (bookmarks.length > 0) {
+        const workspaceState = useWorkspaceStore.getState();
+        const workspaceColIds = getActiveWorkspaceCollectionIds(
+          workspaceState.activeWorkspaceId,
+          workspaceState.workspaces,
+          workspaceState.collections,
         );
-        const workspaceBookmarks = bookmarks.filter(
-          (b) => b.collectionId === "" || workspaceColIds.has(b.collectionId)
-        );
+        const workspaceBookmarks = bookmarksAsArray(useBookmarksStore.getState().bookmarks)
+          .filter((bookmark) => bookmark.collectionId === "" || workspaceColIds.has(bookmark.collectionId));
         const existing = findDuplicateBookmark(workspaceBookmarks, url);
 
         if (existing) {
@@ -112,9 +135,9 @@ export function useTabDragDrop(): UseTabDragDropResult {
             setHighlightedCollectionIds([existing.collectionId], 3000);
           }
           const colName =
-            collections.find((c) => c.id === existing.collectionId)?.name ?? "Default";
+            workspaceState.collections.find((c) => c.id === existing.collectionId)?.name ?? "";
           showNotification(
-            { type: "duplicate", text: `Already saved in "${colName}"` },
+            { type: "duplicate", text: t("workspaceVisibility_duplicateInCollection", [colName]) },
             3000
           );
           setTimeout(() => setHighlightedBookmarkId(null), 3000);
@@ -123,9 +146,31 @@ export function useTabDragDrop(): UseTabDragDropResult {
       }
 
       // ── Save new bookmark ────────────────────────────────────────────────
-      const { id: collectionId, name: collectionName } = resolveTargetCollection();
+      const workspaceState = useWorkspaceStore.getState();
+      const activeCollections = getActiveWorkspaceCollections(
+        workspaceState.activeWorkspaceId,
+        workspaceState.workspaces,
+        workspaceState.collections,
+      );
+      const freshTarget = selectedCollection === "all"
+        ? activeCollections.find((collection) => collection.isDefault) ?? activeCollections[0]
+        : resolveActiveWorkspaceCollectionTarget(
+            selectedCollection,
+            workspaceState.activeWorkspaceId,
+            workspaceState.workspaces,
+            workspaceState.collections,
+          );
+      if (!freshTarget) {
+        setSelectedCollection("all");
+        showNotification({
+          type: "unavailable",
+          text: t("workspaceVisibility_targetUnavailable"),
+        });
+        return;
+      }
+      const { id: collectionId, name: collectionName } = freshTarget;
       addBookmark({ title, url, favicon: favIconUrl, collectionId, tags: [], description: "", seq: 0 });
-      showNotification({ type: "success", text: `Saved to ${collectionName}` });
+      showNotification({ type: "success", text: t("workspaceVisibility_savedTo", [collectionName]) });
     } catch {
       // ignore malformed drag data
     }

@@ -54,6 +54,9 @@ interface GroupCardProps {
 
 import { GroupCardBase } from "@/components/dashboard/shared/group-card-base";
 import { useTranslation } from "@/hooks/use-translation";
+import { isActiveWorkspace } from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
   const { t } = useTranslation();
@@ -67,6 +70,8 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
   const closeSpecificTabs = useTabsStore(s => s.closeSpecificTabs);
   const closeGroup = useTabsStore(s => s.closeGroup);
   const compactGroupTitles = useWorkspaceStore(s => s.compactGroupTitles);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
   const [expanded, setExpanded] = useState(true);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -76,7 +81,15 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
   const [saveResult, setSaveResult] = useState<{ saved: number; skipped: number } | null>(null);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [compactAlert, setCompactAlert] = useState(false);
+  const [targetUnavailable, setTargetUnavailable] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
+
+  const targetIsActive = React.useMemo(
+    () => workspaces.some(
+      (workspace) => workspace.id === activeWorkspaceId && isActiveWorkspace(workspace),
+    ),
+    [activeWorkspaceId, workspaces],
+  );
 
   const displayTitle = (fullTitles && fullTitles[group.id]) || group.title;
 
@@ -129,22 +142,43 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
   }, [nameInput, group.title, group.id, updateGroup]);
 
   const handleSaveGroup = useCallback(async (name: string, deduplicate: boolean) => {
+    const workspaceState = useWorkspaceStore.getState();
+    const activeWorkspace = workspaceState.workspaces.find(
+      (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace)) {
+      setTargetUnavailable(true);
+      return;
+    }
     setIsSaving(true);
     const result = await saveGroupAsCollection(group.id, name, deduplicate);
     setIsSaving(false);
+    if (result.targetUnavailable) {
+      setTargetUnavailable(true);
+      return;
+    }
     setSaveDialogOpen(false);
     setSaveResult(result);
+    setTargetUnavailable(false);
     setTimeout(() => setSaveResult(null), 3000);
   }, [saveGroupAsCollection, group.id]);
 
   const handleSaveAsGroup = useCallback(() => {
     const { createGroup, addTabToGroup } = useGroupsStore.getState();
-    const { activeWorkspaceId } = useWorkspaceStore.getState();
-    const savedGroupId = createGroup(displayTitle || "Unnamed", group.color, group.title.length === 1, activeWorkspaceId);
+    const workspaceState = useWorkspaceStore.getState();
+    const activeWorkspace = workspaceState.workspaces.find(
+      (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace)) {
+      setTargetUnavailable(true);
+      return;
+    }
+    const savedGroupId = createGroup(displayTitle || "Unnamed", group.color, group.title.length === 1, workspaceState.activeWorkspaceId);
     for (const tab of tabs) {
       addTabToGroup(savedGroupId, { title: tab.title || "", url: tab.url, favicon: tab.favIconUrl || "" });
     }
     setSaveResult({ saved: tabs.length, skipped: 0 });
+    setTargetUnavailable(false);
     setTimeout(() => setSaveResult(null), 3000);
   }, [displayTitle, group.color, group.title, tabs]);
 
@@ -329,6 +363,12 @@ export function GroupCard({ group, tabs, onJoinRequest }: GroupCardProps) {
       isDragging={isGroupDragging}
       isOver={isTabOver}
     >
+      {(targetUnavailable || !targetIsActive) && (
+        <Alert className="mb-3" variant="destructive">
+          <AlertCircle />
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       {showDropIndicator && (
         <div className="h-0.5 rounded-full bg-primary/60 mx-1 mb-1" />
       )}

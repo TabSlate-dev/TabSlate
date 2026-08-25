@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Loader2, Save } from "lucide-react";
+import { AlertCircle, Loader2, Save } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,9 @@ import { Input } from "@/components/ui/input";
 import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { useTranslation } from "@/hooks/use-translation";
+import { useWorkspaceStore } from "@/store/workspace-store";
+import { isActiveWorkspace } from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface SaveCollectionDialogProps {
   open: boolean;
@@ -34,13 +37,34 @@ export function SaveCollectionDialog({
   const { t } = useTranslation();
   const [name, setName] = useState(defaultName);
   const [deduplicate, setDeduplicate] = useState(false);
+  const [targetUnavailable, setTargetUnavailable] = useState(false);
+  const workspaces = useWorkspaceStore((state) => state.workspaces);
+  const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
 
   useEffect(() => {
     if (open) {
       setName(defaultName);
       setDeduplicate(false); // Default to OFF as requested
+      setTargetUnavailable(false);
     }
   }, [defaultName, open]);
+
+  const handleConfirm = () => {
+    const state = useWorkspaceStore.getState();
+    const activeWorkspace = state.workspaces.find(
+      (workspace) => workspace.id === state.activeWorkspaceId,
+    );
+    if (!isActiveWorkspace(activeWorkspace)) {
+      setTargetUnavailable(true);
+      return;
+    }
+    setTargetUnavailable(false);
+    onConfirm(name, deduplicate);
+  };
+
+  const targetIsActive = workspaces.some(
+    (workspace) => workspace.id === activeWorkspaceId && isActiveWorkspace(workspace),
+  );
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -48,18 +72,24 @@ export function SaveCollectionDialog({
         <DialogHeader>
           <DialogTitle>{t("tabsPanel_saveAsCollection")}</DialogTitle>
           <DialogDescription className="sr-only">
-            Save {tabCount} tabs as a new collection of bookmarks.
+            {t("tabsPanel_saveCollectionDesc", [tabCount.toString()])}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3 py-2">
+          {(targetUnavailable || !targetIsActive) && (
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+            </Alert>
+          )}
           <p className="text-sm text-muted-foreground">
-            {tabCount} tab{tabCount !== 1 ? "s" : ""} will be saved as bookmarks.
+            {t(tabCount === 1 ? "tabsPanel_saveCollectionCount_one" : "tabsPanel_saveCollectionCount_other", [tabCount.toString()])}
           </p>
           <Input
-            placeholder="Collection name..."
+            placeholder={t("tabsPanel_collectionNamePlaceholder")}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && onConfirm(name, deduplicate)}
+            onKeyDown={(e) => e.key === "Enter" && handleConfirm()}
             autoFocus
           />
           <Field orientation="horizontal" className="px-1 pt-1">
@@ -76,15 +106,15 @@ export function SaveCollectionDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={onClose}>
-            Cancel
+            {t("groupsPanel_cancel")}
           </Button>
-          <Button size="sm" onClick={() => onConfirm(name, deduplicate)} disabled={isSaving}>
+          <Button size="sm" onClick={handleConfirm} disabled={isSaving || !targetIsActive}>
             {isSaving ? (
               <Loader2 className="size-4 animate-spin mr-2" />
             ) : (
               <Save className="size-4 mr-2" />
             )}
-            Save
+            {t("tabsPanel_save")}
           </Button>
         </DialogFooter>
       </DialogContent>

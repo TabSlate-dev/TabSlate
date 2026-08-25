@@ -62,7 +62,9 @@ import { useTranslation } from "@/hooks/use-translation";
 import { AuthDialog } from "@/components/auth/auth-dialog";
 import type { AuthEntryMode } from "@/lib/auth-session";
 import { useAuthStore } from "@/store/auth-store";
-import { compareActiveCollections } from "@/lib/collection-utils";
+import { getActiveWorkspaceCollections, isActiveWorkspace } from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { AlertCircle } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Icon map
@@ -203,12 +205,20 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const deleteGroup = useGroupsStore(s => s.deleteGroup);
 
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const tags = useWorkspaceStore(s => s.tags);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
   const groups = React.useMemo(
-    () => allGroups.filter(g => !g.deletedAt && g.workspaceId === activeWorkspaceId),
-    [allGroups, activeWorkspaceId]
+    () => {
+      const activeWorkspace = workspaces.find(
+        (workspace) => workspace.id === activeWorkspaceId,
+      );
+      return isActiveWorkspace(activeWorkspace)
+        ? allGroups.filter(g => !g.deletedAt && g.workspaceId === activeWorkspaceId)
+        : [];
+    },
+    [allGroups, activeWorkspaceId, workspaces]
   );
   const createCollection = useWorkspaceStore(s => s.createCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
@@ -218,14 +228,13 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const highlightedCollectionIds = useWorkspaceStore(s => s.highlightedCollectionIds);
 
   const isHomePage = pathname === "/";
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   // Memoize workspace collections to avoid re-filtering on every render
   const workspaceCollections = React.useMemo(
     () =>
-      collections
-        .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-        .sort(compareActiveCollections),
-    [collections, activeWorkspaceId]
+      getActiveWorkspaceCollections(activeWorkspaceId, workspaces, collections),
+    [activeWorkspaceId, workspaces, collections]
   );
 
   // Memoize per-collection bookmark counts
@@ -258,6 +267,12 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
 
   return (
     <>
+      {targetUnavailable && (
+        <Alert className="fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg" variant="destructive">
+          <AlertCircle />
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       <Sidebar collapsible="offcanvas" {...props}>
         <SidebarHeader className="p-0">
           <UserProfile onLogin={handleOpenLogin} />
@@ -533,7 +548,16 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
         open={newCollectionOpen}
         onOpenChange={setNewCollectionOpen}
         onSubmit={(name, icon) => {
-          createCollection(activeWorkspaceId, name, icon);
+          const state = useWorkspaceStore.getState();
+          const activeWorkspace = state.workspaces.find(
+            (workspace) => workspace.id === state.activeWorkspaceId,
+          );
+          if (!isActiveWorkspace(activeWorkspace)) {
+            setTargetUnavailable(true);
+            return;
+          }
+          createCollection(state.activeWorkspaceId, name, icon);
+          setTargetUnavailable(false);
           setNewCollectionOpen(false);
         }}
       />
@@ -552,7 +576,15 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
         onOpenChange={setNewGroupOpen}
         onSubmit={(name, color, selectedTabs, isCompact) => {
           const { createGroup, addTabToGroup } = useGroupsStore.getState();
-          const groupId = createGroup(name, color, isCompact, activeWorkspaceId);
+          const state = useWorkspaceStore.getState();
+          const activeWorkspace = state.workspaces.find(
+            (workspace) => workspace.id === state.activeWorkspaceId,
+          );
+          if (!isActiveWorkspace(activeWorkspace)) {
+            setTargetUnavailable(true);
+            return;
+          }
+          const groupId = createGroup(name, color, isCompact, state.activeWorkspaceId);
           selectedTabs.forEach((tab) => {
             addTabToGroup(groupId, {
               title: tab.title,
@@ -561,6 +593,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
             });
           });
           setNewGroupOpen(false);
+          setTargetUnavailable(false);
         }}
       />
 

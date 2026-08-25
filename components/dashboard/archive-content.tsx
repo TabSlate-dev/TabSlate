@@ -33,9 +33,16 @@ import {
   Trash2,
   Wrench,
   ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import type { Bookmark as BookmarkType, Collection } from "@/lib/types";
 import { useTranslation } from "@/hooks/use-translation";
+import {
+  getActiveWorkspaceCollections,
+  getActiveWorkspaceCollectionIds,
+  getCollectionsUnderActiveWorkspace,
+} from "@/lib/workspace-visibility";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 // ---------------------------------------------------------------------------
 // Icon map (mirrors sidebar)
@@ -78,9 +85,16 @@ function ArchivedCollectionCard({
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
   const [expanded, setExpanded] = React.useState(false);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   return (
     <div className="flex flex-col rounded-lg border bg-card overflow-hidden">
+      {targetUnavailable && (
+        <Alert variant="destructive" className="m-3 mb-0">
+          <AlertCircle />
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       <div
         className="flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors cursor-pointer"
         onClick={() => setExpanded(!expanded)}
@@ -116,6 +130,16 @@ function ArchivedCollectionCard({
             variant="outline" 
             size="sm" 
             onClick={() => {
+              const state = useWorkspaceStore.getState();
+              const visibleCollection = getCollectionsUnderActiveWorkspace(
+                state.activeWorkspaceId,
+                state.workspaces,
+                state.collections,
+              ).find((candidate) => candidate.id === collection.id && !!candidate.archivedAt);
+              if (!visibleCollection) {
+                setTargetUnavailable(true);
+                return;
+              }
               restoreCollection(collection.id);
               // Restore ALL bookmarks currently in this collection, ignoring selection
               bookmarks.forEach(b => {
@@ -181,13 +205,26 @@ function ArchivedBookmarkCard({
     [tags, bookmark.tags]
   );
 
-  const collections = useWorkspaceStore(s => s.collections);
-  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   function handleRestore() {
-    const active = collections.filter(
-      c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
+    const state = useWorkspaceStore.getState();
+    const active = getActiveWorkspaceCollections(
+      state.activeWorkspaceId,
+      state.workspaces,
+      state.collections,
     );
+    const scopedCollectionIds = new Set(
+      getCollectionsUnderActiveWorkspace(
+        state.activeWorkspaceId,
+        state.workspaces,
+        state.collections,
+      ).map((collection) => collection.id),
+    );
+    if (bookmark.collectionId !== "" && !scopedCollectionIds.has(bookmark.collectionId)) {
+      setTargetUnavailable(true);
+      return;
+    }
 
     // 1. collectionId still points to an active collection
     const byId = active.find(c => c.id === bookmark.collectionId);
@@ -197,7 +234,7 @@ function ArchivedBookmarkCard({
     }
 
     // 2. Original collection name exists under a different id (e.g. re-created)
-    const srcCol = collections.find(c => c.id === bookmark.collectionId);
+    const srcCol = state.collections.find(c => c.id === bookmark.collectionId);
     const byName = srcCol ? active.find(c => c.name === srcCol.name) : undefined;
     if (byName) {
       useBookmarksStore.getState().updateBookmark(bookmark.id, { collectionId: byName.id });
@@ -210,9 +247,22 @@ function ArchivedBookmarkCard({
     const targetColId = defaultCol?.id ?? "";
     useBookmarksStore.getState().updateBookmark(bookmark.id, { collectionId: targetColId });
     restoreFromArchive(bookmark.id);
+    setTargetUnavailable(false);
   }
 
   function handleMoveToTrash() {
+    const state = useWorkspaceStore.getState();
+    const scopedIds = new Set(
+      getCollectionsUnderActiveWorkspace(
+        state.activeWorkspaceId,
+        state.workspaces,
+        state.collections,
+      ).map((collection) => collection.id),
+    );
+    if (bookmark.collectionId !== "" && !scopedIds.has(bookmark.collectionId)) {
+      setTargetUnavailable(true);
+      return;
+    }
     restoreFromArchive(bookmark.id);
     setTimeout(() => trashBookmark(bookmark.id), 0);
   }
@@ -220,12 +270,18 @@ function ArchivedBookmarkCard({
   return (
     <div
       className={cn(
-        "group flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors",
+        "group relative flex items-center gap-4 p-4 hover:bg-accent/50 transition-colors",
         !isNested && "rounded-lg border bg-card",
         onSelect && "cursor-pointer"
       )}
       onClick={() => onSelect?.()}
     >
+      {targetUnavailable && (
+        <Alert variant="destructive" className="absolute z-10">
+          <AlertCircle />
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+        </Alert>
+      )}
       {onSelect && (
         <div
           className={cn(
@@ -299,18 +355,20 @@ export function ArchiveContent() {
   const trashBookmark = useBookmarksStore(s => s.trashBookmark);
   
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
   const restoreCollection = useWorkspaceStore(s => s.restoreCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
 
-  const wsAllColIds = React.useMemo(
-    () => new Set(collections.filter(c => c.workspaceId === activeWorkspaceId).map(c => c.id)),
-    [collections, activeWorkspaceId]
+  const activeCollectionIds = React.useMemo(
+    () => getActiveWorkspaceCollectionIds(activeWorkspaceId, workspaces, collections),
+    [activeWorkspaceId, workspaces, collections],
   );
 
   const archivedCollections = React.useMemo(
-    () => collections.filter(c => !!c.archivedAt && !c.deletedAt && c.workspaceId === activeWorkspaceId),
-    [collections, activeWorkspaceId]
+    () => getCollectionsUnderActiveWorkspace(activeWorkspaceId, workspaces, collections)
+      .filter(c => !!c.archivedAt && !c.deletedAt),
+    [activeWorkspaceId, workspaces, collections]
   );
 
   const archivedCollectionIds = React.useMemo(
@@ -331,15 +389,16 @@ export function ArchiveContent() {
 
   const individualArchivedBookmarks = React.useMemo(
     () => archivedBookmarks.filter(
-      b => !archivedCollectionIds.has(b.collectionId) && (b.collectionId === "" || wsAllColIds.has(b.collectionId))
+      b => !archivedCollectionIds.has(b.collectionId) && (b.collectionId === "" || activeCollectionIds.has(b.collectionId))
     ),
-    [archivedBookmarks, archivedCollectionIds, wsAllColIds]
+    [archivedBookmarks, archivedCollectionIds, activeCollectionIds]
   );
 
   const totalCount = archivedCollections.length + individualArchivedBookmarks.length;
 
   const [selectedColIds, setSelectedColIds] = React.useState<Set<string>>(new Set());
   const [selectedBmIds, setSelectedBmIds] = React.useState<Set<string>>(new Set());
+  const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
   React.useEffect(() => {
     setSelectedColIds(new Set());
@@ -387,10 +446,31 @@ export function ArchiveContent() {
   };
 
   const handleBatchRestore = () => {
-    const { collections, activeWorkspaceId } = useWorkspaceStore.getState();
-    const active = collections.filter(
-      c => !c.deletedAt && !c.archivedAt && c.workspaceId === activeWorkspaceId,
+    const state = useWorkspaceStore.getState();
+    const active = getActiveWorkspaceCollections(
+      state.activeWorkspaceId,
+      state.workspaces,
+      state.collections,
     );
+    const scopedIds = new Set(
+      getCollectionsUnderActiveWorkspace(
+        state.activeWorkspaceId,
+        state.workspaces,
+        state.collections,
+      ).map((collection) => collection.id),
+    );
+    if (
+      Array.from(selectedColIds).some((id) => !scopedIds.has(id)) ||
+      Array.from(selectedBmIds).some((id) => {
+        const bookmark = archivedBookmarks.find((candidate) => candidate.id === id);
+        return !bookmark || (bookmark.collectionId !== "" && !scopedIds.has(bookmark.collectionId));
+      })
+    ) {
+      setSelectedColIds(new Set());
+      setSelectedBmIds(new Set());
+      setTargetUnavailable(true);
+      return;
+    }
     const defaultCol = active.find(c => c.isDefault);
 
     // 1. Restore collections
@@ -401,7 +481,7 @@ export function ArchiveContent() {
       const allBmsInCol = collectionBookmarks[colId] || [];
       for (const bm of allBmsInCol) {
         if (!selectedBmIds.has(bm.id)) {
-          useBookmarksStore.getState().updateBookmark(bm.id, { collectionId: "" });
+          useBookmarksStore.getState().updateBookmark(bm.id, { collectionId: defaultCol?.id ?? bm.collectionId });
         }
       }
     }
@@ -429,6 +509,7 @@ export function ArchiveContent() {
 
     setSelectedColIds(new Set());
     setSelectedBmIds(new Set());
+    setTargetUnavailable(false);
   };
 
   const handleBatchDelete = () => {
@@ -449,6 +530,12 @@ export function ArchiveContent() {
   return (
     <div className="flex-1 w-full overflow-auto">
       <div className="p-4 md:p-6 space-y-6">
+        {targetUnavailable && (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+          </Alert>
+        )}
         <div className="flex items-center justify-between gap-4 p-4 rounded-xl border bg-card">
           <div className="flex items-center gap-3">
             <div className="size-10 rounded-lg bg-violet-500/10 text-violet-500 flex items-center justify-center">

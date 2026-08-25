@@ -1,13 +1,14 @@
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { useTabsStore } from "@/store/tabs-store";
 import { Button } from "@/components/ui/button";
-import { Monitor, RefreshCw, FolderPlus, Loader2 } from "lucide-react";
+import { AlertCircle, Monitor, RefreshCw, FolderPlus, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { GroupCard } from "./group-card";
 import { UngroupedSection } from "./ungrouped-section";
 import { SaveCollectionDialog } from "./save-collection-dialog";
 import { JoinGroupDialog } from "./join-group-dialog";
 import { useTranslation } from "@/hooks/use-translation";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 export function TabsPanel() {
   const { t } = useTranslation();
@@ -23,6 +24,7 @@ export function TabsPanel() {
   const [saveResult, setSaveResult] = useState<{ saved: number; skipped: number } | null>(null);
   const [selectedTabIds, setSelectedTabIds] = useState<number[]>([]);
   const [isJoinDialogOpen, setIsJoinDialogOpen] = useState(false);
+  const [targetUnavailable, setTargetUnavailable] = useState(false);
 
   const handleJoinRequest = useCallback((tabIds: number[]) => {
     setSelectedTabIds(tabIds);
@@ -52,14 +54,25 @@ export function TabsPanel() {
     setIsSavingWindow(true);
     const result = await saveWindowAsCollection(name, deduplicate);
     setIsSavingWindow(false);
+    if (result.targetUnavailable) {
+      setTargetUnavailable(true);
+      return;
+    }
     setSaveWindowOpen(false);
     setSaveResult(result);
+    setTargetUnavailable(false);
     setTimeout(() => setSaveResult(null), 3000);
   }, [saveWindowAsCollection]);
 
   return (
     <div className="flex-1 w-full overflow-auto">
       <div className="p-4 md:p-6 space-y-5">
+        {targetUnavailable && (
+          <Alert variant="destructive">
+            <AlertCircle />
+            <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+          </Alert>
+        )}
         {/* Header */}
         <div className="flex items-center justify-between gap-4 p-4 rounded-xl border bg-card">
           <div className="flex items-center gap-3">

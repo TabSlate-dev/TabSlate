@@ -1517,5 +1517,58 @@
   },
   "workspaceManager_actionInProgress": {
     "message": "Another Workspace action is in progress."
+  },
+  "workspaceVisibility_targetUnavailable": {
+    "message": "That destination is no longer available. Your selection has been refreshed."
+  },
+  "workspaceVisibility_duplicateTab_one": {
+    "message": "$1 duplicate tab detected.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceVisibility_duplicateTab_other": {
+    "message": "$1 duplicate tabs detected.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "workspaceVisibility_alreadyInCollection": {
+    "message": "Already in this Collection."
+  },
+  "workspaceVisibility_dropDefault": {
+    "message": "Drop to save to the Default Collection"
+  },
+  "workspaceVisibility_dropCollection": {
+    "message": "Drop to save to “$1”",
+    "placeholders": { "collection": { "content": "$1" } }
+  },
+  "workspaceVisibility_duplicateInCollection": {
+    "message": "Already saved in “$1”",
+    "placeholders": { "collection": { "content": "$1" } }
+  },
+  "workspaceVisibility_savedTo": {
+    "message": "Saved to $1",
+    "placeholders": { "collection": { "content": "$1" } }
+  },
+  "tabsPanel_saveCollectionDesc": {
+    "message": "Save $1 tabs as a new Collection of Bookmarks.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "tabsPanel_saveCollectionCount_one": {
+    "message": "$1 tab will be saved as a Bookmark.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "tabsPanel_saveCollectionCount_other": {
+    "message": "$1 tabs will be saved as Bookmarks.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "tabsPanel_collectionNamePlaceholder": {
+    "message": "Collection name…"
+  },
+  "tabsPanel_save": {
+    "message": "Save"
+  },
+  "import_failedQuotaChanged": {
+    "message": "Import could not start because the current quota no longer allows it."
+  },
+  "import_failedUnexpected": {
+    "message": "Import failed unexpectedly. Try again with the same file."
   }
 }

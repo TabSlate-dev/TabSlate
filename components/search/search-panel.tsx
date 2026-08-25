@@ -9,6 +9,9 @@ import type { BrowserTab } from "@/lib/chrome/tabs";
 import { smartOpenUrl } from "@/lib/chrome/tabs";
 import { runWebSearch } from "@/lib/browser/search";
 import { cn } from "@/lib/utils";
+import { useWorkspaceStore } from "@/store/workspace-store";
+import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
+import { useTranslation } from "@/hooks/use-translation";
 
 interface Props {
   openTabs: BrowserTab[];
@@ -19,6 +22,7 @@ interface Props {
 }
 
 export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) {
+  const { t } = useTranslation();
   const [query, setQuery] = React.useState("");
   const [bookmarkResults, setBookmarkResults] = React.useState<SearchBookmark[]>([]);
   const [activeIndex, setActiveIndex] = React.useState(0);
@@ -26,6 +30,22 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
 
   const accessToken = useAuthStore(s => s.accessToken);
   const serverUrl = useAuthStore(s => s.serverUrl);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
+  const collections = useWorkspaceStore(s => s.collections);
+  const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
+  const workspaceHydrated = useWorkspaceStore(s => s._hydrated);
+  const hydrateWorkspace = useWorkspaceStore(s => s.hydrate);
+
+  React.useEffect(() => {
+    if (!workspaceHydrated) {
+      void hydrateWorkspace();
+    }
+  }, [hydrateWorkspace, workspaceHydrated]);
+
+  const activeCollectionIds = React.useMemo(
+    () => getActiveWorkspaceCollectionIds(activeWorkspaceId, workspaces, collections),
+    [activeWorkspaceId, workspaces, collections],
+  );
 
   const filteredTabs = React.useMemo(() => {
     if (query.length < 2) { return []; }
@@ -46,13 +66,15 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
     const timer = setTimeout(async () => {
       try {
         const res = await searchBookmarks(serverUrl, accessToken, query);
-        setBookmarkResults(res.bookmarks);
+        setBookmarkResults(res.bookmarks.filter(
+          (bookmark) => bookmark.collectionId === "" || activeCollectionIds.has(bookmark.collectionId),
+        ));
       } catch {
         setBookmarkResults([]);
       }
     }, 300);
     return () => clearTimeout(timer);
-  }, [query, accessToken, serverUrl]);
+  }, [query, accessToken, serverUrl, activeCollectionIds]);
 
   React.useEffect(() => { setActiveIndex(0); }, [bookmarkResults.length, filteredTabs.length]);
 
@@ -114,7 +136,7 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
         <Input
           autoFocus={autoFocus}
-          placeholder="Search bookmarks, tabs…"
+          placeholder={t("search_placeholderGlobal")}
           value={query}
           onChange={e => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
@@ -128,7 +150,7 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
             <section>
               <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5 border-b">
                 <BookmarkIcon className="size-3" />
-                Bookmarks ({bookmarkResults.length})
+                {t("search_bookmarks")} ({bookmarkResults.length})
               </div>
               {bookmarkResults.map((bm, i) => (
                 <button
@@ -148,7 +170,7 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
                       {bm.isArchived && (
                         <span className="shrink-0 flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded border text-muted-foreground">
                           <Archive className="size-2.5" />
-                          Archived
+                          {t("search_archived")}
                         </span>
                       )}
                     </div>
@@ -166,7 +188,7 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
             <section>
               <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center gap-1.5 border-b">
                 <Globe className="size-3" />
-                Open Tabs ({filteredTabs.length})
+                {t("search_openTabs")} ({filteredTabs.length})
               </div>
               {filteredTabs.map((tab, i) => {
                 const flatIdx = bookmarkResults.length + i;
@@ -203,7 +225,7 @@ export function SearchPanel({ openTabs, onClose, autoFocus, smartOpen }: Props) 
           >
             <Search className="size-4 shrink-0 text-muted-foreground" />
             <span className="text-sm">
-              Search <span className="font-medium">"{query}"</span> on the web
+              {t("search_searchWeb", query)}
             </span>
           </button>
         </div>

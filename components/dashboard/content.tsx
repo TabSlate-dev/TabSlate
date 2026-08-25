@@ -38,7 +38,10 @@ import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-
 import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
 import { SearchBox } from "./search-box";
 import { useTranslation } from "@/hooks/use-translation";
-import { compareActiveCollections } from "@/lib/collection-utils";
+import {
+  getActiveWorkspaceCollectionIds,
+  getActiveWorkspaceCollections,
+} from "@/lib/workspace-visibility";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   folder: Folder,
@@ -208,6 +211,7 @@ export function BookmarksContent() {
   const getFilteredBookmarks = useBookmarksStore(s => s.getFilteredBookmarks);
 
   const collections = useWorkspaceStore(s => s.collections);
+  const workspaces = useWorkspaceStore(s => s.workspaces);
   const tags = useWorkspaceStore(s => s.tags);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
@@ -230,8 +234,13 @@ export function BookmarksContent() {
   const gridCols = useContainerColumns(parentRef);
 
   const workspaceCollectionIds = React.useMemo(
-    () => new Set(collections.filter((c) => c.workspaceId === activeWorkspaceId).map((c) => c.id)),
-    [collections, activeWorkspaceId]
+    () => getActiveWorkspaceCollectionIds(activeWorkspaceId, workspaces, collections),
+    [activeWorkspaceId, workspaces, collections]
+  );
+
+  const activeCollections = React.useMemo(
+    () => getActiveWorkspaceCollections(activeWorkspaceId, workspaces, collections),
+    [activeWorkspaceId, workspaces, collections],
   );
 
   const filteredBookmarks = React.useMemo(
@@ -242,7 +251,13 @@ export function BookmarksContent() {
   const currentCollection =
     selectedCollection === "all"
       ? { name: t("bookmarksContent_allBookmarks") }
-      : collections.find((c) => c.id === selectedCollection);
+      : activeCollections.find((c) => c.id === selectedCollection);
+
+  React.useEffect(() => {
+    if (selectedCollection !== "all" && !workspaceCollectionIds.has(selectedCollection)) {
+      setSelectedCollection("all");
+    }
+  }, [selectedCollection, setSelectedCollection, workspaceCollectionIds]);
 
   const activeTagsData = React.useMemo(
     () => tags.filter((t) => selectedTags.includes(t.id)),
@@ -286,9 +301,7 @@ export function BookmarksContent() {
       // Group by Collection view under "All Bookmarks"
       const groups: Record<string, BookmarkType[]> = {};
 
-      const activeCols = collections
-        .filter((c) => c.workspaceId === activeWorkspaceId && !c.deletedAt && !c.archivedAt)
-        .sort(compareActiveCollections);
+      const activeCols = activeCollections;
 
       activeCols.forEach((c) => {
         groups[c.id] = [];
@@ -368,8 +381,7 @@ export function BookmarksContent() {
   }, [
     selectedCollection,
     filteredBookmarks,
-    collections,
-    activeWorkspaceId,
+    activeCollections,
     expandedCollectionIds,
     viewMode,
     gridCols,
@@ -444,7 +456,7 @@ export function BookmarksContent() {
       {/* Notification Toast */}
       {notification && (
         <Alert
-          variant={notification.type === "duplicate" ? "default" : "info"}
+          variant={notification.type === "unavailable" ? "destructive" : notification.type === "duplicate" ? "default" : "info"}
           className={cn(
             "fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap",
             notification.type === "duplicate" && "border-amber-500/50 text-amber-600 bg-amber-50/90 dark:bg-amber-950/20"
