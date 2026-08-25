@@ -60,6 +60,10 @@ import {
   readWorkspaceLifecycleIntents,
 } from "@/lib/workspace-lifecycle-state";
 import { loadWorkspaceAggregateIds, toSyncEntityReferences } from "@/lib/workspace-aggregate";
+import {
+  GUEST_WORKSPACE_LEGACY_RESTORE_EVENT,
+  recoverLegacyGuestWorkspaceOrphans,
+} from "@/lib/guest-workspace-orphan-recovery";
 
 function quotaResourceForRejectedType(type: string | undefined): QuotaResource | null {
   if (type === "bookmark") {
@@ -240,6 +244,7 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   const user = useAuthStore((s) => s.user);
   const workspaceCount = useWorkspaceStore((s) => s.workspaces.length);
   const initializeGuestWorkspace = useWorkspaceStore((s) => s.initializeGuestWorkspace);
+  const [orphanRecoveryComplete, setOrphanRecoveryComplete] = useState(false);
   const prevSessionStatusRef = useRef<AuthSessionStatus | null>(null);
 
   const hydrated =
@@ -265,6 +270,28 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!hydrated || orphanRecoveryComplete) {
+      return;
+    }
+    let current = true;
+    void (async () => {
+      const recovered = await recoverLegacyGuestWorkspaceOrphans();
+      const workspaceState = useWorkspaceStore.getState();
+      if (recovered.some((record) =>
+        !workspaceState.workspaces.some((workspace) => workspace.id === record.workspaceId),
+      )) {
+        await workspaceState.hydrate();
+      }
+      if (current) {
+        setOrphanRecoveryComplete(true);
+      }
+    })();
+    return () => {
+      current = false;
+    };
+  }, [hydrated, orphanRecoveryComplete]);
+
+  useEffect(() => {
     if (shouldResetLocalData(prevSessionStatusRef.current, sessionStatus)) {
       useWorkspaceStore.getState().reset();
       useBookmarksStore.getState().reset();
@@ -277,7 +304,7 @@ function StoreGate({ children }: { children: React.ReactNode }) {
   }, [sessionStatus]);
 
   useEffect(() => {
-    if (!hydrated || sessionStatus !== "guest") {
+    if (!hydrated || !orphanRecoveryComplete || sessionStatus !== "guest") {
       return;
     }
 
@@ -295,9 +322,9 @@ function StoreGate({ children }: { children: React.ReactNode }) {
         }) === "guest",
       });
     }
-  }, [hydrated, initializeGuestWorkspace, sessionStatus, workspaceCount]);
+  }, [hydrated, initializeGuestWorkspace, orphanRecoveryComplete, sessionStatus, workspaceCount]);
 
-  if (!hydrated) {
+  if (!hydrated || !orphanRecoveryComplete) {
     return (
       <div className="flex items-center justify-center h-svh bg-background">
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
@@ -350,6 +377,16 @@ function SyncProvider({
   useEffect(() => { mergeBookmarksRef.current = mergeBookmarks; }, [mergeBookmarks]);
   useEffect(() => { mergeGroupsRef.current = mergeGroups; }, [mergeGroups]);
   useEffect(() => { tRef.current = t; }, [t]);
+
+  useEffect(() => {
+    const handleLegacyRestore = () => {
+      setSyncErrorMessage(tRef.current("workspaceLifecycle_legacyArchiveStateLimited"));
+    };
+    window.addEventListener(GUEST_WORKSPACE_LEGACY_RESTORE_EVENT, handleLegacyRestore);
+    return () => {
+      window.removeEventListener(GUEST_WORKSPACE_LEGACY_RESTORE_EVENT, handleLegacyRestore);
+    };
+  }, []);
 
   const showRecoveryNotice = useCallback((targetWorkspaceName: string | undefined) => {
     if (!targetWorkspaceName) {
@@ -545,6 +582,12 @@ function SyncProvider({
           return false;
         }
         const reconciliation = await resolveLegacyGuestWorkspaceFailure(plan, remote);
+        if (reconciliation.kind === "conflict" &&
+          reconciliation.errorKey === "sync_noMigrationTarget") {
+          setSyncErrorMessage(tRef.current(reconciliation.errorKey));
+          await sweepAllUnsynced();
+          return true;
+        }
         if (reconciliation.kind !== "migrated") {
           return false;
         }

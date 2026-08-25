@@ -1,4 +1,12 @@
-import type { PlanResponse, SyncEntityType, SyncPullResponse, SyncPushResponse } from "@/lib/api";
+import type {
+  PlanResponse,
+  SyncEntity,
+  SyncEntityType,
+  SyncPullResponse,
+  SyncPushPayload,
+  SyncRejected,
+  SyncPushResponse,
+} from "@/lib/api";
 import type { Bookmark, Collection, Workspace } from "@/lib/types";
 import { idbBulkWrite, idbDelete, idbGet, idbGetAll, type BulkWriteOp } from "@/lib/idb";
 import {
@@ -15,8 +23,15 @@ import { syncConflictRegistry, type SyncConflict } from "@/lib/sync-conflicts";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { type GroupTab, type SavedGroup, useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
-import { readWorkspaceLifecycleIntents } from "@/lib/workspace-lifecycle-state";
-import { workspaceHasPendingDeleteIntent } from "@/lib/workspace-lifecycle-coordinator";
+import {
+  mergeWorkspaceLifecycleDeferredPayload,
+  readWorkspaceLifecycleIntents,
+} from "@/lib/workspace-lifecycle-state";
+import {
+  loadWorkspaceLifecycleAggregatePayload,
+  workspaceHasPendingDeleteIntent,
+} from "@/lib/workspace-lifecycle-coordinator";
+import { wakeActiveWorkspaceLifecycle } from "@/lib/sync-lifecycle";
 
 export type SyncConflictErrorKey =
   | "sync_noMigrationTarget"
@@ -36,6 +51,31 @@ interface GuestSnapshotLoadResult {
 }
 
 const NONE_RESULT: GuestReconciliationResult = { kind: "none", needsResweep: false };
+
+function mergeEntities(
+  payloads: readonly SyncPushPayload[],
+  select: (payload: SyncPushPayload) => readonly SyncEntity[],
+): SyncEntity[] {
+  const merged = new Map<string, SyncEntity>();
+  for (const payload of payloads) {
+    for (const entity of select(payload)) {
+      merged.set(entity.id, entity);
+    }
+  }
+  return [...merged.values()];
+}
+
+function mergeAggregatePayload(payloads: readonly SyncPushPayload[]): SyncPushPayload {
+  return {
+    entities: {
+      workspaces: mergeEntities(payloads, (payload) => payload.entities.workspaces),
+      collections: mergeEntities(payloads, (payload) => payload.entities.collections),
+      bookmarks: mergeEntities(payloads, (payload) => payload.entities.bookmarks),
+      tags: mergeEntities(payloads, (payload) => payload.entities.tags),
+      groups: mergeEntities(payloads, (payload) => payload.entities.groups),
+    },
+  };
+}
 
 function isActiveRemoteWorkspace(workspace: { seq: number; deleted_at?: number }): boolean {
   return workspace.seq > 0 && workspace.deleted_at === undefined;
@@ -226,6 +266,33 @@ async function currentPersistentResult(): Promise<GuestReconciliationResult> {
   return errorKey ? { kind: "conflict", needsResweep: false, errorKey } : NONE_RESULT;
 }
 
+async function quarantineDeletedGuestWorkspace(
+  snapshot: GuestWorkspaceSnapshot,
+): Promise<GuestReconciliationResult> {
+  const workspaceId = snapshot.provenance.workspaceId;
+  const aggregate = await loadWorkspaceLifecycleAggregatePayload(workspaceId);
+  await mergeWorkspaceLifecycleDeferredPayload(workspaceId, mergeAggregatePayload([
+    aggregate.activeWorkspacePayload,
+    aggregate.collectionsAndGroupsPayload,
+    aggregate.bookmarksPayload,
+  ]));
+  const descendantRejections: SyncRejected[] = aggregate.references
+    .filter((reference) => reference.entityType !== "workspace")
+    .map((reference) => ({
+      id: reference.entityId,
+      type: reference.entityType,
+      reason: "parent_deleted",
+      parent_id: workspaceId,
+      parent_type: "workspace",
+    }));
+  await syncConflictRegistry.recordRejections([{
+    id: workspaceId,
+    type: "workspace",
+    reason: "quota_exceeded",
+  }, ...descendantRejections]);
+  return { kind: "conflict", needsResweep: false, errorKey: "sync_noMigrationTarget" };
+}
+
 export async function prepareGuestWorkspaceForPull(response: SyncPullResponse): Promise<GuestReconciliationResult> {
   await syncConflictRegistry.ready();
   const loaded = await loadGuestSnapshot();
@@ -291,7 +358,7 @@ export async function resolveGuestPushRejections(response: SyncPushResponse): Pr
     sourceId,
   );
   if (pendingDelete) {
-    return currentPersistentResult();
+    return quarantineDeletedGuestWorkspace(loaded.snapshot);
   }
   const plan = planGuestWorkspaceMigration(loaded.snapshot, targetFromCurrentState());
   if (plan.kind === "conflict") {
@@ -320,7 +387,16 @@ export async function resolveLegacyGuestWorkspaceFailure(
   const sourceAbsent = !remote.entities.workspaces.some((workspace) => workspace.id === sourceId);
   const hasActiveRemote = remote.entities.workspaces.some(isActiveRemoteWorkspace);
   const maxWorkspaces = plan.limits.max_workspaces;
-  if (!sourceAbsent || !hasActiveRemote || maxWorkspaces === -1 || plan.usage.workspaces < maxWorkspaces) {
+  const hasWorkspaceCapacity = maxWorkspaces === -1 || plan.usage.workspaces < maxWorkspaces;
+  const pendingDelete = loaded.snapshot.workspace?.deletedAt !== undefined &&
+    workspaceHasPendingDeleteIntent(await readWorkspaceLifecycleIntents(), sourceId);
+  if (pendingDelete) {
+    if (!sourceAbsent || !hasActiveRemote || hasWorkspaceCapacity) {
+      return NONE_RESULT;
+    }
+    return quarantineDeletedGuestWorkspace(loaded.snapshot);
+  }
+  if (!sourceAbsent || !hasActiveRemote || hasWorkspaceCapacity) {
     return NONE_RESULT;
   }
   const remoteWorkspaces: Workspace[] = remote.entities.workspaces.map((workspace) => ({
@@ -380,6 +456,9 @@ export async function clearCapacityResolvedConflicts(plan: PlanResponse): Promis
     .filter((conflict) => conflict.reason === "quota_exceeded" && conflict.parentType === undefined)
     .sort((left, right) => left.createdAt - right.createdAt || left.entityId.localeCompare(right.entityId));
   let cleared = false;
+  const pendingWorkspaceIds = new Set(
+    (await readWorkspaceLifecycleIntents()).map((intent) => intent.workspaceId),
+  );
   for (const root of roots) {
     const available = slots.get(root.entityType) ?? 0;
     if (available <= 0) {
@@ -388,6 +467,9 @@ export async function clearCapacityResolvedConflicts(plan: PlanResponse): Promis
     await syncConflictRegistry.clearRoot(root.entityType, root.entityId);
     slots.set(root.entityType, available === Number.POSITIVE_INFINITY ? available : available - 1);
     cleared = true;
+    if (root.entityType === "workspace" && pendingWorkspaceIds.has(root.entityId)) {
+      void wakeActiveWorkspaceLifecycle(root.entityId);
+    }
   }
   return cleared;
 }

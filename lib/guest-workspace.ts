@@ -83,7 +83,7 @@ export interface GuestWorkspaceMigrationPlan {
 export interface GuestWorkspaceConflictPlan {
   kind: "conflict";
   sourceWorkspaceId: string;
-  reason: "no_valid_target";
+  reason: "no_valid_target" | "deleted_root_requires_lifecycle";
 }
 
 export type GuestWorkspacePlan =
@@ -220,6 +220,13 @@ export function planGuestWorkspaceMigration(
       kind: "conflict",
       sourceWorkspaceId: snapshot.provenance.workspaceId,
       reason: "no_valid_target",
+    };
+  }
+  if (sourceWorkspace.deletedAt !== undefined) {
+    return {
+      kind: "conflict",
+      sourceWorkspaceId: snapshot.provenance.workspaceId,
+      reason: "deleted_root_requires_lifecycle",
     };
   }
   if (isUntouchedGuestWorkspace(snapshot)) {

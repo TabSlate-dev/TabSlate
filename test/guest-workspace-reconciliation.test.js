@@ -1,4 +1,23 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { spawnSync } from "node:child_process";
+
+if (process.env.TABSLATE_GUEST_RECONCILIATION_ISOLATED !== "1") {
+  test("runs Guest reconciliation tests isolated from process-global module mocks", () => {
+    const result = spawnSync(
+      "bun",
+      ["test", "test/guest-workspace-reconciliation.test.js"],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: { ...process.env, TABSLATE_GUEST_RECONCILIATION_ISOLATED: "1" },
+      },
+    );
+    if (result.status !== 0) {
+      throw new Error(`${result.stdout}\n${result.stderr}`);
+    }
+    expect(result.status).toBe(0);
+  });
+} else {
 
 const stores = new Map();
 let transactionOperations = [];
@@ -63,6 +82,15 @@ mock.module("@/lib/idb", () => ({
   idbGetMany: async () => [],
   idbCount: async () => 0,
   idbTransaction: async () => {},
+  idbUpdateKV: async (key, _decode, update) => {
+    const current = stores.get(`kv:${key}`)?.value;
+    const next = update(current);
+    if (next === undefined) {
+      stores.delete(`kv:${key}`);
+      return;
+    }
+    stores.set(`kv:${key}`, { key, value: next });
+  },
   clearDB: async () => {},
   getDB: async () => ({}),
 }));
@@ -78,6 +106,7 @@ const {
 const { createGuestWorkspaceSeed } = await import("../lib/guest-workspace");
 const { syncConflictRegistry } = await import("../lib/sync-conflicts");
 const { useWorkspaceStore } = await import("../store/workspace-store");
+const { registerSyncLifecycle, unregisterSyncLifecycle } = await import("../lib/sync-lifecycle");
 
 function seedSnapshot(seed, extras = {}) {
   stores.set("kv:guest-workspace-provenance-v1", seed.provenance);
@@ -318,6 +347,46 @@ describe("guest workspace reconciliation", () => {
     expect(syncConflictRegistry.isBlocked("tag", "tag-b")).toBe(false);
   });
 
+  test("wakes a quarantined Workspace lifecycle when plan refresh observes capacity", async () => {
+    stores.set("kv:workspace-lifecycle-intents-v1", {
+      key: "workspace-lifecycle-intents-v1",
+      value: {
+        version: 1,
+        intents: [{
+          workspaceId: "guest-workspace",
+          action: "delete",
+          baseSeq: 0,
+          previousActiveWorkspaceId: "account-workspace",
+          createdAt: 100,
+        }],
+      },
+    });
+    await syncConflictRegistry.recordRejections([{
+      id: "guest-workspace",
+      type: "workspace",
+      reason: "quota_exceeded",
+    }]);
+    const wakes = [];
+    const lifecycle = {
+      async retire() {},
+      async wakeWorkspaceLifecycle(workspaceId) {
+        wakes.push(workspaceId);
+      },
+    };
+    registerSyncLifecycle(lifecycle);
+    try {
+      await clearCapacityResolvedConflicts({
+        usage: { workspaces: 0, collections: 0, bookmarks: 0, tags: 0, saved_groups: 0 },
+        limits: { max_workspaces: 1, max_collections: 0, max_bookmarks: 0, max_tags: 0, max_saved_groups: 0 },
+      });
+      await Promise.resolve();
+    } finally {
+      unregisterSyncLifecycle(lifecycle);
+    }
+
+    expect(wakes).toEqual(["guest-workspace"]);
+  });
+
   test("prioritizes invalid parent conflicts over unrelated quota roots", async () => {
     await syncConflictRegistry.recordRejections([
       { id: "workspace", type: "workspace", reason: "quota_exceeded" },
@@ -352,4 +421,72 @@ describe("guest workspace reconciliation", () => {
     expect(stores.get("kv:activeWorkspaceId")).toEqual({ key: "activeWorkspaceId", value: accountWorkspace.id });
     expect(stores.get("kv:guest-workspace-provenance-v1")).toBeUndefined();
   });
+
+  test("quarantines a deleted automatic Guest seed intact when Workspace capacity is unavailable", async () => {
+    const seed = createGuestWorkspaceSeed("guest-workspace", "guest-default", 0);
+    seed.workspace.deletedAt = 1200;
+    seed.workspace.deletionModel = 0;
+    const bookmark = {
+      id: "bookmark", title: "Saved", url: "https://example.com", description: "", favicon: "",
+      collectionId: seed.collection.id, tags: [], createdAt: "1", isFavorite: false, seq: 0,
+      deletedAt: 1200,
+    };
+    const group = {
+      id: "group", name: "Group", color: "blue", isCompact: false, createdAt: "1", seq: 0,
+      workspaceId: seed.workspace.id, deletedAt: 1200,
+    };
+    seedSnapshot(seed, { trashedBookmarks: [bookmark], groups: [group] });
+    stores.set("kv:workspace-lifecycle-intents-v1", {
+      key: "workspace-lifecycle-intents-v1",
+      value: {
+        version: 1,
+        intents: [{
+          workspaceId: seed.workspace.id,
+          action: "delete",
+          baseSeq: 0,
+          previousActiveWorkspaceId: "account-workspace",
+          createdAt: 1200,
+        }],
+      },
+    });
+    useWorkspaceStore.setState({
+      workspaces: [seed.workspace, {
+        id: "account-workspace", name: "Account", color: "blue", position: 1, seq: 3,
+      }],
+      collections: [seed.collection, {
+        id: "account-default", workspaceId: "account-workspace", name: "Default", icon: "inbox",
+        position: 0, isDefault: true, seq: 3,
+      }],
+      activeWorkspaceId: "account-workspace",
+    });
+    const fullPlan = {
+      usage: { workspaces: 1, collections: 0, bookmarks: 0, tags: 0, saved_groups: 0 },
+      limits: { max_workspaces: 1, max_collections: 0, max_bookmarks: 0, max_tags: 0, max_saved_groups: 0 },
+    };
+
+    const result = await resolveLegacyGuestWorkspaceFailure(
+      fullPlan,
+      remoteResponse([accountWorkspace], [accountDefault]),
+    );
+
+    expect(result).toMatchObject({ kind: "conflict", needsResweep: false, errorKey: "sync_noMigrationTarget" });
+    expect(stores.get("workspaces:all")).toContainEqual(seed.workspace);
+    expect(stores.get("collections:all")).toContainEqual(seed.collection);
+    expect(stores.get("trashed-bookmarks:all")).toContainEqual(bookmark);
+    expect(stores.get("groups:all")).toContainEqual(group);
+    expect(stores.get("kv:guest-workspace-provenance-v1")).toEqual(seed.provenance);
+    expect(stores.get("kv:workspace-lifecycle-intents-v1").value.intents).toHaveLength(1);
+    expect(stores.get("kv:workspace-lifecycle-deferred-sync-v1").value.payloadsByWorkspaceId)
+      .toHaveProperty(seed.workspace.id);
+    expect(syncConflictRegistry.list()).toContainEqual(expect.objectContaining({
+      entityType: "workspace",
+      entityId: seed.workspace.id,
+      reason: "quota_exceeded",
+    }));
+    expect(transactionOperations.some((operation) =>
+      operation.type === "delete" &&
+      (operation.store === "workspaces" || operation.store === "collections"),
+    )).toBe(false);
+  });
 });
+}

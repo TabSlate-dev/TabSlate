@@ -276,4 +276,21 @@ describe("guest workspace migration planning", () => {
       reason: "no_valid_target",
     });
   });
+
+  test("never flattens a deleted Guest root into a confirmed Workspace", () => {
+    const targetWorkspace = makeTargetWorkspace("account-workspace", 1);
+    const targetDefault = makeTargetCollection("account-default", targetWorkspace.id, 0);
+    const snapshot = makeSnapshot({ activeBookmark: true, activeGroup: true });
+    snapshot.workspace.deletedAt = 1234;
+    snapshot.workspace.deletionModel = 0;
+
+    expect(planGuestWorkspaceMigration(snapshot, {
+      workspace: targetWorkspace,
+      defaultCollection: targetDefault,
+    })).toEqual({
+      kind: "conflict",
+      sourceWorkspaceId: "guest-workspace",
+      reason: "deleted_root_requires_lifecycle",
+    });
+  });
 });
