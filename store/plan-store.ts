@@ -33,6 +33,8 @@ interface PlanState {
   checkQuota: (resource: QuotaResource, currentCount?: number) => boolean;
   incrementUsage: (resource: QuotaResource, by?: number) => void;
   decrementUsage: (resource: QuotaResource, by?: number) => void;
+  moveUsageToTrash: (resource: QuotaResource, by?: number) => void;
+  restoreUsageFromTrash: (resource: QuotaResource, by?: number) => void;
   setGuestUsage: (breakdown: QuotaUsageBreakdown) => void;
   showQuotaAlert: (resource: QuotaResource) => void;
   clear: () => void;
@@ -210,6 +212,40 @@ export const usePlanStore = create<PlanState>()(
             total,
             trash,
           );
+          return {
+            usage: breakdown.total,
+            trashUsage: breakdown.trash,
+            inUseUsage: breakdown.inUse,
+          };
+        });
+      },
+
+      moveUsageToTrash: (resource, by = 1) => {
+        set((state) => {
+          if (!state.usage) { return {}; }
+          const key = USAGE_KEY[resource];
+          const currentTrash = state.trashUsage ?? createZeroPlanUsage();
+          const breakdown = createQuotaBreakdown(state.usage, {
+            ...currentTrash,
+            [key]: currentTrash[key] + by,
+          });
+          return {
+            usage: breakdown.total,
+            trashUsage: breakdown.trash,
+            inUseUsage: breakdown.inUse,
+          };
+        });
+      },
+
+      restoreUsageFromTrash: (resource, by = 1) => {
+        set((state) => {
+          if (!state.usage) { return {}; }
+          const key = USAGE_KEY[resource];
+          const currentTrash = state.trashUsage ?? createZeroPlanUsage();
+          const breakdown = createQuotaBreakdown(state.usage, {
+            ...currentTrash,
+            [key]: Math.max(0, currentTrash[key] - by),
+          });
           return {
             usage: breakdown.total,
             trashUsage: breakdown.trash,

@@ -127,6 +127,8 @@ interface GroupsState {
   removeWorkspaceAggregateFromState: (ids: WorkspaceAggregateIds) => void;
 }
 
+const pendingPermanentGroupIds = new Set<string>();
+
 export const useGroupsStore = create<GroupsState>()((set, get) => ({
   groups: [],
   groupTabs: [],
@@ -165,7 +167,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
   },
 
   createGroup: (name, color, isCompact, workspaceId) =>
-    guardQuota("saved_group", get().groups.filter((g) => !g.deletedAt).length, "", () => {
+    guardQuota("saved_group", get().groups.length, "", () => {
       const id = generateId();
       const group: SavedGroup = { id, name, color, isCompact, createdAt: new Date().toISOString(), seq: 0, workspaceId };
       syncEngine?.enqueue({ groups: [toServerGroup(group, [])] });
@@ -235,44 +237,45 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     set((state) => ({
       groups: state.groups.map(g => g.id === id ? deletedGroup : g),
     }));
-    usePlanStore.getState().decrementUsage("saved_group");
+    usePlanStore.getState().moveUsageToTrash("saved_group");
   },
 
   restoreGroup: (id) => {
     const group = get().groups.find(g => g.id === id);
-    if (!group) { return; }
+    if (!group || !group.deletedAt) { return; }
     const tabs = get().groupTabs.filter(t => t.groupId === id);
     const restored: SavedGroup = { ...group, deletedAt: undefined, seq: 0 };
     syncEngine?.enqueue({ groups: [toServerGroup(restored, tabs)] });
     idbPut("groups", restored);
     set((state) => ({ groups: state.groups.map(g => g.id === id ? restored : g) }));
-    usePlanStore.getState().incrementUsage("saved_group");
+    usePlanStore.getState().restoreUsageFromTrash("saved_group");
   },
 
   permanentlyDeleteGroup: (id) => {
+    if (pendingPermanentGroupIds.has(id)) { return; }
+    const group = get().groups.find(candidate => candidate.id === id);
+    if (!group || !group.deletedAt) { return; }
+    const tabs = get().groupTabs.filter(tab => tab.groupId === id);
+    pendingPermanentGroupIds.add(id);
     void (async () => {
-      const group = get().groups.find(g => g.id === id);
-      const tabs = get().groupTabs.filter(t => t.groupId === id);
-      // Optimistic UI — remove from state immediately; IDB cleanup waits for server.
-      set((state) => ({
-        groups: state.groups.filter(g => g.id !== id),
-        groupTabs: state.groupTabs.filter(t => t.groupId !== id),
-      }));
-      if (group && syncEngine) {
-        try {
+      try {
+        if (syncEngine) {
           await syncEngine.forcePush({ groups: [toServerGroup(group, tabs, { isDeleted: 2 })] });
-        } catch {
-          // Push failed — roll back so the group reappears in trash.
-          set((state) => ({
-            groups: [...state.groups, group],
-            groupTabs: [...state.groupTabs, ...tabs],
-          }));
-          return;
         }
+        await Promise.all([
+          ...tabs.map((tab) => idbDelete("group-tabs", tab.id)),
+          idbDelete("groups", id),
+        ]);
+        set((state) => ({
+          groups: state.groups.filter(candidate => candidate.id !== id),
+          groupTabs: state.groupTabs.filter(tab => tab.groupId !== id),
+        }));
+        usePlanStore.getState().decrementUsage("saved_group");
+      } catch {
+        return;
+      } finally {
+        pendingPermanentGroupIds.delete(id);
       }
-      // Server confirmed — safe to delete from IDB.
-      for (const t of tabs) { idbDelete("group-tabs", t.id); }
-      idbDelete("groups", id);
     })();
   },
 

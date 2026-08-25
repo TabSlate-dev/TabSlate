@@ -67,7 +67,7 @@ describe("quota usage breakdown", () => {
       collections: [
         collection("active-col", "active"),
         collection("archived-col", "active", { archivedAt: 50 }),
-        collection("trashed-col", "active", { deletedAt: 75 }),
+        collection("trashed-col", "retained", { deletedAt: 75 }),
         collection("retained-child", "retained"),
       ],
       bookmarks: [
@@ -78,7 +78,7 @@ describe("quota usage breakdown", () => {
       archivedBookmarks: [bookmark("archived-bookmark", "archived-col")],
       trashedBookmarks: [
         // This row is individually trashed, belongs to a trashed Collection,
-        // and that Collection is retained through its Workspace. It is one row.
+        // and that Collection belongs to a retained Workspace. It is one row.
         bookmark("nested-trash-bookmark", "trashed-col"),
       ],
       groups: [

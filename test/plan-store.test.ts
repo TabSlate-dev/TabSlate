@@ -258,4 +258,32 @@ describe("plan store refresh policy", () => {
     expect(usePlanStore.getState().trashUsage?.bookmarks).toBe(1);
     expect(usePlanStore.getState().inUseUsage?.bookmarks).toBe(3);
   });
+
+  test("soft delete and restore move retained usage between in-use and recycle-bin buckets", async () => {
+    const { usePlanStore } = await importPlanStore();
+    usePlanStore.setState({
+      usage: { ...zeroUsage, saved_groups: 5 },
+      trashUsage: { ...zeroUsage, saved_groups: 1 },
+      inUseUsage: { ...zeroUsage, saved_groups: 4 },
+    });
+    const softDelete = usePlanStore.getState().moveUsageToTrash;
+    expect(softDelete).toBeDefined();
+    if (!softDelete) { return; }
+
+    softDelete("saved_group");
+
+    expect(usePlanStore.getState().usage?.saved_groups).toBe(5);
+    expect(usePlanStore.getState().trashUsage?.saved_groups).toBe(2);
+    expect(usePlanStore.getState().inUseUsage?.saved_groups).toBe(3);
+
+    const restore = usePlanStore.getState().restoreUsageFromTrash;
+    expect(restore).toBeDefined();
+    if (!restore) { return; }
+
+    restore("saved_group");
+
+    expect(usePlanStore.getState().usage?.saved_groups).toBe(5);
+    expect(usePlanStore.getState().trashUsage?.saved_groups).toBe(1);
+    expect(usePlanStore.getState().inUseUsage?.saved_groups).toBe(4);
+  });
 });
