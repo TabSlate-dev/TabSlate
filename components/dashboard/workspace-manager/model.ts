@@ -68,6 +68,39 @@ export interface ExecuteWorkspaceManagerActionInput {
   setBusy(busy: boolean): void;
 }
 
+export interface WorkspaceManagerLoaderState {
+  loading: boolean;
+  error: boolean;
+}
+
+export interface WorkspaceManagerLoaderFence {
+  begin(): number;
+  succeed(generation: number): void;
+  fail(generation: number): void;
+  invalidate(generation: number): void;
+}
+
+export interface WorkspaceManagerLoaderSingleFlight {
+  run(operation: () => Promise<void>): Promise<void>;
+}
+
+export interface WorkspaceManagerActionToken {
+  id: number;
+}
+
+export interface WorkspaceManagerActionGate {
+  tryAcquire(): WorkspaceManagerActionToken | null;
+  release(token: WorkspaceManagerActionToken): boolean;
+  isPending(): boolean;
+}
+
+export interface ExecuteSerializedWorkspaceManagerActionInput {
+  action: WorkspaceLifecycleAction;
+  operation(): Promise<WorkspaceActionResult>;
+  gate: WorkspaceManagerActionGate;
+  setPending(pending: boolean): void;
+}
+
 function getRetention(
   workspace: Workspace,
   now: number,
@@ -266,5 +299,103 @@ export async function executeWorkspaceManagerAction({
     };
   } finally {
     setBusy(false);
+  }
+}
+
+export function createWorkspaceManagerLoaderFence(
+  onStateChange: (state: WorkspaceManagerLoaderState) => void,
+): WorkspaceManagerLoaderFence {
+  let currentGeneration = 0;
+  return {
+    begin: () => {
+      currentGeneration += 1;
+      onStateChange({ loading: true, error: false });
+      return currentGeneration;
+    },
+    succeed: (generation) => {
+      if (generation !== currentGeneration) {
+        return;
+      }
+      onStateChange({ loading: false, error: false });
+    },
+    fail: (generation) => {
+      if (generation !== currentGeneration) {
+        return;
+      }
+      onStateChange({ loading: false, error: true });
+    },
+    invalidate: (generation) => {
+      if (generation === currentGeneration) {
+        currentGeneration += 1;
+      }
+    },
+  };
+}
+
+export function createWorkspaceManagerLoaderSingleFlight(): WorkspaceManagerLoaderSingleFlight {
+  let inFlight: Promise<void> | null = null;
+  return {
+    run: (operation) => {
+      if (inFlight) {
+        return inFlight;
+      }
+      const started = operation();
+      let tracked: Promise<void> | null = null;
+      tracked = started.finally(() => {
+        if (inFlight === tracked) {
+          inFlight = null;
+        }
+      });
+      inFlight = tracked;
+      return tracked;
+    },
+  };
+}
+
+export function createWorkspaceManagerActionGate(): WorkspaceManagerActionGate {
+  let activeToken: WorkspaceManagerActionToken | null = null;
+  let nextId = 1;
+  return {
+    tryAcquire: () => {
+      if (activeToken) {
+        return null;
+      }
+      const token = { id: nextId };
+      nextId += 1;
+      activeToken = token;
+      return token;
+    },
+    release: (token) => {
+      if (activeToken !== token) {
+        return false;
+      }
+      activeToken = null;
+      return true;
+    },
+    isPending: () => activeToken !== null,
+  };
+}
+
+export async function executeSerializedWorkspaceManagerAction({
+  action,
+  operation,
+  gate,
+  setPending,
+}: ExecuteSerializedWorkspaceManagerActionInput): Promise<WorkspaceManagerActionOutcome | null> {
+  const token = gate.tryAcquire();
+  if (!token) {
+    return null;
+  }
+  setPending(true);
+  try {
+    return await executeWorkspaceManagerAction({
+      action,
+      operation,
+      setBusy: () => undefined,
+    });
+  } finally {
+    if (gate.release(token)) {
+      setPending(false);
+    }
   }
 }

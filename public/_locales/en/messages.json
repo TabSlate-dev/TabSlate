@@ -1452,5 +1452,8 @@
   },
   "workspaceManager_loadingFailed": {
     "message": "Workspace totals could not be loaded. Close this window and try again."
+  },
+  "workspaceManager_actionInProgress": {
+    "message": "Another Workspace action is in progress."
   }
 }

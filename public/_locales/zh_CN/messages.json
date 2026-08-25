@@ -1452,5 +1452,8 @@
   },
   "workspaceManager_loadingFailed": {
     "message": "无法加载 Workspace 数量，请关闭此窗口后重试。"
+  },
+  "workspaceManager_actionInProgress": {
+    "message": "另一个 Workspace 操作正在进行中。"
   }
 }

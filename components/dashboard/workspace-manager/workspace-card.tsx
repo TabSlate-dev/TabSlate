@@ -17,6 +17,7 @@ export interface WorkspaceCardProps {
   retentionLabel: string;
   canDelete: boolean;
   isActive?: boolean;
+  lifecyclePending?: boolean;
   deleteDisabledReason?: string;
   restoreDisabledReason?: string;
   purgeDisabledReason?: string;
@@ -43,6 +44,7 @@ export const WorkspaceCard = React.memo(function WorkspaceCard({
   retentionLabel,
   canDelete,
   isActive = false,
+  lifecyclePending = false,
   deleteDisabledReason,
   restoreDisabledReason,
   purgeDisabledReason,
@@ -154,7 +156,7 @@ export const WorkspaceCard = React.memo(function WorkspaceCard({
               size="sm"
               variant="outline"
               className="text-destructive hover:text-destructive"
-              disabled={!canDelete}
+              disabled={!canDelete || lifecyclePending}
               onClick={() => onDelete(workspace.id)}
             >
               <Trash2 className="size-3.5" />
@@ -168,7 +170,7 @@ export const WorkspaceCard = React.memo(function WorkspaceCard({
               type="button"
               size="sm"
               variant="outline"
-              disabled={restoreDisabledReason !== undefined}
+              disabled={restoreDisabledReason !== undefined || lifecyclePending}
               onClick={() => onRestore(workspace.id)}
             >
               <RotateCcw className="size-3.5" />
@@ -178,7 +180,7 @@ export const WorkspaceCard = React.memo(function WorkspaceCard({
               type="button"
               size="sm"
               variant="destructive"
-              disabled={purgeDisabledReason !== undefined}
+              disabled={purgeDisabledReason !== undefined || lifecyclePending}
               onClick={() => onPermanentlyDelete(workspace.id)}
             >
               <Trash2 className="size-3.5" />

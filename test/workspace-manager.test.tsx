@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Bookmark, Collection, Workspace } from "@/lib/types";
 import type { SavedGroup } from "@/store/groups-store";
+import type { WorkspaceActionResult } from "@/store/workspace-store";
 import type {
   WorkspaceLifecycleAction,
   WorkspaceLifecycleActionAvailabilityInput,
@@ -39,9 +40,13 @@ mock.module("@/lib/workspace-lifecycle-state", () => ({
 
 const {
   canConfirmPermanentDelete,
+  createWorkspaceManagerActionGate,
+  createWorkspaceManagerLoaderFence,
+  createWorkspaceManagerLoaderSingleFlight,
   createDeleteWorkspaceConfirmation,
   createWorkspaceManagerViewModel,
   executeWorkspaceManagerAction,
+  executeSerializedWorkspaceManagerAction,
   getWorkspaceActionResultMessageKey,
   getWorkspaceLifecycleActionAvailability,
   resolveWorkspaceManagerOnlineStatus,
@@ -98,6 +103,14 @@ function group(id: string, workspaceId: string): SavedGroup {
 }
 
 const noOp = () => undefined;
+
+function deferred(): { promise: Promise<void>; resolve(): void } {
+  let resolvePromise: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+  return { promise, resolve: resolvePromise };
+}
 
 describe("createWorkspaceManagerViewModel", () => {
   test("partitions active and deleted roots while counting every descendant bookmark bucket", () => {
@@ -306,6 +319,136 @@ describe("Workspace lifecycle guards", () => {
   });
 });
 
+describe("Workspace Manager loader coordination", () => {
+  test("ignores a stale rejection that arrives after a newer run succeeds", () => {
+    const states: Array<{ loading: boolean; error: boolean }> = [];
+    const fence = createWorkspaceManagerLoaderFence((state) => {
+      states.push(state);
+    });
+    const staleGeneration = fence.begin();
+    const currentGeneration = fence.begin();
+
+    fence.succeed(currentGeneration);
+    fence.fail(staleGeneration);
+
+    expect(states.at(-1)).toEqual({ loading: false, error: false });
+  });
+
+  test("merges StrictMode replay and close-reopen calls into one in-flight load", async () => {
+    const pendingLoad = deferred();
+    let calls = 0;
+    const singleFlight = createWorkspaceManagerLoaderSingleFlight();
+    const load = () => {
+      calls += 1;
+      return pendingLoad.promise;
+    };
+
+    const firstEffect = singleFlight.run(load);
+    const replayedEffect = singleFlight.run(load);
+    const reopenedEffect = singleFlight.run(load);
+
+    expect(calls).toBe(1);
+    pendingLoad.resolve();
+    await Promise.all([firstEffect, replayedEffect, reopenedEffect]);
+  });
+
+  test("clears only loader error when a new generation starts and succeeds", () => {
+    const states: Array<{ loading: boolean; error: boolean }> = [];
+    const fence = createWorkspaceManagerLoaderFence((state) => {
+      states.push(state);
+    });
+    const failedGeneration = fence.begin();
+    fence.fail(failedGeneration);
+    const retryGeneration = fence.begin();
+    fence.succeed(retryGeneration);
+
+    expect(states).toEqual([
+      { loading: true, error: false },
+      { loading: false, error: true },
+      { loading: true, error: false },
+      { loading: false, error: false },
+    ]);
+  });
+});
+
+describe("Workspace Manager action serialization", () => {
+  test("coalesces overlapping restore clicks into one operation", async () => {
+    const pendingRestore = deferred();
+    const gate = createWorkspaceManagerActionGate();
+    const pendingStates: boolean[] = [];
+    let calls = 0;
+    const operation = async (): Promise<WorkspaceActionResult> => {
+      calls += 1;
+      await pendingRestore.promise;
+      return { status: "queued" };
+    };
+
+    const first = executeSerializedWorkspaceManagerAction({
+      action: "restore",
+      operation,
+      gate,
+      setPending: (pending: boolean) => pendingStates.push(pending),
+    });
+    const overlapping = executeSerializedWorkspaceManagerAction({
+      action: "restore",
+      operation,
+      gate,
+      setPending: (pending: boolean) => pendingStates.push(pending),
+    });
+
+    expect(await overlapping).toBeNull();
+    expect(calls).toBe(1);
+    pendingRestore.resolve();
+    expect((await first)?.shouldClose).toBe(true);
+    expect(pendingStates).toEqual([true, false]);
+  });
+
+  test("blocks a purge click while restore owns the lifecycle gate", async () => {
+    const pendingRestore = deferred();
+    const gate = createWorkspaceManagerActionGate();
+    const first = executeSerializedWorkspaceManagerAction({
+      action: "restore",
+      operation: async () => {
+        await pendingRestore.promise;
+        return { status: "queued" };
+      },
+      gate,
+      setPending: () => undefined,
+    });
+    let purgeCalls = 0;
+
+    const purge = await executeSerializedWorkspaceManagerAction({
+      action: "purge",
+      operation: async () => {
+        purgeCalls += 1;
+        return { status: "completed" };
+      },
+      gate,
+      setPending: () => undefined,
+    });
+
+    expect(purge).toBeNull();
+    expect(purgeCalls).toBe(0);
+    pendingRestore.resolve();
+    await first;
+  });
+
+  test("a stale finally token cannot unlock a newer action", () => {
+    const gate = createWorkspaceManagerActionGate();
+    const firstToken = gate.tryAcquire();
+    expect(firstToken).not.toBeNull();
+    if (!firstToken) {
+      throw new Error("first action did not acquire the gate");
+    }
+    expect(gate.release(firstToken)).toBe(true);
+    const newerToken = gate.tryAcquire();
+    expect(newerToken).not.toBeNull();
+
+    expect(gate.release(firstToken)).toBe(false);
+    expect(gate.isPending()).toBe(true);
+  });
+});
+
 describe("WorkspaceManagerContent", () => {
   const model = createWorkspaceManagerViewModel({
     workspaces: [
@@ -397,5 +540,17 @@ describe("WorkspaceManagerContent", () => {
 
     expect(markup).toContain("workspaceManager_loadingData");
     expect(markup).not.toContain("workspaceManager_stillCountsTowardQuota");
+  });
+
+  test("disables every lifecycle action while another lifecycle action is pending", () => {
+    const markup = renderToStaticMarkup(createElement(WorkspaceManagerContent, {
+      model,
+      selectedTab: "deleted",
+      lifecyclePending: true,
+      ...handlers,
+    }));
+
+    expect(markup).toContain("workspaceManager_actionInProgress");
+    expect(markup.match(/disabled=""/g)).toHaveLength(3);
   });
 });

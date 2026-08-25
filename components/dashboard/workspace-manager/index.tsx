@@ -29,9 +29,12 @@ import {
 } from "@/store/workspace-store";
 import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";
 import {
+  createWorkspaceManagerActionGate,
+  createWorkspaceManagerLoaderFence,
+  createWorkspaceManagerLoaderSingleFlight,
   createDeleteWorkspaceConfirmation,
   createWorkspaceManagerViewModel,
-  executeWorkspaceManagerAction,
+  executeSerializedWorkspaceManagerAction,
   getWorkspaceLifecycleActionAvailability,
   resolveWorkspaceManagerOnlineStatus,
   type WorkspaceManagerCardModel,
@@ -55,6 +58,7 @@ export interface WorkspaceManagerContentProps {
   selectedTab: WorkspaceManagerTab;
   activeWorkspaceId?: string;
   availability?: WorkspaceManagerAvailability;
+  lifecyclePending?: boolean;
   onTabChange(tab: WorkspaceManagerTab): void;
   onCreate(): void;
   onSwitch(workspaceId: string): void;
@@ -96,6 +100,7 @@ export function WorkspaceManagerContent({
     capabilitySupported: true,
     dataReady: true,
   },
+  lifecyclePending = false,
   onTabChange,
   onCreate,
   onSwitch,
@@ -155,6 +160,9 @@ export function WorkspaceManagerContent({
     const purgeReason = purgeAvailability.messageKey
       ? t(purgeAvailability.messageKey)
       : undefined;
+    const pendingReason = lifecyclePending
+      ? t("workspaceManager_actionInProgress")
+      : undefined;
     return (
       <WorkspaceCard
         key={card.workspace.id}
@@ -163,9 +171,12 @@ export function WorkspaceManagerContent({
         retentionLabel={formatRetention(card.retention, t)}
         canDelete={card.canDelete && deleteAvailability.enabled}
         isActive={card.workspace.id === activeWorkspaceId}
-        deleteDisabledReason={card.canDelete ? deleteReason : t("workspaceManager_lastActiveGuard")}
-        restoreDisabledReason={restoreReason}
-        purgeDisabledReason={purgeReason}
+        lifecyclePending={lifecyclePending}
+        deleteDisabledReason={pendingReason ?? (
+          card.canDelete ? deleteReason : t("workspaceManager_lastActiveGuard")
+        )}
+        restoreDisabledReason={pendingReason ?? restoreReason}
+        purgeDisabledReason={pendingReason ?? purgeReason}
         onSwitch={onSwitch}
         onRename={onRename}
         onRecolor={onRecolor}
@@ -444,7 +455,18 @@ export function WorkspaceManager({
   const [deleteTarget, setDeleteTarget] = React.useState<WorkspaceManagerCardModel | null>(null);
   const [purgeTarget, setPurgeTarget] = React.useState<WorkspaceManagerCardModel | null>(null);
   const [actionErrorKey, setActionErrorKey] = React.useState<string | null>(null);
-  const [busy, setBusy] = React.useState(false);
+  const [loaderState, setLoaderState] = React.useState({
+    loading: false,
+    error: false,
+  });
+  const [loaderFence] = React.useState(() => (
+    createWorkspaceManagerLoaderFence(setLoaderState)
+  ));
+  const [loaderSingleFlight] = React.useState(
+    createWorkspaceManagerLoaderSingleFlight,
+  );
+  const [actionGate] = React.useState(createWorkspaceManagerActionGate);
+  const [lifecyclePending, setLifecyclePending] = React.useState(false);
   const [browserOnline, setBrowserOnline] = React.useState(() => navigator.onLine);
   const subdialogReturnFocusRef = React.useRef<HTMLElement | null>(null);
 
@@ -452,10 +474,24 @@ export function WorkspaceManager({
     if (!open) {
       return;
     }
-    void Promise.all([loadArchivedBookmarks(), loadTrashedBookmarks()]).catch(() => {
-      setActionErrorKey("workspaceManager_loadingFailed");
+    const generation = loaderFence.begin();
+    void loaderSingleFlight.run(async () => {
+      await Promise.all([loadArchivedBookmarks(), loadTrashedBookmarks()]);
+    }).then(() => {
+      loaderFence.succeed(generation);
+    }).catch(() => {
+      loaderFence.fail(generation);
     });
-  }, [loadArchivedBookmarks, loadTrashedBookmarks, open]);
+    return () => {
+      loaderFence.invalidate(generation);
+    };
+  }, [
+    loadArchivedBookmarks,
+    loadTrashedBookmarks,
+    loaderFence,
+    loaderSingleFlight,
+    open,
+  ]);
 
   React.useEffect(() => {
     const handleOnline = () => {
@@ -527,11 +563,19 @@ export function WorkspaceManager({
     isGuest: user === null,
     isOnline: resolveWorkspaceManagerOnlineStatus(browserOnline, syncStatus),
     capabilitySupported,
-    dataReady: archivedLoaded && trashedLoaded,
-  }), [archivedLoaded, browserOnline, capabilitySupported, syncStatus, trashedLoaded, user]);
+    dataReady: archivedLoaded && trashedLoaded && !loaderState.loading,
+  }), [
+    archivedLoaded,
+    browserOnline,
+    capabilitySupported,
+    loaderState.loading,
+    syncStatus,
+    trashedLoaded,
+    user,
+  ]);
 
   const handleOpenChange = React.useCallback((nextOpen: boolean) => {
-    if (!nextOpen && busy) {
+    if (!nextOpen && lifecyclePending) {
       return;
     }
     if (!nextOpen) {
@@ -541,7 +585,7 @@ export function WorkspaceManager({
       setFormState(null);
     }
     onOpenChange(nextOpen);
-  }, [busy, onOpenChange]);
+  }, [lifecyclePending, onOpenChange]);
 
   const handleCreate = React.useCallback(() => {
     subdialogReturnFocusRef.current = document.activeElement instanceof HTMLElement
@@ -594,6 +638,9 @@ export function WorkspaceManager({
   }, [createWorkspace, formState, updateWorkspace]);
 
   const handleDeleteRequest = React.useCallback((workspaceId: string) => {
+    if (actionGate.isPending()) {
+      return;
+    }
     const target = model.inUse.find((candidate) => candidate.workspace.id === workspaceId);
     if (target) {
       subdialogReturnFocusRef.current = document.activeElement instanceof HTMLElement
@@ -602,17 +649,21 @@ export function WorkspaceManager({
       setActionErrorKey(null);
       setDeleteTarget(target);
     }
-  }, [model.inUse]);
+  }, [actionGate, model.inUse]);
 
   const handleConfirmDelete = React.useCallback(async () => {
-    if (!deleteTarget) {
+    if (!deleteTarget || actionGate.isPending()) {
       return;
     }
-    const outcome = await executeWorkspaceManagerAction({
+    const outcome = await executeSerializedWorkspaceManagerAction({
       action: "delete",
       operation: () => deleteWorkspace(deleteTarget.workspace.id),
-      setBusy,
+      gate: actionGate,
+      setPending: setLifecyclePending,
     });
+    if (!outcome) {
+      return;
+    }
     if (outcome.shouldClose) {
       setDeleteTarget(null);
       setActionErrorKey(null);
@@ -620,15 +671,22 @@ export function WorkspaceManager({
       return;
     }
     setActionErrorKey(outcome.messageKey ?? "workspaceManager_actionFailed");
-  }, [deleteTarget, deleteWorkspace]);
+  }, [actionGate, deleteTarget, deleteWorkspace]);
 
   const handleRestore = React.useCallback(async (workspaceId: string) => {
+    if (actionGate.isPending()) {
+      return;
+    }
     setActionErrorKey(null);
-    const outcome = await executeWorkspaceManagerAction({
+    const outcome = await executeSerializedWorkspaceManagerAction({
       action: "restore",
       operation: () => restoreWorkspace(workspaceId),
-      setBusy,
+      gate: actionGate,
+      setPending: setLifecyclePending,
     });
+    if (!outcome) {
+      return;
+    }
     if (outcome.shouldClose) {
       setSelectedTab("in_use");
       requestAnimationFrame(() => {
@@ -637,9 +695,12 @@ export function WorkspaceManager({
       return;
     }
     setActionErrorKey(outcome.messageKey ?? "workspaceManager_actionFailed");
-  }, [restoreWorkspace]);
+  }, [actionGate, restoreWorkspace]);
 
   const handlePurgeRequest = React.useCallback((workspaceId: string) => {
+    if (actionGate.isPending()) {
+      return;
+    }
     const target = model.deleted.find((candidate) => candidate.workspace.id === workspaceId);
     if (target) {
       subdialogReturnFocusRef.current = document.activeElement instanceof HTMLElement
@@ -648,24 +709,28 @@ export function WorkspaceManager({
       setActionErrorKey(null);
       setPurgeTarget(target);
     }
-  }, [model.deleted]);
+  }, [actionGate, model.deleted]);
 
   const handleConfirmPurge = React.useCallback(async () => {
-    if (!purgeTarget) {
+    if (!purgeTarget || actionGate.isPending()) {
       return;
     }
-    const outcome = await executeWorkspaceManagerAction({
+    const outcome = await executeSerializedWorkspaceManagerAction({
       action: "purge",
       operation: () => permanentlyDeleteWorkspace(purgeTarget.workspace.id),
-      setBusy,
+      gate: actionGate,
+      setPending: setLifecyclePending,
     });
+    if (!outcome) {
+      return;
+    }
     if (outcome.shouldClose) {
       setPurgeTarget(null);
       setActionErrorKey(null);
       return;
     }
     setActionErrorKey(outcome.messageKey ?? "workspaceManager_actionFailed");
-  }, [permanentlyDeleteWorkspace, purgeTarget]);
+  }, [actionGate, permanentlyDeleteWorkspace, purgeTarget]);
 
   const purgeAvailability = getWorkspaceLifecycleActionAvailability({
     action: "purge",
@@ -699,11 +764,21 @@ export function WorkspaceManager({
             </Alert>
           )}
 
+          {loaderState.error && (
+            <Alert variant="destructive">
+              <AlertTriangle />
+              <AlertDescription>
+                {t("workspaceManager_loadingFailed")}
+              </AlertDescription>
+            </Alert>
+          )}
+
           <WorkspaceManagerContent
             model={model}
             selectedTab={selectedTab}
             activeWorkspaceId={activeWorkspaceId}
             availability={availability}
+            lifecyclePending={lifecyclePending}
             onTabChange={setSelectedTab}
             onCreate={handleCreate}
             onSwitch={setActiveWorkspaceId}
@@ -740,10 +815,10 @@ export function WorkspaceManager({
           ? formatRetention(deleteTarget.retention, t)
           : ""}
         errorMessage={deleteTarget ? errorMessage : null}
-        busy={busy}
+        busy={lifecyclePending}
         returnFocusRef={subdialogReturnFocusRef}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen && !busy) {
+          if (!nextOpen && !lifecyclePending) {
             setDeleteTarget(null);
             setActionErrorKey(null);
           }
@@ -758,10 +833,10 @@ export function WorkspaceManager({
         workspace={purgeTarget?.workspace ?? null}
         errorMessage={purgeTarget ? errorMessage : null}
         disabledReason={purgeDisabledReason}
-        busy={busy}
+        busy={lifecyclePending}
         returnFocusRef={subdialogReturnFocusRef}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen && !busy) {
+          if (!nextOpen && !lifecyclePending) {
             setPurgeTarget(null);
             setActionErrorKey(null);
           }
