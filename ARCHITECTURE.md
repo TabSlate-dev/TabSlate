@@ -139,11 +139,15 @@ useTabsStore       (不持久化，运行时从 Chrome API 加载)
 SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  （30s TTL）
 ```
 
-`lib/idb.ts` 封装 `indexedDB.open("tabslate-db", 2)`，暴露：
+`lib/idb.ts` 封装 `indexedDB.open("tabslate-db", 3)`，暴露：
 - `idbGet/idbPut/idbDelete/idbGetAll/idbGetByIndex` — 基础单键操作
 - `idbGetMany(store, keys)` — **批量读取**，在单个 IDB 事务内并发发起 N 个 `get` 请求，性能远优于 `Promise.all(keys.map(idbGet))`（后者会创建 N 个独立事务）
 - `idbBulkWrite(ops)` — **跨 store 原子写**，在单个 readwrite 事务中执行若干 `put` / `delete`，用于 `mergeFromServer` 同步落盘
 - `idbTransaction` — 底层事务包装，供需要自定义逻辑的场景使用
+- `idbCommitWorkspaceDeleteLifecycleIntent` / `idbCommitWorkspaceLifecycleIntent` — 工作区生命周期专用的原子读写事务；前者在同一 `readwrite` 事务内校验并提交软删除（含"最后一个活跃工作区"拒绝判定），后者提交任意 workspace 快照 + intent 组合（如 restore）
+- `idbTryAcquireLock` / `idbRenewLock` / `idbReleaseLock` — 基于 `kv` 的租约互斥锁，`navigator.locks` 不可用时的 IndexedDB 回退（见下）
+
+**v3 迁移**（`oldVersion < 3`）：为 `groups` 添加 `workspaceId` 索引（`unique: false`），支持按工作区高效过滤 saved group 聚合。v2 迁移（`oldVersion >= 1 && < 2`）为 `trashed-bookmarks` 添加 `collectionId` 索引。新安装直接在 v1 建表时包含全部索引。
 
 各 store 的 `hydrate()` 在挂载时调用 `idbGetAll` 批量读取；`archived-bookmarks` 和 `trashed-bookmarks` 延迟加载（仅在进入对应路由时触发），以减少启动内存峰值。
 
@@ -153,7 +157,7 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 |---|---|---|
 | `useAuthStore` | chrome.storage.session（accessToken）+ chrome.storage.local（其余） | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout/silentRefresh；`silentRefresh` 在 rehydrate 时自动触发（refreshToken 存在但 accessToken 缺失），支持指数退避重试（2s→60s），仅在确切 401/403 时清除 token |
 | `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时从所有 bucket 清除；`permanentlyDelete`（单条）/ `permanentlyDeleteBatch`（批量，≤900/请求）在线时采用 push-first 模式（`forcePush` → `idbBulkWrite` → `decrementUsage`），失败时回滚乐观 UI；**离线时（`syncEngine===null`）写 `isTrashed:2、seq:0` 墓碑到 IDB、从 state 过滤，`sweepUnsynced` 在下次在线时推送**；`permanentlyDeleteCollectionBookmarks` 不再 forcePush（服务端 cascade 已处理），仅执行本地 IDB 清理 |
-| `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并；`permanentlyDeleteCollection` 采用 push-first 模式（`forcePush` → `idbDelete` → `decrementUsage`），失败时回滚；`is_deleted===2` 时从 state+IDB 删除；书签 tombstone 同步由服务端级联兜底（集合 `is_deleted=2` 被接受时，服务端将其书签自动升级为 `is_trashed=2`） |
+| `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并，工作区 `is_deleted∈{0,1}` 时 update+keep（保留墓碑供恢复），`is_deleted===2` 才从 state+IDB 删除；`deleteWorkspace`/`restoreWorkspace`/`permanentlyDeleteWorkspace` 通过工作区生命周期协议实现（见下方专节），不再是普通字段更新；`permanentlyDeleteCollection` 采用 push-first 模式（`forcePush` → `idbDelete` → `decrementUsage`），失败时回滚；书签 tombstone 同步由服务端级联兜底（集合 `is_deleted=2` 被接受时，服务端将其书签自动升级为 `is_trashed=2`） |
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 采用 push-first 模式（`forcePush` → `idbDelete`），失败时回滚；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
 | `usePlanStore` | chrome.storage.local | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；书签配额以 `is_trashed < 2` 计（active + trashed），仅 `permanentlyDelete` 时 `decrementUsage`；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 维护本地计数；`clear` 在登出时调用 |
 | `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
@@ -327,11 +331,85 @@ cleanup 函数依次调用 `engine.forceSync()`（fire-and-forget）、`engine.d
 - `ON CONFLICT (id) DO UPDATE ... WHERE updated_at < EXCLUDED.updated_at`（服务端）
 - 客户端 `mergeFromServer` 同样按 `updatedAt` 比较，忽略旧值
 
+## 工作区生命周期管理（Workspace Lifecycle）
+
+普通实体（collection/bookmark/tag/group）遵循上面的 LWW 字段合并；Workspace 作为聚合根走一套独立的、显式状态机 + 有序阶段推送协议，避免父级墓碑与仍在同步的子内容产生竞态。核心文件：`lib/workspace-lifecycle-state.ts`（版本化 KV 记录）、`lib/workspace-aggregate.ts`（原子聚合发现/清理）、`lib/workspace-lifecycle-coordinator.ts`（协调器，本节主要描述对象）、`lib/sync-confirmation.ts`（推送确认）、`lib/sync-engine.ts`（串行化执行、`purgeWorkspace`）、`store/workspace-store.ts`（`deleteWorkspace`/`restoreWorkspace`/`permanentlyDeleteWorkspace`）。
+
+### 最终状态表
+
+| `is_deleted` | 含义 | `deletion_model` | 子内容可见性 | 触发方式 |
+|---|---|---|---|---|
+| `0` | 活跃 | `1`（新协议）或 `0`（遗留） | 正常显示 | 默认状态 / 成功 restore |
+| `1` | 软删除（父级墓碑，可恢复） | `1` | 本地 IDB 仍持有（供恢复/回收站聚合），但 REST/搜索/普通 UI 一律过滤 | `lifecycle_action: "delete"` 被接受 |
+| `2` | 永久删除（终态，不可逆） | 沿用删除时的值 | 本地聚合被彻底清除（`clearWorkspaceAggregate`） | `lifecycle_action: "purge"` 被接受，或遗留级联删除路径 |
+
+`deletion_model` 由服务端记录：`1` = 使用本节描述的父级墓碑（parent-tombstone）协议删除；`0` = 由不支持该协议的遗留客户端触发的级联删除（旧协议），仅供迁移期兼容判断，不影响客户端读取逻辑本身。
+
+### Protocol Version 2 动作契约
+
+所有 `POST /sync/push` 请求携带 `protocol_version: 2`（`lib/api.ts` 的 `api.syncPush` 固定注入，见 `SyncPushPayload`）。Workspace 推送分两类：
+
+- **普通字段更新**：省略 `lifecycle_action`，仅更新 `name`/`color`/`position` 等元数据，**从不**改变生命周期状态。状态 `1` 拒绝这类请求（`workspace_deleted`），状态 `2` 拒绝一切非 purge 请求（`permanently_deleted`）——这可防止一个持有旧本地状态的客户端在编辑名称时意外把已删除的工作区复活。
+- **生命周期动作**：`SyncWorkspaceMutation.lifecycle_action ∈ { "delete", "restore", "purge" }`（`lib/api.ts`）。
+  - `"delete"`：`is_deleted: 0 → 1`，写入 `deleted_at`。
+  - `"restore"`：`is_deleted: 1 → 0`，清除 `deleted_at`；只把父级恢复为活跃态，**不会**触碰任何子实体各自的 `deletedAt`/`archivedAt`（子级生命周期状态与父级独立，见下方"合并行为"）。
+  - `"purge"`：`is_deleted: * → 2`，终态、幂等（对同一个已是状态 `2` 的根重复发送会被接受为 no-op，确保丢失首次响应的客户端仍能安全完成本地清理）。
+
+`GET /sync/pull` 响应新增可选字段 `capabilities.workspace_parent_tombstone`（`lib/api.ts` 的 `SyncCapabilities`）。**Workspace 列表在每次 pull 中都是全量返回**（不像 collection/bookmark/tag/group 按 `seq > after_seq` 增量返回）——协调器据此才能在任意时刻拿到每个根的可靠 `is_deleted` 视图来安全推进阶段化推送；这一契约是本节其余机制成立的前提。
+
+### Capability 与 full-pull 迁移
+
+新工作区生命周期动作（delete/restore/permanent-delete）只有在服务端于 `SyncPullResponse.capabilities.workspace_parent_tombstone === true` 时才启用；未启用能力的自托管服务端会在 UI 上显示"需要升级服务端"，而不是回退到不安全的级联删除。
+
+- **缓存位置**：`kv["workspace-parent-tombstone-capability-v1:${encodeURIComponent(origin)}:${encodeURIComponent(userId)}"]`，按 **服务器 origin + 用户 ID** 精确限定（`lib/workspace-lifecycle-state.ts` 的 `workspaceLifecycleCapabilityKey`）。切换账号、切换自托管服务器、清空数据库，或后续一次已认证响应省略/关闭该能力，都会使已缓存的值失效（`invalidateWorkspaceLifecycleCapability`）——绝不会把 A 账号或 A 服务器观测到的能力误用到 B。
+- **一次性 full-pull 迁移标记**：`kv["workspace-parent-tombstone-full-pull-v1:${origin}:${userId}"]`。首次确认能力为 `true` 且尚无该标记时，`resolveAuthoritativeWorkspacePull`（`lib/workspace-lifecycle-coordinator.ts`）会额外发起一次 `after_seq=0` 的权威全量 pull，因为升级前的旧客户端可能已经把 `localSeq` 推进到了它当时看不懂、随后又在本地删除的父级墓碑之后。迁移标记与 `localSeq`/`kv["localSeq"]` 一起，在 `commitWorkspacePullCheckpoint` 的**同一个** IndexedDB 事务中提交，因此中断的 pull 不会留下标记已写但 `localSeq` 未推进（或反之）的不一致状态，下次会重试。
+- 离线场景：曾经确认为 `true` 的能力允许浏览器重启后在离线状态下继续本地软删除/恢复（写入 lifecycle intent），但永久删除始终要求一个存活的、已认证的 `SyncEngine`（需要服务端在场确认状态 `2`）。
+
+### 有序生命周期推送（Serialized Lifecycle Order）
+
+Offline 的 delete/restore 先在本地一个 IndexedDB 事务内提交：写工作区快照（`deletedAt`/`seq=0`）+ 版本化 intent 记录 `kv["workspace-lifecycle-intents-v1"]`（`{ workspaceId, action, baseSeq, previousActiveWorkspaceId, createdAt }`，见 `idbCommitWorkspaceDeleteLifecycleIntent`/`idbCommitWorkspaceLifecycleIntent`）。intent 存活于重启之间，且携带足够信息用来在 `last_active_workspace` 迟到拒绝时确定性回滚。
+
+`SyncEngine` 拥有一条**串行化**的执行链（`resolutionChain`），生命周期协调、push 确认、pull 合并全部在同一个"currentness"边界上排队——同一时刻只有一个在跑，`isCurrent()` 保证被 retire 的引擎不会误写已被替换的新引擎的状态。`reconcileWorkspaceLifecycleIntents`（`lib/workspace-lifecycle-coordinator.ts`）按 `createdAt` 升序逐个处理 intent：
+
+**Delete（服务端尚未确认，或本地待推送）：**
+1. `capture` — 把 live queue 与 session-recovery 快照中匹配的实体抽取进耐久的 `kv["workspace-lifecycle-deferred-sync-v1"]` 记录（按 workspaceId 保存），保证离线期间在其它地方排队的编辑不会丢失或绕过阶段顺序。
+2. `push:root` — 推送工作区的普通字段快照（**不带** `lifecycle_action`，服务端此时若还没有该工作区会以状态 `0` 创建它）。
+3. `push:children` — 推送该工作区下的 collections/groups/tags（各自已有的 `deletedAt`/`archivedAt` 原样携带，protocol 层面它们仍是普通更新）。
+4. `push:bookmarks` — 推送 bookmarks。
+5. `push:delete` — 最后才发送 `lifecycle_action: "delete"`，把服务端父级转为状态 `1`。
+
+每一个被接受的阶段都在**开始下一阶段之前**通过 `confirmSyncPayload` 落盘确认（把返回的 `server_seq` 写回本地实体、清理对应 deferred 引用），任何一阶段被拒绝都会把 intent 保持为"待重试"并阻止后续阶段（尤其是绝不会在子内容还没确认前发送父级删除）。
+
+**Restore：** 先 `push:restore`（父级转回状态 `0`），随后按同样的子级阶段顺序把子实体重新纳入同步——但**不会**改写它们各自的 `deletedAt`/`archivedAt`；子级恢复必须由用户对每个子内容单独触发。全部阶段确认后清除 intent 并清理该根的冲突树（`clearConflictTree`）。
+
+**Purge（`SyncEngine.purgeWorkspace`）：** 前置条件是 delete 已被服务端确认（`isWorkspaceDeleteConfirmed`；未确认则先 `requestPull()` 重试一次，仍未确认则拒绝）且本地 ordinary queue 已排空。随后：`queue.flush()` → 推送 `{ workspaces: [{ id, lifecycle_action: "purge" }] }`（不重发任何子实体，服务端已持有它们的最新状态）→ `confirmPayload` → `blockEntities`（阻止聚合中的实体重新进入队列）→ `pruneEntities`（清理 live queue 与 recovery 快照）→ `clearWorkspaceAggregate`（见下）。
+
+若客户端在阶段之间崩溃：已确认的阶段不会被重发，第一个未确认阶段在下次 reconciliation 时可安全重启。若一次子级/根级推送被服务端拒绝（`quota_exceeded`/`parent_rejected`/`last_active_workspace`），协调器把已聚合的实体快照 quarantine 进 deferred 记录、记录冲突（`syncConflictRegistry`），intent 本身保留以便配额恢复或用户手动重试后继续；`last_active_workspace` 额外触发 `rollbackLastActive`，把本地工作区/intent 精确还原到 `baseSeq` 状态。
+
+### 合并行为（`mergeFromServer`）
+
+- 状态 `1`：`workspace-store.mergeFromServer` 插入或更新，**保留** `deletedAt`，绝不删除该 IDB 行；若当前活跃工作区被远端标记为已保留，客户端自动切换到另一个活跃工作区（`chooseActiveWorkspace`：取 position 最小的活跃项）。
+- 状态 `2`：直接从 state + IDB 删除该行（`terminalWorkspaceIds` → `blockPruneAndCleanTerminalAggregates` → `clearWorkspaceAggregate`）。
+- 本地 `seq=0` 的删除/恢复是"待定"的乐观修改：一个较旧的服务端状态 `0` 不能覆盖本地待定删除，一个较旧的服务端状态 `1` 也不能覆盖本地待定恢复；状态 `2` 永远覆盖任何本地待定状态（终态优先）。
+- 状态 `1 → 0`（restore 被确认）时，pull 协调器在常规 sweep 之前清理该根的 `parent_deleted` 子级冲突树，让此前被服务端拒绝（因为父级已删除）的本地子级修改可以在父级重新活跃后正常继续同步。
+
+### 清理归属（Cleanup Ownership）
+
+- **状态 1→2（永久删除）**：只能由客户端显式触发的 `lifecycle_action: "purge"`（人工操作，通过 Workspace Manager）或服务端自动的回收站到期清理（`trash_grace_days`，来自 `GET /api/plan` 的套餐限额）产生。客户端**从不**运行本地过期计时器——服务端是唯一的清理权威，离线设备通过下一次 delta pull 得知结果（一个状态 `2` 的行本身会作为最小的"防复活墓碑"被服务端保留至账号删除为止，不参与配额或普通读取）。
+- **本地 IndexedDB 聚合清理**：仅 `lib/workspace-aggregate.ts` 的 `clearWorkspaceAggregate`/`permanentlyDeleteWorkspaceAggregate` 执行，且只在服务端已确认状态 `2`（正常流程）或识别为终态（`cleanTerminal`）之后才调用；它在**同一个** IndexedDB 事务中原子地：删除 workspace/collections/bookmarks(active+archived+trashed)/groups/group-tabs、选出新的 `activeWorkspaceId`（就近 position）、清除该工作区在 `workspace-lifecycle-intents-v1` / `workspace-lifecycle-deferred-sync-v1` / guest 溯源记录 / legacy orphan-recovery 记录中的条目、清理该根在 `syncConflictRegistry` 中的记录。Guest（无账号）场景下 `permanentlyDeleteWorkspace` 直接调用同一套本地清理，无需服务端确认。
+- **Zustand state 清理**：`useWorkspaceStore`/`useBookmarksStore`/`useGroupsStore` 各自的 `removeWorkspaceAggregateFromState(ids)` 由聚合清理成功后统一调用，保证三个 store 与 IDB 在同一时刻保持一致，不存在"IDB 已删但 state 还在"的窗口。
+
+### 配额方程
+
+`usage = in_use + trash_usage`（每种资源独立成立），由 `lib/quota-usage.ts` 的 `createQuotaBreakdown(total, trash)` 强制保证：`inUse[key] = total[key] - trash[key]`，且两者都先各自 clamp 到 `[0, total]` 区间。Guest／OSS／Cloud 三种模式共用同一等式：
+- **Guest**（无账号）：`total`/`trash` 由 `calculateGuestQuotaUsage` 在本地聚合计算（保留工作区及其后代计入 `trash`，其余计入 `in_use`）。
+- **OSS/Cloud**（已认证）：`GET /api/plan` 返回 `usage`（= `total`）与可选的 `trash_usage`；服务端配额判定条件与此一致——workspace/collection 以 `is_deleted < 2` 计（active + 已软删除 + 已归档都占配额，只有永久删除才释放），bookmark 以 `is_trashed < 2` 计。软删除/归档只把资源从 `in_use` 移到 `trash`，两者之和（=服务端计费的 `usage`）不变；只有永久删除才会真正减少 `usage`（`decrementUsage`）。
+
 ## 核心数据模型
 
 ```ts
 // lib/types.ts（同步字段已包含）
-Workspace { id, name, color, position, seq, deletedAt? }
+Workspace { id, name, color, position, seq, deletedAt?, deletionModel? }  // deletionModel: 1=父级墓碑协议, 0=遗留级联删除迁移标记
   └── Collection[] { id, workspaceId, name, icon, position, isDefault?, seq, deletedAt?, archivedAt? }
          └── Bookmark[] { id, title, url, favicon, description, collectionId, tags[], createdAt, isFavorite, seq, deletedAt? }
 Tag { id, name, color, seq, deletedAt? }
