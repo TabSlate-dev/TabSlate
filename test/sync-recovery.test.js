@@ -186,6 +186,36 @@ describe("sync recovery persistence", () => {
     expect(sessionStore.has("tabslate-sync-recovery")).toBe(false);
   });
 
+  test("conditionally prunes only the recovery snapshot captured before a newer same-ID buffer", async () => {
+    const references = [{ entityType: "bookmark", entityId: "bookmark-captured" }];
+    recoveryModule.bufferSyncRecoverySnapshot({
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "captured" }],
+        tags: [], groups: [],
+      },
+    });
+    await waitForStorageWork();
+    const captured = await recoveryModule.copySyncRecoveryEntities(references);
+
+    recoveryModule.bufferSyncRecoverySnapshot({
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "newer" }],
+        tags: [], groups: [],
+      },
+    });
+    await recoveryModule.pruneSyncRecoveryEntities(references, captured);
+
+    expect(await recoveryModule.loadSyncRecoverySnapshot()).toEqual({
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "newer" }],
+        tags: [], groups: [],
+      },
+    });
+  });
+
   test("clearSyncRecoverySnapshot clears session storage", async () => {
     const snapshot = {
       entities: {

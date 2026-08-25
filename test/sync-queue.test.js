@@ -289,6 +289,30 @@ describe("SyncQueue", () => {
     queue.destroy();
   });
 
+  test("conditionally prunes only the queue snapshot captured before a newer same-ID enqueue", async () => {
+    const queue = new SyncQueue(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      async () => {},
+      async () => false,
+    );
+    const references = [{ entityType: "bookmark", entityId: "bookmark-captured" }];
+    queue.enqueue({ bookmarks: [{ id: "bookmark-captured", title: "captured" }] });
+    const captured = queue.copyEntities(references);
+
+    queue.enqueue({ bookmarks: [{ id: "bookmark-captured", title: "newer" }] });
+    await queue.pruneEntities(references, captured);
+    await queue.flush();
+
+    expect(syncPushCalls).toEqual([{
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "newer" }],
+        tags: [], groups: [],
+      },
+    }]);
+    queue.destroy();
+  });
+
   test("prunes idempotently and blocks captured aggregate entities from re-entering", async () => {
     const queue = new SyncQueue(
       () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),

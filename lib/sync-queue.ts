@@ -6,6 +6,7 @@ import {
   bufferSyncRecoverySnapshot,
   createEmptySyncPushPayload,
   isSyncPushPayloadEmpty,
+  matchesCapturedSyncEntity,
   loadSyncRecoverySnapshot,
   splitSyncPushPayload,
   SYNC_ENTITY_PAYLOAD_MAPPINGS,
@@ -153,6 +154,7 @@ export class SyncQueue {
   private selectEntities(
     references: readonly SyncEntityReference[],
     remove: boolean,
+    capturedPayload?: SyncPushPayload,
   ): SyncPushPayload {
     const extracted = createEmptySyncPushPayload();
     for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
@@ -163,13 +165,16 @@ export class SyncQueue {
           continue;
         }
         const entity = queueMap.get(reference.entityId);
+        const shouldRemove = remove && (
+          !entity || matchesCapturedSyncEntity(capturedPayload, payloadKey, entity)
+        );
         if (entity) {
           target.push(remove ? entity : structuredClone(entity));
-          if (remove) {
+          if (shouldRemove) {
             queueMap.delete(reference.entityId);
           }
         }
-        if (remove) {
+        if (shouldRemove) {
           this.pendingConflictClears.delete(entityReferenceKey(reference));
         }
       }
@@ -183,9 +188,12 @@ export class SyncQueue {
     }
   }
 
-  async pruneEntities(references: readonly SyncEntityReference[]): Promise<void> {
+  async pruneEntities(
+    references: readonly SyncEntityReference[],
+    capturedPayload?: SyncPushPayload,
+  ): Promise<void> {
     await this.recoveryReady;
-    this.extractEntities(references);
+    this.selectEntities(references, true, capturedPayload);
   }
 
   isEmpty(): boolean {

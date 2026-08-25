@@ -9,6 +9,7 @@ let queueFlushImpl;
 let queueExtractImpl;
 let queueCopyImpl;
 let queuePruneImpl;
+let queueEnqueueImpl;
 let queueSuccessHandler = null;
 let queueFailureHandler = null;
 let sseSequenceHandler = null;
@@ -42,7 +43,7 @@ class OrderingTestQueue {
     queueFailureHandler = onFailure;
   }
 
-  enqueue() {}
+  enqueue(entities) { queueEnqueueImpl(entities); }
   async flush() {
     queueFlushEvents.push("queue-flush");
     await queueFlushImpl();
@@ -50,7 +51,9 @@ class OrderingTestQueue {
   extractEntities(references) { return queueExtractImpl(references); }
   copyEntities(references) { return queueCopyImpl(references); }
   blockEntities() {}
-  async pruneEntities(references) { await queuePruneImpl(references); }
+  async pruneEntities(references, capturedPayload) {
+    await queuePruneImpl(references, capturedPayload);
+  }
   async ready() {}
   isEmpty() { return true; }
   destroy() {}
@@ -105,6 +108,7 @@ describe("SyncEngine ordering", () => {
     queueExtractImpl = () => emptyPayload();
     queueCopyImpl = () => emptyPayload();
     queuePruneImpl = async () => {};
+    queueEnqueueImpl = () => {};
   });
 
   afterEach(() => {
@@ -352,6 +356,105 @@ describe("SyncEngine ordering", () => {
       "queue-pruned",
       "recovery-pruned",
     ]);
+    engine.destroy();
+  });
+
+  test("keeps newer same-ID queue and recovery updates after deferred capture persists", async () => {
+    const references = [{ entityType: "bookmark", entityId: "bookmark-captured" }];
+    const capturedLiveSnapshot = {
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "captured-live" }],
+        tags: [], groups: [],
+      },
+    };
+    const capturedRecoverySnapshot = {
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "captured-recovery" }],
+        tags: [], groups: [],
+      },
+    };
+    const newerLiveSnapshot = {
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "newer-live" }],
+        tags: [], groups: [],
+      },
+    };
+    const newerRecoverySnapshot = {
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "newer-recovery" }],
+        tags: [], groups: [],
+      },
+    };
+    let liveState = structuredClone(capturedLiveSnapshot);
+    let recoveryState = structuredClone(capturedRecoverySnapshot);
+    const persistenceStarted = deferred();
+    const releasePersistence = deferred();
+    const captureFinished = deferred();
+    const durablePayloads = [];
+    queueCopyImpl = () => structuredClone(liveState);
+    queueEnqueueImpl = (entities) => {
+      liveState = { entities: {
+        workspaces: [], collections: [],
+        bookmarks: structuredClone(entities.bookmarks ?? []),
+        tags: [], groups: [],
+      } };
+    };
+    queuePruneImpl = async (_receivedReferences, capturedPayload) => {
+      const capturedBookmark = capturedPayload?.entities.bookmarks[0];
+      const currentBookmark = liveState.entities.bookmarks[0];
+      if (!capturedBookmark || capturedBookmark.title === currentBookmark?.title) {
+        liveState = emptyPayload();
+      }
+    };
+
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async (_response, _isCurrent, context) => {
+        await context.captureDeferredEntities("workspace-captured", references);
+        captureFinished.resolve();
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        copyRecoveryEntities: async () => structuredClone(recoveryState),
+        pruneRecoveryEntities: async (_receivedReferences, capturedPayload) => {
+          const capturedBookmark = capturedPayload?.entities.bookmarks[0];
+          const currentBookmark = recoveryState.entities.bookmarks[0];
+          if (!capturedBookmark || capturedBookmark.title === currentBookmark?.title) {
+            recoveryState = emptyPayload();
+          }
+        },
+        mergeDeferredPayload: async (_workspaceId, payload) => {
+          durablePayloads.push(payload);
+          persistenceStarted.resolve();
+          await releasePersistence.promise;
+        },
+      }),
+    );
+
+    engine.start();
+    await persistenceStarted.promise;
+    engine.enqueue({ bookmarks: newerLiveSnapshot.entities.bookmarks });
+    recoveryState = structuredClone(newerRecoverySnapshot);
+    releasePersistence.resolve();
+    await captureFinished.promise;
+
+    expect(durablePayloads).toEqual([{
+      entities: {
+        workspaces: [], collections: [],
+        bookmarks: [{ id: "bookmark-captured", title: "captured-live" }],
+        tags: [], groups: [],
+      },
+    }]);
+    expect(liveState).toEqual(newerLiveSnapshot);
+    expect(recoveryState).toEqual(newerRecoverySnapshot);
     engine.destroy();
   });
 

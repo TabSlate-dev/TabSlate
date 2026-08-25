@@ -60,6 +60,19 @@ export function syncPayloadEntities(
   }
 }
 
+export function matchesCapturedSyncEntity(
+  capturedPayload: SyncPushPayload | undefined,
+  payloadKey: keyof SyncPushEntities,
+  entity: SyncEntity,
+): boolean {
+  if (!capturedPayload) {
+    return true;
+  }
+  return syncPayloadEntities(capturedPayload, payloadKey).some((captured) =>
+    captured.id === entity.id && JSON.stringify(captured) === JSON.stringify(entity)
+  );
+}
+
 export function splitSyncPushPayload(full: SyncPushPayload): SyncPushPayload[] {
   const { workspaces, collections, bookmarks, tags, groups } = full.entities;
   const total = workspaces.length + collections.length + bookmarks.length +
@@ -233,6 +246,7 @@ function parseRecoverySnapshot(raw: unknown): SyncPushPayload | null {
 
 export async function extractSyncRecoveryEntities(
   references: readonly SyncEntityReference[],
+  capturedPayload?: SyncPushPayload,
 ): Promise<SyncPushPayload> {
   await _storagePersistence.catch(() => {});
   const sessionStorage = getSessionStorage();
@@ -241,7 +255,7 @@ export async function extractSyncRecoveryEntities(
     const stored = await sessionStorage.get(RECOVERY_KEY);
     snapshot = parseRecoverySnapshot(stored[RECOVERY_KEY]);
   }
-  const extracted = selectSyncPayloadEntities(snapshot, references);
+  const extracted = createEmptySyncPushPayload();
   if (snapshot === null) {
     return extracted;
   }
@@ -251,10 +265,16 @@ export async function extractSyncRecoveryEntities(
   const remainder = createEmptySyncPushPayload();
   for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
     const matchingIds = referenceIds.get(entityType);
+    const extractedEntities = syncPayloadEntities(extracted, payloadKey);
     const remainingEntities = syncPayloadEntities(remainder, payloadKey);
     for (const entity of syncPayloadEntities(snapshot, payloadKey)) {
-      if (!matchingIds?.has(entity.id)) {
+      if (
+        !matchingIds?.has(entity.id) ||
+        !matchesCapturedSyncEntity(capturedPayload, payloadKey, entity)
+      ) {
         remainingEntities.push(entity);
+      } else {
+        extractedEntities.push(entity);
       }
     }
   }
@@ -313,8 +333,9 @@ export async function copySyncRecoveryEntities(
 
 export async function pruneSyncRecoveryEntities(
   references: readonly SyncEntityReference[],
+  capturedPayload?: SyncPushPayload,
 ): Promise<void> {
-  await extractSyncRecoveryEntities(references);
+  await extractSyncRecoveryEntities(references, capturedPayload);
 }
 
 export function clearSyncRecoverySnapshot() {

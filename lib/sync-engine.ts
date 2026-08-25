@@ -70,7 +70,10 @@ interface SyncQueueDriver {
   extractEntities(references: readonly SyncEntityReference[]): SyncPushPayload;
   copyEntities(references: readonly SyncEntityReference[]): SyncPushPayload;
   blockEntities(references: readonly SyncEntityReference[]): void;
-  pruneEntities(references: readonly SyncEntityReference[]): Promise<void>;
+  pruneEntities(
+    references: readonly SyncEntityReference[],
+    capturedPayload?: SyncPushPayload,
+  ): Promise<void>;
   destroy(): void;
 }
 
@@ -105,6 +108,7 @@ export interface SyncEngineDependencies {
   ) => Promise<SyncPushPayload>;
   pruneRecoveryEntities?: (
     references: readonly SyncEntityReference[],
+    capturedPayload?: SyncPushPayload,
   ) => Promise<void>;
   mergeDeferredPayload?: (
     workspaceId: string,
@@ -173,6 +177,7 @@ export class SyncEngine {
   ) => Promise<SyncPushPayload>;
   private readonly pruneRecoveryEntities: (
     references: readonly SyncEntityReference[],
+    capturedPayload?: SyncPushPayload,
   ) => Promise<void>;
   private readonly mergeDeferredPayload: (
     workspaceId: string,
@@ -404,9 +409,9 @@ export class SyncEngine {
           mergeSyncPayloads(recoveryPayload, livePayload),
         );
         this.assertResolutionCurrent(isCurrent);
-        await this.queue.pruneEntities(references);
+        await this.queue.pruneEntities(references, livePayload);
         this.assertResolutionCurrent(isCurrent);
-        await this.pruneRecoveryEntities(references);
+        await this.pruneRecoveryEntities(references, recoveryPayload);
         this.assertResolutionCurrent(isCurrent);
       },
       blockEntities: (references) => {
