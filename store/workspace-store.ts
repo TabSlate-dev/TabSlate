@@ -1009,7 +1009,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
   sweepUnsynced: async () => {
     await syncConflictRegistry.ready();
-    await withWorkspaceLifecycleLock(async () => {
+    await withWorkspaceLifecycleLock(async (lock) => {
       const pendingWorkspaceIds = new Set(
         (await readWorkspaceLifecycleIntents()).map((intent) => intent.workspaceId),
       );
@@ -1033,6 +1033,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         payload.entities.collections.length > 0 ||
         payload.entities.tags.length > 0
       ) {
+        if (!await lock.renew()) {
+          return;
+        }
         syncEngine?.enqueue(payload.entities, "respect");
       }
     });

@@ -28,6 +28,7 @@ let purgeImpl;
 let aggregateCleanupIds;
 let deleteTransactionTail = Promise.resolve();
 let heldLifecycleLocks = new Map();
+let releaseLockImpl;
 
 mock.module("@/lib/idb", () => ({
   idbGetAll: async (store) => {
@@ -174,10 +175,19 @@ mock.module("@/lib/idb", () => ({
     heldLifecycleLocks.set(key, { owner, expiresAt });
     return true;
   },
+  idbRenewLock: async (key, owner, expiresAt) => {
+    const current = heldLifecycleLocks.get(key);
+    if (!current || current.owner !== owner || current.expiresAt <= Date.now()) {
+      return false;
+    }
+    heldLifecycleLocks.set(key, { owner, expiresAt });
+    return true;
+  },
   idbReleaseLock: async (key, owner) => {
     if (heldLifecycleLocks.get(key)?.owner === owner) {
       heldLifecycleLocks.delete(key);
     }
+    return releaseLockImpl();
   },
   idbCreateGuestWorkspaceIfEmpty: async (workspace, collection, activeWorkspace, provenance) => {
     if (guestSeedCreated) {
@@ -359,6 +369,7 @@ describe("workspace lifecycle store", () => {
     aggregateCleanupIds = undefined;
     deleteTransactionTail = Promise.resolve();
     heldLifecycleLocks = new Map();
+    releaseLockImpl = async () => {};
     useWorkspaceStore.setState({
       workspaces: [],
       collections: [],
@@ -827,6 +838,64 @@ describe("workspace lifecycle store", () => {
     );
     expect(deleteCommitIndex).toBeGreaterThanOrEqual(0);
     expect(targetEnqueueIndex === -1 || targetEnqueueIndex < deleteCommitIndex).toBe(true);
+  });
+
+  test("an expired fallback sweep holder cannot enqueue after another context deletes", async () => {
+    const target = workspace("workspace-target", 0, { seq: 0 });
+    const replacement = workspace("workspace-replacement", 1);
+    storedWorkspaces = structuredClone([target, replacement]);
+    storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: target.id });
+    useFirstContextWorkspaceStore.setState({
+      workspaces: [target, replacement],
+      activeWorkspaceId: target.id,
+    });
+    useSecondContextWorkspaceStore.setState({
+      workspaces: [target, replacement],
+      activeWorkspaceId: target.id,
+    });
+    let resolveIntentRead;
+    let observeIntentRead;
+    const intentReadStarted = new Promise((resolve) => { observeIntentRead = resolve; });
+    intentReadImpl = (key) => {
+      observeIntentRead();
+      return new Promise((resolve) => {
+        resolveIntentRead = () => resolve({ key, value: { version: 1, intents: [] } });
+      });
+    };
+
+    const staleSweep = useFirstContextWorkspaceStore.getState().sweepUnsynced();
+    await intentReadStarted;
+    for (const [key, lock] of heldLifecycleLocks) {
+      heldLifecycleLocks.set(key, { ...lock, expiresAt: 0 });
+    }
+    expect(await useSecondContextWorkspaceStore.getState().deleteWorkspace(target.id)).toEqual({
+      status: "queued",
+    });
+    if (!resolveIntentRead) { throw new Error("intent read was not blocked"); }
+    resolveIntentRead();
+    await staleSweep;
+
+    const targetWasEnqueued = syncEnqueueCalls.some((call) =>
+      call[0].workspaces?.some((entity) => entity.id === target.id)
+    );
+    expect(targetWasEnqueued).toBe(false);
+    expect(storedWorkspaces.find((item) => item.id === target.id)?.deletedAt).toBeNumber();
+  });
+
+  test("fallback release failure preserves a committed delete result and runtime wake", async () => {
+    const target = workspace("workspace-target", 0);
+    const replacement = workspace("workspace-replacement", 1);
+    storedWorkspaces = structuredClone([target, replacement]);
+    storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: target.id });
+    useWorkspaceStore.setState({
+      workspaces: [target, replacement],
+      activeWorkspaceId: target.id,
+    });
+    releaseLockImpl = async () => { throw new Error("release failed"); };
+
+    expect(await useWorkspaceStore.getState().deleteWorkspace(target.id)).toEqual({ status: "queued" });
+    expect(wakeCalls).toEqual([target.id]);
+    expect(storedWorkspaces.find((item) => item.id === target.id)?.deletedAt).toBeNumber();
   });
 
   test("authenticated purge is offline-safe and rolls back the optimistic card on failure", async () => {

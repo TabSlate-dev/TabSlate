@@ -68,8 +68,12 @@ export interface WorkspaceLifecycleStateStorage {
   ): Promise<void>;
 }
 
+export interface WorkspaceLifecycleLockGuard {
+  renew(): Promise<boolean>;
+}
+
 async function withIndexedDBWorkspaceLifecycleLock<Result>(
-  operation: () => Promise<Result>,
+  operation: (guard: WorkspaceLifecycleLockGuard) => Promise<Result>,
 ): Promise<Result> {
   const idb = await import("@/lib/idb");
   const owner = typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -85,22 +89,33 @@ async function withIndexedDBWorkspaceLifecycleLock<Result>(
       setTimeout(resolve, WORKSPACE_LIFECYCLE_LOCK_RETRY_MS);
     });
   }
+  const guard: WorkspaceLifecycleLockGuard = {
+    renew: () => idb.idbRenewLock(
+      key,
+      owner,
+      Date.now() + WORKSPACE_LIFECYCLE_LOCK_LEASE_MS,
+    ),
+  };
   try {
-    return await operation();
+    return await operation(guard);
   } finally {
-    await idb.idbReleaseLock(key, owner);
+    try {
+      await idb.idbReleaseLock(key, owner);
+    } catch {
+      // The lease expires independently; cleanup cannot replace the operation result.
+    }
   }
 }
 
 /** Holds lifecycle reads, commits, and synchronous enqueue across contexts. */
 export async function withWorkspaceLifecycleLock<Result>(
-  operation: () => Promise<Result>,
+  operation: (guard: WorkspaceLifecycleLockGuard) => Promise<Result>,
 ): Promise<Result> {
   if (typeof navigator !== "undefined" && navigator.locks) {
     return navigator.locks.request(
       WORKSPACE_LIFECYCLE_LOCK_NAME,
       { mode: "exclusive" },
-      operation,
+      () => operation({ renew: async () => true }),
     );
   }
   return withIndexedDBWorkspaceLifecycleLock(operation);

@@ -596,6 +596,27 @@ export function idbTryAcquireLock(key: string, owner: string, expiresAt: number)
   }));
 }
 
+/** Renews a live lease only while the caller remains its current owner. */
+export function idbRenewLock(key: string, owner: string, expiresAt: number): Promise<boolean> {
+  return getDB().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction("kv", "readwrite");
+    let renewed = false;
+    tx.oncomplete = () => resolve(renewed);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+    const request = tx.objectStore("kv").get(key);
+    request.onerror = () => tx.abort();
+    request.onsuccess = () => {
+      const record = request.result as LockRecord | undefined;
+      if (record?.value.owner !== owner || record.value.expiresAt <= Date.now()) {
+        return;
+      }
+      tx.objectStore("kv").put({ key, value: { owner, expiresAt } });
+      renewed = true;
+    };
+  }));
+}
+
 export function idbReleaseLock(key: string, owner: string): Promise<void> {
   return getDB().then((db) => new Promise((resolve, reject) => {
     const tx = db.transaction("kv", "readwrite");
