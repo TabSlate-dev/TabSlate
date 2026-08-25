@@ -9,6 +9,7 @@ import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
+import type { WorkspaceAggregateIds } from "@/lib/workspace-aggregate";
 
 export interface GroupTab {
   id: string;
@@ -63,6 +64,37 @@ function buildTabsByGroup(groupTabs: GroupTab[]): Map<string, GroupTab[]> {
   return map;
 }
 
+function groupTabMatchesSyncEntity(tab: GroupTab, entity: SyncEntity): boolean {
+  return entity.id === tab.id &&
+    entity.group_id === tab.groupId &&
+    entity.title === tab.title &&
+    entity.url === tab.url &&
+    entity.favicon === tab.favicon &&
+    entity.position === tab.position;
+}
+
+function isSyncEntityArray(value: SyncEntity[string]): value is SyncEntity[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "object");
+}
+
+function groupMatchesSyncEntity(
+  group: SavedGroup,
+  tabs: readonly GroupTab[],
+  entity: SyncEntity,
+): boolean {
+  const entityTabs = entity.tabs;
+  return entity.id === group.id &&
+    entity.name === group.name &&
+    entity.color === group.color &&
+    entity.is_compact === group.isCompact &&
+    entity.workspace_id === group.workspaceId &&
+    entity.created_at === new Date(group.createdAt).getTime() &&
+    (entity.deleted_at ?? null) === (group.deletedAt ?? null) &&
+    isSyncEntityArray(entityTabs) &&
+    entityTabs.length === tabs.length &&
+    tabs.every((tab, index) => groupTabMatchesSyncEntity(tab, entityTabs[index]));
+}
+
 interface GroupsState {
   groups: SavedGroup[];
   groupTabs: GroupTab[];
@@ -91,6 +123,8 @@ interface GroupsState {
   applyGuestGroupChanges: (groups: SavedGroup[]) => void;
   sweepUnsynced: () => Promise<void>;
   enqueueAllToSync: () => void;
+  confirmGroupEntitySeqs: (entities: readonly SyncEntity[], serverSeq: number) => void;
+  removeWorkspaceAggregateFromState: (ids: WorkspaceAggregateIds) => void;
 }
 
 export const useGroupsStore = create<GroupsState>()((set, get) => ({
@@ -489,6 +523,30 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
     if (payload.entities.groups.length > 0) {
       syncEngine?.enqueue(payload.entities, "respect");
     }
+  },
+
+  confirmGroupEntitySeqs: (entities, serverSeq) => {
+    const entitiesById = new Map(entities.map((entity) => [entity.id, entity]));
+    set((state) => ({
+      groups: state.groups.map((group) => {
+        const entity = entitiesById.get(group.id);
+        const tabs = state.groupTabs.filter((tab) => tab.groupId === group.id);
+        return entity && groupMatchesSyncEntity(group, tabs, entity)
+          ? { ...group, seq: serverSeq }
+          : group;
+      }),
+    }));
+  },
+
+  removeWorkspaceAggregateFromState: (ids) => {
+    const groupIds = new Set(ids.groupIds);
+    const groupTabIds = new Set(ids.groupTabIds);
+    set((state) => ({
+      groups: state.groups.filter((group) => !groupIds.has(group.id)),
+      groupTabs: state.groupTabs.filter(
+        (tab) => !groupIds.has(tab.groupId) && !groupTabIds.has(tab.id),
+      ),
+    }));
   },
 
   enqueueAllToSync: () => {

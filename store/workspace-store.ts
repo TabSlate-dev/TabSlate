@@ -6,13 +6,27 @@ import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } 
 import * as idb from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import { compareActiveCollections } from "@/lib/collection-utils";
-import type { SyncEntity, SyncPullResponse } from "@/lib/api";
+import type { SyncEntity, SyncPullResponse, SyncPushEntities } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
+import { useAuthStore } from "@/store/auth-store";
 import { analytics } from "@/lib/analytics";
 import { createGuestWorkspaceSeed, type GuestWorkspaceChanges } from "@/lib/guest-workspace";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
+import {
+  readWorkspaceLifecycleCapability,
+  readWorkspaceLifecycleIntents,
+  type WorkspaceLifecycleIntent,
+} from "@/lib/workspace-lifecycle-state";
+import {
+  purgeWorkspaceThroughActiveLifecycle,
+  wakeActiveWorkspaceLifecycle,
+} from "@/lib/sync-lifecycle";
+import {
+  clearWorkspaceAggregate,
+  type WorkspaceAggregateIds,
+} from "@/lib/workspace-aggregate";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -111,9 +125,85 @@ function toServerTag(t: Tag): SyncEntity {
   };
 }
 
+function isActiveWorkspace(workspace: Workspace): boolean {
+  return workspace.deletedAt === undefined;
+}
+
+function compareWorkspacePosition(a: Workspace, b: Workspace): number {
+  return a.position - b.position || a.id.localeCompare(b.id);
+}
+
+function chooseActiveWorkspace(workspaces: readonly Workspace[]): Workspace | undefined {
+  return workspaces.filter(isActiveWorkspace).sort(compareWorkspacePosition)[0];
+}
+
+function chooseNearestActiveWorkspace(
+  workspaces: readonly Workspace[],
+  target: Workspace,
+): Workspace | undefined {
+  return workspaces
+    .filter((workspace) => workspace.id !== target.id && isActiveWorkspace(workspace))
+    .sort((a, b) =>
+      Math.abs(a.position - target.position) - Math.abs(b.position - target.position) ||
+      compareWorkspacePosition(a, b),
+    )[0];
+}
+
+function workspaceMatchesSyncEntity(workspace: Workspace, entity: SyncEntity): boolean {
+  const lifecycleAction = entity.lifecycle_action;
+  const lifecycleMatches = lifecycleAction === "delete"
+    ? workspace.deletedAt !== undefined
+    : lifecycleAction === "restore"
+      ? workspace.deletedAt === undefined
+      : (entity.deleted_at ?? null) === (workspace.deletedAt ?? null);
+  return lifecycleMatches &&
+    entity.id === workspace.id &&
+    entity.name === workspace.name &&
+    entity.color === workspace.color &&
+    entity.position === workspace.position;
+}
+
+function collectionMatchesSyncEntity(collection: Collection, entity: SyncEntity): boolean {
+  return entity.id === collection.id &&
+    entity.workspace_id === (collection.workspaceId || null) &&
+    entity.name === collection.name &&
+    entity.icon === collection.icon &&
+    entity.position === collection.position &&
+    (entity.deleted_at ?? null) === (collection.deletedAt ?? null) &&
+    (entity.archived_at ?? null) === (collection.archivedAt ?? null);
+}
+
+function tagMatchesSyncEntity(tag: Tag, entity: SyncEntity): boolean {
+  return entity.id === tag.id &&
+    entity.name === tag.name &&
+    entity.color === tag.color &&
+    (entity.deleted_at ?? null) === (tag.deletedAt ?? null);
+}
+
+async function workspaceLifecycleSupported(): Promise<boolean> {
+  const { user, serverUrl } = useAuthStore.getState();
+  if (!user) {
+    return true;
+  }
+  if (!serverUrl) {
+    return false;
+  }
+  return Boolean(await readWorkspaceLifecycleCapability(serverUrl, user.id));
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+export interface WorkspaceActionResult {
+  status: "queued" | "completed" | "blocked" | "unsupported";
+  reason?: "last_active_workspace" | "server_capability" | "offline";
+}
+
+export interface WorkspaceMergeResult {
+  terminalWorkspaceIds: string[];
+  restoredWorkspaceIds: string[];
+}
+
 interface WorkspaceState {
   workspaces: Workspace[];
   collections: Collection[];
@@ -135,15 +225,22 @@ interface WorkspaceState {
 
   // Sync actions
   setLocalSeq: (seq: number) => Promise<void>;
-  mergeFromServer: (resp: SyncPullResponse) => Promise<void>;
+  mergeFromServer: (resp: SyncPullResponse) => Promise<WorkspaceMergeResult>;
   applyGuestWorkspaceChanges: (changes: GuestWorkspaceChanges) => void;
   enqueueAllToSync: () => void;
   sweepUnsynced: () => Promise<void>;
+  confirmWorkspaceStoreEntitySeqs: (
+    entities: Pick<SyncPushEntities, "workspaces" | "collections" | "tags">,
+    serverSeq: number,
+  ) => void;
+  removeWorkspaceAggregateFromState: (ids: WorkspaceAggregateIds) => void;
 
   // Workspace CRUD
   createWorkspace: (name: string, color: string) => Workspace;
   updateWorkspace: (id: string, patch: Partial<Pick<Workspace, "name" | "color">>) => void;
-  deleteWorkspace: (id: string) => void;
+  deleteWorkspace: (id: string) => Promise<WorkspaceActionResult>;
+  restoreWorkspace: (id: string) => Promise<WorkspaceActionResult>;
+  permanentlyDeleteWorkspace: (id: string) => Promise<WorkspaceActionResult>;
 
   // Collection CRUD
   createCollection: (workspaceId: string, name: string, icon: string) => Collection;
@@ -160,6 +257,8 @@ interface WorkspaceState {
   importFromPlan: (plan: ImportPlan) => boolean;
 
   // Computed
+  getActiveWorkspaces: () => Workspace[];
+  getDeletedWorkspaces: () => Workspace[];
   getWorkspaceCollections: (workspaceId?: string) => Collection[];
   getArchivedCollections: () => Collection[];
   getTrashedCollections: () => Collection[];
@@ -196,7 +295,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     // Offline fallback: if a workspace has no isDefault collection in local IDB data,
     // flag the lowest-position active one temporarily. This is overwritten on the next
     // pull once the server confirms the real is_default value.
-    for (const ws of workspaces) {
+    for (const ws of workspaces.filter(isActiveWorkspace)) {
       const wsCols = collections.filter(
         c => c.workspaceId === ws.id && !c.deletedAt && !c.archivedAt,
       );
@@ -207,13 +306,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }
     }
 
-    let activeWorkspaceId = activeWsKv?.value ?? "";
-    if (!activeWorkspaceId && workspaces.length > 0) {
-      const first = [...workspaces].sort((a, b) => a.position - b.position)[0];
-      if (first) {
-        activeWorkspaceId = first.id;
-        idbPut("kv", { key: "activeWorkspaceId", value: activeWorkspaceId });
-      }
+    const persistedActiveId = activeWsKv?.value ?? "";
+    const persistedActive = workspaces.find(
+      (workspace) => workspace.id === persistedActiveId && isActiveWorkspace(workspace),
+    );
+    const activeWorkspaceId = persistedActive?.id ?? chooseActiveWorkspace(workspaces)?.id ?? "";
+    if (activeWorkspaceId !== persistedActiveId) {
+      await idbPut("kv", { key: "activeWorkspaceId", value: activeWorkspaceId });
     }
 
     set({
@@ -290,7 +389,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
             return;
           }
           if (get().workspaces.length === 0 && workspaces.length > 0) {
-            set({ workspaces, collections, activeWorkspaceId: activeWorkspace?.value ?? workspaces[0].id });
+            const persistedActive = workspaces.find(
+              (workspace) => workspace.id === activeWorkspace?.value && isActiveWorkspace(workspace),
+            );
+            set({
+              workspaces,
+              collections,
+              activeWorkspaceId: persistedActive?.id ?? chooseActiveWorkspace(workspaces)?.id ?? "",
+            });
           }
           return;
         }
@@ -331,6 +437,9 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   setActiveWorkspaceId: (id) => {
+    if (!get().workspaces.some((workspace) => workspace.id === id && isActiveWorkspace(workspace))) {
+      return;
+    }
     set({ activeWorkspaceId: id });
     idbPut("kv", { key: "activeWorkspaceId", value: id });
   },
@@ -355,185 +464,163 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   mergeFromServer: async (resp) => {
-    const { workspaces: sw, collections: sc, tags: st } = resp.entities;
-    if (sw.length === 0 && sc.length === 0 && st.length === 0) {
-      const s = get();
-      if (!s.activeWorkspaceId && s.workspaces.length > 0) {
-        const first = [...s.workspaces].sort((a, b) => a.position - b.position)[0];
-        set({ activeWorkspaceId: first.id });
-        await idbPut("kv", { key: "activeWorkspaceId", value: first.id });
-      }
-      return;
-    }
-
-    // Collect permanently-deleted collection IDs before set() to keep the updater pure.
-    const permDeletedCollectionIds = new Set(
-      resp.entities.collections.filter(c => c.is_deleted === 2).map(c => c.id)
+    const terminalWorkspaceIds = resp.entities.workspaces
+      .filter((workspace) => workspace.is_deleted === 2)
+      .map((workspace) => workspace.id);
+    const terminalIds = new Set(terminalWorkspaceIds);
+    const pendingIntents = new Map(
+      (await readWorkspaceLifecycleIntents()).map((intent) => [intent.workspaceId, intent]),
     );
-    const existingWorkspaces = get().workspaces;
-    const existingCollections = get().collections;
-    const existingTags = get().tags;
-    const wsIdx = new Map<string, number>(existingWorkspaces.map((w, i) => [w.id, i]));
-    const colIdx = new Map<string, number>(existingCollections.map((c, i) => [c.id, i]));
-    const tagIdx = new Map<string, number>(existingTags.map((t, i) => [t.id, i]));
+    const current = get();
+    let workspaces = [...current.workspaces];
+    let collections = [...current.collections];
+    let tags = [...current.tags];
+    const restoredWorkspaceIds = new Set<string>();
 
-    set((state) => {
-      let workspaces = [...existingWorkspaces];
-      let collections = [...existingCollections];
-      let tags = [...existingTags];
-      const deletedWorkspaceIds = new Set<string>();
-      const deletedCollectionIds = new Set<string>();
-      const deletedTagIds = new Set<string>();
-
-      for (const sw of resp.entities.workspaces) {
-        const idx = wsIdx.get(sw.id);
-        if (sw.deleted_at) {
-          if (idx !== undefined) {
-            deletedWorkspaceIds.add(sw.id);
-          }
-        } else {
-          if (idx === undefined) {
-            wsIdx.set(sw.id, workspaces.length);
-            workspaces.push({ id: sw.id, name: sw.name, color: sw.color ?? "", position: sw.position, seq: sw.seq });
-          } else {
-            workspaces[idx] = { ...workspaces[idx], name: sw.name, color: sw.color ?? workspaces[idx].color, position: sw.position, seq: sw.seq };
-          }
+    for (const serverWorkspace of resp.entities.workspaces) {
+      const index = workspaces.findIndex((workspace) => workspace.id === serverWorkspace.id);
+      const local = index === -1 ? undefined : workspaces[index];
+      if (serverWorkspace.is_deleted === 2) {
+        if (index !== -1) {
+          workspaces.splice(index, 1);
         }
-      }
-      if (deletedWorkspaceIds.size > 0) {
-        workspaces = workspaces.filter(w => !deletedWorkspaceIds.has(w.id));
+        continue;
       }
 
-      for (const sc of resp.entities.collections) {
-        const idx = colIdx.get(sc.id);
-        if (permDeletedCollectionIds.has(sc.id)) {
-          // Permanently deleted on server — skip; IDB deletion happens after set() returns.
-          if (idx !== undefined) {
-            deletedCollectionIds.add(sc.id);
-          }
-          continue;
+      const intent = pendingIntents.get(serverWorkspace.id);
+      const serverDeleted = serverWorkspace.is_deleted === 1;
+      const pendingDeleteWins = intent?.action === "delete" && !serverDeleted;
+      const pendingRestoreWins = intent?.action === "restore" && serverDeleted;
+      if (local && (pendingDeleteWins || pendingRestoreWins)) {
+        continue;
+      }
+
+      if (!serverDeleted && (local?.deletedAt !== undefined || intent?.action === "restore")) {
+        restoredWorkspaceIds.add(serverWorkspace.id);
+      }
+      const merged: Workspace = {
+        id: serverWorkspace.id,
+        name: serverWorkspace.name,
+        color: serverWorkspace.color ?? local?.color ?? "",
+        position: serverWorkspace.position,
+        seq: serverWorkspace.seq,
+        deletionModel: serverWorkspace.deletion_model,
+        ...(serverDeleted
+          ? { deletedAt: serverWorkspace.deleted_at ?? local?.deletedAt ?? Date.now() }
+          : {}),
+      };
+      if (index === -1) {
+        workspaces.push(merged);
+      } else {
+        workspaces[index] = merged;
+      }
+    }
+
+    const permanentlyDeletedCollectionIds = new Set(
+      resp.entities.collections.filter((collection) => collection.is_deleted === 2).map((collection) => collection.id),
+    );
+    for (const serverCollection of resp.entities.collections) {
+      const index = collections.findIndex((collection) => collection.id === serverCollection.id);
+      if (permanentlyDeletedCollectionIds.has(serverCollection.id)) {
+        if (index !== -1) {
+          collections.splice(index, 1);
         }
-        if (sc.deleted_at) {
-          // Server confirmed soft-delete — keep in collections with deletedAt so
-          // TrashContent can still find and display the collection card.
-          if (idx === undefined) {
-            colIdx.set(sc.id, collections.length);
-            collections.push({
-              id: sc.id,
-              workspaceId: sc.workspace_id ?? "",
-              name: sc.name,
-              icon: sc.icon ?? "folder",
-              position: sc.position,
-              seq: sc.seq,
-              isDefault: false,   // trashed collections are never the default
-              deletedAt: sc.deleted_at,
-            });
-          } else {
-            collections[idx] = { ...collections[idx], seq: sc.seq, deletedAt: sc.deleted_at };
-          }
-        } else {
-          if (idx === undefined) {
-            colIdx.set(sc.id, collections.length);
-            collections.push({
-              id: sc.id,
-              workspaceId: sc.workspace_id ?? "",
-              name: sc.name,
-              icon: sc.icon ?? "folder",
-              position: sc.position,
-              seq: sc.seq,
-              isDefault: sc.is_default ?? false,
-              archivedAt: sc.archived_at ?? undefined,
-            });
-          } else {
-            // Local pending archive (seq=0) wins over server alive state, but not over a
-            // server-confirmed archive — that ack must land so sweepUnsynced stops re-queuing.
-            const local = collections[idx];
-            if ((local.deletedAt || local.archivedAt) && local.seq === 0 && !sc.archived_at) {
-              continue;
-            }
-            collections[idx] = {
-              ...local,
-              name: sc.name,
-              icon: sc.icon ?? local.icon,
-              position: sc.position,
-              seq: sc.seq,
-              workspaceId: sc.workspace_id ?? local.workspaceId,
-              isDefault: sc.is_default ?? local.isDefault,
-              archivedAt: sc.archived_at ?? undefined,
-            };
-          }
+        continue;
+      }
+      const local = index === -1 ? undefined : collections[index];
+      if (
+        local &&
+        local.seq === 0 &&
+        (local.deletedAt !== undefined || local.archivedAt !== undefined) &&
+        !serverCollection.deleted_at &&
+        !serverCollection.archived_at
+      ) {
+        continue;
+      }
+      const merged: Collection = {
+        id: serverCollection.id,
+        workspaceId: serverCollection.workspace_id ?? local?.workspaceId ?? "",
+        name: serverCollection.name,
+        icon: serverCollection.icon ?? local?.icon ?? "folder",
+        position: serverCollection.position,
+        seq: serverCollection.seq,
+        isDefault: serverCollection.deleted_at ? false : serverCollection.is_default ?? local?.isDefault,
+        ...(serverCollection.deleted_at ? { deletedAt: serverCollection.deleted_at } : {}),
+        ...(serverCollection.archived_at ? { archivedAt: serverCollection.archived_at } : {}),
+      };
+      if (index === -1) {
+        collections.push(merged);
+      } else {
+        collections[index] = merged;
+      }
+    }
+
+    for (const serverTag of resp.entities.tags) {
+      const index = tags.findIndex((tag) => tag.id === serverTag.id);
+      if (serverTag.deleted_at) {
+        if (index !== -1) {
+          tags.splice(index, 1);
         }
+        continue;
       }
-      if (deletedCollectionIds.size > 0) {
-        collections = collections.filter(c => !deletedCollectionIds.has(c.id));
+      const merged: Tag = {
+        id: serverTag.id,
+        name: serverTag.name,
+        color: serverTag.color ?? (index === -1 ? "" : tags[index].color),
+        seq: serverTag.seq,
+      };
+      if (index === -1) {
+        tags.push(merged);
+      } else {
+        tags[index] = merged;
       }
+    }
 
-      for (const st of resp.entities.tags) {
-        const idx = tagIdx.get(st.id);
-        if (st.deleted_at) {
-          if (idx !== undefined) {
-            deletedTagIds.add(st.id);
-          }
-        } else {
-          if (idx === undefined) {
-            tagIdx.set(st.id, tags.length);
-            tags.push({ id: st.id, name: st.name, color: st.color ?? "", seq: st.seq });
-          } else {
-            tags[idx] = { ...tags[idx], name: st.name, color: st.color ?? tags[idx].color, seq: st.seq };
-          }
-        }
-      }
-      if (deletedTagIds.size > 0) {
-        tags = tags.filter(t => !deletedTagIds.has(t.id));
-      }
-
-      const sortedWs = [...workspaces].sort((a, b) => a.position - b.position);
-      const activeWorkspaceId =
-        workspaces.some(w => w.id === state.activeWorkspaceId)
-          ? state.activeWorkspaceId
-          : sortedWs[0]?.id ?? "";
-      return { workspaces, collections, tags, activeWorkspaceId };
-    });
-
-    const afterState = get();
-    const wsByIdAfter = new Map(afterState.workspaces.map(w => [w.id, w]));
-    const colByIdAfter = new Map(afterState.collections.map(c => [c.id, c]));
-    const tagByIdAfter = new Map(afterState.tags.map(t => [t.id, t]));
-
-    const idbOps: BulkWriteOp[] = [
-      { type: "put", store: "kv", value: { key: "activeWorkspaceId", value: afterState.activeWorkspaceId } },
+    const currentActive = workspaces.find(
+      (workspace) => workspace.id === current.activeWorkspaceId && isActiveWorkspace(workspace),
+    );
+    const activeWorkspaceId = currentActive?.id ?? chooseActiveWorkspace(workspaces)?.id ?? "";
+    const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
+    const collectionById = new Map(collections.map((collection) => [collection.id, collection]));
+    const tagById = new Map(tags.map((tag) => [tag.id, tag]));
+    const operations: BulkWriteOp[] = [
+      { type: "put", store: "kv", value: { key: "activeWorkspaceId", value: activeWorkspaceId } },
     ];
-    for (const sw of resp.entities.workspaces) {
-      if (sw.deleted_at) {
-        idbOps.push({ type: "delete", store: "workspaces", key: sw.id });
-      } else {
-        const w = wsByIdAfter.get(sw.id);
-        if (w) {
-          idbOps.push({ type: "put", store: "workspaces", value: w });
-        }
+    for (const serverWorkspace of resp.entities.workspaces) {
+      if (terminalIds.has(serverWorkspace.id)) {
+        continue;
+      }
+      const workspace = workspaceById.get(serverWorkspace.id);
+      if (workspace) {
+        operations.push({ type: "put", store: "workspaces", value: workspace });
       }
     }
-    for (const sc of resp.entities.collections) {
-      if (permDeletedCollectionIds.has(sc.id)) {
-        idbOps.push({ type: "delete", store: "collections", key: sc.id });
-      } else {
-        const c = colByIdAfter.get(sc.id);
-        if (c) {
-          idbOps.push({ type: "put", store: "collections", value: c });
-        }
+    for (const serverCollection of resp.entities.collections) {
+      if (permanentlyDeletedCollectionIds.has(serverCollection.id)) {
+        operations.push({ type: "delete", store: "collections", key: serverCollection.id });
+        continue;
+      }
+      const collection = collectionById.get(serverCollection.id);
+      if (collection) {
+        operations.push({ type: "put", store: "collections", value: collection });
       }
     }
-    for (const st of resp.entities.tags) {
-      if (st.deleted_at) {
-        idbOps.push({ type: "delete", store: "tags", key: st.id });
-      } else {
-        const t = tagByIdAfter.get(st.id);
-        if (t) {
-          idbOps.push({ type: "put", store: "tags", value: t });
-        }
+    for (const serverTag of resp.entities.tags) {
+      if (serverTag.deleted_at) {
+        operations.push({ type: "delete", store: "tags", key: serverTag.id });
+        continue;
+      }
+      const tag = tagById.get(serverTag.id);
+      if (tag) {
+        operations.push({ type: "put", store: "tags", value: tag });
       }
     }
-    await idbBulkWrite(idbOps);
+    await idbBulkWrite(operations);
+    set({ workspaces, collections, tags, activeWorkspaceId });
+    return {
+      terminalWorkspaceIds,
+      restoredWorkspaceIds: [...restoredWorkspaceIds],
+    };
   },
 
   applyGuestWorkspaceChanges: (changes) => {
@@ -563,11 +650,15 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     // an unsafe assertion. Current callers ignore the return value.
     guardQuota("workspace", get().workspaces.length, { id: "", name, color, position: get().workspaces.length, seq: 0 }, () => {
       const state = get();
+      const nextPosition = state.workspaces.reduce(
+        (maximum, workspace) => Math.max(maximum, workspace.position),
+        -1,
+      ) + 1;
       const ws: Workspace = {
         id: generateId(),
         name,
         color,
-        position: state.workspaces.length,
+        position: nextPosition,
         seq: 0,
       };
       const defaultCol: Collection = {
@@ -579,7 +670,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         isDefault: true,
         seq: 0,
       };
-      const nextActiveId = state.workspaces.length === 0 ? ws.id : state.activeWorkspaceId;
+      const hasActiveWorkspace = state.workspaces.some(isActiveWorkspace);
+      const nextActiveId = hasActiveWorkspace ? state.activeWorkspaceId : ws.id;
       set({
         workspaces: [...state.workspaces, ws],
         collections: [...state.collections, defaultCol],
@@ -587,7 +679,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       });
       idbPut("workspaces", ws);
       idbPut("collections", defaultCol);
-      if (state.workspaces.length === 0) {
+      if (!hasActiveWorkspace) {
         idbPut("kv", { key: "activeWorkspaceId", value: ws.id });
       }
       syncEngine?.enqueue({ workspaces: [toServerWorkspace(ws)], collections: [toServerCollection(defaultCol)] });
@@ -610,50 +702,138 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     }
   },
 
-  deleteWorkspace: (id) => {
-    void (async () => {
-      // Soft-delete all active groups in this workspace so they get tombstoned
-      // on the server with a valid workspace_id (avoids ON DELETE SET NULL).
-      const { groups, deleteGroup } = useGroupsStore.getState();
-      for (const g of groups) {
-        if (g.workspaceId === id && !g.deletedAt) {
-          deleteGroup(g.id);
-        }
-      }
+  deleteWorkspace: async (id) => {
+    const state = get();
+    const workspace = state.workspaces.find((candidate) => candidate.id === id);
+    if (!workspace || !isActiveWorkspace(workspace)) {
+      return { status: "completed" };
+    }
+    const activeWorkspaces = state.workspaces.filter(isActiveWorkspace);
+    if (activeWorkspaces.length <= 1) {
+      return { status: "blocked", reason: "last_active_workspace" };
+    }
+    if (!await workspaceLifecycleSupported()) {
+      return { status: "unsupported", reason: "server_capability" };
+    }
 
-      const { workspaces, collections, activeWorkspaceId } = get();
-      const ws = workspaces.find(w => w.id === id);
-      const allWorkspaceCols = collections.filter(c => c.workspaceId === id);
-      // Only non-tombstoned collections need a new deletedAt + bookmark move;
-      // already-deleted collections keep their original tombstone intact.
-      const deletedAt = Date.now();
-      const colsToTombstone = allWorkspaceCols
-        .filter(c => !c.deletedAt)
-        .map((c) => ({ ...c, deletedAt }));
-      if (ws) {
-        syncEngine?.enqueue({
-          workspaces: [toServerWorkspace({ ...ws, deletedAt })],
-          collections: colsToTombstone.map(c => toServerCollection(c)),
-        });
-      }
-      const tombstonedCollections = new Map(colsToTombstone.map(c => [c.id, c]));
-      void idbBulkWrite(colsToTombstone.map(c => ({ type: "put" as const, store: "collections" as const, value: c })));
-      for (const c of colsToTombstone) {
-        await useBookmarksStore.getState().trashCollectionBookmarks(c.id);
-      }
-      idbDelete("workspaces", id);
-      const remaining = workspaces.filter(w => w.id !== id);
-      const newActiveId = activeWorkspaceId === id ? (remaining[0]?.id ?? "") : activeWorkspaceId;
-      if (activeWorkspaceId === id) {
-        idbPut("kv", { key: "activeWorkspaceId", value: newActiveId });
-      }
-      set({
-        workspaces: remaining,
-        collections: collections.map(c => tombstonedCollections.get(c.id) ?? c),
-        activeWorkspaceId: newActiveId,
+    const replacement = state.activeWorkspaceId === id
+      ? chooseNearestActiveWorkspace(state.workspaces, workspace)
+      : state.workspaces.find(
+          (candidate) => candidate.id === state.activeWorkspaceId && isActiveWorkspace(candidate),
+        ) ?? chooseNearestActiveWorkspace(state.workspaces, workspace);
+    if (!replacement) {
+      return { status: "blocked", reason: "last_active_workspace" };
+    }
+    const createdAt = Date.now();
+    const deletedWorkspace: Workspace = { ...workspace, deletedAt: createdAt, seq: 0 };
+    const intent: WorkspaceLifecycleIntent = {
+      workspaceId: id,
+      action: "delete",
+      baseSeq: workspace.seq,
+      previousActiveWorkspaceId: state.activeWorkspaceId,
+      createdAt,
+    };
+    await idb.idbCommitWorkspaceLifecycleIntent({
+      workspace: deletedWorkspace,
+      intent,
+      activeWorkspaceId: replacement.id,
+    });
+    set((current) => ({
+      workspaces: current.workspaces.map((candidate) =>
+        candidate.id === id ? deletedWorkspace : candidate,
+      ),
+      activeWorkspaceId: replacement.id,
+    }));
+    await wakeActiveWorkspaceLifecycle(id).catch(() => false);
+    return { status: "queued" };
+  },
+
+  restoreWorkspace: async (id) => {
+    const state = get();
+    const workspace = state.workspaces.find((candidate) => candidate.id === id);
+    if (!workspace || isActiveWorkspace(workspace)) {
+      return { status: "completed" };
+    }
+    if (!await workspaceLifecycleSupported()) {
+      return { status: "unsupported", reason: "server_capability" };
+    }
+
+    const restoredWorkspace: Workspace = { ...workspace, deletedAt: undefined, seq: 0 };
+    const intent: WorkspaceLifecycleIntent = {
+      workspaceId: id,
+      action: "restore",
+      baseSeq: workspace.seq,
+      previousActiveWorkspaceId: state.activeWorkspaceId,
+      createdAt: Date.now(),
+    };
+    await idb.idbCommitWorkspaceLifecycleIntent({ workspace: restoredWorkspace, intent });
+    set((current) => ({
+      workspaces: current.workspaces.map((candidate) =>
+        candidate.id === id ? restoredWorkspace : candidate,
+      ),
+    }));
+    await wakeActiveWorkspaceLifecycle(id).catch(() => false);
+    return { status: "queued" };
+  },
+
+  permanentlyDeleteWorkspace: async (id) => {
+    const workspace = get().workspaces.find((candidate) => candidate.id === id);
+    if (!workspace) {
+      return { status: "completed" };
+    }
+    if (isActiveWorkspace(workspace)) {
+      return { status: "blocked" };
+    }
+    const { user, accessToken } = useAuthStore.getState();
+    if (!user) {
+      const committedIds = await clearWorkspaceAggregate(id, (ids) => {
+        get().removeWorkspaceAggregateFromState(ids);
+        useBookmarksStore.getState().removeWorkspaceAggregateFromState(ids);
+        useGroupsStore.getState().removeWorkspaceAggregateFromState(ids);
       });
-      usePlanStore.getState().decrementUsage("workspace");
-    })();
+      if (!committedIds) {
+        return { status: "blocked" };
+      }
+      const plan = usePlanStore.getState();
+      plan.decrementUsage("workspace");
+      plan.decrementUsage("collection", committedIds.collectionIds.length);
+      plan.decrementUsage("bookmark", committedIds.bookmarkIds.length);
+      plan.decrementUsage("saved_group", committedIds.groupIds.length);
+      return { status: "completed" };
+    }
+    if (!accessToken) {
+      return { status: "blocked", reason: "offline" };
+    }
+
+    const purge = purgeWorkspaceThroughActiveLifecycle(id);
+    if (!purge) {
+      return { status: "blocked", reason: "offline" };
+    }
+    set((state) => ({
+      workspaces: state.workspaces.filter((candidate) => candidate.id !== id),
+    }));
+    try {
+      const result = await purge;
+      if (result.status === "completed") {
+        await usePlanStore.getState().fetchPlan();
+        return { status: "completed" };
+      }
+      set((state) => ({
+        workspaces: state.workspaces.some((candidate) => candidate.id === id)
+          ? state.workspaces
+          : [...state.workspaces, workspace].sort(compareWorkspacePosition),
+      }));
+      return result.reason === "last_active_workspace"
+        ? { status: "blocked", reason: "last_active_workspace" }
+        : { status: "blocked" };
+    } catch {
+      set((state) => ({
+        workspaces: state.workspaces.some((candidate) => candidate.id === id)
+          ? state.workspaces
+          : [...state.workspaces, workspace].sort(compareWorkspacePosition),
+      }));
+      return { status: "blocked", reason: "offline" };
+    }
   },
 
   // ── Collections ───────────────────────────────────────────────────────
@@ -722,10 +902,12 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     const col = get().collections.find(c => c.id === id);
     if (!col) { return; }
     const { workspaces, activeWorkspaceId } = get();
-    const workspaceExists = workspaces.some(w => w.id === col.workspaceId);
+    const workspaceExists = workspaces.some(
+      (workspace) => workspace.id === col.workspaceId && isActiveWorkspace(workspace),
+    );
     const restoredWorkspaceId = workspaceExists
       ? col.workspaceId
-      : (activeWorkspaceId || workspaces[0]?.id || col.workspaceId);
+      : (activeWorkspaceId || chooseActiveWorkspace(workspaces)?.id || col.workspaceId);
     const restored = {
       ...col,
       workspaceId: restoredWorkspaceId,
@@ -844,8 +1026,13 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
 
   sweepUnsynced: async () => {
     await syncConflictRegistry.ready();
+    const pendingWorkspaceIds = new Set(
+      (await readWorkspaceLifecycleIntents()).map((intent) => intent.workspaceId),
+    );
     const { workspaces, collections, tags } = get();
-    const ws = workspaces.filter(w => w.seq === 0);
+    const ws = workspaces.filter(
+      (workspace) => workspace.seq === 0 && !pendingWorkspaceIds.has(workspace.id),
+    );
     const cols = collections.filter(c => c.seq === 0);
     const ts = tags.filter(t => t.seq === 0);
     const payload = syncConflictRegistry.filterPayload({
@@ -866,7 +1053,54 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     }
   },
 
+  confirmWorkspaceStoreEntitySeqs: (entities, serverSeq) => {
+    const workspacesById = new Map(entities.workspaces.map((entity) => [entity.id, entity]));
+    const collectionsById = new Map(entities.collections.map((entity) => [entity.id, entity]));
+    const tagsById = new Map(entities.tags.map((entity) => [entity.id, entity]));
+    set((state) => ({
+      workspaces: state.workspaces.map((workspace) => {
+        const entity = workspacesById.get(workspace.id);
+        return entity && workspaceMatchesSyncEntity(workspace, entity)
+          ? { ...workspace, seq: serverSeq }
+          : workspace;
+      }),
+      collections: state.collections.map((collection) => {
+        const entity = collectionsById.get(collection.id);
+        return entity && collectionMatchesSyncEntity(collection, entity)
+          ? { ...collection, seq: serverSeq }
+          : collection;
+      }),
+      tags: state.tags.map((tag) => {
+        const entity = tagsById.get(tag.id);
+        return entity && tagMatchesSyncEntity(tag, entity)
+          ? { ...tag, seq: serverSeq }
+          : tag;
+      }),
+    }));
+  },
+
+  removeWorkspaceAggregateFromState: (ids) => {
+    const collectionIds = new Set(ids.collectionIds);
+    set((state) => {
+      const workspaces = state.workspaces.filter((workspace) => workspace.id !== ids.workspaceId);
+      const activeWorkspace = workspaces.find(
+        (workspace) => workspace.id === state.activeWorkspaceId && isActiveWorkspace(workspace),
+      );
+      return {
+        workspaces,
+        collections: state.collections.filter((collection) => !collectionIds.has(collection.id)),
+        activeWorkspaceId: activeWorkspace?.id ?? chooseActiveWorkspace(workspaces)?.id ?? "",
+      };
+    });
+  },
+
   // ── Computed ──────────────────────────────────────────────────────────
+  getActiveWorkspaces: () =>
+    get().workspaces.filter(isActiveWorkspace).sort(compareWorkspacePosition),
+
+  getDeletedWorkspaces: () =>
+    get().workspaces.filter((workspace) => !isActiveWorkspace(workspace)).sort(compareWorkspacePosition),
+
   getWorkspaceCollections: (workspaceId) => {
     const state = get();
     const wsId = workspaceId ?? state.activeWorkspaceId;

@@ -8,6 +8,7 @@ import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { normalizeFavicon } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
+import type { WorkspaceAggregateIds } from "@/lib/workspace-aggregate";
 import type { GuestBookmarkUpdates } from "@/lib/guest-workspace";
 
 export type { Bookmark };
@@ -127,6 +128,36 @@ function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?:
   };
 }
 
+function stringArraysEqual(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function isStringArray(value: SyncEntity[string]): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function bookmarkMatchesSyncEntity(
+  bookmark: Bookmark,
+  entity: SyncEntity,
+  bucket: "active" | "archived" | "trashed",
+): boolean {
+  const isTerminalTrash = "isTrashed" in bookmark && bookmark.isTrashed === 2;
+  const isTrashed = bucket === "trashed" ? (isTerminalTrash ? 2 : 1) : 0;
+  const entityTags = entity.tag_ids;
+  return entity.id === bookmark.id &&
+    entity.collection_id === (bookmark.collectionId || null) &&
+    entity.title === bookmark.title &&
+    entity.url === bookmark.url &&
+    entity.favicon_url === bookmark.favicon &&
+    entity.description === bookmark.description &&
+    entity.is_favorite === bookmark.isFavorite &&
+    entity.is_archived === (bucket === "archived") &&
+    entity.is_trashed === isTrashed &&
+    isStringArray(entityTags) && stringArraysEqual(bookmark.tags, entityTags) &&
+    entity.position === 0 &&
+    (entity.deleted_at ?? null) === (isTrashed === 2 ? bookmark.deletedAt ?? null : null);
+}
+
 // ---------------------------------------------------------------------------
 // Local helpers (module-private)
 // ---------------------------------------------------------------------------
@@ -243,6 +274,8 @@ interface BookmarksState {
   applyGuestBookmarkChanges: (changes: GuestBookmarkUpdates) => void;
   enqueueAllToSync: () => void;
   sweepUnsynced: () => Promise<void>;
+  confirmBookmarkEntitySeqs: (entities: readonly SyncEntity[], serverSeq: number) => void;
+  removeWorkspaceAggregateFromState: (ids: WorkspaceAggregateIds) => void;
   archiveCollectionBookmarks: (collectionId: string) => void;
   trashCollectionBookmarks: (collectionId: string) => Promise<void>;
   restoreCollectionBookmarks: (collectionId: string) => void;
@@ -1090,6 +1123,61 @@ export const useBookmarksStore = create<BookmarksState>()(
         if (payload.entities.bookmarks.length > 0) {
           syncEngine?.enqueue(payload.entities, "respect");
         }
+      },
+
+      confirmBookmarkEntitySeqs: (entities, serverSeq) => {
+        const entitiesById = new Map(entities.map((entity) => [entity.id, entity]));
+        set((state) => {
+          const bookmarks = new Map(state.bookmarks);
+          let activeChanged = false;
+          for (const [id, bookmark] of bookmarks) {
+            const entity = entitiesById.get(id);
+            if (entity && bookmarkMatchesSyncEntity(bookmark, entity, "active")) {
+              bookmarks.set(id, { ...bookmark, seq: serverSeq });
+              activeChanged = true;
+            }
+          }
+          return {
+            bookmarks: activeChanged ? bookmarks : state.bookmarks,
+            archivedBookmarks: state._archivedLoaded
+              ? state.archivedBookmarks.map((bookmark) => {
+                  const entity = entitiesById.get(bookmark.id);
+                  return entity && bookmarkMatchesSyncEntity(bookmark, entity, "archived")
+                    ? { ...bookmark, seq: serverSeq }
+                    : bookmark;
+                })
+              : state.archivedBookmarks,
+            trashedBookmarks: state._trashedLoaded
+              ? state.trashedBookmarks.map((bookmark) => {
+                  const entity = entitiesById.get(bookmark.id);
+                  return entity && bookmarkMatchesSyncEntity(bookmark, entity, "trashed")
+                    ? { ...bookmark, seq: serverSeq }
+                    : bookmark;
+                })
+              : state.trashedBookmarks,
+          };
+        });
+      },
+
+      removeWorkspaceAggregateFromState: (ids) => {
+        const bookmarkIds = new Set(ids.bookmarkIds);
+        set((state) => {
+          const bookmarks = new Map(state.bookmarks);
+          for (const id of bookmarkIds) {
+            bookmarks.delete(id);
+          }
+          return {
+            bookmarks,
+            countsByCollection: recomputeCounts(bookmarks),
+            archivedBookmarks: state._archivedLoaded
+              ? state.archivedBookmarks.filter((bookmark) => !bookmarkIds.has(bookmark.id))
+              : state.archivedBookmarks,
+            trashedBookmarks: state._trashedLoaded
+              ? state.trashedBookmarks.filter((bookmark) => !bookmarkIds.has(bookmark.id))
+              : state.trashedBookmarks,
+          };
+        });
+        assertCountsInvariant(get());
       },
 
       archiveCollectionBookmarks: (collectionId) => {
