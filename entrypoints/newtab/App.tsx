@@ -50,6 +50,7 @@ import {
 import {
   blockPruneAndCleanTerminalAggregates,
   commitWorkspacePullCheckpoint,
+  orchestrateWorkspacePull,
   reconcileWorkspaceLifecycleIntents,
   resolveAuthoritativeWorkspacePull,
 } from "@/lib/workspace-lifecycle-coordinator";
@@ -396,7 +397,7 @@ function SyncProvider({
         };
       },
       () => localSeqRef.current,
-      async (resp: SyncPullResponse, isCurrent, context) => {
+      async (resp: SyncPullResponse, isCurrent, context, responseIsAuthoritativeFullPull) => {
         if (!isCurrent()) {
           return { errorMessage: null };
         }
@@ -408,11 +409,13 @@ function SyncProvider({
         const authoritative = await resolveAuthoritativeWorkspacePull({
           context,
           response: resp,
+          responseIsAuthoritativeFullPull,
           serverUrl: currentServerUrl,
           userId: currentUser.id,
         });
         const authoritativeResponse = authoritative.response;
         const capabilitySupported = authoritative.capabilitySupported;
+        const authoritativeFullPull = authoritative.authoritativeFullPull;
         if (!isCurrent()) {
           return { errorMessage: null };
         }
@@ -425,81 +428,69 @@ function SyncProvider({
           return { errorMessage: null };
         }
         const needsInitialPush = localSeqRef.current === 0 && authoritativeResponse.server_seq === 0;
-        await prepareGuestWorkspaceForPull(authoritativeResponse);
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        const workspaceMerge = await mergeWorkspacesRef.current(authoritativeResponse);
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        await mergeGroupsRef.current(authoritativeResponse);
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        await mergeBookmarksRef.current(authoritativeResponse);
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        await blockPruneAndCleanTerminalAggregates(
-          context,
-          workspaceMerge.terminalWorkspaceIds,
-        );
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        for (const workspaceId of workspaceMerge.restoredWorkspaceIds) {
-          await syncConflictRegistry.clearRoot("workspace", workspaceId);
-        }
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        await confirmGuestWorkspaceFromPull(authoritativeResponse);
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        if (capabilitySupported) {
-          await reconcileWorkspaceLifecycleIntents({
-            context,
+        const checkpointCommitted = await orchestrateWorkspacePull({
+          isCurrent,
+          prepareGuest: async () => {
+            await prepareGuestWorkspaceForPull(authoritativeResponse);
+          },
+          mergeWorkspaces: () => mergeWorkspacesRef.current(authoritativeResponse),
+          mergeGroups: () => mergeGroupsRef.current(authoritativeResponse),
+          mergeBookmarks: () => mergeBookmarksRef.current(authoritativeResponse),
+          cleanTerminalAggregates: (workspaceMerge) =>
+            blockPruneAndCleanTerminalAggregates(
+              context,
+              workspaceMerge.terminalWorkspaceIds,
+            ),
+          clearRestoredConflictTrees: async (workspaceMerge) => {
+            for (const workspaceId of workspaceMerge.restoredWorkspaceIds) {
+              await syncConflictRegistry.clearRoot("workspace", workspaceId);
+            }
+          },
+          confirmGuest: () => confirmGuestWorkspaceFromPull(authoritativeResponse),
+          reconcileLifecycle: async () => {
+            const refreshedPlan = await usePlanStore.getState().fetchPlan();
+            if (!isCurrent()) {
+              return;
+            }
+            if (refreshedPlan) {
+              await clearCapacityResolvedConflicts(refreshedPlan);
+            }
+            if (!isCurrent()) {
+              return;
+            }
+            if (capabilitySupported) {
+              await reconcileWorkspaceLifecycleIntents({
+                context,
+                userId: currentUser.id,
+                serverOrigin: new URL(currentServerUrl).origin,
+                authoritativeWorkspaces: authoritativeResponse.entities.workspaces,
+                authoritativeFullPull,
+                reportConflict: reportLifecycleConflict,
+                notify: (messageKey) => {
+                  setSyncErrorMessage(tRef.current(messageKey));
+                },
+              });
+            }
+            if (!isCurrent()) {
+              return;
+            }
+            if (needsInitialPush && useWorkspaceStore.getState().workspaces.length === 0) {
+              await useWorkspaceStore.getState().initializeGuestWorkspace({
+                isSessionCurrent: () =>
+                  isCurrent() && useAuthStore.getState().accessToken === accessToken,
+              });
+            }
+          },
+          sweepUnsynced: sweepAllUnsynced,
+          commitCheckpoint: () => commitWorkspacePullCheckpoint({
+            serverUrl: currentServerUrl,
             userId: currentUser.id,
-            serverOrigin: new URL(currentServerUrl).origin,
-            authoritativeWorkspaces: authoritativeResponse.entities.workspaces,
-            reportConflict: reportLifecycleConflict,
-            notify: (messageKey) => {
-              setSyncErrorMessage(tRef.current(messageKey));
-            },
-          });
-        }
-
-        if (needsInitialPush && useWorkspaceStore.getState().workspaces.length === 0) {
-          await useWorkspaceStore.getState().initializeGuestWorkspace({
-            isSessionCurrent: () => isCurrent() && useAuthStore.getState().accessToken === accessToken,
-          });
-        }
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        await sweepAllUnsynced();
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        const refreshedPlan = await usePlanStore.getState().fetchPlan();
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        if (refreshedPlan && await clearCapacityResolvedConflicts(refreshedPlan)) {
-          await sweepAllUnsynced();
-        }
-        if (!isCurrent()) {
-          return { errorMessage: null };
-        }
-        await commitWorkspacePullCheckpoint({
-          serverUrl: currentServerUrl,
-          userId: currentUser.id,
-          serverSeq: authoritativeResponse.server_seq,
-          capabilitySupported,
+            serverSeq: authoritativeResponse.server_seq,
+            capabilitySupported,
+            isCurrent,
+          }),
         });
-        if (!isCurrent()) {
+        if (!checkpointCommitted || !isCurrent()) {
           return { errorMessage: null };
         }
         localSeqRef.current = authoritativeResponse.server_seq;

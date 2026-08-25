@@ -57,6 +57,7 @@ export type OnPullSuccess = (
   response: SyncPullResponse,
   isCurrent: () => boolean,
   context: SyncResolutionContext,
+  authoritativeFullPull: boolean,
 ) => Promise<PullMergeResult>;
 export type OnPushSuccess = (
   resp: SyncPushResponse,
@@ -250,8 +251,9 @@ export class SyncEngine {
       if (this.destroyed) {
         return;
       }
+      const acceptedPayload = this.acceptedPayload(confirmedPayload, resp.rejected);
       const conflictMessage = await this.serializeResolution(
-        () => this.destroyed ? Promise.resolve(null) : this.onPushSuccess(resp, confirmedPayload),
+        () => this.destroyed ? Promise.resolve(null) : this.onPushSuccess(resp, acceptedPayload),
       );
       if (this.destroyed) {
         return;
@@ -362,7 +364,10 @@ export class SyncEngine {
       async (context) => {
         const response = await context.pushConfirmed(payload);
         this.assertResolutionCurrent(context.isCurrent);
-        const conflictMessage = await this.onPushSuccess(response, payload);
+        const conflictMessage = await this.onPushSuccess(
+          response,
+          this.acceptedPayload(payload, response.rejected),
+        );
         return { response, conflictMessage };
       },
     );
@@ -548,15 +553,16 @@ export class SyncEngine {
     }
     this.setQueueStatus("syncing");
     try {
-      const resp = await this.doPull();
-      if (!resp || this.destroyed) {
+      const pulled = await this.doPull();
+      if (!pulled || this.destroyed) {
         return;
       }
+      const { response: resp, authoritativeFullPull } = pulled;
       this.lastPulledCount = this.countPulledEntities(resp);
       const mergeResult = await this.serializeResolutionWithContext(
         (context) => this.destroyed
           ? Promise.resolve({ errorMessage: null })
-          : this.onPullSuccess(resp, context.isCurrent, context),
+          : this.onPullSuccess(resp, context.isCurrent, context, authoritativeFullPull),
       );
       if (this.destroyed) {
         return;
@@ -576,7 +582,10 @@ export class SyncEngine {
     }
   }
 
-  private async doPull(): Promise<SyncPullResponse | null> {
+  private async doPull(): Promise<{
+    response: SyncPullResponse;
+    authoritativeFullPull: boolean;
+  } | null> {
     if (!this.getCredentials()) {
       return null;
     }
@@ -586,9 +595,12 @@ export class SyncEngine {
       const resp = await this.pullWithRefresh(localSeq, isCurrent);
       // Seq divergence (e.g. after account recovery) — full re-sync from 0.
       if (resp.server_seq < localSeq) {
-        return this.pullWithRefresh(0, isCurrent);
+        return {
+          response: await this.pullWithRefresh(0, isCurrent),
+          authoritativeFullPull: true,
+        };
       }
-      return resp;
+      return { response: resp, authoritativeFullPull: localSeq === 0 };
     } catch (error) {
       if (error instanceof AuthenticationSessionEndedError) {
         return null;
@@ -730,6 +742,30 @@ export class SyncEngine {
       }
       return targetKeys.has(`${item.type}:${item.id}`);
     });
+  }
+
+  private acceptedPayload(
+    payload: SyncPushPayload,
+    rejected: readonly SyncRejected[],
+  ): SyncPushPayload {
+    const accepted = createEmptySyncPushPayload();
+    for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
+      for (const entity of syncPayloadEntities(payload, payloadKey)) {
+        const isRejected = rejected.some((item) => {
+          if (item.id !== entity.id) {
+            return false;
+          }
+          const knownType = SYNC_ENTITY_PAYLOAD_MAPPINGS.some(
+            (mapping) => mapping.entityType === item.type,
+          );
+          return !knownType || item.type === entityType;
+        });
+        if (!isRejected) {
+          syncPayloadEntities(accepted, payloadKey).push(entity);
+        }
+      }
+    }
+    return accepted;
   }
 
   private ensurePeriodicPull() {

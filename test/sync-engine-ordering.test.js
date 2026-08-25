@@ -170,6 +170,82 @@ describe("SyncEngine ordering", () => {
     engine.destroy();
   });
 
+  test("ordinary queue confirms only accepted entities and retries a rejected collection later", async () => {
+    const confirmed = [];
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => ({ errorMessage: null }),
+      async (_response, payload) => {
+        confirmed.push(payload);
+        return null;
+      },
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+    if (!queueSuccessHandler) {
+      throw new Error("queue success handler was not registered");
+    }
+    const workspace = { id: "workspace-accepted", name: "Accepted" };
+    const collection = { id: "collection-rejected", workspace_id: workspace.id };
+    await queueSuccessHandler({
+      server_seq: 1,
+      rejected: [{ id: collection.id, type: "collection", reason: "quota_exceeded" }],
+    }, {
+      entities: {
+        workspaces: [workspace],
+        collections: [collection],
+        bookmarks: [],
+        tags: [],
+        groups: [],
+      },
+    });
+    await queueSuccessHandler({ server_seq: 2, rejected: [] }, {
+      ...emptyPayload(),
+      entities: { ...emptyPayload().entities, collections: [collection] },
+    });
+
+    expect(confirmed[0].entities.workspaces).toEqual([workspace]);
+    expect(confirmed[0].entities.collections).toEqual([]);
+    expect(confirmed[1].entities.collections).toEqual([collection]);
+    engine.destroy();
+  });
+
+  test("forcePush never confirms a rejected workspace and can confirm its later retry", async () => {
+    const workspace = { id: "workspace-rejected", name: "Retry" };
+    const confirmed = [];
+    let pushCount = 0;
+    syncPushImpl = async () => {
+      pushCount += 1;
+      return pushCount === 1
+        ? {
+            server_seq: 1,
+            rejected: [{ id: workspace.id, type: "workspace", reason: "quota_exceeded" }],
+          }
+        : { server_seq: 2, rejected: [] };
+    };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => ({ errorMessage: null }),
+      async (_response, payload) => {
+        confirmed.push(payload);
+        return null;
+      },
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+
+    await expect(engine.forcePush({ workspaces: [workspace] })).rejects.toBeInstanceOf(SyncRejectedError);
+    await engine.forcePush({ workspaces: [workspace] });
+
+    expect(confirmed[0].entities.workspaces).toEqual([]);
+    expect(confirmed[1].entities.workspaces).toEqual([workspace]);
+    engine.destroy();
+  });
+
   test("confirmed push returns the response body inside pull reconciliation", async () => {
     const expected = { server_seq: 17, rejected: [] };
     syncPushImpl = async () => expected;
@@ -207,6 +283,34 @@ describe("SyncEngine ordering", () => {
       },
     ]]);
     engine.destroy();
+  });
+
+  test("threads delta versus authoritative full-pull provenance into reconciliation", async () => {
+    const provenance = [];
+    syncPullImpl = async (_baseUrl, _accessToken, afterSeq) => emptyResponse(afterSeq + 10);
+    const createEngine = (localSeq) => new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => localSeq,
+      async (_response, _isCurrent, _context, authoritativeFullPull) => {
+        provenance.push(authoritativeFullPull);
+        return { errorMessage: null };
+      },
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies(),
+    );
+
+    const deltaEngine = createEngine(5);
+    deltaEngine.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    deltaEngine.destroy();
+    const fullEngine = createEngine(0);
+    fullEngine.start();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fullEngine.destroy();
+
+    expect(provenance).toEqual([false, true]);
   });
 
   test("confirmed push refreshes authentication once after a 401", async () => {
