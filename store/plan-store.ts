@@ -37,6 +37,7 @@ interface PlanState {
   restoreUsageFromTrash: (resource: QuotaResource, by?: number) => void;
   setGuestUsage: (breakdown: QuotaUsageBreakdown) => void;
   showQuotaAlert: (resource: QuotaResource) => void;
+  invalidatePendingFetch: () => void;
   clear: () => void;
 }
 
@@ -271,6 +272,17 @@ export const usePlanStore = create<PlanState>()(
           set({ quotaAlert: null });
           _alertTimer = null;
         }, 3000);
+      },
+
+      // Bumps the request generation without clearing displayed state, so a
+      // still-in-flight fetchPlan (started before a mutation this caller
+      // just confirmed, e.g. workspace-manager's ensurePlanFresh() on open)
+      // can no longer be reused by a subsequent fetchPlan() call — that call
+      // will see requestGeneration !== _planRequestGeneration and issue a
+      // fresh request instead of returning a response computed before the
+      // mutation.
+      invalidatePendingFetch: () => {
+        _planRequestGeneration += 1;
       },
 
       clear: () => {

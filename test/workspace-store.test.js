@@ -247,6 +247,7 @@ mock.module("@/store/plan-store", () => ({
       restoreUsageFromTrash: (resource, count) => { planCalls.push(["restoreFromTrash", resource, count]); },
       ensureFresh: async () => {},
       showQuotaAlert: () => {},
+      invalidatePendingFetch: () => { planCalls.push(["invalidate"]); },
       fetchPlan: async () => { planCalls.push(["fetch"]); },
       usage: { bookmarks: 0 },
       limits: null,
@@ -944,7 +945,10 @@ describe("workspace lifecycle store", () => {
     if (!resolvePurge) { throw new Error("purge runtime was not called"); }
     resolvePurge({ status: "completed" });
     expect(await purging).toEqual({ status: "completed" });
-    expect(planCalls).toEqual([["fetch"]]);
+    // invalidatePendingFetch runs first so a fetchPlan already in flight
+    // before this purge confirmed (e.g. the manager's ensurePlanFresh() on
+    // open) can't be reused and mask the released quota.
+    expect(planCalls).toEqual([["invalidate"], ["fetch"]]);
   });
 
   test("guest purge removes the committed aggregate from loaded state and decrements exact usage", async () => {

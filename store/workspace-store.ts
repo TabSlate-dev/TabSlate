@@ -810,7 +810,14 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     try {
       const result = await purge;
       if (result.status === "completed") {
-        await usePlanStore.getState().fetchPlan();
+        // A fetchPlan() already in flight (e.g. the Workspace Manager's
+        // ensurePlanFresh() on open) was necessarily started before this
+        // purge confirmed, so its response can't reflect the released
+        // quota — invalidate it so this call issues a fresh request rather
+        // than reusing that stale in-flight promise.
+        const plan = usePlanStore.getState();
+        plan.invalidatePendingFetch();
+        await plan.fetchPlan();
         return { status: "completed" };
       }
       set((state) => ({
