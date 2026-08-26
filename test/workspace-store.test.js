@@ -1073,4 +1073,58 @@ describe("workspace lifecycle store", () => {
     expect(idbPutCalls).toEqual([]);
     expect(idbBulkWriteCalls).toEqual([]);
   });
+
+  test("applyGuestWorkspaceChanges recomputes an empty activeWorkspaceId instead of assigning it verbatim", () => {
+    const account = workspace("account-workspace", 0);
+    useWorkspaceStore.setState({ workspaces: [account], collections: [], activeWorkspaceId: "guest-workspace" });
+
+    // The discard sentinel: an untouched guest seed being dropped in favor
+    // of a confirmed account workspace. Assigning "" verbatim would strand
+    // activeWorkspaceId pointing at nothing while an active workspace exists.
+    useWorkspaceStore.getState().applyGuestWorkspaceChanges({
+      workspaceDeletes: ["guest-workspace"],
+      collectionPuts: [],
+      collectionDeletes: [],
+      activeWorkspaceId: "",
+    });
+
+    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe(account.id);
+    expect(useWorkspaceStore.getState().workspaces.map((item) => item.id)).toEqual(["account-workspace"]);
+  });
+
+  test("applyGuestWorkspaceChanges passes a non-empty target through even when not yet in local state", () => {
+    // A legacy-migration target: not yet merged locally, but the immediately
+    // following mergeFromServer will materialize it — this is a legitimate
+    // forward reference, not the bug the "" case guards against.
+    useWorkspaceStore.setState({
+      workspaces: [workspace("guest-workspace", 0)],
+      collections: [],
+      activeWorkspaceId: "guest-workspace",
+    });
+
+    useWorkspaceStore.getState().applyGuestWorkspaceChanges({
+      workspaceDeletes: ["guest-workspace"],
+      collectionPuts: [],
+      collectionDeletes: [],
+      activeWorkspaceId: "not-yet-local-account-workspace",
+    });
+
+    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("not-yet-local-account-workspace");
+  });
+
+  test("applyGuestWorkspaceChanges leaves activeWorkspaceId untouched when the field is omitted", () => {
+    useWorkspaceStore.setState({
+      workspaces: [workspace("guest-workspace", 0)],
+      collections: [],
+      activeWorkspaceId: "guest-workspace",
+    });
+
+    useWorkspaceStore.getState().applyGuestWorkspaceChanges({
+      workspaceDeletes: [],
+      collectionPuts: [],
+      collectionDeletes: [],
+    });
+
+    expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("guest-workspace");
+  });
 });

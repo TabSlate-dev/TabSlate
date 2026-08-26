@@ -625,10 +625,20 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           collections.push(collection);
         }
       }
+      const workspaces = state.workspaces.filter((workspace) => !workspaceDeletes.has(workspace.id));
+      // A non-empty activeWorkspaceId may legitimately forward-reference a
+      // Workspace this call doesn't itself materialize (e.g. a legacy
+      // migration target that the immediately-following mergeFromServer
+      // will merge in) — pass it through as-is. Only the empty-string
+      // discard sentinel needs guarding: assigning "" verbatim while an
+      // active Workspace already exists in state would strand the
+      // dashboard empty until the next pull, so recompute instead.
+      const nextActiveWorkspaceId =
+        changes.activeWorkspaceId === "" ? chooseActiveWorkspace(workspaces)?.id ?? "" : changes.activeWorkspaceId;
       return {
-        workspaces: state.workspaces.filter((workspace) => !workspaceDeletes.has(workspace.id)),
+        workspaces,
         collections,
-        ...(changes.activeWorkspaceId === undefined ? {} : { activeWorkspaceId: changes.activeWorkspaceId }),
+        ...(nextActiveWorkspaceId === undefined ? {} : { activeWorkspaceId: nextActiveWorkspaceId }),
       };
     });
   },
