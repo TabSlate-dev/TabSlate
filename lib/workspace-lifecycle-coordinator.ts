@@ -33,6 +33,7 @@ import {
   removeWorkspaceLifecycleIntent,
   workspaceFullPullKey,
   type WorkspaceLifecycleIntent,
+  type WorkspaceLifecycleStateStorage,
 } from "@/lib/workspace-lifecycle-state";
 import type { WorkspaceAggregateIds } from "@/lib/workspace-aggregate";
 import type { BulkWriteOp } from "@/lib/idb";
@@ -598,9 +599,17 @@ export function buildWorkspaceLifecycleAggregatePayload(
   };
 }
 
-async function hasDeferred(workspaceId: string): Promise<boolean> {
-  const record = await readWorkspaceLifecycleDeferredSync();
-  return record.payloadsByWorkspaceId[workspaceId] !== undefined;
+export async function hasDeferred(
+  workspaceId: string,
+  storage?: WorkspaceLifecycleStateStorage,
+): Promise<boolean> {
+  const record = await readWorkspaceLifecycleDeferredSync(storage);
+  const payload = record.payloadsByWorkspaceId[workspaceId];
+  // captureDeferredEntities writes an entry unconditionally, including when
+  // nothing was actually pending in the live/recovery queues — the normal
+  // case for a freshly deleted workspace. Key presence alone would spuriously
+  // quarantine that workspace's whole tree on the next remote-delete pull.
+  return payload !== undefined && !isSyncPushPayloadEmpty(payload);
 }
 
 async function rollbackLastActive(intent: WorkspaceLifecycleIntent): Promise<void> {
