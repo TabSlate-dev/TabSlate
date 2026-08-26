@@ -221,8 +221,25 @@ function isWorkspaceLifecycleStoredRecord(
     isDeferredSyncRecord(value);
 }
 
-function normalizedOrigin(serverUrl: string): string {
-  return new URL(serverUrl).origin;
+/**
+ * A malformed or scheme-less serverUrl (e.g. "myserver.example:8080") makes
+ * `new URL()` throw, and a self-hosted server entered without a scheme would
+ * otherwise collapse to the constant `new URL("x").origin === "null"` for
+ * every such input — defeating the (userId, serverOrigin) scoping this value
+ * exists for, since two different malformed URLs would collide on the same
+ * scoped key. Falling back to the raw string keeps distinct inputs distinct
+ * and never throws.
+ */
+export function normalizedOrigin(serverUrl: string): string {
+  try {
+    const url = new URL(serverUrl);
+    if (url.protocol === "http:" || url.protocol === "https:") {
+      return url.origin;
+    }
+  } catch {
+    // fall through to the raw-string fallback below
+  }
+  return serverUrl;
 }
 
 function scopedKey(prefix: string, serverUrl: string, userId: string): string {

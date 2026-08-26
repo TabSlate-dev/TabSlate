@@ -28,6 +28,7 @@ import {
   readWorkspaceLifecycleIntents,
   invalidateWorkspaceFullPull,
   mergeWorkspaceLifecycleCapability,
+  normalizedOrigin,
   removeWorkspaceLifecycleDeferredPayload,
   removeWorkspaceLifecycleIntent,
   workspaceFullPullKey,
@@ -238,7 +239,7 @@ export async function commitWorkspacePullCheckpoint(
         value: {
           version: 1,
           userId: checkpoint.userId,
-          serverOrigin: new URL(checkpoint.serverUrl).origin,
+          serverOrigin: normalizedOrigin(checkpoint.serverUrl),
           serverSeq: checkpoint.serverSeq,
           completedAt: Date.now(),
         },

@@ -175,6 +175,38 @@ describe("workspace lifecycle state persistence", () => {
     await invalidateWorkspaceLifecycleCapability("https://server.example.test", "user-a", storage);
   });
 
+  test("never throws on a malformed serverUrl and keeps distinct malformed inputs scoped separately", async () => {
+    // A scheme-less self-hosted server (or any URL that fails to parse) must
+    // not throw — that would propagate out of deleteWorkspace/restoreWorkspace
+    // — and two different malformed inputs must not collide on the same
+    // scoped record, which `new URL(x).origin === "null"` for every invalid
+    // input would otherwise cause.
+    await expect(mergeWorkspaceLifecycleCapability(
+      "myserver.example.test:8080", "user-a", true, 1000, storage,
+    )).resolves.toBeUndefined();
+    await expect(mergeWorkspaceLifecycleCapability(
+      "othercorp.example.test:9090", "user-a", true, 2000, storage,
+    )).resolves.toBeUndefined();
+
+    const first = await readWorkspaceLifecycleCapability("myserver.example.test:8080", "user-a", storage);
+    const second = await readWorkspaceLifecycleCapability("othercorp.example.test:9090", "user-a", storage);
+    expect(first?.supported).toBe(true);
+    expect(second?.supported).toBe(true);
+    expect(first?.serverOrigin).not.toBe(second?.serverOrigin);
+
+    // A different malformed input must not read back the first server's
+    // confirmation.
+    expect(await readWorkspaceLifecycleCapability(
+      "yet-another.example.test", "user-a", storage,
+    )).toBeUndefined();
+
+    for (const malformed of ["", "not a url", "://missing-scheme"]) {
+      // Must resolve, not reject/throw — a naturally-failing await is enough
+      // to fail this test if the fix regresses.
+      await readWorkspaceLifecycleCapability(malformed, "user-a", storage);
+    }
+  });
+
   test("round-trips and removes a delete intent with all five fields", async () => {
     const intent = {
       workspaceId: "workspace-a",
