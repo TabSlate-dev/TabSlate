@@ -715,10 +715,24 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           workspaceId: id,
           createdAt: Date.now(),
         });
-        set({
-          workspaces: committed.workspaces,
-          activeWorkspaceId: committed.activeWorkspaceId,
-        });
+        // committed.workspaces is a raw IDB getAll() snapshot, not
+        // necessarily a superset of current memory: a concurrent
+        // permanentlyDeleteWorkspace optimistically removes its target from
+        // state before its own IDB cleanup runs, and a wholesale replace
+        // here would resurrect that row into the UI until the purge
+        // confirms. Patch only rows still present in memory instead. Also
+        // only adopt activeWorkspaceId for statuses that actually persisted
+        // it — "missing"/"already_deleted" recompute a value for the
+        // snapshot but never write it to kv, so adopting it here would
+        // diverge from what's durable.
+        set((state) => ({
+          workspaces: state.workspaces.map((workspace) =>
+            committed.workspaces.find((candidate) => candidate.id === workspace.id) ?? workspace,
+          ),
+          ...(committed.status === "committed" || committed.status === "last_active_workspace"
+            ? { activeWorkspaceId: committed.activeWorkspaceId }
+            : {}),
+        }));
         if (committed.status === "committed") {
           usePlanStore.getState().moveUsageToTrash("workspace");
           return { status: "queued" };

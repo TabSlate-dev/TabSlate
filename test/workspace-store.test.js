@@ -1174,4 +1174,26 @@ describe("workspace lifecycle store", () => {
     useWorkspaceStore.getState().restoreCollection(archived.id);
     expect(planCalls).toEqual([]);
   });
+
+  test("delete does not resurrect a workspace optimistically removed from memory by a concurrent purge", async () => {
+    const target = workspace("workspace-delete-target", 0);
+    const upper = workspace("workspace-delete-upper", 1);
+    // Still present in "IDB" (its own permanent-delete cleanup hasn't
+    // committed yet) but already optimistically removed from memory by a
+    // concurrent permanentlyDeleteWorkspace call.
+    const purgingElsewhere = workspace("workspace-purging-elsewhere", 2);
+    storedWorkspaces = structuredClone([target, upper, purgingElsewhere]);
+    storedKv.set("activeWorkspaceId", { key: "activeWorkspaceId", value: target.id });
+    useWorkspaceStore.setState({
+      workspaces: [target, upper],
+      activeWorkspaceId: target.id,
+    });
+
+    const result = await useWorkspaceStore.getState().deleteWorkspace(target.id);
+
+    expect(result).toEqual({ status: "queued" });
+    const ids = useWorkspaceStore.getState().workspaces.map((item) => item.id);
+    expect(ids).not.toContain(purgingElsewhere.id);
+    expect(ids.sort()).toEqual([target.id, upper.id].sort());
+  });
 });
