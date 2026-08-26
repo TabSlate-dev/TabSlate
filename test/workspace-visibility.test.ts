@@ -5,7 +5,9 @@ import {
   belongsToActiveWorkspace,
   getActiveWorkspaceCollectionIds,
   getCollectionsUnderActiveWorkspace,
+  purgeTargetsRemainVisible,
   resolveActiveWorkspaceCollectionTarget,
+  type PurgeVisibilityInput,
 } from "@/lib/workspace-visibility";
 
 function workspace(id: string, deletedAt?: number): Workspace {
@@ -130,5 +132,69 @@ describe("active Workspace mutation targets", () => {
       workspaces,
       collections,
     )).toBeUndefined();
+  });
+});
+
+describe("purge target revalidation", () => {
+  // Models the window between opening a confirm dialog and clicking Confirm,
+  // during which a remote pull can retire the parent workspace.
+  function scene(activeWorkspaceId: string, retainedAt?: number): PurgeVisibilityInput {
+    return {
+      activeWorkspaceId,
+      workspaces: [workspace("ws-a"), workspace("ws-b", retainedAt)],
+      collections: [
+        collection("col-a", "ws-a", { deletedAt: Date.UTC(2026, 7, 1) }),
+        collection("col-b", "ws-b", { deletedAt: Date.UTC(2026, 7, 1) }),
+      ],
+      groups: [
+        { id: "grp-a", workspaceId: "ws-a" },
+        { id: "grp-b", workspaceId: "ws-b" },
+      ],
+      groupTabs: [
+        { id: "tab-a", groupId: "grp-a" },
+        { id: "tab-b", groupId: "grp-b" },
+      ],
+      trashedBookmarks: [
+        { id: "bm-a", collectionId: "col-a" },
+        { id: "bm-b", collectionId: "col-b" },
+        { id: "bm-uncategorized", collectionId: "" },
+      ],
+    };
+  }
+
+  test("accepts targets that still belong to the active workspace", () => {
+    expect(purgeTargetsRemainVisible(scene("ws-a"), {
+      collectionIds: ["col-a"],
+      groupIds: ["grp-a"],
+      bookmarkIds: ["bm-a"],
+      tabIds: ["tab-a"],
+    })).toBe(true);
+  });
+
+  test("rejects a collection, group, tab, or bookmark under another workspace", () => {
+    const input = scene("ws-a");
+    expect(purgeTargetsRemainVisible(input, { collectionIds: ["col-b"] })).toBe(false);
+    expect(purgeTargetsRemainVisible(input, { groupIds: ["grp-b"] })).toBe(false);
+    expect(purgeTargetsRemainVisible(input, { tabIds: ["tab-b"] })).toBe(false);
+    expect(purgeTargetsRemainVisible(input, { bookmarkIds: ["bm-b"] })).toBe(false);
+  });
+
+  test("rejects every target once the active workspace itself is retired mid-dialog", () => {
+    // Captured while ws-b was active; a pull then soft-deleted ws-b.
+    const retired = scene("ws-b", Date.UTC(2026, 7, 25));
+    expect(purgeTargetsRemainVisible(retired, { collectionIds: ["col-b"] })).toBe(false);
+    expect(purgeTargetsRemainVisible(retired, { groupIds: ["grp-b"] })).toBe(false);
+    expect(purgeTargetsRemainVisible(retired, { bookmarkIds: ["bm-b"] })).toBe(false);
+  });
+
+  test("keeps uncategorized bookmarks purgeable and rejects vanished ids", () => {
+    const input = scene("ws-a");
+    expect(purgeTargetsRemainVisible(input, { bookmarkIds: ["bm-uncategorized"] })).toBe(true);
+    expect(purgeTargetsRemainVisible(input, { bookmarkIds: ["bm-gone"] })).toBe(false);
+    expect(purgeTargetsRemainVisible(input, { tabIds: ["tab-gone"] })).toBe(false);
+  });
+
+  test("treats an empty target set as nothing to invalidate", () => {
+    expect(purgeTargetsRemainVisible(scene("ws-a"), {})).toBe(true);
   });
 });

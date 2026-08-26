@@ -513,6 +513,28 @@ export function ArchiveContent() {
   };
 
   const handleBatchDelete = () => {
+    // Mirror handleBatchRestore: never write a tombstone into a workspace that
+    // a remote pull has since retired.
+    const state = useWorkspaceStore.getState();
+    const scopedIds = new Set(
+      getCollectionsUnderActiveWorkspace(
+        state.activeWorkspaceId,
+        state.workspaces,
+        state.collections,
+      ).map((collection) => collection.id),
+    );
+    if (
+      Array.from(selectedColIds).some((id) => !scopedIds.has(id)) ||
+      Array.from(selectedBmIds).some((id) => {
+        const bookmark = archivedBookmarks.find((candidate) => candidate.id === id);
+        return !bookmark || (bookmark.collectionId !== "" && !scopedIds.has(bookmark.collectionId));
+      })
+    ) {
+      setSelectedColIds(new Set());
+      setSelectedBmIds(new Set());
+      setTargetUnavailable(true);
+      return;
+    }
     for (const colId of selectedColIds) {
       deleteCollection(colId);
     }

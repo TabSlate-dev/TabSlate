@@ -12,7 +12,7 @@ import { runWebSearch } from "@/lib/browser/search";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
 import { useWorkspaceStore } from "@/store/workspace-store";
-import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
+import { getCollectionsUnderActiveWorkspace } from "@/lib/workspace-visibility";
 
 interface SearchBoxProps {
   /** When provided, bookmark results are filtered to this collection. */
@@ -36,8 +36,15 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const collections = useWorkspaceStore(s => s.collections);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
+  // Scope search hits to the active workspace only. Archived collections stay
+  // in scope because the server deliberately returns archived bookmarks (and
+  // the dropdown badges them); it already excludes trashed/deleted parents.
   const activeCollectionIds = React.useMemo(
-    () => getActiveWorkspaceCollectionIds(activeWorkspaceId, workspaces, collections),
+    () => new Set(getCollectionsUnderActiveWorkspace(
+      activeWorkspaceId,
+      workspaces,
+      collections,
+    ).map((collection) => collection.id)),
     [activeWorkspaceId, workspaces, collections],
   );
 

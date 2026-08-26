@@ -58,6 +58,8 @@ import {
   getActiveWorkspaceCollections,
   getCollectionsUnderActiveWorkspace,
   isActiveWorkspace,
+  purgeTargetsRemainVisible,
+  type PurgeTargets,
 } from "@/lib/workspace-visibility";
 
 export interface GroupPurgeUiOutcome {
@@ -828,6 +830,31 @@ export function TrashContent() {
     return { status: "completed" };
   }, [permanentlyDeleteGroup]);
 
+  // Re-check purge targets against live store state, because the confirm dialog
+  // runs a closure captured when it opened and a remote pull may have retired
+  // the parent workspace since then.
+  const purgeTargetsStillVisible = (targets: PurgeTargets): boolean => {
+    const workspaceState = useWorkspaceStore.getState();
+    const groupsState = useGroupsStore.getState();
+    return purgeTargetsRemainVisible(
+      {
+        activeWorkspaceId: workspaceState.activeWorkspaceId,
+        workspaces: workspaceState.workspaces,
+        collections: workspaceState.collections,
+        groups: groupsState.groups,
+        groupTabs: groupsState.groupTabs,
+        trashedBookmarks: useBookmarksStore.getState().trashedBookmarks,
+      },
+      targets,
+    );
+  };
+
+  const rejectStalePurge = (): GroupPurgeUiOutcome => {
+    clearSelection();
+    setTargetUnavailable(true);
+    return { shouldClose: true, messageKey: null };
+  };
+
   const handleBatchRestore = () => {
     if (groupPurgePending) { return; }
     const workspaceState = useWorkspaceStore.getState();
@@ -926,7 +953,12 @@ export function TrashContent() {
     setTargetUnavailable(false);
   };
 
-  const handleBatchDelete = () => executeGroupPurgeAction({
+  const handleBatchDelete = () => !purgeTargetsStillVisible({
+    collectionIds: Array.from(selectedColIds),
+    groupIds: Array.from(selectedGroupIds),
+    bookmarkIds: Array.from(selectedBmIds),
+    tabIds: Array.from(selectedTabIds),
+  }) ? rejectStalePurge() : executeGroupPurgeAction({
     operation: () => purgeGroups(Array.from(selectedGroupIds)),
     setPending: setGroupPurgePending,
     onCompleted: () => {
@@ -948,7 +980,11 @@ export function TrashContent() {
     },
   });
 
-  const handleEmptyTrash = () => executeGroupPurgeAction({
+  const handleEmptyTrash = () => !purgeTargetsStillVisible({
+    collectionIds: trashedCollections.map(collection => collection.id),
+    groupIds: trashedGroups.map(group => group.id),
+    bookmarkIds: individualTrashedBookmarks.map(bookmark => bookmark.id),
+  }) ? rejectStalePurge() : executeGroupPurgeAction({
     operation: () => purgeGroups(trashedGroups.map(group => group.id)),
     setPending: setGroupPurgePending,
     onCompleted: () => {
@@ -1073,7 +1109,9 @@ export function TrashContent() {
                 onPermanentlyDeleteGroup={() => requestConfirm(
                   t("trashContent_groupDeleteConfirmTitle"),
                   t("trashContent_groupDeleteConfirmDesc", [group.name]),
-                  () => executeGroupPurgeAction({
+                  () => !purgeTargetsStillVisible({ groupIds: [group.id] })
+                    ? rejectStalePurge()
+                    : executeGroupPurgeAction({
                     operation: () => permanentlyDeleteGroup(group.id),
                     setPending: setGroupPurgePending,
                     onCompleted: () => {
@@ -1095,7 +1133,13 @@ export function TrashContent() {
                 onPermanentlyDeleteTab={(tabId) => requestConfirm(
                   "Delete tab permanently?",
                   "This tab will be permanently deleted and cannot be recovered.",
-                  () => deleteTabFromTrash(tabId)
+                  () => {
+                    if (!purgeTargetsStillVisible({ tabIds: [tabId] })) {
+                      rejectStalePurge();
+                      return;
+                    }
+                    deleteTabFromTrash(tabId);
+                  }
                 )}
               />
             ))}
@@ -1112,7 +1156,13 @@ export function TrashContent() {
               onPermanentlyDelete={() => requestConfirm(
                 "Delete bookmark permanently?",
                 `"${bookmark.title}" will be permanently deleted and cannot be recovered.`,
-                () => permanentlyDeleteBookmark(bookmark.id)
+                () => {
+                  if (!purgeTargetsStillVisible({ bookmarkIds: [bookmark.id] })) {
+                    rejectStalePurge();
+                    return;
+                  }
+                  permanentlyDeleteBookmark(bookmark.id);
+                }
               )}
             />
           ))}
