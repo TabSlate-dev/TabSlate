@@ -54,6 +54,13 @@ export default defineConfig({
   vite: () => ({
     build: {
       sourcemap: process.env.NODE_ENV !== "production",
+      // Extension pages load from local disk with no network latency to
+      // hide, so the modulepreload optimization has nothing to offer. Worse,
+      // Chrome's extension-page world isolation means the preloaded request
+      // never matches the actual dynamic import, so every emitted
+      // <link rel="modulepreload"> just produces a console warning
+      // ("cross-world extension resource mismatch") for no benefit.
+      modulePreload: false,
     },
   }),
   hooks: {
