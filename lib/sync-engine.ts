@@ -411,6 +411,19 @@ export class SyncEngine {
       }
     }
 
+    // queue.flush() bypasses the automatic-push lifecycle gate (it has no
+    // per-workspace granularity to flush only this workspace's entries), so
+    // a DIFFERENT workspace's still-runnable delete/restore intent could
+    // have its queued child edits reach the server here, ahead of that
+    // intent's own reconciliation. Mirror forceSync's ordering: resolve
+    // first, then flush.
+    if (await this.shouldResolveWorkspaceLifecycleBeforePush()) {
+      await this.requestPull();
+      if (await this.shouldResolveWorkspaceLifecycleBeforePush()) {
+        return { status: "rejected", reason: "parent_rejected" };
+      }
+    }
+
     await this.queue.flush();
     if (!this.queue.isEmpty()) {
       return { status: "rejected", reason: "parent_rejected" };

@@ -966,6 +966,78 @@ describe("SyncEngine ordering", () => {
     engine.destroy();
   });
 
+  test("purge resolves a DIFFERENT workspace's pending lifecycle intent by pull before flushing the ordinary queue", async () => {
+    // queue.flush() has no per-workspace granularity — flushing it while an
+    // unrelated workspace's delete/restore intent is still runnable would
+    // push that workspace's queued child edits to the server ahead of its
+    // own reconciliation. Purge must resolve the gate first, exactly like
+    // forceSync/runInitialSync do.
+    const events = [];
+    let lifecyclePending = true;
+    queueFlushImpl = async () => { events.push("ordinary-flush"); };
+    queueBlockImpl = () => {};
+    queuePruneImpl = async () => {};
+    syncPullImpl = async () => {
+      events.push("pull-request");
+      lifecyclePending = false;
+      return emptyResponse();
+    };
+    syncPushImpl = async () => {
+      events.push("purge-push");
+      return { server_seq: 44, rejected: [] };
+    };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => ({ errorMessage: null }),
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        isWorkspaceDeleteConfirmed: async () => true,
+        loadWorkspaceAggregateReferences: async () => [],
+        confirmPayload: async () => { events.push("confirm"); },
+        clearWorkspaceAggregate: async () => { events.push("cleanup"); },
+        extractRecoveryEntities: async () => emptyPayload(),
+        workspaceLifecycleSyncGate: {
+          shouldResolveWorkspaceLifecycleBeforePush: async () => lifecyclePending,
+        },
+      }),
+    );
+
+    expect(await engine.purgeWorkspace("workspace-purge")).toEqual({ status: "completed" });
+    expect(events).toEqual(["pull-request", "ordinary-flush", "purge-push", "confirm", "cleanup"]);
+    engine.destroy();
+  });
+
+  test("purge rejects rather than flushing when a lifecycle intent remains pending after pull", async () => {
+    const events = [];
+    queueFlushImpl = async () => { events.push("ordinary-flush"); };
+    syncPullImpl = async () => { events.push("pull-request"); return emptyResponse(); };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => ({ errorMessage: null }),
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        isWorkspaceDeleteConfirmed: async () => true,
+        workspaceLifecycleSyncGate: {
+          // Always pending, even after the resolution pull.
+          shouldResolveWorkspaceLifecycleBeforePush: async () => true,
+        },
+      }),
+    );
+
+    expect(await engine.purgeWorkspace("workspace-purge")).toEqual({
+      status: "rejected",
+      reason: "parent_rejected",
+    });
+    expect(events).toEqual(["pull-request"]);
+    engine.destroy();
+  });
+
   test("retires a running pull callback before resolving teardown", async () => {
     const pullStarted = deferred();
     const releasePull = deferred();
