@@ -243,6 +243,8 @@ mock.module("@/store/plan-store", () => ({
     getState: () => ({
       decrementUsage: (resource, count) => { planCalls.push(["decrement", resource, count]); },
       incrementUsage: (resource, count) => { planCalls.push(["increment", resource, count]); },
+      moveUsageToTrash: (resource, count) => { planCalls.push(["moveToTrash", resource, count]); },
+      restoreUsageFromTrash: (resource, count) => { planCalls.push(["restoreFromTrash", resource, count]); },
       ensureFresh: async () => {},
       showQuotaAlert: () => {},
       fetchPlan: async () => { planCalls.push(["fetch"]); },
@@ -519,6 +521,9 @@ describe("workspace lifecycle store", () => {
     expect(idbDeleteCalls).toEqual([]);
     expect(syncEnqueueCalls).toEqual([]);
     expect(wakeCalls).toEqual([target.id]);
+    // Soft delete never releases quota; it moves the root into the trash
+    // bucket of the retained/in-use split shown in the quota UI.
+    expect(planCalls).toEqual([["moveToTrash", "workspace", undefined]]);
   });
 
   test("delete blocks the final active workspace without writing anything", async () => {
@@ -761,6 +766,7 @@ describe("workspace lifecycle store", () => {
       groups: useGroupsStore.getState().groups,
     }).toEqual(childSnapshot);
     expect(wakeCalls).toEqual([target.id]);
+    expect(planCalls).toEqual([["restoreFromTrash", "workspace", undefined]]);
   });
 
   test("active setter refuses deleted roots and new positions follow every retained root", () => {
@@ -1126,5 +1132,42 @@ describe("workspace lifecycle store", () => {
     });
 
     expect(useWorkspaceStore.getState().activeWorkspaceId).toBe("guest-workspace");
+  });
+
+  test("deleteCollection moves collection quota to trash but archiveCollection does not", () => {
+    const active = workspace("workspace-active", 0);
+    const trashTarget = collection("collection-trash-target", active.id);
+    const archiveTarget = collection("collection-archive-target", active.id);
+    useWorkspaceStore.setState({
+      workspaces: [active],
+      collections: [trashTarget, archiveTarget],
+      activeWorkspaceId: active.id,
+    });
+
+    useWorkspaceStore.getState().deleteCollection(trashTarget.id);
+    expect(planCalls).toEqual([["moveToTrash", "collection", undefined]]);
+
+    planCalls.length = 0;
+    // Archived counts as in-use, not trash — must not touch the split.
+    useWorkspaceStore.getState().archiveCollection(archiveTarget.id);
+    expect(planCalls).toEqual([]);
+  });
+
+  test("restoreCollection restores trash quota for a trashed collection but not for a merely archived one", () => {
+    const active = workspace("workspace-active", 0);
+    const trashed = collection("collection-was-trashed", active.id, { deletedAt: 1000 });
+    const archived = collection("collection-was-archived", active.id, { archivedAt: 2000 });
+    useWorkspaceStore.setState({
+      workspaces: [active],
+      collections: [trashed, archived],
+      activeWorkspaceId: active.id,
+    });
+
+    useWorkspaceStore.getState().restoreCollection(trashed.id);
+    expect(planCalls).toEqual([["restoreFromTrash", "collection", undefined]]);
+
+    planCalls.length = 0;
+    useWorkspaceStore.getState().restoreCollection(archived.id);
+    expect(planCalls).toEqual([]);
   });
 });

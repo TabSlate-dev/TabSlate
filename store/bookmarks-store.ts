@@ -716,6 +716,7 @@ export const useBookmarksStore = create<BookmarksState>()(
             trashedBookmarks: state._trashedLoaded ? [...state.trashedBookmarks, trashed] : state.trashedBookmarks,
           };
         });
+        usePlanStore.getState().moveUsageToTrash("bookmark");
         assertCountsInvariant(get());
       },
 
@@ -742,6 +743,7 @@ export const useBookmarksStore = create<BookmarksState>()(
               countsByCollection: nextCounts,
             };
           });
+          usePlanStore.getState().restoreUsageFromTrash("bookmark");
           assertCountsInvariant(get());
           return;
         }
@@ -770,6 +772,7 @@ export const useBookmarksStore = create<BookmarksState>()(
               countsByCollection: nextCounts,
             };
           });
+          usePlanStore.getState().restoreUsageFromTrash("bookmark");
           assertCountsInvariant(get());
         })();
       },
@@ -1241,6 +1244,9 @@ export const useBookmarksStore = create<BookmarksState>()(
                 : current.trashedBookmarks,
             };
           });
+          // Both active and archived bookmarks move to trash here (archived
+          // already counted as in-use, so it moves too).
+          usePlanStore.getState().moveUsageToTrash("bookmark", all.length);
           assertCountsInvariant(get());
         })();
       },
@@ -1282,6 +1288,11 @@ export const useBookmarksStore = create<BookmarksState>()(
               countsByCollection: nextCounts,
             };
           });
+          // Only the trashed subset was ever moved into the trash bucket;
+          // archived bookmarks stayed in-use.
+          if (fromTrash.length > 0) {
+            usePlanStore.getState().restoreUsageFromTrash("bookmark", fromTrash.length);
+          }
           assertCountsInvariant(get());
         })();
       },

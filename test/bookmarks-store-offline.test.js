@@ -4,6 +4,7 @@ const putCalls = [];
 const deleteCalls = [];
 const bulkWriteCalls = [];
 const decrementCalls = [];
+const trashUsageCalls = [];
 const trashedStore = new Map();
 
 mock.module("@/lib/idb", () => ({
@@ -50,6 +51,12 @@ mock.module("@/store/plan-store", () => ({
         decrementCalls.push({ resource, count });
       },
       incrementUsage: () => {},
+      moveUsageToTrash: (resource, count) => {
+        trashUsageCalls.push(["moveToTrash", resource, count]);
+      },
+      restoreUsageFromTrash: (resource, count) => {
+        trashUsageCalls.push(["restoreFromTrash", resource, count]);
+      },
       ensureFresh: async () => {},
       limits: null,
       showQuotaAlert: () => {},
@@ -96,6 +103,7 @@ describe("bookmarks store offline permanent delete", () => {
     deleteCalls.length = 0;
     bulkWriteCalls.length = 0;
     decrementCalls.length = 0;
+    trashUsageCalls.length = 0;
     trashedStore.clear();
     useBookmarksStore.setState({
       bookmarks: [],
@@ -185,5 +193,24 @@ describe("bookmarks store offline permanent delete", () => {
     expect(result).toBeInstanceOf(Promise);
     await result;
     expect(bulkWriteCalls).toHaveLength(1);
+  });
+
+  test("trashBookmark moves quota to trash and restoreFromTrash moves it back", async () => {
+    const bookmark = createBookmark("bookmark-single");
+    useBookmarksStore.setState({
+      bookmarks: new Map([[bookmark.id, bookmark]]),
+      archivedBookmarks: [],
+      trashedBookmarks: [],
+      countsByCollection: {},
+      _archivedLoaded: true,
+      _trashedLoaded: true,
+    });
+
+    useBookmarksStore.getState().trashBookmark(bookmark.id);
+    expect(trashUsageCalls).toEqual([["moveToTrash", "bookmark", undefined]]);
+
+    trashUsageCalls.length = 0;
+    useBookmarksStore.getState().restoreFromTrash(bookmark.id);
+    expect(trashUsageCalls).toEqual([["restoreFromTrash", "bookmark", undefined]]);
   });
 });

@@ -37,6 +37,8 @@ mock.module("@/store/plan-store", () => ({
         decrementCalls.push({ resource, count });
       },
       incrementUsage: () => {},
+      moveUsageToTrash: () => {},
+      restoreUsageFromTrash: () => {},
       ensureFresh: async () => {},
       limits: null,
       showQuotaAlert: () => {},

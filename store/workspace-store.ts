@@ -720,6 +720,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
           activeWorkspaceId: committed.activeWorkspaceId,
         });
         if (committed.status === "committed") {
+          usePlanStore.getState().moveUsageToTrash("workspace");
           return { status: "queued" };
         }
         if (committed.status === "last_active_workspace") {
@@ -760,6 +761,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
             candidate.id === id ? restoredWorkspace : candidate,
           ),
         }));
+        usePlanStore.getState().restoreUsageFromTrash("workspace");
         return { status: "queued" };
       },
     );
@@ -879,6 +881,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     syncEngine?.enqueue({ collections: [toServerCollection(trashed)] });
     set((s) => ({ collections: s.collections.map(c => c.id === id ? trashed : c) }));
     useBookmarksStore.getState().trashCollectionBookmarks(id);
+    usePlanStore.getState().moveUsageToTrash("collection");
   },
 
   archiveCollection: (id) => {
@@ -910,6 +913,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     idbPut("collections", restored);
     syncEngine?.enqueue({ collections: [toServerCollection(restored)] });
     set((s) => ({ collections: s.collections.map(c => c.id === id ? restored : c) }));
+    // Archived collections were never moved to trash (archived counts as
+    // in-use), so only a trashed -> restored transition adjusts the split.
+    if (col.deletedAt) {
+      usePlanStore.getState().restoreUsageFromTrash("collection");
+    }
   },
 
   permanentlyDeleteCollection: (id) => {
