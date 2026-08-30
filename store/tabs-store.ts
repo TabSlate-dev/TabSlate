@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import {
   getCurrentWindowTabs,
+  getAllTabs,
   closeTab,
   focusTab,
   openUrls,
@@ -34,6 +35,12 @@ interface SaveTabsToCollectionResult {
 
 interface TabsState {
   openTabs: BrowserTab[];
+  /**
+   * Tabs across every Chrome window (not just the current one). Used by the
+   * search surfaces so a tab open in another window still shows up as a result
+   * and can be switched to. Window-scoped features keep using `openTabs`.
+   */
+  allTabs: BrowserTab[];
   tabGroups: BrowserTabGroup[];
   fullTitles: Record<number, string>;
   isLoading: boolean;
@@ -189,6 +196,7 @@ async function _saveTabsToCollectionHelper(
 
 export const useTabsStore = create<TabsState>((set, get) => ({
   openTabs: [],
+  allTabs: [],
   tabGroups: [],
   fullTitles: {},
   isLoading: false,
@@ -213,8 +221,9 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   // -------------------------------------------------------------------------
   loadTabs: async (silent = false) => {
     if (!silent) { set({ isLoading: true }); }
-    const [tabs, groups, titleEntries] = await Promise.all([
+    const [tabs, allTabs, groups, titleEntries] = await Promise.all([
       getCurrentWindowTabs(),
+      getAllTabs(),
       getCurrentWindowGroups(),
       idbGetAll<{ groupId: number; title: string }>("tab-group-titles"),
     ]);
@@ -272,7 +281,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       }
     }
 
-    set({ openTabs: tabs, tabGroups: groups, fullTitles, isLoading: false });
+    set({ openTabs: tabs, allTabs, tabGroups: groups, fullTitles, isLoading: false });
   },
 
   // -------------------------------------------------------------------------

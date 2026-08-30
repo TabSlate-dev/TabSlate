@@ -29,7 +29,9 @@ export function SearchBox({ collectionId, size = "lg", className }: SearchBoxPro
   const wrapperRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
-  const openTabs = useTabsStore(s => s.openTabs);
+  // All windows, not just the current one — a tab open elsewhere should still
+  // surface here and be switchable.
+  const openTabs = useTabsStore(s => s.allTabs);
   const accessToken = useAuthStore(s => s.accessToken);
   const serverUrl = useAuthStore(s => s.serverUrl);
   const workspaces = useWorkspaceStore(s => s.workspaces);

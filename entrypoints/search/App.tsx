@@ -7,7 +7,7 @@ import { useTabsStore } from "@/store/tabs-store";
 
 export function SearchApp() {
   const authHydrated = useAuthStore(s => s._hydrated);
-  const openTabs = useTabsStore(s => s.openTabs);
+  const openTabs = useTabsStore(s => s.allTabs);
   const loadTabs = useTabsStore(s => s.loadTabs);
   const [tabsReady, setTabsReady] = useState(false);
 
