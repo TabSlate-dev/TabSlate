@@ -23,7 +23,9 @@ import { useGroupsStore, type GroupTab, type SavedGroup } from "@/store/groups-s
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { TAB_GROUP_COLORS, type TabGroupColor } from "@/lib/chrome/tab-groups";
-import { useGroupDragDrop } from "@/hooks/use-group-drag-drop";
+import { useDroppable } from "@dnd-kit/core";
+import { useTabsDndContext } from "@/components/dashboard/tabs-dnd-provider";
+import { savedGroupDropId } from "@/lib/drop-ids";
 import { GroupCardBase } from "@/components/dashboard/shared/group-card-base";
 import { BaseTabRow } from "@/components/dashboard/shared/base-tab-row";
 import {
@@ -115,7 +117,9 @@ export function GroupDetail() {
     }
   }, [group, editing]);
 
-  const { isDragOver, notification: dropTargetError, dropZoneProps } = useGroupDragDrop(groupId ?? "");
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id: savedGroupDropId(groupId ?? "") });
+  const { activeData } = useTabsDndContext();
+  const isDragOver = isOver && (activeData?.type === "tab" || activeData?.type === "tab-group");
 
   const handleSaveGroup = React.useCallback(async (name: string) => {
     setIsSaving(true);
@@ -338,10 +342,10 @@ export function GroupDetail() {
 
   return (
     <div className="flex-1 p-4 md:p-6 overflow-auto">
-      {(targetUnavailable || dropTargetError) && (
+      {targetUnavailable && (
         <Alert className="mb-4" variant="destructive">
           <AlertCircle />
-          <AlertDescription>{dropTargetError ?? t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+          <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
         </Alert>
       )}
       <GroupCardBase
@@ -354,7 +358,7 @@ export function GroupDetail() {
         titleSlot={titleSlot}
         headerActions={headerActions}
         isOver={isDragOver}
-        {...dropZoneProps}
+        dropRef={setDropRef}
         className="max-w-[95%] mx-auto"
       >
         {isDragOver && (

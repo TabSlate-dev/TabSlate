@@ -2,11 +2,15 @@ import React, { createContext, useContext, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
+  DragOverEvent,
   DragStartEvent,
+  pointerWithin,
+  rectIntersection,
   useSensor,
   useSensors,
   DragOverlay,
 } from "@dnd-kit/core";
+import type { CollisionDetection } from "@dnd-kit/core";
 import { SmartPointerSensor } from "@/lib/drag-sensors";
 import { useTabsStore } from "@/store/tabs-store";
 import { useGroupsStore } from "@/store/groups-store";
@@ -27,6 +31,12 @@ import {
   isActiveWorkspace,
   resolveActiveWorkspaceCollectionTarget,
 } from "@/lib/workspace-visibility";
+import {
+  isCollectionDropId,
+  isSavedGroupDropId,
+  parseCollectionDropId,
+  parseSavedGroupDropId,
+} from "@/lib/drop-ids";
 import { useTranslation } from "@/hooks/use-translation";
 
 export type TabDragData = {
@@ -59,17 +69,44 @@ export type DragData = TabDragData | TabGroupDragData | BookmarkDragData;
 
 interface TabsDndContextValue {
   activeData: DragData | null;
+  /**
+   * Collection currently under the cursor, or null.
+   *
+   * A Collection spans several droppable rows in the virtualized content list,
+   * so per-row `isOver` would light up only the row under the cursor. Sharing
+   * the hovered Collection lets its header and every one of its rows highlight
+   * together as one band.
+   */
+  overCollectionId: string | null;
 }
 
-const TabsDndCtx = createContext<TabsDndContextValue>({ activeData: null });
+const TabsDndCtx = createContext<TabsDndContextValue>({
+  activeData: null,
+  overCollectionId: null,
+});
 
 export function useTabsDndContext() {
   return useContext(TabsDndCtx);
 }
 
+/**
+ * Drop on whatever is under the cursor.
+ *
+ * dnd-kit's default `rectIntersection` ranks by intersection-over-union, which
+ * penalises large drop zones: a full-width Collection row loses to the much
+ * smaller Collection header sitting next to it, so only headers ever won. The
+ * rect pass is kept as a fallback for the moment the pointer leaves every zone
+ * mid-drag.
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length > 0 ? pointerCollisions : rectIntersection(args);
+};
+
 export function TabsDndProvider({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
   const [activeData, setActiveData] = useState<DragData | null>(null);
+  const [overCollectionId, setOverCollectionId] = useState<string | null>(null);
   const [notification, setNotification] = useState<{ text: string; type: "duplicate" } | null>(null);
 
   const sensors = useSensors(
@@ -85,8 +122,18 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     setActiveData((event.active.data.current as DragData) ?? null);
   };
 
+  const handleDragOver = (event: DragOverEvent) => {
+    const dropId = event.over?.id;
+    setOverCollectionId(
+      typeof dropId === "string" && isCollectionDropId(dropId)
+        ? parseCollectionDropId(dropId)
+        : null
+    );
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveData(null);
+    setOverCollectionId(null);
     const { active, over } = event;
 
     const dragData = active.data.current as DragData | undefined;
@@ -106,9 +153,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
       collectionDropId: string,
       tabsToDrop: { id: number; title: string; url: string; favIconUrl: string }[]
     ) => {
-      const collectionId = collectionDropId.startsWith("sidebar-collection-")
-        ? collectionDropId.replace("sidebar-collection-", "")
-        : collectionDropId.replace("content-collection-", "");
+      const collectionId = parseCollectionDropId(collectionDropId);
       const workspaceState = useWorkspaceStore.getState();
       const activeWorkspace = workspaceState.workspaces.find(
         (workspace) => workspace.id === workspaceState.activeWorkspaceId,
@@ -152,11 +197,13 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         const duplicates: number[] = [];
         const existingCollectionIds = new Set<string>();
         const uniqueTabs: typeof tabsToDrop = [];
+        let firstDuplicateBookmarkId: string | null = null;
 
         for (const tab of tabsToDrop) {
           const existingBookmark = findDuplicateBookmark(existing, tab.url);
           if (existingBookmark) {
             duplicates.push(tab.id);
+            firstDuplicateBookmarkId = firstDuplicateBookmarkId ?? existingBookmark.id;
             if (existingBookmark.collectionId) {
               existingCollectionIds.add(existingBookmark.collectionId);
             }
@@ -168,6 +215,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
         if (duplicates.length > 0) {
           useTabsStore.getState().setHighlightedTabs(duplicates);
           useWorkspaceStore.getState().setHighlightedCollectionIds(Array.from(existingCollectionIds));
+          useBookmarksStore.getState().setHighlightedBookmarkId(firstDuplicateBookmarkId);
           showNotification(t(
             duplicates.length === 1
               ? "workspaceVisibility_duplicateTab_one"
@@ -195,13 +243,42 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    const handleDropToSavedGroup = (
+      savedGroupId: string,
+      tabsToDrop: { title: string; url: string; favIconUrl: string }[]
+    ) => {
+      const workspaceState = useWorkspaceStore.getState();
+      const groupState = useGroupsStore.getState();
+      const activeWorkspace = workspaceState.workspaces.find(
+        (workspace) => workspace.id === workspaceState.activeWorkspaceId,
+      );
+      const targetGroup = groupState.groups.find(
+        (group) => group.id === savedGroupId
+          && !group.deletedAt
+          && group.workspaceId === workspaceState.activeWorkspaceId,
+      );
+      if (!isActiveWorkspace(activeWorkspace) || !targetGroup) {
+        showNotification(t("workspaceVisibility_targetUnavailable"));
+        return;
+      }
+      tabsToDrop.forEach((tab) => {
+        groupState.addTabToGroup(savedGroupId, {
+          title: tab.title,
+          url: tab.url,
+          favicon: tab.favIconUrl || "",
+        });
+      });
+    };
+
     if (dragData.type === "tab") {
       if (dropId.startsWith("group-drop-")) {
         const groupId = parseInt(dropId.replace("group-drop-", ""), 10);
         if (!isNaN(groupId)) {
           useTabsStore.getState().moveTabsToGroup([dragData.tabId], groupId);
         }
-      } else if (dropId.startsWith("sidebar-collection-") || dropId.startsWith("content-collection-")) {
+      } else if (isSavedGroupDropId(dropId)) {
+        handleDropToSavedGroup(parseSavedGroupDropId(dropId), [dragData]);
+      } else if (isCollectionDropId(dropId)) {
         handleDropToCollection(dropId, [
           {
             id: dragData.tabId,
@@ -213,11 +290,18 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    if (dragData.type === "tab-group" && isSavedGroupDropId(dropId)) {
+      handleDropToSavedGroup(parseSavedGroupDropId(dropId), dragData.tabs.map((tab) => ({
+        title: tab.title,
+        url: tab.url,
+        favIconUrl: tab.favIconUrl || "",
+      })));
+      return;
+    }
+
     if (dragData.type === "bookmark") {
-      if (dropId.startsWith("sidebar-collection-") || dropId.startsWith("content-collection-")) {
-        const rawId = dropId.startsWith("sidebar-collection-")
-          ? dropId.replace("sidebar-collection-", "")
-          : dropId.replace("content-collection-", "");
+      if (isCollectionDropId(dropId)) {
+        const rawId = parseCollectionDropId(dropId);
         const workspaceState = useWorkspaceStore.getState();
         let targetCollectionId = rawId;
         if (rawId === "all") {
@@ -277,7 +361,7 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
             favicon: tab.favIconUrl || "",
           });
         });
-      } else if (dropId.startsWith("sidebar-collection-") || dropId.startsWith("content-collection-")) {
+      } else if (isCollectionDropId(dropId)) {
         handleDropToCollection(
           dropId,
           dragData.tabs.map((t) => ({
@@ -291,13 +375,23 @@ export function TabsDndProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const handleDragCancel = () => setActiveData(null);
+  const handleDragCancel = () => {
+    setActiveData(null);
+    setOverCollectionId(null);
+  };
+
+  const contextValue = React.useMemo(
+    () => ({ activeData, overCollectionId }),
+    [activeData, overCollectionId]
+  );
 
   return (
-    <TabsDndCtx.Provider value={{ activeData }}>
+    <TabsDndCtx.Provider value={contextValue}>
       <DndContext
         sensors={sensors}
+        collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >

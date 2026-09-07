@@ -992,6 +992,9 @@
   "bookmarksContent_allBookmarks": {
     "message": "All Bookmarks"
   },
+  "bookmarksContent_emptyCollectionDropHint": {
+    "message": "Drop tabs or bookmarks here"
+  },
   "bookmarksContent_uncategorized": {
     "message": "Uncategorized"
   },

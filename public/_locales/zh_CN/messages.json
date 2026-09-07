@@ -992,6 +992,9 @@
   "bookmarksContent_allBookmarks": {
     "message": "全部书签"
   },
+  "bookmarksContent_emptyCollectionDropHint": {
+    "message": "拖拽标签页或书签到这里"
+  },
   "bookmarksContent_uncategorized": {
     "message": "未分类"
   },

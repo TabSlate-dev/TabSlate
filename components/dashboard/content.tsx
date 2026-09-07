@@ -1,21 +1,18 @@
 import * as React from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useTabsDndContext } from "./tabs-dnd-provider";
+import { contentCollectionDropId } from "@/lib/drop-ids";
 import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
-import { useTabDragDrop } from "@/hooks/use-tab-drag-drop";
 import { BookmarkCard } from "./bookmark-card";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
 import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import {
   X,
-  BookmarkPlus,
   Bookmark,
-  AlertCircle,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -71,32 +68,28 @@ interface DroppableCollectionHeaderProps {
     isDefault: boolean;
   };
   isExpanded: boolean;
-  isTabDragOver: boolean;
   onToggle: () => void;
 }
 
-function DroppableCollectionHeader({ rowData, isExpanded, isTabDragOver, onToggle }: DroppableCollectionHeaderProps) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `content-collection-${rowData.collectionId}`,
-  });
-  const { activeData } = useTabsDndContext();
+function DroppableCollectionHeader({ rowData, isExpanded, onToggle }: DroppableCollectionHeaderProps) {
+  const { setNodeRef } = useDroppable({ id: bandDropId(rowData.collectionId) });
+  const { activeData, overCollectionId } = useTabsDndContext();
 
-  const isAccepting = React.useMemo(() => {
-    if (!activeData) return false;
-    return ["tab", "tab-group", "bookmark"].includes(activeData.type);
-  }, [activeData]);
+  const isBandOver = React.useMemo(() => {
+    if (!activeData || !ACCEPTED_DRAG_TYPES.includes(activeData.type)) return false;
+    return overCollectionId === bandCollectionKey(rowData.collectionId);
+  }, [activeData, overCollectionId, rowData.collectionId]);
 
   return (
     <div
       ref={setNodeRef}
-      data-tab-drop-collection-id={rowData.collectionId}
       onClick={onToggle}
       className={cn(
         "group flex items-center justify-between p-3 rounded-xl border transition-all duration-300 cursor-pointer select-none",
         isExpanded
           ? "bg-primary/[0.03] border-primary/20 dark:bg-primary/[0.02] shadow-sm"
           : "bg-card/25 border-muted/20 hover:bg-accent/40 hover:border-primary/20 hover:shadow-md",
-        ((isOver && isAccepting) || isTabDragOver) && "border-primary bg-primary/10 ring-1 ring-primary/30 shadow-lg dark:bg-primary/5 scale-[1.01]"
+        isBandOver && "border-primary bg-primary/10 ring-1 ring-primary/30 shadow-lg dark:bg-primary/5 scale-[1.01]"
       )}
     >
       <div className="flex items-center gap-3">
@@ -117,6 +110,85 @@ function DroppableCollectionHeader({ rowData, isExpanded, isTabDragOver, onToggl
         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/10">
           {rowData.count}
         </span>
+      </div>
+    </div>
+  );
+}
+
+const ACCEPTED_DRAG_TYPES = ["tab", "tab-group", "bookmark"];
+
+/**
+ * The dnd-kit drop id for a Collection band.
+ *
+ * "uncategorized" and "" have no Collection behind them, so they borrow the
+ * "all" sentinel the drop handler already resolves to the default Collection.
+ */
+function bandCollectionKey(collectionId: string) {
+  return collectionId === "uncategorized" || collectionId === "" ? "all" : collectionId;
+}
+
+function bandDropId(collectionId: string, suffix?: string) {
+  return contentCollectionDropId(bandCollectionKey(collectionId), suffix);
+}
+
+interface DroppableCollectionBandProps {
+  collectionId: string;
+  /** Discriminator so each row of a Collection gets a unique dnd-kit id. */
+  suffix: string;
+  measureElement: (node: Element | null) => void;
+  index: number;
+  start: number;
+  style?: React.CSSProperties;
+  className?: string;
+  children: React.ReactNode;
+}
+
+/**
+ * One row of a Collection band, registered as a dnd-kit drop target.
+ *
+ * The positioning transform and the droppable MUST live on different elements.
+ * dnd-kit measures droppables with `getTransformAgnosticClientRect`, which
+ * strips the element's own CSS transform — registering the virtualizer's
+ * `translateY` row would report every band at the top of the list, so the
+ * pointer never lands inside one. The outer element positions, the inner one
+ * is the drop target.
+ */
+function DroppableCollectionBand({
+  collectionId,
+  suffix,
+  measureElement,
+  index,
+  start,
+  style,
+  className,
+  children,
+}: DroppableCollectionBandProps) {
+  const { setNodeRef } = useDroppable({ id: bandDropId(collectionId, suffix) });
+  const { activeData, overCollectionId } = useTabsDndContext();
+
+  const isBandOver = React.useMemo(() => {
+    if (!activeData || !ACCEPTED_DRAG_TYPES.includes(activeData.type)) return false;
+    return overCollectionId === bandCollectionKey(collectionId);
+  }, [activeData, overCollectionId, collectionId]);
+
+  return (
+    <div
+      ref={measureElement}
+      data-index={index}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        transform: `translateY(${start}px)`,
+      }}
+    >
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={cn(className, isBandOver && "bg-primary/5")}
+      >
+        {children}
       </div>
     </div>
   );
@@ -188,6 +260,7 @@ type VirtualItem =
   | { type: "hero_and_title" }
   | { type: "collection_header"; collectionId: string; collectionName: string; count: number; icon: string; isDefault: boolean }
   | { type: "bookmarks_row"; collectionId: string; bookmarks: BookmarkType[]; rowIndex: number }
+  | { type: "collection_dropzone"; collectionId: string }
   | { type: "empty_state"; title: string; description: string };
 
 export function BookmarksContent() {
@@ -229,8 +302,7 @@ export function BookmarksContent() {
     prevWorkspaceIdRef.current = activeWorkspaceId;
   }, [activeWorkspaceId, setSelectedCollection]);
 
-  const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, targetCollectionId, dropZoneProps } =
-    useTabDragDrop();
+  const highlightedBookmarkId = useBookmarksStore((state) => state.highlightedBookmarkId);
 
   const parentRef = React.useRef<HTMLDivElement>(null);
   const gridCols = useContainerColumns(parentRef);
@@ -346,6 +418,8 @@ export function BookmarksContent() {
               rowIndex: r,
             });
           }
+        } else if (isExpanded) {
+          rows.push({ type: "collection_dropzone", collectionId: col.id });
         }
       });
 
@@ -405,6 +479,9 @@ export function BookmarksContent() {
       if (row.type === "empty_state") {
         return 200;
       }
+      if (row.type === "collection_dropzone") {
+        return 76;
+      }
       return viewMode === "grid" ? 156 : 80;
     },
     getItemKey: React.useCallback(
@@ -417,6 +494,9 @@ export function BookmarksContent() {
         if (row.type === "empty_state") return "empty-state";
         if (row.type === "collection_header") {
           return `col-header-${row.collectionId}`;
+        }
+        if (row.type === "collection_dropzone") {
+          return `col-dropzone-${row.collectionId}`;
         }
         return `bookmarks-row-${viewMode}-${row.collectionId}-${row.rowIndex}`;
       },
@@ -446,35 +526,7 @@ export function BookmarksContent() {
   }, [highlightedBookmarkId, virtualRows, virtualizer, filteredBookmarks]);
 
   return (
-    <div ref={parentRef} className="flex-1 w-full overflow-auto relative" {...dropZoneProps}>
-      {/* Drop overlay */}
-      {isDragOver && (
-        <div className="sticky top-3 z-50 h-0 flex justify-center pointer-events-none">
-          <div className="flex items-center gap-2 h-fit px-4 py-2 rounded-lg border border-primary bg-background/95 shadow-lg text-primary" role="status">
-            <BookmarkPlus className="size-5" />
-            <p className="text-sm font-semibold">{targetDropLabel}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Notification Toast */}
-      {notification && (
-        <Alert
-          variant={notification.type === "unavailable" ? "destructive" : notification.type === "duplicate" ? "default" : "info"}
-          className={cn(
-            "fixed top-4 left-1/2 -translate-x-1/2 z-100 w-auto shadow-lg animate-in fade-in slide-in-from-top-2 pointer-events-none whitespace-nowrap",
-            notification.type === "duplicate" && "border-amber-500/50 text-amber-600 bg-amber-50/90 dark:bg-amber-950/20"
-          )}
-        >
-          {notification.type === "success" ? (
-            <BookmarkPlus className="size-4" />
-          ) : (
-            <AlertCircle className="size-4" />
-          )}
-          <AlertDescription>{notification.text}</AlertDescription>
-        </Alert>
-      )}
-
+    <div ref={parentRef} className="flex-1 w-full overflow-auto relative">
       <div
         style={{
           height: `${virtualizer.getTotalSize()}px`,
@@ -561,19 +613,14 @@ export function BookmarksContent() {
 
           if (rowData.type === "empty_state") {
             return (
-              <div
+              <DroppableCollectionBand
                 key={virtualRow.key}
-                ref={virtualizer.measureElement}
-                data-index={virtualRow.index}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
+                collectionId={selectedCollection}
+                suffix="empty-state"
+                measureElement={virtualizer.measureElement}
+                index={virtualRow.index}
+                start={virtualRow.start}
                 className="px-4 md:px-6 py-8"
-                data-tab-drop-collection-id={selectedCollection !== "all" ? selectedCollection : undefined}
               >
                 <EmptyState
                   icon={Bookmark}
@@ -587,7 +634,7 @@ export function BookmarksContent() {
                     ) : undefined
                   }
                 />
-              </div>
+              </DroppableCollectionBand>
             );
           }
 
@@ -610,7 +657,6 @@ export function BookmarksContent() {
                 <DroppableCollectionHeader
                   rowData={rowData}
                   isExpanded={isExpanded}
-                  isTabDragOver={isDragOver && targetCollectionId === rowData.collectionId}
                   onToggle={() => {
                     setExpandedCollectionIds((prev) => ({
                       ...prev,
@@ -622,25 +668,39 @@ export function BookmarksContent() {
             );
           }
 
+          if (rowData.type === "collection_dropzone") {
+            return (
+              <DroppableCollectionBand
+                key={virtualRow.key}
+                collectionId={rowData.collectionId}
+                suffix="dropzone"
+                measureElement={virtualizer.measureElement}
+                index={virtualRow.index}
+                start={virtualRow.start}
+                className="px-4 md:px-6 py-2"
+              >
+                <div className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/10 text-xs text-muted-foreground">
+                  {t("bookmarksContent_emptyCollectionDropHint")}
+                </div>
+              </DroppableCollectionBand>
+            );
+          }
+
           if (rowData.type === "bookmarks_row") {
             return (
-              <div
+              <DroppableCollectionBand
                 key={virtualRow.key}
-                data-index={virtualRow.index}
-                data-tab-drop-collection-id={rowData.collectionId}
-                ref={virtualizer.measureElement}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                  ...(viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : {}),
-                }}
-                className={cn(
-                  viewMode === "grid" ? "grid gap-4 px-4 md:px-6 pb-4" : "flex flex-col gap-2 px-4 md:px-6 pb-4",
-                  isDragOver && targetCollectionId === rowData.collectionId && "bg-primary/5 rounded-xl"
-                )}
+                collectionId={rowData.collectionId}
+                suffix={`row-${rowData.rowIndex}`}
+                measureElement={virtualizer.measureElement}
+                index={virtualRow.index}
+                start={virtualRow.start}
+                style={viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : undefined}
+                className={
+                  viewMode === "grid"
+                    ? "grid gap-4 px-4 md:px-6 py-2"
+                    : "flex flex-col gap-2 px-4 md:px-6 py-2"
+                }
               >
                 {rowData.bookmarks.map((bookmark) => (
                   <DraggableBookmarkCard
@@ -652,7 +712,7 @@ export function BookmarksContent() {
                     onAddTags={setTaggingBookmark}
                   />
                 ))}
-              </div>
+              </DroppableCollectionBand>
             );
           }
 

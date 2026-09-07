@@ -22,6 +22,7 @@ interface TrashedBookmarkRecord extends Bookmark {
   isTrashed?: number;
 }
 
+let _bookmarkHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 let _bookmarksArrayCache: Bookmark[] | null = null;
 let _bookmarksArrayCacheSource: Map<string, Bookmark> | null = null;
 
@@ -261,6 +262,8 @@ interface BookmarksState {
 
   // UI state — ephemeral (reset on each session)
   selectedCollection: string;
+  /** Bookmark the content list should scroll to and flash, e.g. a detected duplicate. */
+  highlightedBookmarkId: string | null;
   selectedTags: string[];
   searchQuery: string;
   viewMode: ViewMode;
@@ -280,6 +283,7 @@ interface BookmarksState {
 
   // Actions
   setSelectedCollection: (collectionId: string) => void;
+  setHighlightedBookmarkId: (id: string | null, durationMs?: number) => void;
   toggleTag: (tagId: string) => void;
   clearTags: () => void;
   setSearchQuery: (query: string) => void;
@@ -328,6 +332,7 @@ export const useBookmarksStore = create<BookmarksState>()(
       trashedBookmarks: [],
 
       selectedCollection: "all",
+      highlightedBookmarkId: null,
       selectedTags: [],
       searchQuery: "",
       viewMode: "grid",
@@ -421,6 +426,17 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       setSelectedCollection: (collectionId) =>
         set({ selectedCollection: collectionId }),
+
+      setHighlightedBookmarkId: (id, durationMs = 3000) => {
+        if (_bookmarkHighlightTimer) { clearTimeout(_bookmarkHighlightTimer); }
+        set({ highlightedBookmarkId: id });
+        if (id) {
+          _bookmarkHighlightTimer = setTimeout(() => {
+            set({ highlightedBookmarkId: null });
+            _bookmarkHighlightTimer = null;
+          }, durationMs);
+        }
+      },
 
       toggleTag: (tagId) =>
         set((state) => ({

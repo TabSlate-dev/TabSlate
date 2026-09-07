@@ -1,4 +1,5 @@
 import * as React from "react";
+import { useDraggable } from "@dnd-kit/core";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { useAdsStore } from "@/store/ads-store";
 import { TabsAdStrip } from "./tabs-panel/tabs-ad-strip";
+import type { TabDragData } from "./tabs-dnd-provider";
 
 interface WindowTab {
   id: number;
@@ -25,6 +27,57 @@ interface BrowserWindow {
   id: number;
   focused: boolean;
   tabs: WindowTab[];
+}
+
+interface DraggableRailTabProps {
+  tab: WindowTab;
+  onFocus: () => void;
+}
+
+function DraggableRailTab({ tab, onFocus }: DraggableRailTabProps) {
+  const dragData: TabDragData = {
+    type: "tab",
+    tabId: tab.id,
+    fromGroupId: -1,
+    title: tab.title,
+    url: tab.url,
+    favIconUrl: tab.favIconUrl,
+  };
+  const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
+    id: `rail-tab-${tab.id}`,
+    data: dragData,
+  });
+
+  return (
+    <button
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      data-drag-handle
+      onClick={onFocus}
+      className={cn(
+        "w-full flex items-start gap-2 px-2.5 py-2 rounded-md border bg-card text-left transition-colors group hover:bg-accent hover:border-accent cursor-grab active:cursor-grabbing touch-none",
+        tab.active && "border-primary/30 bg-primary/5",
+        isDragging && "opacity-40"
+      )}
+    >
+      <div className="relative shrink-0 mt-0.5">
+        <FaviconImage src={tab.favIconUrl} className="size-4 rounded-sm" />
+        {tab.active && (
+          <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-green-500 ring-1 ring-background" />
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-medium truncate leading-tight">
+          {tab.title}
+        </p>
+        <p className="text-[10px] text-muted-foreground truncate mt-0.5">
+          {new URL(tab.url).hostname}
+        </p>
+      </div>
+      <ExternalLink className="size-3 shrink-0 opacity-0 group-hover:opacity-60 mt-0.5 text-muted-foreground" />
+    </button>
+  );
 }
 
 function isUserUrl(url: string) {
@@ -172,42 +225,11 @@ export function TabsRail() {
         )}
         {!loading &&
           tabs.map((tab) => (
-            <button
+            <DraggableRailTab
               key={tab.id}
-              draggable
-              onDragStart={(e) => {
-                e.dataTransfer.effectAllowed = "copy";
-                e.dataTransfer.setData(
-                  "application/tabslate-tab",
-                  JSON.stringify({
-                    title: tab.title,
-                    url: tab.url,
-                    favIconUrl: tab.favIconUrl,
-                  })
-                );
-              }}
-              onClick={() => focusTab(tab.id, tab.windowId)}
-              className={cn(
-                "w-full flex items-start gap-2 px-2.5 py-2 rounded-md border bg-card text-left transition-colors group hover:bg-accent hover:border-accent cursor-grab active:cursor-grabbing",
-                tab.active && "border-primary/30 bg-primary/5"
-              )}
-            >
-              <div className="relative shrink-0 mt-0.5">
-                <FaviconImage src={tab.favIconUrl} className="size-4 rounded-sm" />
-                {tab.active && (
-                  <span className="absolute -bottom-0.5 -right-0.5 size-2 rounded-full bg-green-500 ring-1 ring-background" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium truncate leading-tight">
-                  {tab.title}
-                </p>
-                <p className="text-[10px] text-muted-foreground truncate mt-0.5">
-                  {new URL(tab.url).hostname}
-                </p>
-              </div>
-              <ExternalLink className="size-3 shrink-0 opacity-0 group-hover:opacity-60 mt-0.5 text-muted-foreground" />
-            </button>
+              tab={tab}
+              onFocus={() => focusTab(tab.id, tab.windowId)}
+            />
           ))}
       </div>
 
