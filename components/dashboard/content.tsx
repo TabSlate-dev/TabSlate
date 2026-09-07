@@ -71,10 +71,11 @@ interface DroppableCollectionHeaderProps {
     isDefault: boolean;
   };
   isExpanded: boolean;
+  isTabDragOver: boolean;
   onToggle: () => void;
 }
 
-function DroppableCollectionHeader({ rowData, isExpanded, onToggle }: DroppableCollectionHeaderProps) {
+function DroppableCollectionHeader({ rowData, isExpanded, isTabDragOver, onToggle }: DroppableCollectionHeaderProps) {
   const { setNodeRef, isOver } = useDroppable({
     id: `content-collection-${rowData.collectionId}`,
   });
@@ -88,13 +89,14 @@ function DroppableCollectionHeader({ rowData, isExpanded, onToggle }: DroppableC
   return (
     <div
       ref={setNodeRef}
+      data-tab-drop-collection-id={rowData.collectionId}
       onClick={onToggle}
       className={cn(
         "group flex items-center justify-between p-3 rounded-xl border transition-all duration-300 cursor-pointer select-none",
         isExpanded
           ? "bg-primary/[0.03] border-primary/20 dark:bg-primary/[0.02] shadow-sm"
           : "bg-card/25 border-muted/20 hover:bg-accent/40 hover:border-primary/20 hover:shadow-md",
-        isOver && isAccepting && "border-primary bg-primary/10 ring-1 ring-primary/30 shadow-lg dark:bg-primary/5 scale-[1.01]"
+        ((isOver && isAccepting) || isTabDragOver) && "border-primary bg-primary/10 ring-1 ring-primary/30 shadow-lg dark:bg-primary/5 scale-[1.01]"
       )}
     >
       <div className="flex items-center gap-3">
@@ -227,7 +229,7 @@ export function BookmarksContent() {
     prevWorkspaceIdRef.current = activeWorkspaceId;
   }, [activeWorkspaceId, setSelectedCollection]);
 
-  const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, dropZoneProps } =
+  const { isDragOver, notification, highlightedBookmarkId, targetDropLabel, targetCollectionId, dropZoneProps } =
     useTabDragDrop();
 
   const parentRef = React.useRef<HTMLDivElement>(null);
@@ -447,9 +449,11 @@ export function BookmarksContent() {
     <div ref={parentRef} className="flex-1 w-full overflow-auto relative" {...dropZoneProps}>
       {/* Drop overlay */}
       {isDragOver && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-lg pointer-events-none">
-          <BookmarkPlus className="size-10 text-primary" />
-          <p className="text-base font-semibold text-primary">{targetDropLabel}</p>
+        <div className="sticky top-3 z-50 h-0 flex justify-center pointer-events-none">
+          <div className="flex items-center gap-2 h-fit px-4 py-2 rounded-lg border border-primary bg-background/95 shadow-lg text-primary" role="status">
+            <BookmarkPlus className="size-5" />
+            <p className="text-sm font-semibold">{targetDropLabel}</p>
+          </div>
         </div>
       )}
 
@@ -569,6 +573,7 @@ export function BookmarksContent() {
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
                 className="px-4 md:px-6 py-8"
+                data-tab-drop-collection-id={selectedCollection !== "all" ? selectedCollection : undefined}
               >
                 <EmptyState
                   icon={Bookmark}
@@ -605,6 +610,7 @@ export function BookmarksContent() {
                 <DroppableCollectionHeader
                   rowData={rowData}
                   isExpanded={isExpanded}
+                  isTabDragOver={isDragOver && targetCollectionId === rowData.collectionId}
                   onToggle={() => {
                     setExpandedCollectionIds((prev) => ({
                       ...prev,
@@ -621,6 +627,7 @@ export function BookmarksContent() {
               <div
                 key={virtualRow.key}
                 data-index={virtualRow.index}
+                data-tab-drop-collection-id={rowData.collectionId}
                 ref={virtualizer.measureElement}
                 style={{
                   position: 'absolute',
@@ -630,7 +637,10 @@ export function BookmarksContent() {
                   transform: `translateY(${virtualRow.start}px)`,
                   ...(viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : {}),
                 }}
-                className={viewMode === "grid" ? "grid gap-4 px-4 md:px-6 pb-4" : "flex flex-col gap-2 px-4 md:px-6 pb-4"}
+                className={cn(
+                  viewMode === "grid" ? "grid gap-4 px-4 md:px-6 pb-4" : "flex flex-col gap-2 px-4 md:px-6 pb-4",
+                  isDragOver && targetCollectionId === rowData.collectionId && "bg-primary/5 rounded-xl"
+                )}
               >
                 {rowData.bookmarks.map((bookmark) => (
                   <DraggableBookmarkCard
