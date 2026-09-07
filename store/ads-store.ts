@@ -72,6 +72,18 @@ export function mapRawAd(raw: RawAd, index: number): Ad {
 
 const TTL_MS = 10 * 60 * 1000; // 10 minutes cache TTL
 
+/**
+ * Ads are decorative: a failed fetch just renders no ad slot, so nothing about
+ * it is actionable for the user. Keep the diagnostics in dev and stay silent in
+ * production rather than putting our backend's hiccups in their console.
+ */
+function reportAdsIssue(log: (...args: unknown[]) => void, ...args: unknown[]) {
+  if (!import.meta.env.DEV) {
+    return;
+  }
+  log(...args);
+}
+
 export const useAdsStore = create<AdsState>()((set, get) => ({
   ads: [],
   homepageAds: [],
@@ -85,7 +97,7 @@ export const useAdsStore = create<AdsState>()((set, get) => ({
     try {
       const apiUrl = import.meta.env.VITE_OPENADS_API_URL;
       if (!apiUrl) {
-        console.warn("VITE_OPENADS_API_URL is not configured in .env");
+        reportAdsIssue(console.warn, "VITE_OPENADS_API_URL is not configured in .env");
         set({ isFetching: false });
         return;
       }
@@ -115,7 +127,7 @@ export const useAdsStore = create<AdsState>()((set, get) => ({
         isFetching: false,
       });
     } catch (err) {
-      console.error("Error fetching ads:", err);
+      reportAdsIssue(console.error, "Error fetching ads:", err);
       set({ isFetching: false, fetchedAt: null });
     }
   },
