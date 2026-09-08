@@ -29,7 +29,11 @@ mock.module("@/store/plan-store", () => ({
   guardQuota: (_resource, _currentCount, fallback, fn) => fn() ?? fallback,
 }));
 mock.module("@/lib/id", () => ({ generateId: () => "generated-id" }));
-mock.module("@/lib/bookmark-utils", () => ({ normalizeFavicon: (favicon) => favicon }));
+const bookmarkUtils = await import("../lib/bookmark-utils.ts");
+mock.module("@/lib/bookmark-utils", () => ({
+  ...bookmarkUtils,
+  normalizeFavicon: (favicon) => favicon,
+}));
 
 const { useBookmarksStore } = await import(
   `../store/bookmarks-store.ts?test=${Date.now()}-${Math.random()}`
@@ -99,5 +103,28 @@ describe("bookmark sort order", () => {
     const batch = [bookmark("z", sameInstant), bookmark("m", sameInstant), bookmark("a", sameInstant)];
     expect(sortedIds(batch)).toEqual(["a", "m", "z"]);
     expect(sortedIds([...batch].reverse())).toEqual(["a", "m", "z"]);
+  });
+
+  test("archived bookmarks come back newest first", () => {
+    useBookmarksStore.setState({
+      archivedBookmarks: [
+        bookmark("a", "1748390400000"),
+        bookmark("b", "1779926400000"),
+        bookmark("c", "1716854400000"),
+      ],
+      searchQuery: "",
+    });
+    expect(useBookmarksStore.getState().getArchivedBookmarks().map((b) => b.id))
+      .toEqual(["b", "a", "c"]);
+  });
+
+  test("trashed bookmarks come back most recently trashed first", () => {
+    const trashed = (id, deletedAt) => ({ ...bookmark(id, "2026-05-28T00:00:00.000Z"), deletedAt });
+    useBookmarksStore.setState({
+      trashedBookmarks: [trashed("old", 1000), trashed("new", 3000), trashed("mid", 2000)],
+      searchQuery: "",
+    });
+    expect(useBookmarksStore.getState().getTrashedBookmarks().map((b) => b.id))
+      .toEqual(["new", "mid", "old"]);
   });
 });

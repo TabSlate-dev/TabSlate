@@ -61,6 +61,7 @@ import {
   purgeTargetsRemainVisible,
   type PurgeTargets,
 } from "@/lib/workspace-visibility";
+import { compareBookmarksTrashedFirst } from "@/lib/bookmark-utils";
 
 export interface GroupPurgeUiOutcome {
   shouldClose: boolean;
@@ -640,7 +641,9 @@ export function TrashContent() {
         unique.set(b.id, b);
       }
     }
-    return Array.from(unique.values());
+    // Storage order is IDB key order, or server order after a pull — sort so the
+    // list does not reshuffle between reloads.
+    return Array.from(unique.values()).sort(compareBookmarksTrashedFirst);
   }, [trashedBookmarks, trashedCollections, wsAllColIds]);
 
   const collectionBookmarks = React.useMemo(() => {
@@ -654,6 +657,9 @@ export function TrashContent() {
         if (!map[b.collectionId]) map[b.collectionId] = [];
         map[b.collectionId].push(b);
       }
+    }
+    for (const bookmarks of Object.values(map)) {
+      bookmarks.sort(compareBookmarksTrashedFirst);
     }
     return map;
   }, [trashedBookmarks, trashedCollections]);

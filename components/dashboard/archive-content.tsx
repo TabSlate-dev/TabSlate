@@ -43,6 +43,7 @@ import {
   getCollectionsUnderActiveWorkspace,
 } from "@/lib/workspace-visibility";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { compareBookmarksNewestFirst } from "@/lib/bookmark-utils";
 
 // ---------------------------------------------------------------------------
 // Icon map (mirrors sidebar)
@@ -384,13 +385,18 @@ export function ArchiveContent() {
         map[b.collectionId].push(b);
       }
     }
+    // Storage order is IDB key order, or server order after a pull — sort so the
+    // list does not reshuffle between reloads.
+    for (const bookmarks of Object.values(map)) {
+      bookmarks.sort(compareBookmarksNewestFirst);
+    }
     return map;
   }, [archivedBookmarks, archivedCollectionIds]);
 
   const individualArchivedBookmarks = React.useMemo(
     () => archivedBookmarks.filter(
       b => !archivedCollectionIds.has(b.collectionId) && (b.collectionId === "" || activeCollectionIds.has(b.collectionId))
-    ),
+    ).sort(compareBookmarksNewestFirst),
     [archivedBookmarks, archivedCollectionIds, activeCollectionIds]
   );
 

@@ -5,7 +5,11 @@ import { idbGet, idbGetAll, idbGetByIndex, idbGetMany, idbPut, idbDelete, idbBul
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncEntity, SyncPullResponse } from "@/lib/api";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
-import { normalizeFavicon } from "@/lib/bookmark-utils";
+import {
+  compareBookmarksNewestFirst,
+  compareBookmarksTrashedFirst,
+  normalizeFavicon,
+} from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
 import type { WorkspaceAggregateIds } from "@/lib/workspace-aggregate";
@@ -180,24 +184,6 @@ function applySearch(bookmarks: Bookmark[], query: string): Bookmark[] {
 }
 
 /**
- * Read a bookmark's creation time as a number.
- *
- * Locally created bookmarks store an ISO string, but records merged from the
- * server were stored as the raw epoch stringified, which `new Date()` parses as
- * an invalid date. A comparator that returns NaN is inconsistent, and V8's sort
- * then yields an order that depends on the array's starting order — which is
- * the Map's insertion order, and differs between a plain hydrate and a merge
- * from a sync pull. That is why the list reshuffled on every reload. Accept
- * both shapes so already-stored records sort correctly too.
- */
-function createdAtTime(createdAt: string): number {
-  const parsed = new Date(createdAt).getTime();
-  if (!Number.isNaN(parsed)) { return parsed; }
-  const epoch = Number(createdAt);
-  return Number.isFinite(epoch) ? epoch : 0;
-}
-
-/**
  * Bookmarks saved in one batch share a timestamp, so every comparison needs a
  * tiebreaker to stay deterministic across reloads.
  */
@@ -206,9 +192,9 @@ function applySort(bookmarks: Bookmark[], sortBy: SortBy): Bookmark[] {
   const byId = (a: Bookmark, b: Bookmark) => a.id.localeCompare(b.id);
   switch (sortBy) {
     case "date-newest":
-      return arr.sort((a, b) => createdAtTime(b.createdAt) - createdAtTime(a.createdAt) || byId(a, b));
+      return arr.sort(compareBookmarksNewestFirst);
     case "date-oldest":
-      return arr.sort((a, b) => createdAtTime(a.createdAt) - createdAtTime(b.createdAt) || byId(a, b));
+      return arr.sort((a, b) => -compareBookmarksNewestFirst(a, b));
     case "alpha-az":
       return arr.sort((a, b) => a.title.localeCompare(b.title) || byId(a, b));
     case "alpha-za":
@@ -1440,12 +1426,14 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       getArchivedBookmarks: () => {
         const state = get();
-        return applySearch([...state.archivedBookmarks], state.searchQuery);
+        return applySearch([...state.archivedBookmarks], state.searchQuery)
+          .sort(compareBookmarksNewestFirst);
       },
 
       getTrashedBookmarks: () => {
         const state = get();
-        return applySearch([...state.trashedBookmarks], state.searchQuery);
+        return applySearch([...state.trashedBookmarks], state.searchQuery)
+          .sort(compareBookmarksTrashedFirst);
       },
     })
 );

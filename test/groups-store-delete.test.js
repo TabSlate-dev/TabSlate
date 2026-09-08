@@ -32,7 +32,9 @@ mock.module("@/lib/id", () => ({
   generateId: () => "generated-id",
 }));
 
+const bookmarkUtils = await import("../lib/bookmark-utils.ts");
 mock.module("@/lib/bookmark-utils", () => ({
+  ...bookmarkUtils,
   normalizeFavicon: (favicon) => favicon,
 }));
 
