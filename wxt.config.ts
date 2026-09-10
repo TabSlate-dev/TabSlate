@@ -17,7 +17,7 @@ export default defineConfig({
   manifest: ({ browser }) => ({
     name: "__MSG_extensionName__",
     description: "__MSG_extensionDescription__",
-    version: "0.2.1",
+    version: "0.2.2",
     default_locale: "en",
     permissions: getPermissions(),
     optional_host_permissions: ["<all_urls>"],
