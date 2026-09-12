@@ -70,6 +70,7 @@ interface AuthState {
   resetPassword: (email: string, code: string, newPassword: string) => Promise<void>;
   requestAccountDeletion: (password: string) => Promise<{ scheduled_at: number; executes_at: number }>;
   logout: () => Promise<void>;
+  applyRemoteLogout: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -236,6 +237,17 @@ export const useAuthStore = create<AuthState>()(
         await retireActiveSyncLifecycle();
         await clearDB();
         chrome.storage.local.remove("tabslate-search-engines");
+        set({ user: null, accessToken: null, refreshToken: null, otpSentAt: null });
+        // Other already-open newtab contexts hold their own in-memory copy of
+        // this store and won't see the reset above — tell them to clear their
+        // session too, so they stop showing private data / syncing after logout.
+        chrome.runtime.sendMessage({ type: "AUTH_LOGOUT" }).catch(() => {});
+      },
+
+      /** Applied when another extension context broadcasts AUTH_LOGOUT — mirrors
+       *  logout()'s local state reset without re-invoking the server call. */
+      applyRemoteLogout: () => {
+        invalidateRefreshWork();
         set({ user: null, accessToken: null, refreshToken: null, otpSentAt: null });
       },
     }),

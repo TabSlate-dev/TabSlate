@@ -999,7 +999,7 @@ export const useBookmarksStore = create<BookmarksState>()(
             title: serverBookmark.title,
             url: serverBookmark.url,
             description: serverBookmark.description ?? existing?.description ?? "",
-            favicon: serverBookmark.favicon_url ?? existing?.favicon ?? "",
+            favicon: normalizeFavicon(serverBookmark.favicon_url, serverBookmark.url),
             collectionId: serverBookmark.collection_id ?? existing?.collectionId ?? "",
             tags: serverBookmark.tag_ids ?? existing?.tags ?? [],
             createdAt: existing?.createdAt ?? serverCreatedAtToIso(serverBookmark.created_at),

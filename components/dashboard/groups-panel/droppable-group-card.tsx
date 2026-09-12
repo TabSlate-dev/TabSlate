@@ -14,6 +14,7 @@ import {
   FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { openInNewTab } from "@/lib/chrome/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -360,7 +361,7 @@ export function DroppableGroupCard({ group, tabs }: DroppableGroupCardProps) {
                 <Button
                   variant="ghost"
                   size="icon-xs"
-                  onClick={() => window.open(tab.url, "_blank")}
+                  onClick={() => openInNewTab(tab.url)}
                   className="size-6 text-muted-foreground hover:text-foreground"
                   title="Open in new tab"
                 >

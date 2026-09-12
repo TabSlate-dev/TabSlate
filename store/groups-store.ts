@@ -459,7 +459,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
                 groupId: st.group_id,
                 title: st.title,
                 url: st.url,
-                favicon: st.favicon,
+                favicon: normalizeFavicon(st.favicon, st.url),
                 position: st.position,
               });
             }
@@ -488,7 +488,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
               groupId: st.group_id,
               title: st.title,
               url: st.url,
-              favicon: st.favicon,
+              favicon: normalizeFavicon(st.favicon, st.url),
               position: st.position,
             });
           }

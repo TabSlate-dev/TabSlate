@@ -1,5 +1,6 @@
 import { api } from "@/lib/api";
 import { getDB, idbPut, idbDelete } from "@/lib/idb";
+import { isSecureServerUrl } from "@/lib/server-url";
 
 type OnSeqReceived = (seq: number) => void;
 type OnStatusChange = (connected: boolean) => void;
@@ -86,7 +87,7 @@ export class SSEClient {
   private async connect() {
     if (this.destroyed) return;
     const creds = this.getCredentials();
-    if (!creds) return;
+    if (!creds || !isSecureServerUrl(creds.baseUrl)) return;
 
     let token: string;
     try {

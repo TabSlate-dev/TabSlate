@@ -1,5 +1,6 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
+import { openInNewTab } from "@/lib/chrome/tabs";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import {
@@ -357,7 +358,7 @@ function TrashedBookmarkCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => window.open(bookmark.url, "_blank")}>
+            <DropdownMenuItem onClick={() => openInNewTab(bookmark.url)}>
               <ExternalLink className="size-4 mr-2" />
               {t("trashContent_openUrl")}
             </DropdownMenuItem>

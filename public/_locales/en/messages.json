@@ -233,6 +233,9 @@
   "auth_serverUrlDesc": {
     "message": "For self-hosted TabSlate Server instances."
   },
+  "auth_serverUrlInsecure": {
+    "message": "Must use https://, or http:// for localhost/127.0.0.1 only."
+  },
   "auth_password": {
     "message": "Password"
   },

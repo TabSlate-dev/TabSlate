@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
-import { smartOpenUrl } from "@/lib/chrome/tabs";
+import { smartOpenUrl, openInNewTab } from "@/lib/chrome/tabs";
 import type { Bookmark, Tag } from "@/lib/types";
 
 import { Button } from "@/components/ui/button";
@@ -72,7 +72,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
     setTimeout(() => setCopied(false), 1500);
   }, [bookmark.url]);
   const handleSmartOpen = React.useCallback(() => smartOpenUrl(bookmark.url), [bookmark.url]);
-  const handleNewTabOpen = React.useCallback(() => window.open(bookmark.url, "_blank"), [bookmark.url]);
+  const handleNewTabOpen = React.useCallback(() => openInNewTab(bookmark.url), [bookmark.url]);
 
   // Shared dropdown content for both variants
   const actionsMenu = React.useMemo(() => (

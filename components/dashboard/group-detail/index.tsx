@@ -15,6 +15,7 @@ import {
   FolderPlus
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { openInNewTab } from "@/lib/chrome/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -434,7 +435,7 @@ export function GroupDetail() {
                   size="icon-xs"
                   onClick={(e) => {
                     e.stopPropagation();
-                    window.open(tab.url, "_blank");
+                    openInNewTab(tab.url);
                   }}
                   title="Open in new tab"
                   className="size-6 text-muted-foreground hover:text-foreground"

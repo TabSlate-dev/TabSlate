@@ -59,6 +59,7 @@ mock.module("@/lib/idb", () => ({
 mock.module("@/lib/chrome/tabs", () => ({
   getAllTabs: mock(async () => []),
   focusTab: mock(async () => {}),
+  openInNewTab: mock(() => {}),
 }));
 mock.module("@/lib/browser/search", () => ({
   runWebSearch: mock(async () => {}),

@@ -1,16 +1,19 @@
 import type { Bookmark } from "@/lib/types";
 
-/** Replace data: favicon URLs (large base64 blobs from chrome.tabs) with a lightweight domain-derived URL. */
-export function normalizeFavicon(favicon: string | undefined, url: string): string {
-  if (!favicon || favicon.startsWith("data:")) {
-    try {
-      const domain = new URL(url).hostname;
-      return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
-    } catch {
-      return "";
-    }
+/**
+ * Always derive the favicon from a trusted icon service based on the
+ * bookmark's domain — never persist a page- or sync-supplied favicon URL
+ * directly. An arbitrary remote favicon (e.g. a per-bookmark unique URL)
+ * can act as a tracking pixel that fires whenever the dashboard renders it,
+ * so any incoming favicon value is intentionally ignored.
+ */
+export function normalizeFavicon(_favicon: string | undefined, url: string): string {
+  try {
+    const domain = new URL(url).hostname;
+    return `https://icons.duckduckgo.com/ip3/${domain}.ico`;
+  } catch {
+    return "";
   }
-  return favicon;
 }
 
 /** Remove trailing slash and lowercase for URL comparison. */

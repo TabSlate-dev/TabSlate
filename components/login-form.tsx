@@ -10,6 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
 import { api, ApiError } from "@/lib/api";
+import { isSecureServerUrl } from "@/lib/server-url";
 import { Procaptcha } from "@/components/procaptcha";
 import {
   InputOTP,
@@ -566,6 +567,11 @@ export function LoginForm({
             <FieldDescription>
               {t("auth_serverUrlDesc")}
             </FieldDescription>
+            {serverUrl && !isSecureServerUrl(serverUrl) && (
+              <p role="alert" className="text-sm text-destructive">
+                {t("auth_serverUrlInsecure")}
+              </p>
+            )}
           </Field>
         )}
       </FieldGroup>

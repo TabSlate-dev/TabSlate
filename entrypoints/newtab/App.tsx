@@ -682,7 +682,42 @@ function SyncProvider({
   );
 }
 
+/**
+ * The full dashboard is web-accessible to *.tabslate.com and localhost so the
+ * marketing site can deep-link into it, but that same declaration lets any
+ * matching origin iframe it for clickjacking. Refuse to render when framed —
+ * top-level navigations (window.self === window.top) are unaffected.
+ */
+function isFramed(): boolean {
+  try {
+    return window.self !== window.top;
+  } catch {
+    // Cross-origin access to window.top throws in some embedding contexts —
+    // treat that as framed too, since we can't prove otherwise.
+    return true;
+  }
+}
+
 export default function App() {
+  useEffect(() => {
+    if (isFramed()) {
+      try {
+        window.top!.location.href = window.self.location.href;
+      } catch {
+        // Embedder's sandbox blocks top navigation — fall through to the
+        // blocked render below instead of leaving the framed dashboard live.
+      }
+    }
+  }, []);
+
+  if (isFramed()) {
+    return null;
+  }
+
+  return <AppRoutes />;
+}
+
+function AppRoutes() {
   useEffect(() => {
     const listener = (message: ExtensionMessage) => {
       if (message.type === "ADD_BOOKMARK") {
@@ -699,6 +734,9 @@ export default function App() {
       }
       if (message.type === "OPEN_SEARCH") {
         window.dispatchEvent(new CustomEvent("tabslate-focus-search"));
+      }
+      if (message.type === "AUTH_LOGOUT") {
+        useAuthStore.getState().applyRemoteLogout();
       }
     };
     chrome.runtime.onMessage.addListener(listener);

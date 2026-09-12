@@ -15,6 +15,7 @@ mock.module("@/lib/chrome/tabs", () => ({
   closeTab: async () => {},
   focusTab: async () => {},
   openUrls: async () => {},
+  openInNewTab: () => {},
 }));
 
 mock.module("@/lib/chrome/tab-groups", () => ({

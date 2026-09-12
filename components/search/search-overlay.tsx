@@ -22,6 +22,10 @@ export function SearchOverlay({ onClose }: Props) {
     });
   }, []);
 
+  React.useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
   const filteredTabs = React.useMemo(() => {
     if (query.length < 2) { return []; }
     const lower = query.toLowerCase();

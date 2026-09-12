@@ -1,4 +1,5 @@
 import { isFirefoxBuild } from "@/lib/browser/env";
+import { isSecureServerUrl } from "@/lib/server-url";
 
 // API types — mirror server internal/model/model.go
 
@@ -305,6 +306,12 @@ async function request<T>(
       0,
     );
   }
+  if (!isSecureServerUrl(baseUrl)) {
+    throw new ApiError(
+      "Server URL must use https://, or http:// for localhost/127.0.0.1 only.",
+      0,
+    );
+  }
   const url = baseUrl.replace(/\/$/, "") + path;
   let res: Response;
   try {
@@ -541,6 +548,9 @@ export async function searchBookmarks(
   accessToken: string,
   query: string,
 ): Promise<SearchResponse> {
+  if (!isSecureServerUrl(serverUrl)) {
+    throw new ApiError("Server URL must use https://, or http:// for localhost/127.0.0.1 only.", 0);
+  }
   const res = await fetch(
     `${serverUrl.replace(/\/$/, "")}/search?q=${encodeURIComponent(query)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },

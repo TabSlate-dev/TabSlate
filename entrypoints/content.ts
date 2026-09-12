@@ -1,52 +1,57 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import { SearchOverlay } from "@/components/search/search-overlay";
-import "@/assets/globals.css";
+import { SEARCH_OVERLAY_CLOSE_MESSAGE } from "@/lib/messages";
 
 export default defineContentScript({
   matches: ["<all_urls>"],
-  cssInjectionMode: "ui",
   registration: "runtime",
 
   async main(ctx) {
     // -----------------------------------------------------------------
-    // Search overlay — Shadow Root for CSS isolation, isolateEvents so
-    // keyboard input doesn't leak to the host page
+    // Search overlay — rendered in an extension-origin iframe (see
+    // entrypoints/search-overlay), not directly in this content script's
+    // world. The iframe is a separate browsing context from the host page:
+    // the host page cannot read its DOM, dispatch synthetic input into it,
+    // or observe keystrokes typed inside it. The outer ShadowRoot (closed,
+    // so the host page can't even obtain a reference to the iframe element)
+    // is only used to host and position that iframe.
     // -----------------------------------------------------------------
-    let currentUi: { remove: () => void; shadow: ShadowRoot } | null = null;
+    let currentUi: { remove: () => void } | null = null;
+    let currentIframe: HTMLIFrameElement | null = null;
+
+    function handleOverlayMessage(event: MessageEvent) {
+      if (event.source !== currentIframe?.contentWindow) { return; }
+      if ((event.data as { type?: string } | null)?.type === SEARCH_OVERLAY_CLOSE_MESSAGE) {
+        hideOverlay();
+      }
+    }
 
     async function showOverlay() {
       if (currentUi) { return; }
-
-      const isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
       const ui = await createShadowRootUi(ctx, {
         name: "tabslate-search-overlay",
         position: "overlay",
         zIndex: 2147483647,
-        // Prevent keydown/keyup/keypress from bubbling to the host page
-        isolateEvents: true,
+        mode: "closed",
         onMount(uiContainer) {
-          // Add dark class so Tailwind dark: variants work inside shadow root
-          if (isDark) { uiContainer.classList.add("dark"); }
-
-          const root = ReactDOM.createRoot(uiContainer);
-          root.render(React.createElement(SearchOverlay, { onClose: hideOverlay }));
-          return root;
+          const iframe = document.createElement("iframe");
+          iframe.src = chrome.runtime.getURL("search-overlay.html");
+          iframe.title = "TabSlate Search";
+          iframe.style.cssText =
+            "position:fixed;inset:0;width:100%;height:100%;border:none;background:transparent;";
+          uiContainer.appendChild(iframe);
+          currentIframe = iframe;
+          window.addEventListener("message", handleOverlayMessage);
+          return iframe;
         },
-        onRemove(root) {
-          root?.unmount();
+        onRemove() {
+          window.removeEventListener("message", handleOverlayMessage);
+          currentIframe = null;
           currentUi = null;
         },
       });
 
       ui.mount();
       currentUi = ui;
-
-      // React renders asynchronously inside shadow root; wait for paint + render
-      setTimeout(() => {
-        ui.shadow.querySelector<HTMLInputElement>("input")?.focus();
-      }, 150);
     }
 
     function hideOverlay() {

@@ -27,6 +27,11 @@ export default defineConfig({
     },
     web_accessible_resources: [
       { resources: ["newtab.html"], matches: getNewtabMatches(browser) },
+      // The global search overlay is embedded as an iframe by the content
+      // script on whatever site the user has granted optional host access
+      // to, so it must be loadable there — the content script itself is
+      // only ever registered on granted origins (see background.ts).
+      { resources: ["search-overlay.html"], matches: ["<all_urls>"] },
     ],
     commands: {
       "open-search": {

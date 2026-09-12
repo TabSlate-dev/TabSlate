@@ -233,6 +233,9 @@
   "auth_serverUrlDesc": {
     "message": "适用于自托管 TabSlate Server 实例。"
   },
+  "auth_serverUrlInsecure": {
+    "message": "必须使用 https://，或仅限 localhost/127.0.0.1 使用 http://。"
+  },
   "auth_password": {
     "message": "密码"
   },

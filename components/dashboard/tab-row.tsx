@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { FaviconImage } from "@/components/ui/favicon-image";
 import type { BrowserTab } from "@/lib/chrome/tabs";
+import { openInNewTab } from "@/lib/chrome/tabs";
 import { BaseTabRow } from "@/components/dashboard/shared/base-tab-row";
 import {
   DropdownMenu,
@@ -109,7 +110,7 @@ export const TabRow = React.memo(function TabRow({
 
   const handleOpen = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    window.open(tab.url, "_blank");
+    openInNewTab(tab.url);
   }, [tab.url]);
 
   const handleClose = useCallback((e: React.MouseEvent) => {

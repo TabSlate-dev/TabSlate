@@ -79,6 +79,15 @@ export async function openUrls(urls: string[]): Promise<void> {
   }
 }
 
+/**
+ * Open a URL in a new background tab via the extension API, rather than
+ * window.open(url, "_blank"), which leaves window.opener set in some
+ * browser/version combinations and lets the opened page navigate us back.
+ */
+export function openInNewTab(url: string): void {
+  chrome.tabs.create({ url });
+}
+
 /** Close a tab by id */
 export function closeTab(tabId: number): Promise<void> {
   return new Promise((resolve) => chrome.tabs.remove(tabId, resolve));
