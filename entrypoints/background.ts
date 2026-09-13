@@ -7,8 +7,10 @@ import { restrictSessionStorageToTrustedContexts } from "@/lib/browser/storage-s
 import { searchBookmarks } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import type { ExtensionMessage } from "@/lib/messages";
+import { SearchOverlaySessionStore } from "@/lib/search-overlay-session";
 
 export default defineBackground(() => {
+  const searchOverlaySessions = new SearchOverlaySessionStore();
   void analytics.init();
 
   // Restrict session storage so content scripts cannot read it (Chrome 112+)
@@ -167,7 +169,53 @@ export default defineBackground(() => {
   // -------------------------------------------------------------------------
   // Message routing for content script — proxy tab APIs
   // -------------------------------------------------------------------------
-  chrome.runtime.onMessage.addListener((message: ExtensionMessage, _sender, sendResponse) => {
+  function getSenderTabID(sender: chrome.runtime.MessageSender): number | null {
+    return typeof sender.tab?.id === "number" ? sender.tab.id : null;
+  }
+
+  function isSearchOverlaySender(sender: chrome.runtime.MessageSender): boolean {
+    return sender.url?.startsWith(chrome.runtime.getURL("search-overlay.html")) === true;
+  }
+
+  function isContentScriptSender(sender: chrome.runtime.MessageSender): boolean {
+    return getSenderTabID(sender) !== null && !sender.url?.startsWith(chrome.runtime.getURL(""));
+  }
+
+  chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
+    const senderTabID = getSenderTabID(sender);
+    if (message.type === "REGISTER_SEARCH_OVERLAY_SESSION") {
+      const registered = senderTabID !== null && isContentScriptSender(sender)
+        ? searchOverlaySessions.register(message.session, senderTabID)
+        : false;
+      sendResponse({ ok: registered });
+      return false;
+    }
+    if (message.type === "VALIDATE_SEARCH_OVERLAY_SESSION") {
+      const valid = senderTabID !== null && isSearchOverlaySender(sender)
+        ? searchOverlaySessions.validate(message.session, senderTabID)
+        : false;
+      sendResponse({ ok: valid });
+      return false;
+    }
+    if (message.type === "REVOKE_SEARCH_OVERLAY_SESSION") {
+      const revoked = senderTabID !== null && isContentScriptSender(sender)
+        ? searchOverlaySessions.revoke(message.session, senderTabID)
+        : false;
+      sendResponse({ ok: revoked });
+      return false;
+    }
+
+    if (!("session" in message)) {
+      return false;
+    }
+
+    const authorized = senderTabID !== null && isSearchOverlaySender(sender) &&
+      searchOverlaySessions.validate(message.session, senderTabID);
+    if (!authorized) {
+      sendResponse({ ok: false });
+      return false;
+    }
+
     if (message.type === "GET_OPEN_TABS") {
       getAllTabs().then(sendResponse);
       return true;

@@ -16,6 +16,7 @@ export default defineContentScript({
     // -----------------------------------------------------------------
     let currentUi: { remove: () => void } | null = null;
     let currentIframe: HTMLIFrameElement | null = null;
+    let openingOverlay = false;
 
     function handleOverlayMessage(event: MessageEvent) {
       if (event.source !== currentIframe?.contentWindow) { return; }
@@ -25,7 +26,20 @@ export default defineContentScript({
     }
 
     async function showOverlay() {
-      if (currentUi) { return; }
+      if (currentUi || openingOverlay) { return; }
+
+      openingOverlay = true;
+      const session = crypto.randomUUID();
+      try {
+        const response = await chrome.runtime.sendMessage({ type: "REGISTER_SEARCH_OVERLAY_SESSION", session });
+        if (response?.ok !== true) {
+          openingOverlay = false;
+          return;
+        }
+      } catch {
+        openingOverlay = false;
+        return;
+      }
 
       const ui = await createShadowRootUi(ctx, {
         name: "tabslate-search-overlay",
@@ -34,7 +48,7 @@ export default defineContentScript({
         mode: "closed",
         onMount(uiContainer) {
           const iframe = document.createElement("iframe");
-          iframe.src = chrome.runtime.getURL("search-overlay.html");
+          iframe.src = chrome.runtime.getURL(`search-overlay.html?session=${encodeURIComponent(session)}`);
           iframe.title = "TabSlate Search";
           iframe.style.cssText =
             "position:fixed;inset:0;width:100%;height:100%;border:none;background:transparent;";
@@ -45,6 +59,7 @@ export default defineContentScript({
         },
         onRemove() {
           window.removeEventListener("message", handleOverlayMessage);
+          void chrome.runtime.sendMessage({ type: "REVOKE_SEARCH_OVERLAY_SESSION", session }).catch(() => {});
           currentIframe = null;
           currentUi = null;
         },
@@ -52,6 +67,7 @@ export default defineContentScript({
 
       ui.mount();
       currentUi = ui;
+      openingOverlay = false;
     }
 
     function hideOverlay() {

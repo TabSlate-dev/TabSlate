@@ -7,9 +7,10 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   onClose: () => void;
+  session: string;
 }
 
-export function SearchOverlay({ onClose }: Props) {
+export function SearchOverlay({ onClose, session }: Props) {
   const [query, setQuery] = React.useState("");
   const [openTabs, setOpenTabs] = React.useState<BrowserTab[]>([]);
   const [bookmarkResults, setBookmarkResults] = React.useState<SearchBookmark[]>([]);
@@ -17,8 +18,8 @@ export function SearchOverlay({ onClose }: Props) {
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
-    chrome.runtime.sendMessage({ type: "GET_OPEN_TABS" }, (tabs: BrowserTab[]) => {
-      if (tabs) { setOpenTabs(tabs); }
+    chrome.runtime.sendMessage({ type: "GET_OPEN_TABS", session }, (tabs: BrowserTab[]) => {
+      if (Array.isArray(tabs)) { setOpenTabs(tabs); }
     });
   }, []);
 
@@ -42,7 +43,7 @@ export function SearchOverlay({ onClose }: Props) {
     let cancelled = false;
     const timer = setTimeout(() => {
       chrome.runtime.sendMessage(
-        { type: "SEARCH_BOOKMARKS", query },
+        { type: "SEARCH_BOOKMARKS", session, query },
         (response: { ok: boolean; bookmarks: SearchBookmark[] } | undefined) => {
           if (cancelled) { return; }
           setBookmarkResults(response?.ok ? response.bookmarks : []);
@@ -63,18 +64,18 @@ export function SearchOverlay({ onClose }: Props) {
       const url = bookmarkResults[index].url;
       const existingTab = openTabs.find(t => t.url === url);
       if (existingTab) {
-        chrome.runtime.sendMessage({ type: "FOCUS_TAB", tabId: existingTab.id, windowId: existingTab.windowId });
+        chrome.runtime.sendMessage({ type: "FOCUS_TAB", session, tabId: existingTab.id, windowId: existingTab.windowId });
       } else {
-        chrome.runtime.sendMessage({ type: "OPEN_TAB", url });
+        chrome.runtime.sendMessage({ type: "OPEN_TAB", session, url });
       }
     } else if (index < bookmarkResults.length + filteredTabs.length) {
       const tab = filteredTabs[index - bookmarkResults.length];
-      chrome.runtime.sendMessage({ type: "FOCUS_TAB", tabId: tab.id, windowId: tab.windowId });
+      chrome.runtime.sendMessage({ type: "FOCUS_TAB", session, tabId: tab.id, windowId: tab.windowId });
     } else {
-      chrome.runtime.sendMessage({ type: "WEB_SEARCH", query: query.trim() });
+      chrome.runtime.sendMessage({ type: "WEB_SEARCH", session, query: query.trim() });
     }
     onClose();
-  }, [bookmarkResults, filteredTabs, openTabs, query, onClose]);
+  }, [bookmarkResults, filteredTabs, openTabs, query, onClose, session]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Escape") { onClose(); return; }

@@ -15,8 +15,11 @@ export type ExtensionMessage =
   | { type: "TABS_CHANGED" }
   | { type: "OPEN_SEARCH" }
   | { type: "AUTH_LOGOUT" }
-  | { type: "GET_OPEN_TABS" }
-  | { type: "FOCUS_TAB"; tabId: number; windowId: number }
-  | { type: "OPEN_TAB"; url: string }
-  | { type: "SEARCH_BOOKMARKS"; query: string }
-  | { type: "WEB_SEARCH"; query: string };
+  | { type: "REGISTER_SEARCH_OVERLAY_SESSION"; session: string }
+  | { type: "VALIDATE_SEARCH_OVERLAY_SESSION"; session: string }
+  | { type: "REVOKE_SEARCH_OVERLAY_SESSION"; session: string }
+  | { type: "GET_OPEN_TABS"; session: string }
+  | { type: "FOCUS_TAB"; session: string; tabId: number; windowId: number }
+  | { type: "OPEN_TAB"; session: string; url: string }
+  | { type: "SEARCH_BOOKMARKS"; session: string; query: string }
+  | { type: "WEB_SEARCH"; session: string; query: string };
