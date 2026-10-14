@@ -51,16 +51,12 @@ const filterOptions = [
 
 export function BookmarksHeader({ title }: BookmarksHeaderProps) {
   const { t } = useTranslation();
-  const {
-    viewMode,
-    setViewMode,
-    searchQuery,
-    setSearchQuery,
-    sortBy,
-    setSortBy,
-    filterType,
-    setFilterType,
-  } = useBookmarksStore();
+  const viewMode = useBookmarksStore(s => s.viewMode);
+  const setViewMode = useBookmarksStore(s => s.setViewMode);
+  const sortBy = useBookmarksStore(s => s.sortBy);
+  const setSortBy = useBookmarksStore(s => s.setSortBy);
+  const filterType = useBookmarksStore(s => s.filterType);
+  const setFilterType = useBookmarksStore(s => s.setFilterType);
 
   const [addBookmarkOpen, setAddBookmarkOpen] = useState(false);
 
