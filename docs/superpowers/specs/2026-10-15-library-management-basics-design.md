@@ -48,6 +48,7 @@ This is the first of five sub-projects derived from the faved.to comparison. Eac
 | Tag management entry point | Right-click context menu on chips. |
 | Right-click scope | Tags (right-click only), collection rows and bookmark cards (right-click in addition to the existing ⋯). |
 | Implementation approach | Keep state where it lives today and add small focused modules (`view-preferences`, `url-match`, `context-menu`); match duplicates in memory. |
+| Firefox preference sync | Mozilla classifies extension settings data as `technicalAndInteraction`. Declare it as an optional data-collection category and request it on its own from a Settings toggle (Firefox's install prompt also offers it). Account-data consent stays unchanged; declining the new category only keeps view preferences local. |
 
 ## Design
 
@@ -66,13 +67,19 @@ This is the first of five sub-projects derived from the faved.to comparison. Eac
 1. **Hydrate.** `useSettingsStore.hydrate()` reads the local copy and applies it to the bookmarks store before setting `_hydrated`. `StoreGate` already waits for the settings store, so the dashboard never renders with the default view first.
 2. **Local change.** The settings store subscribes to the bookmarks store's `viewMode` and `sortBy`. On a user change it writes the local copy with `updatedAt = now` and `dirty = true`, then schedules a push debounced by 1 s. Values applied from the server do not count as user changes and never trigger a push.
 3. **Push.** `GET /preferences`, replace only `bookmarkView`, `PUT /preferences` with the merged object. On success clear `dirty`, unless the local copy changed again while the request was in flight.
-4. **Pull.** `useSettingsStore.pullFromServer(serverUrl, accessToken)`, already called by `App.tsx` once the sync session is eligible, reads `bookmarkView` and compares `updatedAt`:
+4. **Pull.** `App.tsx` already calls the settings store once the sync session is eligible. That call becomes `startPreferenceSync(getCredentials)`, which receives the same credentials getter the sync engine uses (so the settings store never imports the auth store), remembers it for later pushes, and pulls once. The pull reads `bookmarkView` and compares `updatedAt`:
    - server newer, or no local copy: apply the server value and store it locally with `dirty = false`;
    - local newer, or local `dirty`: push the local value;
    - equal: no-op.
-5. **Session reset.** Logout clears IndexedDB, so the local copy resets to defaults; the values currently shown in the open page are left as they are. `useSettingsStore.reset()` clears the pending push and in-memory bookkeeping.
+5. **Session reset.** Logout clears IndexedDB, so the local copy resets to defaults; the values currently shown in the open page are left as they are. `useSettingsStore.reset()` and the sync effect's cleanup (`stopPreferenceSync()`) clear the pending push and the remembered credentials getter.
 
-**Eligibility.** Pushes and pulls use the same gate as `SyncProvider`: verified user, access token, server URL, and, on Firefox, account-data consent. Guest, unverified, and offline sessions only use the local copy.
+**Eligibility.** Pushes and pulls use the same gate as `SyncProvider`: verified user, access token, server URL, and, on Firefox, account-data consent. On Firefox they additionally require the optional `technicalAndInteraction` data-collection permission. Guest, unverified, and offline sessions, and Firefox users without that permission, only use the local copy.
+
+**Firefox settings consent.**
+
+- `lib/browser/data-collection-permissions.ts` adds `FIREFOX_SETTINGS_DATA_COLLECTION = ["technicalAndInteraction"]`, documented as "the bookmark view mode and sort order synced through `/preferences`". The manifest's `optional` list becomes the account categories plus this one.
+- `lib/browser/data-collection.ts` adds `hasSettingsSyncConsent()`, `requestSettingsSyncConsent()`, and `removeSettingsSyncConsent()`. Non-Firefox builds always report `true` and never touch the permissions API; Firefox fails closed when the API errors. `requestAccountDataConsent()` is unchanged, so declining the new category never blocks sign-in or sync.
+- The Settings dialog's General tab shows a "Sync view preferences across devices" switch on Firefox builds only. It reflects the permission, requests it when turned on (from the click handler, before any `await`), and removes it when turned off. After a grant it asks the settings store to pull and push again. Firefox's install prompt also offers this category, and about:addons can toggle it.
 
 **Propagation.** Each new tab is a new page that pulls on start, so a change on one device reaches the others the next time they open a new tab. Open tabs do not update live.
 
@@ -135,10 +142,10 @@ The section keeps the current chip cloud and the current tag order.
 
 **Entry points.**
 
-- **Add bookmark dialog (newtab).** After the URL changes (300 ms debounce), run the loose tier against visible bookmarks in all workspaces. On a match, show a notice under the URL field: "Already saved in «collection» · «workspace»", or "…and N more" for several matches. The notice has an **Open existing bookmark** action that closes the dialog, switches to the bookmark's workspace and collection (or "All bookmarks" when it is uncategorized), clears the selected tags, the filter type, and the search query, and sets `highlightedBookmarkId`. The existing list logic then scrolls to the bookmark and flashes it. The save button stays enabled.
+- **Add bookmark dialog (newtab).** After the URL changes (300 ms debounce), run the loose tier against visible bookmarks in all workspaces. On a match, show a notice under the URL field: "Already saved in «collection» · «workspace»", or "…and N more" for several matches. The notice has an **Open existing bookmark** action that closes the dialog, switches to the bookmark's workspace and collection (or "All bookmarks" when it is uncategorized), clears the selected tags, the filter type, and the search query, and sets `highlightedBookmarkId`. The existing list logic then scrolls to the bookmark and flashes it. The save button stays enabled. `BookmarksContent` currently resets the selected collection to "All bookmarks" on every workspace switch; that reset now skips the case where the selected collection already belongs to the new workspace, which only happens when both are set together like this.
 - **Popup.** On open, read bookmarks, collections, and workspaces from IndexedDB (through `lib/storage.ts`) and run the loose tier against the current tab URL. On a match, show the same notice at the top and relabel the save button **Save anyway**. **Open existing bookmark** opens or focuses TabSlate with `#/?highlight=<bookmarkId>`.
 - **Deep link.** The newtab reads `highlight` from the hash query once. If the bookmark is visible it applies the same navigation as the add dialog's action, then removes the parameter with a replace navigation. An unknown or hidden ID is ignored and the parameter is still removed.
-- **Context menu (background).** No UI is available to ask, so run the strict tier against visible bookmarks in the active workspace (`kv.activeWorkspaceId`). A duplicate is not saved and the action badge for that tab shows an amber, translated "Saved" (已存) for 3 s. A successful save, which today gives no feedback, shows a green "✓" for 3 s. The background has no access to the in-app language override, so the badge text uses the browser locale through `browser.i18n.getMessage`. Badges need no new permission.
+- **Context menu (background).** No UI is available to ask, so run the strict tier against visible bookmarks in the active workspace (`kv.activeWorkspaceId`). A duplicate is not saved: the action badge for that tab shows amber text for 3 s ("已存" in Chinese; "Dup" in English, because a badge only fits about four characters) and the action's tooltip for that tab reads "Already saved in TabSlate" for the same 3 s. A successful save, which today gives no feedback, shows a green "✓" for 3 s. The background has no access to the in-app language override, so the badge text and tooltip use the browser locale through `chrome.i18n.getMessage`. Badges need no new permission.
 - **Drag-and-drop and batch tab saves.** Keep skipping duplicates in the active workspace, now using the strict tier.
 
 ### 6. Save shortcut
@@ -167,7 +174,10 @@ Modified:
 - `entrypoints/popup/App.tsx`, `lib/storage.ts` — duplicate notice, Save anyway, shortcut hint.
 - `entrypoints/background.ts` — strict duplicate check and badges for context-menu saves.
 - `lib/bookmark-utils.ts` — strict-tier helpers.
-- `wxt.config.ts`, `test/wxt-config.test.ts` — save shortcut per browser.
+- `wxt.config.ts`, `test/wxt-config.test.ts` — save shortcut per browser; `technicalAndInteraction` in the Firefox optional list.
+- `lib/browser/data-collection-permissions.ts`, `lib/browser/data-collection.ts`, `test/data-collection.test.ts` — Firefox settings consent.
+- `components/dashboard/settings-dialog.tsx` — Firefox-only preference sync switch.
+- `entrypoints/newtab/App.tsx` — `startPreferenceSync` / `stopPreferenceSync` in the sync effect.
 - `public/_locales/en/messages.json`, `public/_locales/zh_CN/messages.json` — new strings.
 - `CLAUDE.md`, `ARCHITECTURE.md` — the new `kv` key, the `bookmarkView` preference, the URL-matching tiers, and the deep-link parameter.
 
@@ -192,7 +202,8 @@ Each behavior is implemented test-first.
   - the three tag menu actions and the N shown in the delete confirmation;
   - clicking a card tag changes the filter without opening the bookmark;
   - the add dialog's duplicate notice and the open-existing navigation.
-- **Manifest test.** `test/wxt-config.test.ts` asserts the suggested shortcut for the Chromium and Firefox builds.
+- **Manifest test.** `test/wxt-config.test.ts` asserts the suggested shortcut for the Chromium and Firefox builds and the Firefox optional data-collection list.
+- **Consent tests.** `test/data-collection.test.ts` covers the settings consent functions on Chromium (always granted, permissions API untouched) and Firefox (checks, requests, and removes exactly `technicalAndInteraction`; fails closed on errors).
 - **Manual check.** Load the unpacked build in Chrome and Firefox; verify the shortcut, the context-menu badges, popup duplicate notice and deep link, and that view preferences follow the user to a second signed-in profile.
 
 ## Accessibility and Internationalization
@@ -203,8 +214,8 @@ Each behavior is implemented test-first.
 - The confirmation dialog uses Radix's default focus management.
 - Every new string is translated in English and Simplified Chinese, using `[component]_[description]` keys.
 
-## Review Items for Implementation
+## Resolved During Planning
 
-- **Firefox data-collection declaration.** `/preferences` sync only runs after account-data consent. Confirm against Mozilla's category definitions that syncing a UI preference needs no new category in `lib/browser/data-collection-permissions.ts`; add one to `optional` if it does.
-- **Settings store imports.** The settings store will read auth state and consent. Check that this adds no import cycle with the auth store; if it does, pass an eligibility callback from `App.tsx` instead.
-- **Popup tag creation.** The tag-name rule is enforced in `TagDialog`. Confirm that the popup's quick tag input reuses an existing tag with the same name (case-insensitive) instead of creating a duplicate; if it does not, apply the same rule there.
+- **Firefox data-collection declaration.** Mozilla's definition of `technicalAndInteraction` includes "extension usage and settings data", so syncing view preferences needs that category. Resolved by the "Firefox settings consent" design in section 1.
+- **Settings store imports.** The settings store receives a credentials getter from `App.tsx` and checks Firefox consent through `lib/browser/data-collection.ts`; it does not import the auth store.
+- **Popup tag creation.** The popup's quick tag input already reuses an existing tag with the same name (case-insensitive), so it needs no change.
