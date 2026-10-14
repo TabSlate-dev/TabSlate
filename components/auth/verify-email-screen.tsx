@@ -13,6 +13,7 @@ import {
 import { Procaptcha } from "@/components/procaptcha";
 import { useAuthStore } from "@/store/auth-store";
 import { api, ApiError } from "@/lib/api";
+import { requestAccountDataConsent } from "@/lib/browser/data-collection";
 import { useTranslation } from "@/hooks/use-translation";
 
 interface VerifyEmailScreenProps {
@@ -92,6 +93,13 @@ export function VerifyEmailScreen({
     setError("");
     setLoading(true);
     try {
+      // Sessions from before Firefox required consent can land here without
+      // it. Firefox only shows its prompt while handling user input, so this
+      // has to stay ahead of any other await.
+      if (!(await requestAccountDataConsent())) {
+        setError(t("auth_dataConsentRequired"));
+        return;
+      }
       await verifyEmailOTP(email, value);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : t("auth_somethingWentWrong"));
@@ -142,11 +150,18 @@ export function VerifyEmailScreen({
 
   function handleResend() {
     if (retryAfter > 0) return;
-    if (captchaRequired) {
-      setCaptchaDialogOpen(true);
-      return;
-    }
-    doResend();
+    // Firefox only shows its data collection prompt while handling the click.
+    void requestAccountDataConsent().then((granted) => {
+      if (!granted) {
+        setError(t("auth_dataConsentRequired"));
+        return;
+      }
+      if (captchaRequired) {
+        setCaptchaDialogOpen(true);
+        return;
+      }
+      void doResend();
+    });
   }
 
   async function handleCaptchaToken(token: string) {

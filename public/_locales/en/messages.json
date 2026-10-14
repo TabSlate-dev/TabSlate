@@ -122,6 +122,9 @@
   "auth_somethingWentWrong": {
     "message": "Something went wrong"
   },
+  "auth_dataConsentRequired": {
+    "message": "Signing in sends your account details to the sync server, which Firefox only allows with your permission. Try again and allow it when Firefox asks."
+  },
   "auth_email": {
     "message": "Email"
   },
@@ -370,6 +373,15 @@
   },
   "sync_registerNow": {
     "message": "Register now"
+  },
+  "sync_paused": {
+    "message": "Sync paused"
+  },
+  "sync_pausedDesc": {
+    "message": "Firefox hasn't allowed TabSlate to send your account data to the sync server. Allow it to resume syncing."
+  },
+  "sync_allowSync": {
+    "message": "Allow sync"
   },
   "sync_guestDataMerged": {
     "message": "Offline data was merged into $1",

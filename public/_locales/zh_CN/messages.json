@@ -122,6 +122,9 @@
   "auth_somethingWentWrong": {
     "message": "出了点问题"
   },
+  "auth_dataConsentRequired": {
+    "message": "登录会向同步服务器发送您的账户信息，Firefox 需要您授权后才允许。请重试，并在 Firefox 询问时选择允许。"
+  },
   "auth_email": {
     "message": "邮箱"
   },
@@ -370,6 +373,15 @@
   },
   "sync_registerNow": {
     "message": "立即注册"
+  },
+  "sync_paused": {
+    "message": "同步已暂停"
+  },
+  "sync_pausedDesc": {
+    "message": "Firefox 尚未允许 TabSlate 向同步服务器发送您的账户数据，授权后即可恢复同步。"
+  },
+  "sync_allowSync": {
+    "message": "允许同步"
   },
   "sync_guestDataMerged": {
     "message": "离线数据已合并到 $1",

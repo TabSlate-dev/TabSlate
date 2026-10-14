@@ -23,6 +23,7 @@ import { usePlanStore, type QuotaResource } from "@/store/plan-store";
 import { QuotaAlert } from "@/components/ui/quota-alert";
 import { SyncRecoveryAlert } from "@/components/ui/sync-recovery-alert";
 import { useTranslation } from "@/hooks/use-translation";
+import { useAccountDataConsent } from "@/hooks/use-account-data-consent";
 import type { ExtensionMessage } from "@/lib/messages";
 import { analytics } from "@/lib/analytics";
 import { type SyncStatus, initSyncEngine, syncEngine, releaseSyncEngine } from "@/lib/sync-engine";
@@ -368,7 +369,10 @@ function SyncProvider({
     refreshToken,
     isVerified: user?.is_verified ?? null,
   });
-  const syncEnabled = canStartSync(sessionStatus, serverUrl);
+  // Firefox: no sync traffic until the user allows the account data
+  // collection (requested at sign-in, or from the sidebar's sync status).
+  const accountDataConsent = useAccountDataConsent();
+  const syncEnabled = canStartSync(sessionStatus, serverUrl) && accountDataConsent === true;
 
   // Keep refs stable so the engine closure always reads the latest values
   // without needing to be recreated on each localSeq change.
@@ -653,8 +657,8 @@ function SyncProvider({
   }, [showRecoveryNotice, syncEnabled, serverUrl]);
 
   const effectiveSyncStatus = useMemo<SyncStatus>(
-    () => sessionStatus === "offline" ? "offline" : syncStatus,
-    [sessionStatus, syncStatus],
+    () => sessionStatus === "offline" || accountDataConsent === false ? "offline" : syncStatus,
+    [sessionStatus, accountDataConsent, syncStatus],
   );
 
   const handleForceSync = useCallback(() => {

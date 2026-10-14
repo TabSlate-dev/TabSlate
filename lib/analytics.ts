@@ -150,7 +150,21 @@ function track(name: string, properties?: AnalyticsProperties): void {
   })();
 }
 
-export const analytics = {
-  init,
-  track,
+interface AnalyticsClient {
+  init: () => Promise<void>;
+  track: (name: string, properties?: AnalyticsProperties) => void;
+}
+
+const disabledAnalytics: AnalyticsClient = {
+  init: async () => {},
+  track: () => {},
 };
+
+// The Firefox manifest declares no technicalAndInteraction data collection
+// (wxt.config.ts), so Firefox builds must never send usage events. Like
+// lib/browser/storage-session.ts, this branches on the compile-time FIREFOX
+// flag, which lets the bundler drop the analytics client and its endpoint from
+// the Firefox build entirely.
+export const analytics: AnalyticsClient = import.meta.env.FIREFOX
+  ? disabledAnalytics
+  : { init, track };

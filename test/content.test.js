@@ -287,7 +287,7 @@ describe("tab group helpers", () => {
 });
 
 describe("background content script sync", () => {
-  test("omits the Chromium-only storage session access-level API from the Firefox background bundle", () => {
+  test("omits the Chromium-only storage session access-level API and analytics from the Firefox background bundle", () => {
     const result = spawnSync(
       "bunx",
       ["wxt", "build", "-b", "firefox", "--mv3", "--filter-entrypoint", "background"],
@@ -301,6 +301,8 @@ describe("background content script sync", () => {
       "utf8",
     );
     expect(backgroundBundle).not.toContain("setAccessLevel");
+    // The Firefox manifest declares no technicalAndInteraction data collection.
+    expect(backgroundBundle).not.toContain("/api/track");
   });
 
   test("exits early when the scripting API is unavailable", async () => {

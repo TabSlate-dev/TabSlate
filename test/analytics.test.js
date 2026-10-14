@@ -141,4 +141,22 @@ describe("analytics", () => {
     expect(setCalls).toHaveLength(0);
     expect(fetchCalls).toHaveLength(0);
   });
+
+  test("Firefox builds never send events even when analytics is configured", async () => {
+    // The Firefox manifest declares no technicalAndInteraction data collection.
+    process.env.FIREFOX = "true";
+    try {
+      const { analytics } = await importAnalyticsModule();
+
+      await analytics.init();
+      analytics.track("bookmark_added", { source: "popup" });
+      await flushAsyncWork();
+
+      expect(getCalls).toHaveLength(0);
+      expect(setCalls).toHaveLength(0);
+      expect(fetchCalls).toHaveLength(0);
+    } finally {
+      delete process.env.FIREFOX;
+    }
+  });
 });

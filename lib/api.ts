@@ -1,4 +1,5 @@
 import { isFirefoxBuild } from "@/lib/browser/env";
+import { hasAccountDataConsent } from "@/lib/browser/data-collection";
 import { isSecureServerUrl } from "@/lib/server-url";
 
 // API types — mirror server internal/model/model.go
@@ -295,6 +296,23 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Firefox builds declare the account data (email, password, synced page
+ * content, search queries) as optional data collection, so nothing may reach
+ * the sync server until the user has granted it. Every server call goes
+ * through here; the UI asks for consent from the sign-in forms and the
+ * sidebar's sync status.
+ */
+async function ensureAccountDataConsent(): Promise<void> {
+  if (await hasAccountDataConsent()) {
+    return;
+  }
+  throw new ApiError(
+    "Firefox hasn't allowed TabSlate to send account data to the sync server yet.",
+    0,
+  );
+}
+
 async function request<T>(
   baseUrl: string,
   path: string,
@@ -312,6 +330,7 @@ async function request<T>(
       0,
     );
   }
+  await ensureAccountDataConsent();
   const url = baseUrl.replace(/\/$/, "") + path;
   let res: Response;
   try {
@@ -551,6 +570,7 @@ export async function searchBookmarks(
   if (!isSecureServerUrl(serverUrl)) {
     throw new ApiError("Server URL must use https://, or http:// for localhost/127.0.0.1 only.", 0);
   }
+  await ensureAccountDataConsent();
   const res = await fetch(
     `${serverUrl.replace(/\/$/, "")}/search?q=${encodeURIComponent(query)}`,
     { headers: { Authorization: `Bearer ${accessToken}` } },

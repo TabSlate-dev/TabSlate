@@ -1,4 +1,8 @@
 import { defineConfig } from "wxt";
+import {
+  FIREFOX_ACCOUNT_DATA_COLLECTION,
+  FIREFOX_REQUIRED_DATA_COLLECTION,
+} from "./lib/browser/data-collection-permissions";
 
 function getPermissions(): string[] {
   return ["tabs", "tabGroups", "storage", "contextMenus", "scripting", "search"];
@@ -48,8 +52,12 @@ export default defineConfig({
             gecko: {
               id: "support@cs.tabslate.com",
               strict_min_version: "142.0",
+              // What leaves the browser is documented next to each list in
+              // lib/browser/data-collection-permissions.ts. Analytics is not
+              // declared because Firefox builds never send it (lib/analytics.ts).
               data_collection_permissions: {
-                required: ["none"],
+                required: [...FIREFOX_REQUIRED_DATA_COLLECTION],
+                optional: [...FIREFOX_ACCOUNT_DATA_COLLECTION],
               },
             },
           },
@@ -69,7 +77,7 @@ export default defineConfig({
     },
   }),
   hooks: {
-    "build:manifestGenerated": (_wxt, manifest) => {
+    "build:manifestGenerated": (wxt, manifest) => {
       // Remove auto-generated host_permissions that conflict with optional_host_permissions
       delete manifest.host_permissions;
 
@@ -88,7 +96,8 @@ export default defineConfig({
       }
 
       const openpanelUrl = process.env.VITE_OPENPANEL_URL;
-      if (openpanelUrl) {
+      // Firefox builds never send analytics (see lib/analytics.ts).
+      if (openpanelUrl && wxt.config.browser !== "firefox") {
         try {
           hostPermissionOrigins.add(`${new URL(openpanelUrl).origin}/*`);
         } catch {

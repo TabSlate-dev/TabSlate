@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { useAuthStore } from "@/store/auth-store";
 import { api, ApiError } from "@/lib/api";
 import { isSecureServerUrl } from "@/lib/server-url";
+import { requestAccountDataConsent } from "@/lib/browser/data-collection";
 import { Procaptcha } from "@/components/procaptcha";
 import {
   InputOTP,
@@ -160,6 +161,12 @@ export function LoginForm({
               setError("");
               setLoading(true);
               try {
+                // Firefox only shows its data collection prompt while handling
+                // the submit, so this has to stay ahead of any other await.
+                if (!(await requestAccountDataConsent())) {
+                  setError(t("auth_dataConsentRequired"));
+                  return;
+                }
                 await forgotPassword(email, forgotCaptchaToken || undefined);
                 setPendingEmail(email);
                 setResetCooldown(60);
@@ -370,6 +377,12 @@ export function LoginForm({
             setError("");
             setLoading(true);
             try {
+              // Firefox only shows its data collection prompt while handling
+              // the submit, so this has to stay ahead of any other await.
+              if (!(await requestAccountDataConsent())) {
+                setError(t("auth_dataConsentRequired"));
+                return;
+              }
               if (mode === "login") {
                 await login(
                   formData.get("email") as string,
