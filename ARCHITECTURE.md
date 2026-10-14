@@ -37,8 +37,8 @@ TabSlate/
 │   ├── login-form.tsx          # login/register/forgot-password/reset-password 四模式 + Prosopo 验证码 + 密码强度提示
 │   ├── procaptcha.tsx          # Prosopo iframe 包装组件（绕过 MV3 CSP 限制；通过 postMessage 接收 token）
 │   ├── search/
-│   │   ├── search-panel.tsx    # 内联搜索 UI：输入框 + 书签/标签/搜索引擎三栏下拉；键盘导航；已归档 badge；从 useSettingsStore 读取默认引擎
-│   │   └── search-overlay.tsx  # 全局搜索浮层（供 content.ts 注入 Shadow DOM）；从 chrome.storage.local["tabslate-search-engines"] 读取用户引擎（content script 无法用 Zustand）
+│   │   ├── search-panel.tsx    # 内联搜索 UI：输入框 + 书签/标签页/网页搜索三栏下拉；键盘导航；已归档 badge；网页搜索经 runWebSearch 在新标签页交给浏览器默认搜索引擎
+│   │   └── search-overlay.tsx  # 全局搜索浮层（供 content.ts 注入 Shadow DOM）；网页搜索发送 WEB_SEARCH 消息，由 background 经 runWebSearch 在新标签页交给浏览器默认搜索引擎
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
@@ -70,13 +70,13 @@ TabSlate/
 │       ├── tabs-dnd-provider.tsx # 全局 DnD context（tab → collection/saved-group）
 │       ├── tab-row.tsx         # 单行 tab 组件（React.memo）
 │       ├── stats-cards.tsx     # 书签统计卡片
-│       ├── search-box.tsx      # 统一搜索栏（新标签页英雄区 + 集合内联）；open tabs / 书签 / 引擎三段下拉；size="sm|lg"；collectionId 过滤
+│       ├── search-box.tsx      # 统一搜索栏（新标签页英雄区 + 集合内联）；open tabs / 书签 / 网页搜索三段下拉（网页搜索经 runWebSearch 在当前标签页交给浏览器默认搜索引擎）；size="sm|lg"；collectionId 过滤
 │       ├── hero-section.tsx    # 新标签页英雄区：时钟 + SearchBox（lg）+ AdBanner
 │       ├── content.tsx         # / 路由：书签网格/列表；集合视图内嵌 SearchBox（sm）；顶部嵌入 SearchPanel（smartOpen 模式）
 │       ├── header.tsx          # 顶部搜索/过滤栏
 │       ├── workspace-rail.tsx  # 最左侧工作区切换轨道
 │       ├── tabs-rail.tsx       # 最右侧标签页快速预览轨道
-│       ├── settings-dialog.tsx # 设置对话框：搜索引擎管理（启用/禁用/拖拽排序/添加/删除）
+│       ├── settings-dialog.tsx # 设置对话框：General（全局搜索浮层开关、导入书签等）/ Plan（套餐配额）/ Account（账户信息、删除账户）三个标签页
 │       ├── bookmark-card.tsx   # 单个书签卡片/列表项
 │       ├── favorites-content.tsx
 │       ├── archive-content.tsx
@@ -177,6 +177,7 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `FOCUS_TAB` | active tab | background | SearchOverlay 请求切换到指定标签页 |
 | `OPEN_TAB` | active tab | background | SearchOverlay 请求打开新标签页（content script 无法直接调用 `chrome.tabs.create`） |
 | `SEARCH_BOOKMARKS` | active tab | background | SearchOverlay 代理发起搜索请求（绕过跨域限制） |
+| `WEB_SEARCH` | active tab | background | SearchOverlay 网页搜索回退：background 调用 `runWebSearch`（`NEW_TAB`），交给浏览器默认搜索引擎 |
 
 ## 路由
 
@@ -184,7 +185,7 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 
 | 路径 | 组件 | 说明 |
 |---|---|---|
-| `/` | `BookmarksContent` | 书签主界面（grid/list）；顶部搜索栏（书签 + open tabs + Google 回退） |
+| `/` | `BookmarksContent` | 书签主界面（grid/list）；顶部搜索栏（书签 + open tabs + 浏览器默认搜索引擎回退） |
 | `/favorites` | `FavoritesContent` | 收藏夹 |
 | `/archive` | `ArchiveContent` | 已归档集合卡片（含一键还原）+ 已归档单个书签 |
 | `/trash` | `TrashContent` | 已删除集合 + 已删除保存组（含还原 + 永久删除）+ 已删除单个书签 |
@@ -433,10 +434,10 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 | `bookmarks` | （暂未使用 Chrome 原生书签 API） |
 | `contextMenus` | 右键菜单"Save to TabSlate" |
 | `scripting` | 配合 `optional_host_permissions` 实现 SearchOverlay 的动态注入 |
+| `search` | 网页搜索回退：`runWebSearch`（`lib/browser/search.ts`）调用 `chrome.search.query`（Firefox 为 `browser.search.query`），由浏览器默认搜索引擎执行；扩展不内置搜索引擎列表 |
 | `optional_host_permissions: <all_urls>` | 用户在设置中手动开启后，用于读取任意页面的 favicon 及挂载搜索浮层；规避安装时的全站权限警告 |
 | `host_permissions: [VITE_OPENPANEL_URL origin]` | 由 `wxt.config.ts` 的 `build:manifestGenerated` hook 在构建时按 env var 动态注入；让扩展页面（newtab/popup/background）可直接 fetch 分析接口而无 CORS 限制；env var 未设置时此项不存在；仅 Chromium 构建（Firefox 构建不发送分析） |
 | `browser_specific_settings.gecko.data_collection_permissions`（仅 Firefox） | `required: ["browsingActivity"]`（favicon 查询把书签域名发给第三方图标服务）；`optional` 为账户/同步数据，登录时通过 `permissions.request` 请求，未同意前 `lib/api.ts` 不发出任何服务器请求；类别定义见 `lib/browser/data-collection-permissions.ts` |
-| `web_accessible_resources: search-engine-icon/*` | 允许 Shadow DOM（content script 上下文）加载扩展内置的搜索引擎 SVG 图标 |
 | `commands` | `Ctrl+Shift+K` / `Cmd+Shift+K` 全局快捷键（open-search）→ background 发送 `OPEN_SEARCH` 唤起当前页搜索层 |
 
 ### 动态内容脚本注册流程
