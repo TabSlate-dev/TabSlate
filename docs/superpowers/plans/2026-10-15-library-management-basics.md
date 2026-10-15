@@ -78,7 +78,7 @@ Modified files: `lib/bookmark-utils.ts`, `lib/storage.ts`, `lib/browser/data-col
 **Interfaces:**
 - Produces: `createModuleReplacer(): ModuleReplacer` (`replace(specifier, replacement): Promise<void>`, `restore(): void`); `importFresh<T>(repoPath: string): Promise<T>`; `setupDom()`, `teardownDom()`, `translateKey(key, substitutions?)`, `installAppModules(replacer): Promise<AppModules>` with `AppModules { createRoot, useBookmarksStore, useWorkspaceStore }`; `render(app, element): RenderResult` (`container`, `rerender`, `unmount`); `click`, `rightClick`, `openDropdown`, `pressKey`, `typeInto`, `submitForm` (async), `wait(ms)` (async), `queryByText`, `getByText`, `getBySelector`; fixtures `makeWorkspace`, `makeCollection`, `makeTag`, `makeBookmark`, `bookmarkMap`, `countsByCollection`.
 
-- [ ] **Step 1: Write the fixture module and the failing test**
+- [x] **Step 1: Write the fixture module and the failing test**
 
 `test/fixtures/replaceable-module.ts`:
 
@@ -120,12 +120,12 @@ describe("createModuleReplacer", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/module-replacer.test.ts`
 Expected: FAIL — `Cannot find module './helpers/module-replacer'`.
 
-- [ ] **Step 3: Implement the helpers**
+- [x] **Step 3: Implement the helpers**
 
 `test/helpers/module-replacer.ts`:
 
@@ -410,12 +410,12 @@ export function countsByCollection(bookmarks: readonly Bookmark[]): Record<strin
 }
 ```
 
-- [ ] **Step 4: Run the tests and type check**
+- [x] **Step 4: Run the tests and type check**
 
 Run: `bun test test/module-replacer.test.ts && bun run compile`
 Expected: 2 pass, 0 fail; `tsc --noEmit` exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add test/helpers test/fixtures/replaceable-module.ts test/module-replacer.test.ts
@@ -437,11 +437,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `importFresh`, `makeBookmark` (Task 1).
 - Produces: `type UrlMatchTier = "strict" | "loose"`; `strictUrlKey(url: string): string`; `looseUrlKey(url: string): string`; `urlMatchKey(url: string, tier: UrlMatchTier): string`; `findUrlMatches(url: string, bookmarks: readonly Bookmark[], tier: UrlMatchTier): Bookmark[]`. `normalizeUrl` returns `strictUrlKey(url)`.
 
-- [ ] **Step 0: Reconcile with the standalone fix**
+- [x] **Step 0: Reconcile with the standalone fix**
 
 Run: `git log --oneline -- lib/bookmark-utils.ts | head -3` and read `normalizeUrl`. If it no longer lowercases the whole URL, keep that fix's tests, and still make `normalizeUrl` delegate to `strictUrlKey` in Step 3 so both share one rule.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/url-match.test.ts`:
 
@@ -547,12 +547,12 @@ describe("findDuplicateBookmark", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/url-match.test.ts`
 Expected: FAIL — `Cannot find module` for `lib/url-match.ts`.
 
-- [ ] **Step 3: Implement `lib/url-match.ts` and switch `normalizeUrl`**
+- [x] **Step 3: Implement `lib/url-match.ts` and switch `normalizeUrl`**
 
 `lib/url-match.ts`:
 
@@ -652,12 +652,12 @@ export function normalizeUrl(url: string): string {
 }
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `bun test test/url-match.test.ts && bun test && bun run compile`
 Expected: all url-match tests pass; the full suite has 0 failures; compile exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/url-match.ts lib/bookmark-utils.ts test/url-match.test.ts
@@ -682,7 +682,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `urlMatchKey`, `UrlMatchTier` (Task 2); `isActiveWorkspace` from `@/lib/workspace-visibility`.
 - Produces: `interface BookmarkLibrary { bookmarks; collections; workspaces }` (readonly arrays); `interface DuplicateMatch { bookmark: Bookmark; collection: Collection | null; workspace: Workspace | null }`; `findVisibleDuplicates(url: string, library: BookmarkLibrary, tier: UrlMatchTier, options?: { workspaceId?: string }): DuplicateMatch[]`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/duplicate-lookup.test.ts`:
 
@@ -741,12 +741,12 @@ describe("findVisibleDuplicates", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/duplicate-lookup.test.ts`
 Expected: FAIL — `Cannot find module` for `lib/duplicate-lookup.ts`.
 
-- [ ] **Step 3: Implement `lib/duplicate-lookup.ts`**
+- [x] **Step 3: Implement `lib/duplicate-lookup.ts`**
 
 ```ts
 import type { Bookmark, Collection, Workspace } from "@/lib/types";
@@ -812,12 +812,12 @@ export function findVisibleDuplicates(
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bun test test/duplicate-lookup.test.ts && bun run compile`
 Expected: 3 pass, 0 fail; compile exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/duplicate-lookup.ts test/duplicate-lookup.test.ts
@@ -839,7 +839,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `FIREFOX_SETTINGS_DATA_COLLECTION` (`["technicalAndInteraction"]`); `hasSettingsSyncConsent(): Promise<boolean>`; `requestSettingsSyncConsent(): Promise<boolean>`; `removeSettingsSyncConsent(): Promise<boolean>`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `test/data-collection.test.ts` (the file already defines `useBuild`, `stubPermissions`, `importDataCollectionModule` and restores `chrome` after each test):
 
@@ -911,12 +911,12 @@ In `test/wxt-config.test.ts`, change the expected `optional` list in "adds Firef
       ],
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `bun test test/data-collection.test.ts test/wxt-config.test.ts`
 Expected: FAIL — `hasSettingsSyncConsent is not a function`, and the manifest `optional` list lacks `technicalAndInteraction`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Append to `lib/browser/data-collection-permissions.ts`:
 
@@ -1006,12 +1006,12 @@ with:
               },
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `bun test test/data-collection.test.ts test/wxt-config.test.ts && bun run compile`
 Expected: all pass; compile exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/browser/data-collection-permissions.ts lib/browser/data-collection.ts wxt.config.ts test/data-collection.test.ts test/wxt-config.test.ts
@@ -1032,7 +1032,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `idbGet`, `idbPut` (`@/lib/idb`); `getPreferences`, `updatePreferences` (`@/lib/api`).
 - Produces: `type BookmarkViewMode = "grid" | "list"`; `type BookmarkSortBy = "date-newest" | "date-oldest" | "alpha-az" | "alpha-za"`; `interface BookmarkViewPrefs { viewMode; sortBy; updatedAt: number }`; `interface StoredViewPrefs extends BookmarkViewPrefs { dirty: boolean }`; `interface PreferenceCredentials { baseUrl: string; accessToken: string }`; `type PullAction = "apply-remote" | "push-local" | "none"`; constants `VIEW_PREFS_KV_KEY = "bookmark-view-prefs"`, `VIEW_PREFS_SERVER_KEY = "bookmarkView"`, `DEFAULT_VIEW_MODE`, `DEFAULT_SORT_BY`; functions `parseViewPrefs(value: unknown): BookmarkViewPrefs | null`, `resolvePullAction(local, remote): PullAction`, `readLocalViewPrefs(): Promise<StoredViewPrefs | null>`, `writeLocalViewPrefs(prefs: StoredViewPrefs): Promise<void>`, `fetchRemoteViewPrefs(credentials): Promise<BookmarkViewPrefs | null>`, `pushViewPrefs(credentials, prefs: BookmarkViewPrefs): Promise<void>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/view-preferences.test.ts`:
 
@@ -1157,12 +1157,12 @@ describe("server preferences", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/view-preferences.test.ts`
 Expected: FAIL — `Cannot find module` for `lib/view-preferences.ts`.
 
-- [ ] **Step 3: Implement `lib/view-preferences.ts`**
+- [x] **Step 3: Implement `lib/view-preferences.ts`**
 
 ```ts
 import { idbGet, idbPut } from "@/lib/idb";
@@ -1273,12 +1273,12 @@ export async function pushViewPrefs(credentials: PreferenceCredentials, prefs: B
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `bun test test/view-preferences.test.ts && bun run compile`
 Expected: all pass; compile exits 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add lib/view-preferences.ts test/view-preferences.test.ts
@@ -1301,7 +1301,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: Task 5 exports; `hasSettingsSyncConsent` (Task 4).
 - Produces: `useSettingsStore` actions `hydrate()`, `reset()`, `startPreferenceSync(getCredentials: GetPreferenceCredentials): Promise<void>`, `resyncPreferences(): Promise<void>`, `stopPreferenceSync(): void`; `type GetPreferenceCredentials = () => PreferenceCredentials | null`. `pullFromServer` is removed.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/settings-store-view-prefs.test.ts`:
 
@@ -1440,12 +1440,12 @@ describe("view preference sync", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/settings-store-view-prefs.test.ts`
 Expected: FAIL — `startPreferenceSync is not a function` / preferences are not applied.
 
-- [ ] **Step 3: Share the view and sort types**
+- [x] **Step 3: Share the view and sort types**
 
 In `store/bookmarks-store.ts`, add `import type { BookmarkSortBy, BookmarkViewMode } from "@/lib/view-preferences";` after the existing type imports and replace:
 
@@ -1461,7 +1461,7 @@ type ViewMode = BookmarkViewMode;
 type SortBy = BookmarkSortBy;
 ```
 
-- [ ] **Step 4: Replace `store/settings-store.ts`**
+- [x] **Step 4: Replace `store/settings-store.ts`**
 
 ```ts
 import { create } from "zustand";
@@ -1630,7 +1630,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
 }));
 ```
 
-- [ ] **Step 5: Wire the sync effect in `entrypoints/newtab/App.tsx`**
+- [x] **Step 5: Wire the sync effect in `entrypoints/newtab/App.tsx`**
 
 Replace:
 
@@ -1687,12 +1687,12 @@ with:
       // Capture the engine reference before async work begins.
 ```
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `bun test test/settings-store-view-prefs.test.ts && bun test && bun run compile`
 Expected: 6 pass in the new file; the suite has 0 failures; compile exits 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add store/bookmarks-store.ts store/settings-store.ts entrypoints/newtab/App.tsx test/settings-store-view-prefs.test.ts
@@ -1715,7 +1715,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: Task 4 consent functions; `subscribeToPermissionChanges`; `useSettingsStore.getState().resyncPreferences()` (Task 6).
 - Produces: `usePreferenceSyncConsent(): { granted: boolean | null; setGranted: (enabled: boolean) => void }` (`granted` stays `null` outside Firefox).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/preference-sync-consent.test.tsx`:
 
@@ -1799,12 +1799,12 @@ describe("usePreferenceSyncConsent", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/preference-sync-consent.test.tsx`
 Expected: FAIL — `Cannot find module` for `hooks/use-preference-sync-consent.ts`.
 
-- [ ] **Step 3: Implement the hook**
+- [x] **Step 3: Implement the hook**
 
 `hooks/use-preference-sync-consent.ts`:
 
@@ -1868,7 +1868,7 @@ export function usePreferenceSyncConsent(): { granted: boolean | null; setGrante
 }
 ```
 
-- [ ] **Step 4: Add the switch to the Settings dialog**
+- [x] **Step 4: Add the switch to the Settings dialog**
 
 In `components/dashboard/settings-dialog.tsx`, add `import { usePreferenceSyncConsent } from "@/hooks/use-preference-sync-consent";`, call `const preferenceSync = usePreferenceSyncConsent();` next to the `searchOverlayEnabled` state, and insert after the search-overlay card (the `<div className="rounded-lg border p-3 shadow-sm bg-card/20">` block that contains `handleToggleSearchOverlay`):
 
@@ -1914,12 +1914,12 @@ Add to `public/_locales/zh_CN/messages.json`:
   },
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `bun test test/preference-sync-consent.test.tsx && bun run compile`
 Expected: 1 pass; compile exits 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add hooks/use-preference-sync-consent.ts components/dashboard/settings-dialog.tsx public/_locales test/preference-sync-consent.test.tsx
@@ -1943,7 +1943,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: test helpers (Task 1).
 - Produces: `TagDialog` props `{ open: boolean; onOpenChange: (open: boolean) => void; initial?: Tag; takenNames: readonly string[]; onSubmit: (name: string, color: string) => void }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/tag-dialog.test.tsx`:
 
@@ -2039,12 +2039,12 @@ describe("TagDialog", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/tag-dialog.test.tsx`
 Expected: FAIL — no element with text `tagDialog_editTitle` (the title is still the hard-coded "New Tag").
 
-- [ ] **Step 3: Rewrite `components/dashboard/sidebar/tag-dialog.tsx`**
+- [x] **Step 3: Rewrite `components/dashboard/sidebar/tag-dialog.tsx`**
 
 ```tsx
 import * as React from "react";
@@ -2169,13 +2169,13 @@ export function TagDialog({ open, onOpenChange, initial, takenNames, onSubmit }:
 }
 ```
 
-- [ ] **Step 4: Update the two create call sites**
+- [x] **Step 4: Update the two create call sites**
 
 In `components/dashboard/sidebar/index.tsx`, add `const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);` after the `tags` selector and pass `takenNames={tagNames}` to the existing `<TagDialog ... />` (Task 9 moves this dialog into the tags section).
 
 In `components/dashboard/shared/bookmark-tags-dialog.tsx`, add `const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);` after the `tags` selector and pass `takenNames={tagNames}` to its `<TagDialog ... />`.
 
-- [ ] **Step 5: Add the strings**
+- [x] **Step 5: Add the strings**
 
 `public/_locales/en/messages.json`:
 
@@ -2213,12 +2213,12 @@ In `components/dashboard/shared/bookmark-tags-dialog.tsx`, add `const tagNames =
 
 (Expand each entry to the file's multi-line 2-space style when inserting.)
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `bun test test/tag-dialog.test.tsx && bun run compile`
 Expected: 3 pass; compile exits 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add components/dashboard/sidebar/tag-dialog.tsx components/dashboard/sidebar/index.tsx components/dashboard/shared/bookmark-tags-dialog.tsx public/_locales test/tag-dialog.test.tsx
@@ -2242,7 +2242,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `TagDialog` (Task 8); `getActiveWorkspaceCollectionIds`.
 - Produces: `SectionHeader({ label, open, onToggle, actions? })`; `SidebarTagsSection()` (no props). Chips render `data-tag-id={tag.id}`, `aria-pressed`, and a count `<span data-tag-count>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/sidebar-tags-section.test.tsx`:
 
@@ -2346,12 +2346,12 @@ describe("SidebarTagsSection", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/sidebar-tags-section.test.tsx`
 Expected: FAIL — `Cannot find module` for `components/dashboard/sidebar/tags-section`.
 
-- [ ] **Step 3: Move `SectionHeader` into its own file**
+- [x] **Step 3: Move `SectionHeader` into its own file**
 
 `components/dashboard/sidebar/section-header.tsx`:
 
@@ -2383,7 +2383,7 @@ export function SectionHeader({ label, open, onToggle, actions }: SectionHeaderP
 
 In `components/dashboard/sidebar/index.tsx`, delete the `// SectionHeader` banner comment, the `SectionHeaderProps` interface and the `SectionHeader` function, and add `import { SectionHeader } from "./section-header";`.
 
-- [ ] **Step 4: Create `components/dashboard/sidebar/tags-section.tsx`**
+- [x] **Step 4: Create `components/dashboard/sidebar/tags-section.tsx`**
 
 ```tsx
 import * as React from "react";
@@ -2600,7 +2600,7 @@ export function SidebarTagsSection() {
 
 (The hover × is carried over unchanged so deletion keeps working until Task 10 replaces it with the context menu.)
 
-- [ ] **Step 5: Use the section in `components/dashboard/sidebar/index.tsx`**
+- [x] **Step 5: Use the section in `components/dashboard/sidebar/index.tsx`**
 
 - Replace the JSX from the line `{/* Tags */}` through the `</SidebarGroup>` that precedes `{/* Nav */}` with:
 
@@ -2614,7 +2614,7 @@ export function SidebarTagsSection() {
 - Replace `import { TagDialog } from "./tag-dialog";` with `import { SidebarTagsSection } from "./tags-section";`.
 - Remove the imports this task leaves unused: `Tag` and `ChevronDown` from `lucide-react`, and `SidebarGroupLabel` from `@/components/ui/sidebar`. Leave imports that were already unused (`Search`, `Input`, the `Collection` type) alone.
 
-- [ ] **Step 6: Add the strings**
+- [x] **Step 6: Add the strings**
 
 `en`:
 
@@ -2634,12 +2634,12 @@ export function SidebarTagsSection() {
   "sidebar_newTag": { "message": "新建标签" },
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `bun test test/sidebar-tags-section.test.tsx && bun test && bun run compile`
 Expected: 3 pass; suite 0 failures; compile exits 0.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add components/dashboard/sidebar public/_locales test/sidebar-tags-section.test.tsx
@@ -2663,7 +2663,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `SidebarTagsSection` (Task 9), `TagDialog` (Task 8), `TAG_COLORS`, `updateTag`, `deleteTag`.
 - Produces: `ContextMenu`, `ContextMenuTrigger`, `ContextMenuContent`, `ContextMenuItem` (`variant?: "default" | "destructive"`, `inset?`), `ContextMenuSeparator`, `ContextMenuSub`, `ContextMenuSubTrigger`, `ContextMenuSubContent`; `TagDeleteDialog({ tag: Tag; bookmarkCount: number; onClose: () => void; onConfirm: () => void })`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/sidebar-tag-menu.test.tsx`:
 
@@ -2784,12 +2784,12 @@ describe("tag context menu", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/sidebar-tag-menu.test.tsx`
 Expected: FAIL — no element with text `tagMenu_rename`.
 
-- [ ] **Step 3: Create `components/ui/context-menu.tsx`**
+- [x] **Step 3: Create `components/ui/context-menu.tsx`**
 
 ```tsx
 "use client"
@@ -2926,7 +2926,7 @@ export {
 }
 ```
 
-- [ ] **Step 4: Create `components/dashboard/sidebar/tag-delete-dialog.tsx`**
+- [x] **Step 4: Create `components/dashboard/sidebar/tag-delete-dialog.tsx`**
 
 ```tsx
 import {
@@ -2987,7 +2987,7 @@ export function TagDeleteDialog({ tag, bookmarkCount, onClose, onConfirm }: TagD
 }
 ```
 
-- [ ] **Step 5: Add the menu to `components/dashboard/sidebar/tags-section.tsx`**
+- [x] **Step 5: Add the menu to `components/dashboard/sidebar/tags-section.tsx`**
 
 Add imports:
 
@@ -3133,7 +3133,7 @@ Remove the now-unused `deleteTag` selector line from the chip block (it moves to
       )}
 ```
 
-- [ ] **Step 6: Add the strings**
+- [x] **Step 6: Add the strings**
 
 `en`:
 
@@ -3159,12 +3159,12 @@ Remove the now-unused `deleteTag` selector line from the chip block (it moves to
   "tagDeleteDialog_confirm": { "message": "删除" },
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `bun test test/sidebar-tag-menu.test.tsx test/sidebar-tags-section.test.tsx && bun run compile`
 Expected: all pass; compile exits 0.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add components/ui/context-menu.tsx components/dashboard/sidebar public/_locales test/sidebar-tag-menu.test.tsx
@@ -3192,7 +3192,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: context menu (Task 10); `CollectionDialog` edit mode; `updateCollection`, `archiveCollection`, `deleteCollection`.
 - Produces: `interface MenuItemProps { onSelect?: (event: Event) => void; variant?: "default" | "destructive"; className?: string; children: React.ReactNode }`; `interface MenuPrimitives { Item: React.ComponentType<MenuItemProps>; Separator: React.ComponentType }`; `dropdownMenuPrimitives`, `contextMenuPrimitives`; `CollectionMenuItems({ menu, collection, onEdit, onArchive, onDelete })`; `SidebarCollectionRow({ collection, count, isActive, isHighlighted, onSelect })`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/sidebar-collection-row.test.tsx`:
 
@@ -3325,12 +3325,12 @@ describe("SidebarCollectionRow", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/sidebar-collection-row.test.tsx`
 Expected: FAIL — `Cannot find module` for `components/dashboard/sidebar/collection-row`.
 
-- [ ] **Step 3: Create the menu primitives and collection items**
+- [x] **Step 3: Create the menu primitives and collection items**
 
 `components/dashboard/shared/menu-primitives.tsx`:
 
@@ -3407,7 +3407,7 @@ export function CollectionMenuItems({ menu, collection, onEdit, onArchive, onDel
 }
 ```
 
-- [ ] **Step 4: Create `components/dashboard/sidebar/collection-row.tsx`**
+- [x] **Step 4: Create `components/dashboard/sidebar/collection-row.tsx`**
 
 Move `ICON_MAP` and `CollectionIcon` (with their lucide icon imports) from `sidebar/index.tsx` into this file:
 
@@ -3559,7 +3559,7 @@ export function SidebarCollectionRow({ collection, count, isActive, isHighlighte
 }
 ```
 
-- [ ] **Step 5: Translate `CollectionDialog` and use the row in the sidebar**
+- [x] **Step 5: Translate `CollectionDialog` and use the row in the sidebar**
 
 In `components/dashboard/sidebar/collection-dialog.tsx`, add `import { useTranslation } from "@/hooks/use-translation";`, call `const { t } = useTranslation();` first in the component, and replace the hard-coded strings:
 
@@ -3604,7 +3604,7 @@ In `components/dashboard/sidebar/index.tsx`:
 - Delete the `// Icon map` banner, `ICON_MAP`, `CollectionIcon`, and the `deleteCollection` and `archiveCollection` selectors.
 - Remove the imports this leaves unused: the lucide icons `BookOpen`, `Code`, `Folder`, `Globe`, `Inbox`, `Palette`, `Sparkles`, `Star`, `Wrench`, `MoreHorizontal`, and the whole `@/components/ui/dropdown-menu` import. `Bookmark`, `ChevronRight`, `Heart`, `Archive`, `Trash2`, `Trash`, `Monitor` and `Plus` stay (the "All bookmarks" row, nav items, groups and add buttons use them). Leave imports that were already unused before this task (`Search`, `Input`, the `Collection` type) alone.
 
-- [ ] **Step 6: Add the strings**
+- [x] **Step 6: Add the strings**
 
 `en`:
 
@@ -3638,12 +3638,12 @@ In `components/dashboard/sidebar/index.tsx`:
   "collectionDialog_save": { "message": "保存" },
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `bun test test/sidebar-collection-row.test.tsx && bun test && bun run compile`
 Expected: 4 pass; suite 0 failures; compile exits 0.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add components/dashboard/shared/menu-primitives.tsx components/dashboard/shared/collection-menu-items.tsx components/dashboard/sidebar public/_locales test/sidebar-collection-row.test.tsx
@@ -3667,7 +3667,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `MenuPrimitives`, `dropdownMenuPrimitives`, `contextMenuPrimitives` (Task 11); context menu (Task 10).
 - Produces: `BookmarkMenuItems({ menu, onOpenSmart, onOpenNewTab, onEdit, onAddTags, onArchive, onDelete })`; `TagList` gains optional `onTagClick?: (tagId: string) => void` and `selectedTagIds?: readonly string[]`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/bookmark-card-menu.test.tsx`:
 
@@ -3778,12 +3778,12 @@ describe("BookmarkCard menus", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/bookmark-card-menu.test.tsx`
 Expected: FAIL — no `context-menu-item` elements after the right-click.
 
-- [ ] **Step 3: Create `components/dashboard/shared/bookmark-menu-items.tsx`**
+- [x] **Step 3: Create `components/dashboard/shared/bookmark-menu-items.tsx`**
 
 ```tsx
 import { Archive, ExternalLink, Pencil, Tag as TagIcon, Trash2 } from "lucide-react";
@@ -3843,7 +3843,7 @@ export function BookmarkMenuItems({
 }
 ```
 
-- [ ] **Step 4: Make `TagList` tags clickable**
+- [x] **Step 4: Make `TagList` tags clickable**
 
 Replace `components/ui/tag-list.tsx` with:
 
@@ -3908,7 +3908,7 @@ export function TagList({ tags, max = 3, className, wrap = false, onTagClick, se
 }
 ```
 
-- [ ] **Step 5: Update `components/dashboard/bookmark-card.tsx`**
+- [x] **Step 5: Update `components/dashboard/bookmark-card.tsx`**
 
 - Imports: remove `Pencil`, `Trash2`, `Tag as TagIcon` and `Archive` from `lucide-react` and `DropdownMenuItem` and `DropdownMenuSeparator` from the dropdown import (`ExternalLink` stays: the list variant's quick-open button uses it). Add:
 
@@ -3971,16 +3971,16 @@ import {
 <TagList tags={bookmarkTags} max={3} onTagClick={toggleTag} selectedTagIds={selectedTags} />
 ```
 
-- [ ] **Step 6: Add the string**
+- [x] **Step 6: Add the string**
 
 `en`: `"bookmarkCard_moreActions": { "message": "Bookmark actions" },` · `zh_CN`: `"bookmarkCard_moreActions": { "message": "书签操作" },`
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `bun test test/bookmark-card-menu.test.tsx && bun test && bun run compile`
 Expected: 3 pass; suite 0 failures; compile exits 0.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add components/dashboard/shared/bookmark-menu-items.tsx components/ui/tag-list.tsx components/dashboard/bookmark-card.tsx public/_locales test/bookmark-card-menu.test.tsx
@@ -4004,7 +4004,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `revealBookmark(bookmarkId: string): boolean`; `useWorkspaceCollectionReset(selectedCollection: string, workspaceCollectionIds: ReadonlySet<string>, setSelectedCollection: (collectionId: string) => void): void`; `HIGHLIGHT_PARAM = "highlight"` in `lib/highlight-link.ts` (no store imports, so the popup can use it); `useHighlightDeepLink(): void`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `test/reveal-bookmark.test.ts`:
 
@@ -4203,12 +4203,12 @@ describe("useHighlightDeepLink", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `bun test test/reveal-bookmark.test.ts test/workspace-collection-reset.test.tsx test/highlight-deep-link.test.tsx`
 Expected: FAIL — the three modules do not exist.
 
-- [ ] **Step 3: Implement the three modules**
+- [x] **Step 3: Implement the three modules**
 
 `lib/reveal-bookmark.ts`:
 
@@ -4319,7 +4319,7 @@ export function useHighlightDeepLink(): void {
 }
 ```
 
-- [ ] **Step 4: Use the hooks in `components/dashboard/content.tsx`**
+- [x] **Step 4: Use the hooks in `components/dashboard/content.tsx`**
 
 - Add imports: `import { useWorkspaceCollectionReset } from "@/hooks/use-workspace-collection-reset";` and `import { useHighlightDeepLink } from "@/hooks/use-highlight-deep-link";`.
 - Delete:
@@ -4351,12 +4351,12 @@ with:
   useHighlightDeepLink();
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `bun test test/reveal-bookmark.test.ts test/workspace-collection-reset.test.tsx test/highlight-deep-link.test.tsx && bun test && bun run compile`
 Expected: all pass; suite 0 failures; compile exits 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/reveal-bookmark.ts lib/highlight-link.ts hooks/use-workspace-collection-reset.ts hooks/use-highlight-deep-link.ts components/dashboard/content.tsx test/reveal-bookmark.test.ts test/workspace-collection-reset.test.tsx test/highlight-deep-link.test.tsx
@@ -4380,7 +4380,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `findVisibleDuplicates`, `DuplicateMatch` (Task 3); `revealBookmark` (Task 13); `bookmarksAsArray`.
 - Produces: `DuplicateNotice({ matches: readonly DuplicateMatch[]; onOpenExisting: (bookmarkId: string) => void; className?: string })`, rendering `data-slot="duplicate-notice"` and nothing when `matches` is empty.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/add-bookmark-duplicates.test.tsx`:
 
@@ -4480,12 +4480,12 @@ describe("add bookmark duplicate notice", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/add-bookmark-duplicates.test.tsx`
 Expected: FAIL — no element matches `[data-slot="duplicate-notice"]`.
 
-- [ ] **Step 3: Create `components/dashboard/shared/duplicate-notice.tsx`**
+- [x] **Step 3: Create `components/dashboard/shared/duplicate-notice.tsx`**
 
 ```tsx
 import { Copy } from "lucide-react";
@@ -4527,7 +4527,7 @@ export function DuplicateNotice({ matches, onOpenExisting, className }: Duplicat
 }
 ```
 
-- [ ] **Step 4: Wire the dialog**
+- [x] **Step 4: Wire the dialog**
 
 In `components/dashboard/add-bookmark-dialog.tsx`:
 
@@ -4576,7 +4576,7 @@ import { DuplicateNotice } from "@/components/dashboard/shared/duplicate-notice"
 - On the URL `<Input id="bm-url" ...>`, add `value={urlInput}` and `onChange={(event) => setUrlInput(event.target.value)}`.
 - Right after the URL `</Field>`, add `<DuplicateNotice matches={duplicateMatches} onOpenExisting={handleOpenExisting} />`.
 
-- [ ] **Step 5: Add the strings**
+- [x] **Step 5: Add the strings**
 
 `en`:
 
@@ -4598,7 +4598,7 @@ import { DuplicateNotice } from "@/components/dashboard/shared/duplicate-notice"
   "duplicateNotice_openExisting": { "message": "打开已有书签" },
 ```
 
-- [ ] **Step 6: Keep the header test inside a router**
+- [x] **Step 6: Keep the header test inside a router**
 
 `BookmarksHeader` always renders `AddBookmarkDialog`, which now calls `useNavigate()`; in the app the header already sits inside `HashRouter`. In `test/bookmarks-header-subscription.test.tsx`, add `import { MemoryRouter } from "react-router-dom";` after the `react` import and make `renderHeader` render:
 
@@ -4620,12 +4620,12 @@ import { DuplicateNotice } from "@/components/dashboard/shared/duplicate-notice"
     );
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `bun test test/add-bookmark-duplicates.test.tsx test/bookmarks-header-subscription.test.tsx && bun test && bun run compile`
 Expected: 5 pass; suite 0 failures; compile exits 0.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add components/dashboard/shared/duplicate-notice.tsx components/dashboard/add-bookmark-dialog.tsx public/_locales test/add-bookmark-duplicates.test.tsx test/bookmarks-header-subscription.test.tsx
@@ -4648,7 +4648,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `findVisibleDuplicates` (Task 3), `DuplicateNotice` (Task 14), `HIGHLIGHT_PARAM` from `lib/highlight-link.ts` (Task 13). The popup must not import stores or hooks that load them.
 - Produces: `findSavedDuplicates(url: string): Promise<DuplicateMatch[]>` (never throws; returns `[]` when IndexedDB fails).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `test/storage-duplicates.test.ts`:
 
@@ -4708,12 +4708,12 @@ describe("findSavedDuplicates", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `bun test test/storage-duplicates.test.ts`
 Expected: FAIL — `findSavedDuplicates is not a function`.
 
-- [ ] **Step 3: Implement in `lib/storage.ts`**
+- [x] **Step 3: Implement in `lib/storage.ts`**
 
 Add `import { findVisibleDuplicates, type DuplicateMatch } from "@/lib/duplicate-lookup";` and append:
 
@@ -4737,7 +4737,7 @@ export async function findSavedDuplicates(url: string): Promise<DuplicateMatch[]
 }
 ```
 
-- [ ] **Step 4: Wire the popup (`entrypoints/popup/App.tsx`)**
+- [x] **Step 4: Wire the popup (`entrypoints/popup/App.tsx`)**
 
 - Change the storage import to `import { storageService, getWorkspaceState, findSavedDuplicates, type BookmarkInput } from "@/lib/storage";` and add:
 
@@ -4770,16 +4770,16 @@ import { HIGHLIGHT_PARAM } from "@/lib/highlight-link";
 - In the save form, right after the "Current page preview" block, add `<DuplicateNotice matches={duplicates} onOpenExisting={openExistingBookmark} />`.
 - In the save button's idle branch, replace `{t("popup_saveBookmark")}` with `{duplicates.length > 0 ? t("popup_saveAnyway") : t("popup_saveBookmark")}`.
 
-- [ ] **Step 5: Add the string**
+- [x] **Step 5: Add the string**
 
 `en`: `"popup_saveAnyway": { "message": "Save anyway" },` · `zh_CN`: `"popup_saveAnyway": { "message": "仍然保存" },`
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `bun test test/storage-duplicates.test.ts && bun run compile`
 Expected: 2 pass; compile exits 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add lib/storage.ts entrypoints/popup/App.tsx public/_locales test/storage-duplicates.test.ts
@@ -4803,7 +4803,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Consumes: `findVisibleDuplicates`, `BookmarkLibrary` (Task 3); `getWorkspaceState` (`lib/storage.ts`).
 - Produces: `interface ContextMenuLibrary extends BookmarkLibrary { activeWorkspaceId: string }`; `type ContextMenuSaveOutcome = "save" | "duplicate"`; `resolveContextMenuSave(url: string, loadLibrary: () => Promise<ContextMenuLibrary>): Promise<ContextMenuSaveOutcome>`; `type SaveBadgeKind = "saved" | "duplicate"`; `flashSaveBadge(tabId: number, kind: SaveBadgeKind, durationMs?: number): Promise<void>` (default 3000 ms).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `test/context-menu-save.test.ts`:
 
@@ -4937,12 +4937,12 @@ describe("flashSaveBadge", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `bun test test/context-menu-save.test.ts test/action-badge.test.ts`
 Expected: FAIL — both modules are missing.
 
-- [ ] **Step 3: Implement the modules**
+- [x] **Step 3: Implement the modules**
 
 `lib/context-menu-save.ts`:
 
@@ -5017,7 +5017,7 @@ export async function flashSaveBadge(
 }
 ```
 
-- [ ] **Step 4: Wire `entrypoints/background.ts`**
+- [x] **Step 4: Wire `entrypoints/background.ts`**
 
 - Change `import { idbPut } from "@/lib/idb";` to `import { idbGetAll, idbPut } from "@/lib/idb";`, add the imports below after the existing ones, and add the function at module scope, just above `export default defineBackground(() => {`:
 
@@ -5064,7 +5064,7 @@ with:
 
 - After `chrome.runtime.sendMessage({ type: "BOOKMARKS_CHANGED" } as ExtensionMessage).catch(() => {});` add `await flashSaveBadge(tab.id, "saved");`.
 
-- [ ] **Step 5: Add the strings**
+- [x] **Step 5: Add the strings**
 
 `en`:
 
@@ -5080,12 +5080,12 @@ with:
   "badge_alreadySavedTitle": { "message": "已保存在 TabSlate 中" },
 ```
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Run: `bun test test/context-menu-save.test.ts test/action-badge.test.ts && bun test && bun run compile`
 Expected: 7 pass; suite 0 failures; compile exits 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add lib/context-menu-save.ts lib/browser/action-badge.ts entrypoints/background.ts public/_locales test/context-menu-save.test.ts test/action-badge.test.ts
@@ -5108,7 +5108,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `findSaveShortcut(commands: readonly chrome.commands.Command[]): string`; manifest command `_execute_action`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `test/wxt-config.test.ts` inside `describe("wxt cross-browser manifest", ...)`:
 
@@ -5151,12 +5151,12 @@ describe("findSaveShortcut", () => {
 });
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `bun test test/wxt-config.test.ts test/browser-commands.test.ts`
 Expected: FAIL — the manifest has no `_execute_action`; `lib/browser/commands.ts` is missing.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `lib/browser/commands.ts`:
 
@@ -5196,7 +5196,7 @@ and below the existing footer `<p>` (the one that shows `popup_pressEnter`), add
           </p>
 ```
 
-- [ ] **Step 4: Add the strings**
+- [x] **Step 4: Add the strings**
 
 `en`:
 
@@ -5212,12 +5212,12 @@ and below the existing footer `<p>` (the one that shows `popup_pressEnter`), add
   "popup_saveShortcutUnset": { "message": "可以在浏览器的扩展快捷键设置里为此窗口设置快捷键" },
 ```
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `bun test test/wxt-config.test.ts test/browser-commands.test.ts && bun run compile`
 Expected: all pass; compile exits 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add lib/browser/commands.ts wxt.config.ts entrypoints/popup/App.tsx public/_locales test/wxt-config.test.ts test/browser-commands.test.ts
@@ -5234,7 +5234,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `CLAUDE.md`
 - Modify: `ARCHITECTURE.md`
 
-- [ ] **Step 1: Update `CLAUDE.md`**
+- [x] **Step 1: Update `CLAUDE.md`**
 
 - In the IndexedDB `kv` row, after `` `searchEngines`、`` insert:
   `` `bookmark-view-prefs`（书签视图模式与排序的本机副本 `{ viewMode, sortBy, updatedAt, dirty }`，见 `lib/view-preferences.ts`）、``
@@ -5251,7 +5251,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - **右键菜单**：`components/ui/context-menu.tsx`；集合与书签卡片的菜单项各定义一次（`components/dashboard/shared/*-menu-items.tsx`），通过 `menu-primitives.tsx` 同时用于 ⋯ 下拉和右键菜单；标签只用右键菜单（重命名、改色、删除前确认）。
 ```
 
-- [ ] **Step 2: Update `ARCHITECTURE.md`**
+- [x] **Step 2: Update `ARCHITECTURE.md`**
 
 - Replace the persistence diagram lines
 
@@ -5327,7 +5327,7 @@ useSettingsStore   ──手动 idbPut/Get──▶  IndexedDB  kv["bookmark-vie
 │   ├── use-highlight-deep-link.ts       # 处理 #/?highlight=<id> 深链
 ```
 
-- [ ] **Step 3: Check translation parity**
+- [x] **Step 3: Check translation parity**
 
 Run:
 
@@ -5337,7 +5337,7 @@ python3 -c "import json;a=json.load(open('public/_locales/en/messages.json'));b=
 
 Expected: both lists are empty.
 
-- [ ] **Step 4: Run the full verification**
+- [x] **Step 4: Run the full verification**
 
 Run: `bun test && bun run compile && bun run build && bun run build:firefox`
 Expected: 0 test failures; compile exits 0; both builds finish.
@@ -5351,7 +5351,7 @@ Load `.output/chrome-mv3` and `.output/firefox-mv3` unpacked and confirm:
 4. Right-click works on tags (rename, color, delete with confirmation), collection rows, and bookmark cards; tag counts and tag search behave as specified.
 5. View mode and sort survive a new tab, and follow the user to a second signed-in browser profile (on Firefox only after enabling "Sync view preferences across devices").
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add CLAUDE.md ARCHITECTURE.md
@@ -5359,3 +5359,12 @@ git commit -m "docs: document library management basics
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
+
+
+## Execution status — 2026-10-15
+
+- Tasks 1 and 1b, and Tasks 2–17: implemented, committed, and reviewed. Task 1b includes fresh IndexedDB module isolation and the header test’s shared setup.
+- Task 18 documentation and automated verification: complete. Final verification after integration fixes: 334 tests passed; TypeScript, Chrome build, Firefox build, translation parity, and popup/background runtime import-boundary checks passed.
+- Final whole-branch review findings were fixed in `7ef311d`; the scoped re-review approved all five integration fixes and two cleanups with no new actionable findings.
+- Task 18 Step 5 remains pending: native shortcut activation, live popup/badge/menu behavior, Firefox consent prompt, and synchronization between signed-in browser profiles. Available UI surfaces expose only the Codex in-app browser and MCP Apps, with no Chrome/Firefox/native control; no manual pass is claimed.
+- Accepted limits: the server’s read/replace preference API has no compare-and-swap, so simultaneous writes from different devices can still race. Existing Favorites Edit/Add tags callbacks and existing tag-deletion cleanup semantics remain outside this plan’s changes. Both builds retain the reported ineffective dynamic-import chunking warning.
