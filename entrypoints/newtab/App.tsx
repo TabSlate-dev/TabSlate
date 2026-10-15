@@ -444,20 +444,22 @@ function SyncProvider({
       return;
     }
 
-    // Pull user preferences from server on login
-    useSettingsStore.getState().pullFromServer(serverUrl, accessToken);
+    const getCredentials = () => {
+      const currentAuth = useAuthStore.getState();
+      if (!currentAuth.accessToken || !currentAuth.serverUrl) {
+        return null;
+      }
+      return {
+        baseUrl: currentAuth.serverUrl,
+        accessToken: currentAuth.accessToken,
+      };
+    };
+
+    // Reconcile synced view preferences for this sync session.
+    void useSettingsStore.getState().startPreferenceSync(getCredentials);
 
     const engine = createSyncEngine(
-      () => {
-        const currentAuth = useAuthStore.getState();
-        if (!currentAuth.accessToken || !currentAuth.serverUrl) {
-          return null;
-        }
-        return {
-          baseUrl: currentAuth.serverUrl,
-          accessToken: currentAuth.accessToken,
-        };
-      },
+      getCredentials,
       () => localSeqRef.current,
       async (resp: SyncPullResponse, isCurrent, context, responseIsAuthoritativeFullPull) => {
         if (!isCurrent()) {
@@ -645,6 +647,7 @@ function SyncProvider({
     engine.start();
 
     return () => {
+      useSettingsStore.getState().stopPreferenceSync();
       // Capture the engine reference before async work begins.
       // destroySyncEngine() must NOT be used here — by the time .finally() fires,
       // the global syncEngine already points to the new engine and would destroy it.

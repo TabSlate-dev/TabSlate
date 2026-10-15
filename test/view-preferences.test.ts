@@ -115,4 +115,9 @@ describe("server preferences", () => {
       { theme: "dark", bookmarkView: { viewMode: "list", sortBy: "alpha-az", updatedAt: 9 } },
     ]);
   });
+  test("does not dispatch an update when the push is no longer eligible", async () => {
+    await viewPrefs.pushViewPrefs(credentials, { viewMode: "list", sortBy: "alpha-az", updatedAt: 9 }, () => false);
+    expect(updateCalls).toEqual([]);
+  });
+
 });

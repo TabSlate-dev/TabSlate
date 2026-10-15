@@ -14,11 +14,12 @@ import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
 import type { WorkspaceAggregateIds } from "@/lib/workspace-aggregate";
 import type { GuestBookmarkUpdates } from "@/lib/guest-workspace";
+import type { BookmarkSortBy, BookmarkViewMode } from "@/lib/view-preferences";
 
 export type { Bookmark };
 
-type ViewMode = "grid" | "list";
-type SortBy = "date-newest" | "date-oldest" | "alpha-az" | "alpha-za";
+type ViewMode = BookmarkViewMode;
+type SortBy = BookmarkSortBy;
 type FilterType = "all" | "favorites" | "with-tags" | "without-tags";
 type BookmarkStoreName = "bookmarks" | "archived-bookmarks" | "trashed-bookmarks";
 

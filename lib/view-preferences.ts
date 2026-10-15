@@ -94,8 +94,15 @@ export async function fetchRemoteViewPrefs(credentials: PreferenceCredentials): 
 }
 
 /** Read-merge-write so other preference keys on the server survive. */
-export async function pushViewPrefs(credentials: PreferenceCredentials, prefs: BookmarkViewPrefs): Promise<void> {
+export async function pushViewPrefs(
+  credentials: PreferenceCredentials,
+  prefs: BookmarkViewPrefs,
+  isEligible: () => boolean | Promise<boolean> = () => true,
+): Promise<void> {
   const preferences = await getPreferences(credentials.baseUrl, credentials.accessToken);
+  if (!(await isEligible())) {
+    return;
+  }
   await updatePreferences(credentials.baseUrl, credentials.accessToken, {
     ...preferences,
     [VIEW_PREFS_SERVER_KEY]: { viewMode: prefs.viewMode, sortBy: prefs.sortBy, updatedAt: prefs.updatedAt },
