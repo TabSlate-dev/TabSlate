@@ -19,7 +19,7 @@
 - Dialogs keep the standard shadcn structure (no overrides that remove the border or default shadow). Forms that show validation errors use `onSubmit` with `preventDefault`, not a React 19 form `action`.
 - Tests live in `test/*.test.ts(x)`. Each file starts with `// @ts-expect-error Bun provides this test module at runtime.` before importing `bun:test`. A test file that swaps a module must restore it in `afterAll` (use `test/helpers/module-replacer.ts`); component tests use `test/helpers/dom-environment.ts`.
 - Verification commands: `bun test <file>` for one file, `bun test` for the suite, `bun run compile` for types, `bun run build` and `bun run build:firefox` for bundles.
-- The popup and background never load Zustand: code they import must not import `store/*` or a hook that does.
+- The popup and background never load the data stores: code they import must not import `store/bookmarks-store`, `store/workspace-store`, `store/groups-store`, `store/tabs-store`, `store/settings-store`, `store/auth-store`, `store/plan-store`, or a module that does. `useTranslation` (which uses `store/i18n-store`) is already used by the popup and stays allowed.
 - Each task ends with a commit whose message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Two independent tasks may land while this plan runs. If `test/helpers/` already holds an equivalent module replacer when Task 1 starts, reuse it and adapt imports instead of duplicating it. If `normalizeUrl` was already fixed when Task 2 starts, follow Task 2's reconciliation step.
 
@@ -4925,12 +4925,14 @@ describe("flashSaveBadge", () => {
     expect(calls.slice(2)).toEqual([["setBadgeText", { tabId: 7, text: "" }]]);
   });
 
-  test("ignores a failing action API", async () => {
-    stubChrome(true);
+  test("stops quietly when the action API fails, without scheduling a reset", async () => {
+    const calls = stubChrome(true);
     const { flashSaveBadge } = await importFresh<typeof import("@/lib/browser/action-badge")>("lib/browser/action-badge.ts");
 
-    await flashSaveBadge(7, "saved", 5);
+    await expect(flashSaveBadge(7, "saved", 5)).resolves.toBeUndefined();
     await outlast(30);
+
+    expect(calls).toEqual([["setBadgeBackgroundColor", { tabId: 7, color: "#16a34a" }]]);
   });
 });
 ```
