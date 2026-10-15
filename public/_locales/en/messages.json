@@ -58,6 +58,9 @@
   "popup_somethingWentWrong": {
     "message": "Something went wrong."
   },
+  "popup_saveRejected": {
+    "message": "Not saved. You may have reached your bookmark limit."
+  },
   "popup_pressEnter": {
     "message": "Press Enter to save quickly"
   },

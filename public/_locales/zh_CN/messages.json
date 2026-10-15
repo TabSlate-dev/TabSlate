@@ -58,6 +58,9 @@
   "popup_somethingWentWrong": {
     "message": "出了点问题。"
   },
+  "popup_saveRejected": {
+    "message": "未保存，可能已达到书签数量上限。"
+  },
   "popup_pressEnter": {
     "message": "按回车键快速保存"
   },

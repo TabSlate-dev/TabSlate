@@ -10,11 +10,12 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { storageService, getWorkspaceState, findSavedDuplicates, type BookmarkInput } from "@/lib/storage";
+import { storageService, getWorkspaceState, findSavedDuplicates } from "@/lib/storage";
 import { DuplicateNotice } from "@/components/dashboard/shared/duplicate-notice";
 import type { DuplicateMatch } from "@/lib/duplicate-lookup";
 import { findSaveShortcut } from "@/lib/browser/commands";
 import { HIGHLIGHT_PARAM } from "@/lib/highlight-link";
+import type { AddBookmarkResponse, ExtensionMessage } from "@/lib/messages";
 import { authStorageAdapter } from "@/lib/auth-storage-adapter";
 import {
   Bookmark,
@@ -26,7 +27,7 @@ import {
   LogIn,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Collection, Tag } from "@/lib/types";
+import type { Bookmark as BookmarkType, Collection, Tag } from "@/lib/types";
 import { useTranslation } from "@/hooks/use-translation";
 import {
   getActiveWorkspaceCollections,
@@ -42,7 +43,7 @@ interface TabInfo {
   favIconUrl: string;
 }
 
-type SaveState = "idle" | "saving" | "saved" | "error";
+type SaveState = "idle" | "saving" | "saved" | "rejected" | "error";
 
 function PopupContent() {
   const { t } = useTranslation();
@@ -153,7 +154,7 @@ function PopupContent() {
       if (!currentTargetId) {
         return;
       }
-      const bookmarkData: BookmarkInput & { tags: string[]; seq: number } = {
+      const bookmarkData: Omit<BookmarkType, "id" | "createdAt" | "isFavorite"> = {
         title: pageInfo?.ogTitle || tab.title,
         url: tab.url,
         favicon: tab.favIconUrl,
@@ -172,10 +173,16 @@ function PopupContent() {
             return;
           }
           bookmarkData.collectionId = confirmedTargetId;
-          await chrome.tabs.sendMessage(newtabTab.id, { type: "ADD_BOOKMARK", data: bookmarkData });
-          setTargetUnavailable(false);
-          setSaveState("saved");
-          return;
+          const response = await chrome.tabs.sendMessage<ExtensionMessage, AddBookmarkResponse | undefined>(
+            newtabTab.id, { type: "ADD_BOOKMARK", data: bookmarkData },
+          );
+          if (response) {
+            setTargetUnavailable(false);
+            // A delivered answer is final: a rejection must never bypass the newtab's quota guard.
+            setSaveState(response.status === "saved" && response.bookmarkId ? "saved" : "rejected");
+            return;
+          }
+          // No answer: fall through to storage.
         } catch { /* newtab not ready, fall through to storage */ }
       }
 
@@ -310,6 +317,13 @@ function PopupContent() {
             <Alert variant="destructive">
               <AlertCircle />
               <AlertDescription>{t("workspaceVisibility_targetUnavailable")}</AlertDescription>
+            </Alert>
+          )}
+
+          {saveState === "rejected" && (
+            <Alert variant="destructive">
+              <AlertCircle />
+              <AlertDescription>{t("popup_saveRejected")}</AlertDescription>
             </Alert>
           )}
 
