@@ -164,7 +164,7 @@ Dialog 必须使用标准 shadcn 结构，禁止在 `DialogContent` 上添加破
 
 ### 数据持久化布局
 
-大部分数据已迁移到 **IndexedDB**（`tabslate-db` v2），少量需要 content script 跨上下文读取的数据保留在 `chrome.storage.local`。`accessToken` 单独存入 `chrome.storage.session`（`TRUSTED_CONTEXTS` 级别），content script 无法读取。
+大部分数据已迁移到 **IndexedDB**（`tabslate-db` v3），少量需要 content script 跨上下文读取的数据保留在 `chrome.storage.local`。`accessToken` 单独存入 `chrome.storage.session`（`TRUSTED_CONTEXTS` 级别），content script 无法读取。
 
 #### chrome.storage.session（仅 newtab / background / popup 可读）
 
@@ -287,7 +287,7 @@ Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对�
    {t(count === 1 ? "key_one" : "key_other", [count.toString()])}
    ```
 3. **语言切换与持久化**：
-   用户选择的语言保存在 `chrome.storage.local` 的 `tabslate-i18n` 中。由于 `chrome.i18n.getMessage` 只在扩展启动时根据浏览器语言静态求值，所以用户主动切换语言时，我们通过 `i18nStore` 中缓存的热重载语言包来覆盖原生 API。开发者**必须**使用 `useTranslation` 的 `t` 方法，不要直接调用 `chrome.i18n.getMessage`。
+   用户选择的语言保存在 Zustand `persist` 的默认存储（页面的 `localStorage`，key 为 `tabslate-i18n`）中，不是 `chrome.storage`。由于 `chrome.i18n.getMessage` 只在扩展启动时根据浏览器语言静态求值，所以用户主动切换语言时，我们通过 `i18nStore` 中缓存的热重载语言包来覆盖原生 API。开发者**必须**使用 `useTranslation` 的 `t` 方法，不要直接调用 `chrome.i18n.getMessage`。
 4. **命名规范**：
    在 `messages.json` 中的 key 应保持 `[组件名或模块名]_[描述]` 的驼峰格式，如 `sidebar_allBookmarks`、`trashContent_emptyTrash`。
 
@@ -308,7 +308,7 @@ Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对�
 
 | 变量 | 说明 |
 |---|---|
-| `VITE_API_URL` | 后端 API 地址，默认 `http://localhost:8080` |
+| `VITE_API_URL` | 后端 API 地址；构建时注入，作为 `useAuthStore.serverUrl` 的初始值（持久化的 `serverUrl` 为空时也回退到它）。未设置则为空串，此时 `lib/api.ts` 拒绝发请求，需在登录页 “Advanced” 里填写服务器地址；`.env.example` 的示例值为 `http://localhost:8080` |
 | `VITE_PROSOPO_SITE_KEY` | Prosopo 站点公钥（Site Key）；空 = 禁用验证码 |
 | `VITE_PROSOPO_CAPTCHA_TYPE` | Prosopo 验证码类型，需与 Prosopo 控制台配置一致：`frictionless` \| `pow` \| `image`；空 = Prosopo 默认 |
 | `VITE_OPENPANEL_URL` | 自部署 OpenPanel 实例地址（如 `https://analytics.example.com`）；空 = 禁用分析；Firefox 构建始终禁用 |
@@ -322,7 +322,7 @@ Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对�
 
 ## 注意事项
 
-- **不要在 newtab/search popup 以外使用 store**：popup 和 background 不加载 Zustand；保存书签时优先通过 `chrome.tabs.sendMessage` 发 `{ type: "ADD_BOOKMARK", data }` 消息到 newtab（newtab 在 `App` 的 `useEffect` 中监听），newtab 不存在时回退到直接写 `chrome.storage.local`（`seq: 0`，下次 newtab 打开时由 `sweepUnsynced` 补推）
+- **不要在 newtab/search popup 以外使用 store**：popup 和 background 不加载应用 store（popup 仅经 `useTranslation` 用到 `i18n-store`，background 不加载任何 store）；保存书签时优先通过 `chrome.tabs.sendMessage` 发 `{ type: "ADD_BOOKMARK", data }` 消息到 newtab（newtab 在 `App` 的 `useEffect` 中监听），newtab 不存在或投递失败时回退到直接写 IndexedDB `bookmarks`（`seq: 0`，下次 newtab 打开时由 `sweepUnsynced` 补推；background 写入后还会广播 `BOOKMARKS_CHANGED` 通知 newtab 刷新）
 - **Tab 变更广播**：background.ts 监听 `chrome.tabs`（created / removed / activated / moved，以及 `status` 为 complete 或 title / groupId 变化的 updated）与 `chrome.tabGroups`（created / removed / updated / moved）事件，经 100ms 防抖的 `broadcastTabChange()` 用 `chrome.runtime.sendMessage({ type: "TABS_CHANGED" })` 广播，不写任何 storage key。newtab 里有两处独立监听：`App.tsx` 的 `AppRoutes` 收到后调 `useTabsStore.getState().loadTabs(true)`（静默刷新 store）；`TabsRail` 不走 store，监听同一消息后刷新自己的本地 state。`TabsPanel` / `GroupsPanel` 自己不监听该消息，只订阅 `useTabsStore`（挂载时各调一次 `loadTabs()`），随 store 更新而更新。
 - **Store hydration**：`App.tsx` 中的 `StoreGate` 等待 bookmarks、workspace、auth、groups、settings 五个 store 全部 hydrate 后再渲染 dashboard；guest 与已认证用户走相同的 dashboard 路由，不再使用全屏认证守卫。若 hydrate 完成后会话是 guest 且本地没有 workspace，`StoreGate` 创建一个含 Default collection 的空 guest workspace。guest 创建的 workspace、collection、bookmark 等实体保持 `seq === 0` 并持久化在 IndexedDB；用户完成邮箱验证后 Verified-only `SyncEngine` 启动，通过首次 enqueue 或 `sweepUnsynced()` 将这些本地实体并入账号。
 - **认证生命周期与 AuthDialog**（`entrypoints/newtab/App.tsx`、`components/auth/auth-dialog.tsx`）：guest 始终可使用 dashboard；Sidebar 顶部 “Not logged in” / “未登录” 用户卡片以 login mode 打开 `AuthDialog`，底部同名同步状态区域的 “Register now” 入口以 register mode 打开。`LoginForm` 在同一 Dialog 内切换 login / register / forgot-password / reset-password，不离开 dashboard。若已登录用户 `user.is_verified === false`，同一 `AuthDialog` 强制切换为 `VerifyEmailScreen`；此时隐藏关闭按钮并阻止 X、Escape、outside click，只有验证成功或 “use different account” 完成 logout 后才能离开。浏览器重启时 `accessToken` 因 session storage 清除而为 null、但 verified user 与 `refreshToken` 仍在时，dashboard 保持显示并由 `silentRefresh` 后台恢复 token；临时网络失败保留用户资料并显示 Offline。显式 logout 或 refresh 返回 401/403 时，auth store 先 `clearDB()` 并清除账号数据，再转为 guest；`StoreGate` 随后 reset 各账号 store，并在空库中初始化全新的 guest workspace。
