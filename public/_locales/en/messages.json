@@ -615,6 +615,12 @@
       }
     }
   },
+  "settings_generalPreferenceSyncTitle": {
+    "message": "Sync view preferences across devices"
+  },
+  "settings_generalPreferenceSyncDesc": {
+    "message": "Firefox asks first, then TabSlate sends your bookmark view and sort order to your sync server."
+  },
   "settings_generalImportTitle": {
     "message": "Data Import"
   },

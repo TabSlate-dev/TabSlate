@@ -615,6 +615,12 @@
       }
     }
   },
+  "settings_generalPreferenceSyncTitle": {
+    "message": "跨设备同步视图偏好"
+  },
+  "settings_generalPreferenceSyncDesc": {
+    "message": "开启时 Firefox 会先征得你的同意，之后书签视图和排序方式会同步到你的服务器。"
+  },
   "settings_generalImportTitle": {
     "message": "数据导入"
   },

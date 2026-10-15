@@ -10,6 +10,7 @@ import { Bookmark, Layers, Tag, Folder, ShieldCheck, Loader2, Sparkles } from "l
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/use-translation";
+import { usePreferenceSyncConsent } from "@/hooks/use-preference-sync-consent";
 
 interface QuotaRowProps {
   label: string;
@@ -206,6 +207,7 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
   const [importDialogOpen, setImportDialogOpen] = React.useState(false);
 
   const [searchOverlayEnabled, setSearchOverlayEnabled] = React.useState(false);
+  const preferenceSync = usePreferenceSyncConsent();
 
   React.useEffect(() => {
     if (open && typeof chrome !== "undefined" && chrome.permissions) {
@@ -311,6 +313,24 @@ export function SettingsDialog({ open, onOpenChange, initialTab = "general" }: S
                   />
                 </div>
               </div>
+
+              {preferenceSync.granted !== null && (
+                <div className="rounded-lg border p-3 shadow-sm bg-card/20">
+                  <div className="flex flex-row items-center justify-between">
+                    <div className="space-y-0.5">
+                      <h3 className="text-sm font-semibold">{t("settings_generalPreferenceSyncTitle")}</h3>
+                      <p className="text-xs text-muted-foreground mr-4 mt-0.5">
+                        {t("settings_generalPreferenceSyncDesc")}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={preferenceSync.granted}
+                      onCheckedChange={preferenceSync.setGranted}
+                      aria-label={t("settings_generalPreferenceSyncTitle")}
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2.5">
                 <h3 className="text-sm font-semibold">{t("settings_generalImportTitle")}</h3>
