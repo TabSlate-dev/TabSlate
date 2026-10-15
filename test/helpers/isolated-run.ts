@@ -6,6 +6,12 @@ import { expect, test } from "bun:test";
 const ISOLATED_TEST_FILE_ENV = "TABSLATE_ISOLATED_TEST_FILE";
 const ISOLATED_RUN_TIMEOUT_MS = 60_000;
 
+/** The last count Bun's summary reports for a pattern, e.g. " 12 pass". */
+function summaryCount(output: string, pattern: RegExp): number | null {
+  const last = [...output.matchAll(pattern)].at(-1);
+  return last ? Number(last[1]) : null;
+}
+
 /**
  * Bun fixes a module's export names the first time it is imported in a test
  * process, so a file that registers a mock table missing some of a module's
@@ -21,13 +27,22 @@ export function runsInIsolatedProcess(testFile: string): boolean {
   }
   const displayPath = relative(process.cwd(), testFile);
   test(`${displayPath} passes in its own bun process`, () => {
-    const result = spawnSync("bun", ["test", testFile], {
+    const result = spawnSync(process.execPath, ["test", testFile], {
       cwd: process.cwd(),
       encoding: "utf8",
       env: { ...process.env, [ISOLATED_TEST_FILE_ENV]: testFile },
+      timeout: ISOLATED_RUN_TIMEOUT_MS,
     });
-    if (result.status !== 0) {
-      throw new Error(`${result.stdout}\n${result.stderr}`);
+    const output = `${result.stdout}\n${result.stderr}`;
+    const ran = summaryCount(output, /^Ran (\d+) tests? across/gm) ?? 0;
+    const passed = summaryCount(output, /^ *(\d+) pass$/gm) ?? 0;
+    const failed = summaryCount(output, /^ *(\d+) fail$/gm);
+    // Bun exits 0 when the file registers no tests or skips them all, so a pass must be reported too.
+    if (result.status !== 0 || passed === 0 || failed !== 0) {
+      const exit = result.error?.message ?? `exit ${result.status ?? result.signal}`;
+      throw new Error(
+        `${displayPath} did not pass in its own process (tests run: ${ran}, pass: ${passed}, fail: ${failed ?? "not reported"}; ${exit})\n${output}`,
+      );
     }
     expect(result.status).toBe(0);
   }, ISOLATED_RUN_TIMEOUT_MS);
