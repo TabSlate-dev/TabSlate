@@ -328,8 +328,7 @@ export function BookmarksContent() {
     () => tags.filter((t) => selectedTags.includes(t.id)),
     [tags, selectedTags]
   );
-  const hasActiveFilters =
-    selectedTags.length > 0 || filterType !== "all" || sortBy !== "date-newest";
+  const hasActiveFilters = selectedTags.length > 0 || filterType !== "all";
 
   const actualCols = viewMode === "grid" ? gridCols : 1;
 

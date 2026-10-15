@@ -68,6 +68,15 @@ test("Favorites card tags visibly filter favorites and toggling off restores the
   expect(document.querySelectorAll("[data-bookmark-id]").length).toBe(2);
 });
 
+test("a saved sort keeps the new-tab hero and does not mark the list as filtered", () => {
+  const bookmarks = [makeBookmark("article", { collectionId: "reading" })];
+  app.useBookmarksStore.setState({ bookmarks: bookmarkMap(bookmarks), countsByCollection: countsByCollection(bookmarks), sortBy: "alpha-az" });
+  view = render(app, createElement(MemoryRouter, null, createElement(BookmarksContent)));
+  expect(document.querySelector('input[placeholder="search_placeholderGlobal"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("bookmarksContent_bookmarkCount_one[1]");
+  expect(document.body.textContent).not.toContain("bookmarksContent_filtered");
+});
+
 test("reveal expands a collapsed Uncategorized group before rendering and scrolling to its highlighted card", () => {
   const bookmarks = [makeBookmark("uncategorized", { collectionId: "" })];
   app.useBookmarksStore.setState({ bookmarks: bookmarkMap(bookmarks), countsByCollection: countsByCollection(bookmarks) });
