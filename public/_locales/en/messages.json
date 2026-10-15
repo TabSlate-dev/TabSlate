@@ -1639,5 +1639,36 @@
   },
   "tagDialog_errorDuplicate": {
     "message": "A tag with this name already exists."
+  },
+  "sidebar_tagRightClickHint": {
+    "message": "Right-click to edit"
+  },
+  "tagMenu_rename": {
+    "message": "Rename…"
+  },
+  "tagMenu_color": {
+    "message": "Color"
+  },
+  "tagMenu_delete": {
+    "message": "Delete…"
+  },
+  "tagDeleteDialog_title": {
+    "message": "Delete \"$1\"?",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_desc": {
+    "message": "This tag will be removed from $1 bookmarks. This can't be undone.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_confirm": {
+    "message": "Delete"
   }
 }

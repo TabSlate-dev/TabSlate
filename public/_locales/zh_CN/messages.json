@@ -1639,5 +1639,36 @@
   },
   "tagDialog_errorDuplicate": {
     "message": "已有同名标签。"
+  },
+  "sidebar_tagRightClickHint": {
+    "message": "右键可编辑"
+  },
+  "tagMenu_rename": {
+    "message": "重命名…"
+  },
+  "tagMenu_color": {
+    "message": "颜色"
+  },
+  "tagMenu_delete": {
+    "message": "删除…"
+  },
+  "tagDeleteDialog_title": {
+    "message": "删除标签「$1」？",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_desc": {
+    "message": "这个标签会从 $1 个书签上移除，此操作无法撤销。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_confirm": {
+    "message": "删除"
   }
 }

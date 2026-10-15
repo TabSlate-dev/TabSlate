@@ -1,15 +1,42 @@
 import * as React from "react";
-import { Plus, Search, Tag as TagIcon, X } from "lucide-react";
+import { Check, Palette, Pencil, Plus, Search, Tag as TagIcon, Trash2, X } from "lucide-react";
 import { SidebarGroup, SidebarGroupContent } from "@/components/ui/sidebar";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
-import { useWorkspaceStore } from "@/store/workspace-store";
+import { TAG_COLORS, useWorkspaceStore } from "@/store/workspace-store";
 import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
 import { useTranslation } from "@/hooks/use-translation";
-import type { Bookmark } from "@/lib/types";
+import type { Bookmark, Tag } from "@/lib/types";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TagDeleteDialog } from "./tag-delete-dialog";
 import { SectionHeader } from "./section-header";
 import { TagDialog } from "./tag-dialog";
+
+/** Active bookmarks in every workspace that carry the tag; tags are global. */
+function countBookmarksWithTag(bookmarks: Map<string, Bookmark>, tagId: string): number {
+  let count = 0;
+  for (const bookmark of bookmarks.values()) {
+    if (bookmark.tags.includes(tagId)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function swatchClass(color: string): string {
+  return color.split(" ")[0].replace("/10", "");
+}
 
 /** Bookmarks in the active workspace (its collections plus uncategorized) per tag. */
 function countTagsInWorkspace(
@@ -61,6 +88,18 @@ export function SidebarTagsSection() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const createTag = useWorkspaceStore((s) => s.createTag);
   const deleteTag = useWorkspaceStore((s) => s.deleteTag);
+
+  const [editingTag, setEditingTag] = React.useState<Tag | null>(null);
+  const [deletingTag, setDeletingTag] = React.useState<Tag | null>(null);
+  const updateTag = useWorkspaceStore((s) => s.updateTag);
+  const deletingCount = React.useMemo(
+    () => (deletingTag ? countBookmarksWithTag(bookmarks, deletingTag.id) : 0),
+    [bookmarks, deletingTag],
+  );
+  const editingTakenNames = React.useMemo(
+    () => (editingTag ? tags.filter((tag) => tag.id !== editingTag.id).map((tag) => tag.name) : []),
+    [tags, editingTag],
+  );
 
   const workspaceCollectionIds = React.useMemo(
     () => getActiveWorkspaceCollectionIds(activeWorkspaceId, workspaces, collections),
@@ -164,33 +203,57 @@ export function SidebarTagsSection() {
               const count = tagCounts.get(tag.id) ?? 0;
               const selected = selectedTags.includes(tag.id);
               return (
-                <button
-                  key={tag.id}
-                  type="button"
-                  data-tag-id={tag.id}
-                  aria-pressed={selected}
-                  onClick={() => toggleTag(tag.id)}
-                  className={cn(
-                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium transition-colors group/tag",
-                    selected ? "bg-primary text-primary-foreground" : tag.color,
-                  )}
-                >
-                  <TagIcon className="size-3" />
-                  <HighlightedName name={tag.name} query={trimmedQuery} />
-                  <span data-tag-count className={cn("tabular-nums", count === 0 ? "opacity-50" : "opacity-80")}>
-                    {count}
-                  </span>
-                  <span
-                    role="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      deleteTag(tag.id);
-                    }}
-                    className="hidden group-hover/tag:inline ml-0.5 hover:opacity-70"
-                  >
-                    ×
-                  </span>
-                </button>
+                <Tooltip key={tag.id} delayDuration={1000}>
+                  <ContextMenu>
+                    <TooltipTrigger asChild>
+                      <ContextMenuTrigger asChild>
+                        <button
+                          type="button"
+                          data-tag-id={tag.id}
+                          aria-pressed={selected}
+                          onClick={() => toggleTag(tag.id)}
+                          className={cn(
+                            "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium transition-colors",
+                            selected ? "bg-primary text-primary-foreground" : tag.color,
+                          )}
+                        >
+                          <TagIcon className="size-3" />
+                          <HighlightedName name={tag.name} query={trimmedQuery} />
+                          <span data-tag-count className={cn("tabular-nums", count === 0 ? "opacity-50" : "opacity-80")}>
+                            {count}
+                          </span>
+                        </button>
+                      </ContextMenuTrigger>
+                    </TooltipTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem onSelect={() => setEditingTag(tag)}>
+                        <Pencil className="size-4" />
+                        {t("tagMenu_rename")}
+                      </ContextMenuItem>
+                      <ContextMenuSub>
+                        <ContextMenuSubTrigger>
+                          <Palette className="size-4" />
+                          {t("tagMenu_color")}
+                        </ContextMenuSubTrigger>
+                        <ContextMenuSubContent>
+                          {TAG_COLORS.map((color, index) => (
+                            <ContextMenuItem key={color} onSelect={() => updateTag(tag.id, { color })}>
+                              <span className={cn("size-3 rounded-full", swatchClass(color))} />
+                              {t("tagDialog_colorOption", [String(index + 1)])}
+                              {tag.color === color && <Check className="ml-auto size-4" />}
+                            </ContextMenuItem>
+                          ))}
+                        </ContextMenuSubContent>
+                      </ContextMenuSub>
+                      <ContextMenuSeparator />
+                      <ContextMenuItem variant="destructive" onSelect={() => setDeletingTag(tag)}>
+                        <Trash2 className="size-4" />
+                        {t("tagMenu_delete")}
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
+                  <TooltipContent side="top">{t("sidebar_tagRightClickHint")}</TooltipContent>
+                </Tooltip>
               );
             })}
           </div>
@@ -205,6 +268,34 @@ export function SidebarTagsSection() {
           createTag(name, color);
         }}
       />
+      {editingTag && (
+        <TagDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setEditingTag(null);
+            }
+          }}
+          initial={editingTag}
+          takenNames={editingTakenNames}
+          onSubmit={(name, color) => {
+            updateTag(editingTag.id, { name, color });
+          }}
+        />
+      )}
+      {deletingTag && (
+        <TagDeleteDialog
+          tag={deletingTag}
+          bookmarkCount={deletingCount}
+          onClose={() => setDeletingTag(null)}
+          onConfirm={() => {
+            // A no-op when another device deleted the tag while the dialog was open.
+            if (tags.some((tag) => tag.id === deletingTag.id)) {
+              deleteTag(deletingTag.id);
+            }
+          }}
+        />
+      )}
     </SidebarGroup>
   );
 }
