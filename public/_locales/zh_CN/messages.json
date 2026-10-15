@@ -993,6 +993,9 @@
   "import_tryAgain": {
     "message": "重试"
   },
+  "bookmarkCard_moreActions": {
+    "message": "书签操作"
+  },
   "bookmarkCard_openSmart": {
     "message": "智能打开"
   },

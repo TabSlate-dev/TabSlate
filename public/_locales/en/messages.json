@@ -993,6 +993,9 @@
   "import_tryAgain": {
     "message": "Try again"
   },
+  "bookmarkCard_moreActions": {
+    "message": "Bookmark actions"
+  },
   "bookmarkCard_openSmart": {
     "message": "Open (Smart)"
   },
