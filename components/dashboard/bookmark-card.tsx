@@ -96,8 +96,8 @@ export const BookmarkCard = React.memo(function BookmarkCard({
       menu={menu}
       onOpenSmart={handleSmartOpen}
       onOpenNewTab={handleNewTabOpen}
-      onEdit={handleEdit}
-      onAddTags={handleAddTags}
+      onEdit={onEdit ? handleEdit : undefined}
+      onAddTags={onAddTags ? handleAddTags : undefined}
       onArchive={handleArchive}
       onDelete={handleDelete}
     />

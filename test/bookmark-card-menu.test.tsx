@@ -28,6 +28,8 @@ import {
 const replacer = createModuleReplacer();
 const smartOpenUrl = mock(async () => {});
 const openInNewTab = mock(async () => {});
+const handleEdit = mock(() => {});
+const handleAddTags = mock(() => {});
 let app: AppModules;
 let BookmarkCard: typeof import("@/components/dashboard/bookmark-card").BookmarkCard;
 let view: RenderResult | null = null;
@@ -37,6 +39,12 @@ const MENU_ITEMS = [
   "bookmarkCard_openNewTab",
   "bookmarkCard_edit",
   "bookmarkCard_addTags",
+  "bookmarkCard_archive",
+  "bookmarkCard_delete",
+];
+const MENU_ITEMS_WITHOUT_EDITING = [
+  "bookmarkCard_openSmart",
+  "bookmarkCard_openNewTab",
   "bookmarkCard_archive",
   "bookmarkCard_delete",
 ];
@@ -63,6 +71,8 @@ beforeEach(() => {
   view?.unmount();
   smartOpenUrl.mockClear();
   openInNewTab.mockClear();
+  handleEdit.mockClear();
+  handleAddTags.mockClear();
   app.useWorkspaceStore.setState({
     activeWorkspaceId: "home",
     workspaces: [makeWorkspace("home")],
@@ -90,7 +100,7 @@ const variants: Array<"grid" | "list"> = ["grid", "list"];
 for (const variant of variants) {
   describe(`BookmarkCard ${variant} menus`, () => {
     beforeEach(() => {
-      view?.rerender(createElement(BookmarkCard, { bookmark: article, variant }));
+      view?.rerender(createElement(BookmarkCard, { bookmark: article, variant, onEdit: handleEdit, onAddTags: handleAddTags }));
     });
     test("right-click shows the same actions as the ⋯ menu", async () => {
       await act(async () => {
@@ -103,6 +113,34 @@ for (const variant of variants) {
         openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
       });
       expect(itemTexts("dropdown-menu-item")).toEqual(MENU_ITEMS);
+    });
+
+    test("Edit and Add tags hand the bookmark to their handlers", async () => {
+      await act(async () => {
+        rightClick(getBySelector('[data-bookmark-id="b1"]'));
+      });
+      click(getByText("bookmarkCard_edit"));
+      expect(handleEdit).toHaveBeenCalledWith(article);
+
+      await act(async () => {
+        openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
+      });
+      click(getByText("bookmarkCard_addTags"));
+      expect(handleAddTags).toHaveBeenCalledWith(article);
+    });
+
+    test("without edit and tag handlers, as on Favorites, the menus leave out Edit and Add tags", async () => {
+      view?.rerender(createElement(BookmarkCard, { bookmark: article, variant }));
+      await act(async () => {
+        rightClick(getBySelector('[data-bookmark-id="b1"]'));
+      });
+      expect(itemTexts("context-menu-item")).toEqual(MENU_ITEMS_WITHOUT_EDITING);
+      pressKey(getByText("bookmarkCard_openSmart"), "Escape");
+
+      await act(async () => {
+        openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
+      });
+      expect(itemTexts("dropdown-menu-item")).toEqual(MENU_ITEMS_WITHOUT_EDITING);
     });
 
     test("presses inside an open card menu never reach a parent pointerdown handler", async () => {
