@@ -17,38 +17,22 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import {
   Bookmark,
-  BookOpen,
   ChevronRight,
-  Code,
-  Folder,
-  Globe,
   Heart,
-  Inbox,
   Monitor,
-  Palette,
   Plus,
   Search,
-  Sparkles,
-  Star,
   Archive,
-  MoreHorizontal,
   Trash2,
   Trash,
-  Wrench,
 } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import type { Collection } from "@/lib/types";
 import { CollectionDialog } from "./collection-dialog";
+import { SidebarCollectionRow } from "./collection-row";
 import { SidebarTagsSection } from "./tags-section";
 import { SectionHeader } from "./section-header";
 import { GroupDialog } from "./group-dialog";
@@ -63,28 +47,6 @@ import { useAuthStore } from "@/store/auth-store";
 import { getActiveWorkspaceCollections, isActiveWorkspace } from "@/lib/workspace-visibility";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { AlertCircle } from "lucide-react";
-
-// ---------------------------------------------------------------------------
-// Icon map
-// ---------------------------------------------------------------------------
-const ICON_MAP: Record<string, React.ElementType> = {
-  folder: Folder,
-  bookmark: Bookmark,
-  code: Code,
-  palette: Palette,
-  wrench: Wrench,
-  "book-open": BookOpen,
-  sparkles: Sparkles,
-  star: Star,
-  heart: Heart,
-  globe: Globe,
-  inbox: Inbox,
-};
-
-function CollectionIcon({ icon }: { icon: string }) {
-  const Icon = ICON_MAP[icon] ?? Folder;
-  return <Icon className="size-4" />;
-}
 
 const navItems = [
   { icon: Monitor, labelKey: "sidebar_navOpenTabs", href: "/tabs" },
@@ -192,8 +154,6 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
     [allGroups, activeWorkspaceId, workspaces]
   );
   const createCollection = useWorkspaceStore(s => s.createCollection);
-  const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
-  const archiveCollection = useWorkspaceStore(s => s.archiveCollection);
   const highlightedCollectionIds = useWorkspaceStore(s => s.highlightedCollectionIds);
 
   const isHomePage = pathname === "/";
@@ -221,6 +181,11 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
     }
     return perCol;
   }, [countsByCollection, workspaceCollections]);
+
+  const handleSelectCollection = React.useCallback((collectionId: string) => {
+    setSelectedCollection(collectionId);
+    clearTags();
+  }, [setSelectedCollection, clearTags]);
 
   const handleToggleCollections = React.useCallback(() => setCollectionsOpen(v => !v), []);
   const handleToggleGroups = React.useCallback(() => setGroupsOpen(v => !v), []);
@@ -292,66 +257,17 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
                     </SidebarMenuItem>
                   </DroppableZone>
 
-                  {workspaceCollections.map((col) => {
-                    const isActive = isHomePage && selectedCollection === col.id;
-                    const isHighlighted = highlightedCollectionIds.includes(col.id);
-                    return (
-                      <DroppableZone key={col.id} id={`sidebar-collection-${col.id}`}>
-                        <SidebarMenuItem>
-                          <SidebarMenuButton
-                            asChild
-                            isActive={isActive}
-                            className={cn("h-9 group/col transition-all", isHighlighted && "ring-2 ring-inset ring-amber-500 bg-amber-500/10 text-amber-600 dark:text-amber-500")}
-                          >
-                            <Link
-                              to="/"
-                              onClick={() => {
-                                setSelectedCollection(col.id);
-                                clearTags();
-                              }}
-                            >
-                              <CollectionIcon icon={col.icon} />
-                              <span className="flex-1 text-sm truncate">{col.name}</span>
-                              <div className="flex items-center">
-                                {!col.isDefault && (
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <button
-                                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                                        className="flex items-center justify-center overflow-hidden opacity-0 -translate-x-2 w-0 group-hover/col:w-4 group-hover/col:mr-1 group-hover/col:opacity-100 group-hover/col:translate-x-0 text-muted-foreground hover:text-foreground transition-all duration-300 ease-out"
-                                      >
-                                        <MoreHorizontal className="size-3 shrink-0" />
-                                      </button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end" side="right">
-                                      <DropdownMenuItem
-                                        onClick={(e) => { e.preventDefault(); archiveCollection(col.id); }}
-                                      >
-                                        <Archive className="size-4 mr-2" />
-                                        {t("sidebar_archiveCollection")}
-                                      </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem
-                                        className="text-destructive focus:text-destructive"
-                                        onClick={(e) => { e.preventDefault(); deleteCollection(col.id); }}
-                                      >
-                                        <Trash2 className="size-4 mr-2" />
-                                        {t("sidebar_deleteCollection")}
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                )}
-                                <span className="text-muted-foreground text-xs shrink-0">{bookmarkCounts[col.id] ?? 0}</span>
-                              </div>
-                              {isActive && (
-                                <ChevronRight className="size-3.5 text-muted-foreground opacity-60 shrink-0 ml-1" />
-                              )}
-                            </Link>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      </DroppableZone>
-                    );
-                  })}
+                  {workspaceCollections.map((col) => (
+                    <DroppableZone key={col.id} id={`sidebar-collection-${col.id}`}>
+                      <SidebarCollectionRow
+                        collection={col}
+                        count={bookmarkCounts[col.id] ?? 0}
+                        isActive={isHomePage && selectedCollection === col.id}
+                        isHighlighted={highlightedCollectionIds.includes(col.id)}
+                        onSelect={handleSelectCollection}
+                      />
+                    </DroppableZone>
+                  ))}
 
                   <AddItemButton label={t("sidebar_addCollection")} onClick={() => setNewCollectionOpen(true)} />
                 </SidebarMenu>

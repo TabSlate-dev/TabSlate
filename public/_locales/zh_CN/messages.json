@@ -1670,5 +1670,38 @@
   },
   "tagDeleteDialog_confirm": {
     "message": "删除"
+  },
+  "collectionMenu_edit": {
+    "message": "编辑…"
+  },
+  "collectionMenu_more": {
+    "message": "集合操作"
+  },
+  "collectionDialog_newTitle": {
+    "message": "新建集合"
+  },
+  "collectionDialog_editTitle": {
+    "message": "编辑集合"
+  },
+  "collectionDialog_newDesc": {
+    "message": "创建一个集合来整理书签。"
+  },
+  "collectionDialog_editDesc": {
+    "message": "修改这个集合的名称和图标。"
+  },
+  "collectionDialog_nameLabel": {
+    "message": "名称"
+  },
+  "collectionDialog_namePlaceholder": {
+    "message": "我的集合"
+  },
+  "collectionDialog_iconLabel": {
+    "message": "图标"
+  },
+  "collectionDialog_create": {
+    "message": "创建"
+  },
+  "collectionDialog_save": {
+    "message": "保存"
   }
 }

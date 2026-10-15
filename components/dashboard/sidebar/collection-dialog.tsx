@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { COLLECTION_ICONS } from "@/store/workspace-store";
 import type { Collection } from "@/lib/types";
+import { useTranslation } from "@/hooks/use-translation";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   folder: Folder,
@@ -49,6 +50,7 @@ interface CollectionDialogProps {
 }
 
 export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: CollectionDialogProps) {
+  const { t } = useTranslation();
   const [icon, setIcon] = React.useState(initial?.icon ?? "folder");
 
   React.useEffect(() => {
@@ -61,11 +63,9 @@ export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: Coll
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xs">
         <DialogHeader>
-          <DialogTitle>{initial ? "Edit Collection" : "New Collection"}</DialogTitle>
+          <DialogTitle>{t(initial ? "collectionDialog_editTitle" : "collectionDialog_newTitle")}</DialogTitle>
           <DialogDescription className="sr-only">
-            {initial
-              ? "Edit the name and icon of this collection."
-              : "Create a new collection to organize your bookmarks."}
+            {t(initial ? "collectionDialog_editDesc" : "collectionDialog_newDesc")}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -78,18 +78,18 @@ export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: Coll
           }}
         >
           <Field>
-            <FieldLabel htmlFor="collection-name">Name</FieldLabel>
+            <FieldLabel htmlFor="collection-name">{t("collectionDialog_nameLabel")}</FieldLabel>
             <Input
               id="collection-name"
               name="name"
               defaultValue={initial?.name ?? ""}
-              placeholder="My Collection"
+              placeholder={t("collectionDialog_namePlaceholder")}
               autoFocus
               required
             />
           </Field>
           <Field>
-            <FieldLabel>Icon</FieldLabel>
+            <FieldLabel>{t("collectionDialog_iconLabel")}</FieldLabel>
             <div className="flex flex-wrap gap-1.5">
               {COLLECTION_ICONS.map((ic) => {
                 const Icon = ICON_MAP[ic] ?? Folder;
@@ -113,10 +113,10 @@ export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: Coll
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("settings_cancel")}
             </Button>
             <Button type="submit" size="sm">
-              {initial ? "Save" : "Create"}
+              {t(initial ? "collectionDialog_save" : "collectionDialog_create")}
             </Button>
           </DialogFooter>
         </form>

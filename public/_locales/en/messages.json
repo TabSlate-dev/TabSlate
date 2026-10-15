@@ -1670,5 +1670,38 @@
   },
   "tagDeleteDialog_confirm": {
     "message": "Delete"
+  },
+  "collectionMenu_edit": {
+    "message": "Edit…"
+  },
+  "collectionMenu_more": {
+    "message": "Collection actions"
+  },
+  "collectionDialog_newTitle": {
+    "message": "New collection"
+  },
+  "collectionDialog_editTitle": {
+    "message": "Edit collection"
+  },
+  "collectionDialog_newDesc": {
+    "message": "Create a collection to organize your bookmarks."
+  },
+  "collectionDialog_editDesc": {
+    "message": "Change this collection's name and icon."
+  },
+  "collectionDialog_nameLabel": {
+    "message": "Name"
+  },
+  "collectionDialog_namePlaceholder": {
+    "message": "My collection"
+  },
+  "collectionDialog_iconLabel": {
+    "message": "Icon"
+  },
+  "collectionDialog_create": {
+    "message": "Create"
+  },
+  "collectionDialog_save": {
+    "message": "Save"
   }
 }
