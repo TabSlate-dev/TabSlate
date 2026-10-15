@@ -1,6 +1,6 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import type { Collection } from "@/lib/types";
 import { createModuleReplacer } from "./helpers/module-replacer";
@@ -83,22 +83,31 @@ function renderRow(collection: Collection) {
 }
 
 describe("SidebarCollectionRow", () => {
-  test("right-click offers edit, archive and delete", () => {
-    rightClick(renderRow(projects));
+  test("right-click offers edit, archive and delete", async () => {
+    const row = renderRow(projects);
+    await act(async () => {
+      rightClick(row);
+    });
     expect(getByText("collectionMenu_edit")).toBeTruthy();
     expect(getByText("sidebar_archiveCollection")).toBeTruthy();
     expect(getByText("sidebar_deleteCollection")).toBeTruthy();
   });
 
-  test("the default collection can only be edited", () => {
-    rightClick(renderRow(reading));
+  test("the default collection can only be edited", async () => {
+    const row = renderRow(reading);
+    await act(async () => {
+      rightClick(row);
+    });
     expect(getByText("collectionMenu_edit")).toBeTruthy();
     expect(queryByText("sidebar_archiveCollection")).toBeNull();
     expect(queryByText("sidebar_deleteCollection")).toBeNull();
   });
 
   test("edit renames the collection", async () => {
-    rightClick(renderRow(projects));
+    const row = renderRow(projects);
+    await act(async () => {
+      rightClick(row);
+    });
     click(getByText("collectionMenu_edit"));
     const input = getBySelector<HTMLInputElement>("#collection-name");
     expect(input.value).toBe("Projects");
@@ -113,9 +122,11 @@ describe("SidebarCollectionRow", () => {
     expect(app.useWorkspaceStore.getState().collections.find((c) => c.id === "projects")?.name).toBe("Side projects");
   });
 
-  test("the ⋯ button opens the same items, and choosing one does not select the row", () => {
+  test("the ⋯ button opens the same items, and choosing one does not select the row", async () => {
     renderRow(projects);
-    openDropdown(getBySelector('[aria-label="collectionMenu_more"]'));
+    await act(async () => {
+      openDropdown(getBySelector('[aria-label="collectionMenu_more"]'));
+    });
     expect(getByText("sidebar_archiveCollection")).toBeTruthy();
 
     click(getByText("collectionMenu_edit"));
