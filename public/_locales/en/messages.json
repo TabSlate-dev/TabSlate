@@ -1079,6 +1079,20 @@
   "bookmarksContent_clearFilters": {
     "message": "Clear filters"
   },
+  "activeFilterChips_removeTypeFilter": {
+    "message": "Remove filter"
+  },
+  "activeFilterChips_removeTag": {
+    "message": "Remove tag filter: $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "activeFilterChips_clearAll": {
+    "message": "Clear all"
+  },
   "favoritesContent_title": {
     "message": "Favorite Bookmarks"
   },
@@ -1106,6 +1120,18 @@
   },
   "favoritesContent_emptyDesc": {
     "message": "Star a bookmark to add it to your favorites."
+  },
+  "favoritesContent_filtered": {
+    "message": " (filtered)"
+  },
+  "favoritesContent_noMatchTitle": {
+    "message": "No favorites match the selected tags"
+  },
+  "favoritesContent_noMatchDesc": {
+    "message": "Clear the tag filter to see all your favorites."
+  },
+  "favoritesContent_clearTagFilter": {
+    "message": "Clear tag filter"
   },
   "archiveContent_restore": {
     "message": "Restore"

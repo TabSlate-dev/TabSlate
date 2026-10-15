@@ -3,6 +3,8 @@ import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { BookmarkCard } from "./bookmark-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import { ActiveFilterChips } from "@/components/dashboard/shared/active-filter-chips";
 import { Heart } from "lucide-react";
 import { useTranslation } from "@/hooks/use-translation";
 import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
@@ -12,6 +14,7 @@ export function FavoritesContent() {
   const bookmarks = useBookmarksStore(s => bookmarksAsArray(s.bookmarks));
   const viewMode = useBookmarksStore(s => s.viewMode);
   const selectedTags = useBookmarksStore(s => s.selectedTags);
+  const clearTags = useBookmarksStore(s => s.clearTags);
 
   const collections = useWorkspaceStore(s => s.collections);
   const workspaces = useWorkspaceStore(s => s.workspaces);
@@ -22,12 +25,18 @@ export function FavoritesContent() {
     [activeWorkspaceId, workspaces, collections]
   );
 
-  const favoriteBookmarks = React.useMemo(
+  const allFavorites = React.useMemo(
     () => bookmarks.filter(
-      b => b.isFavorite && (b.collectionId === "" || workspaceCollectionIds.has(b.collectionId)) &&
-        (selectedTags.length === 0 || selectedTags.some(tag => b.tags.includes(tag)))
+      b => b.isFavorite && (b.collectionId === "" || workspaceCollectionIds.has(b.collectionId))
     ),
-    [bookmarks, workspaceCollectionIds, selectedTags]
+    [bookmarks, workspaceCollectionIds]
+  );
+
+  const favoriteBookmarks = React.useMemo(
+    () => selectedTags.length === 0
+      ? allFavorites
+      : allFavorites.filter(b => selectedTags.some(tag => b.tags.includes(tag))),
+    [allFavorites, selectedTags]
   );
 
   return (
@@ -41,9 +50,12 @@ export function FavoritesContent() {
             <h2 className="text-lg font-semibold">{t("favoritesContent_title")}</h2>
             <p className="text-sm text-muted-foreground">
               {t(favoriteBookmarks.length === 1 ? "favoritesContent_count_one" : "favoritesContent_count_other", [favoriteBookmarks.length.toString()])} {t("favoritesContent_markedAsFavorite")}
+              {selectedTags.length > 0 && t("favoritesContent_filtered")}
             </p>
           </div>
         </div>
+
+        <ActiveFilterChips />
 
         {viewMode === "grid" ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -59,7 +71,20 @@ export function FavoritesContent() {
           </div>
         )}
 
-        {favoriteBookmarks.length === 0 && (
+        {favoriteBookmarks.length === 0 && allFavorites.length > 0 && (
+          <EmptyState
+            icon={Heart}
+            title={t("favoritesContent_noMatchTitle")}
+            description={t("favoritesContent_noMatchDesc")}
+            action={
+              <Button variant="outline" size="sm" onClick={() => clearTags()}>
+                {t("favoritesContent_clearTagFilter")}
+              </Button>
+            }
+          />
+        )}
+
+        {allFavorites.length === 0 && (
           <EmptyState
             icon={Heart}
             title={t("favoritesContent_emptyTitle")}

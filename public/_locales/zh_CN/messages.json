@@ -1079,6 +1079,20 @@
   "bookmarksContent_clearFilters": {
     "message": "清除筛选"
   },
+  "activeFilterChips_removeTypeFilter": {
+    "message": "移除筛选"
+  },
+  "activeFilterChips_removeTag": {
+    "message": "移除标签筛选：$1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "activeFilterChips_clearAll": {
+    "message": "全部清除"
+  },
   "favoritesContent_title": {
     "message": "收藏书签"
   },
@@ -1106,6 +1120,18 @@
   },
   "favoritesContent_emptyDesc": {
     "message": "点击书签旁的星标图标即可将其加入收藏。"
+  },
+  "favoritesContent_filtered": {
+    "message": "（已筛选）"
+  },
+  "favoritesContent_noMatchTitle": {
+    "message": "没有符合所选标签的收藏书签"
+  },
+  "favoritesContent_noMatchDesc": {
+    "message": "清除标签筛选即可查看全部收藏书签。"
+  },
+  "favoritesContent_clearTagFilter": {
+    "message": "清除标签筛选"
   },
   "archiveContent_restore": {
     "message": "还原"

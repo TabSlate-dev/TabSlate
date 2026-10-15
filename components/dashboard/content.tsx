@@ -13,7 +13,6 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
-  X,
   Bookmark,
   ChevronDown,
   ChevronRight,
@@ -35,6 +34,7 @@ import { HeroSection } from "./hero-section";
 import { useTabsStore } from "@/store/tabs-store";
 import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-dialog";
 import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
+import { ActiveFilterChips } from "@/components/dashboard/shared/active-filter-chips";
 import { SearchBox } from "./search-box";
 import { useTranslation } from "@/hooks/use-translation";
 import {
@@ -279,7 +279,6 @@ export function BookmarksContent() {
   const setSelectedCollection = useBookmarksStore(s => s.setSelectedCollection);
   const viewMode = useBookmarksStore(s => s.viewMode);
   const selectedTags = useBookmarksStore(s => s.selectedTags);
-  const toggleTag = useBookmarksStore(s => s.toggleTag);
   const filterType = useBookmarksStore(s => s.filterType);
   const setFilterType = useBookmarksStore(s => s.setFilterType);
   const sortBy = useBookmarksStore(s => s.sortBy);
@@ -289,7 +288,6 @@ export function BookmarksContent() {
 
   const collections = useWorkspaceStore(s => s.collections);
   const workspaces = useWorkspaceStore(s => s.workspaces);
-  const tags = useWorkspaceStore(s => s.tags);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
   const [editingBookmark, setEditingBookmark] = React.useState<BookmarkType | null>(null);
@@ -324,10 +322,6 @@ export function BookmarksContent() {
   useWorkspaceCollectionReset(selectedCollection, workspaceCollectionIds, setSelectedCollection);
   useHighlightDeepLink();
 
-  const activeTagsData = React.useMemo(
-    () => tags.filter((t) => selectedTags.includes(t.id)),
-    [tags, selectedTags]
-  );
   const hasActiveFilters = selectedTags.length > 0 || filterType !== "all";
 
   const actualCols = viewMode === "grid" ? gridCols : 1;
@@ -563,37 +557,7 @@ export function BookmarksContent() {
                         )}
                       </div>
 
-                      {(activeTagsData.length > 0 || filterType !== "all") && (
-                        <div className="flex flex-wrap items-center gap-2">
-                          {filterType !== "all" && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-primary/10 text-primary">
-                              {filterType === "favorites" && t("bookmarksContent_favoritesOnly")}
-                              {filterType === "with-tags" && t("bookmarksContent_withTags")}
-                              {filterType === "without-tags" && t("bookmarksContent_withoutTags")}
-                              <button
-                                onClick={() => setFilterType("all")}
-                                className="hover:bg-primary/20 rounded-full p-0.5"
-                              >
-                                <X className="size-3" />
-                              </button>
-                            </span>
-                          )}
-                          {activeTagsData.map((tag) => (
-                            <span
-                              key={tag.id}
-                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-primary text-primary-foreground"
-                            >
-                              {tag.name}
-                              <button
-                                onClick={() => toggleTag(tag.id)}
-                                className="hover:bg-primary-foreground/20 rounded-full p-0.5"
-                              >
-                                <X className="size-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                      <ActiveFilterChips includeTypeFilter />
                     </div>
                   </div>
                 </div>
