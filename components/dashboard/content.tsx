@@ -1,3 +1,5 @@
+import { useWorkspaceCollectionReset } from "@/hooks/use-workspace-collection-reset";
+import { useHighlightDeepLink } from "@/hooks/use-highlight-deep-link";
 import * as React from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useTabsDndContext } from "./tabs-dnd-provider";
@@ -294,14 +296,6 @@ export function BookmarksContent() {
   const [taggingBookmark, setTaggingBookmark] = React.useState<BookmarkType | null>(null);
   const [expandedCollectionIds, setExpandedCollectionIds] = React.useState<Record<string, boolean>>({});
 
-  const prevWorkspaceIdRef = React.useRef<string | null>(null);
-  React.useEffect(() => {
-    if (prevWorkspaceIdRef.current !== null && prevWorkspaceIdRef.current !== activeWorkspaceId) {
-      setSelectedCollection("all");
-    }
-    prevWorkspaceIdRef.current = activeWorkspaceId;
-  }, [activeWorkspaceId, setSelectedCollection]);
-
   const highlightedBookmarkId = useBookmarksStore((state) => state.highlightedBookmarkId);
 
   const parentRef = React.useRef<HTMLDivElement>(null);
@@ -327,11 +321,8 @@ export function BookmarksContent() {
       ? { name: t("bookmarksContent_allBookmarks") }
       : activeCollections.find((c) => c.id === selectedCollection);
 
-  React.useEffect(() => {
-    if (selectedCollection !== "all" && !workspaceCollectionIds.has(selectedCollection)) {
-      setSelectedCollection("all");
-    }
-  }, [selectedCollection, setSelectedCollection, workspaceCollectionIds]);
+  useWorkspaceCollectionReset(selectedCollection, workspaceCollectionIds, setSelectedCollection);
+  useHighlightDeepLink();
 
   const activeTagsData = React.useMemo(
     () => tags.filter((t) => selectedTags.includes(t.id)),
