@@ -62,6 +62,8 @@ describe("wxt cross-browser manifest", () => {
         "personallyIdentifyingInfo",
         "searchTerms",
         "websiteContent",
+        // Only sent once the user turns on view-preference sync (lib/browser/data-collection.ts).
+        "technicalAndInteraction",
       ],
     });
   });

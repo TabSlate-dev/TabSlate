@@ -44,3 +44,13 @@ export const FIREFOX_ACCOUNT_DATA_COLLECTION: readonly FirefoxDataCollectionPerm
   "searchTerms",
   "websiteContent",
 ];
+
+/**
+ * Sent to the sync server only when the user turns it on (Firefox's install
+ * prompt, about:addons, or TabSlate's settings): the bookmark view mode and
+ * sort order synced through /preferences. Mozilla files extension settings
+ * data under this category.
+ */
+export const FIREFOX_SETTINGS_DATA_COLLECTION: readonly FirefoxDataCollectionPermission[] = [
+  "technicalAndInteraction",
+];

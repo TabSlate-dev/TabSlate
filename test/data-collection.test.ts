@@ -81,3 +81,56 @@ describe("account data consent", () => {
     expect(await hasAccountDataConsent()).toBe(false);
   });
 });
+
+const SETTINGS_DATA_COLLECTION = { data_collection: ["technicalAndInteraction"] };
+
+describe("settings sync consent", () => {
+  test("Chromium builds always allow it and never touch the permissions API", async () => {
+    useBuild("chrome");
+    const contains = mock(async () => false);
+    const request = mock(async () => false);
+    const remove = mock(async () => false);
+    stubPermissions({ contains, request, remove });
+
+    const { hasSettingsSyncConsent, requestSettingsSyncConsent, removeSettingsSyncConsent } =
+      await importDataCollectionModule();
+
+    expect(await hasSettingsSyncConsent()).toBe(true);
+    expect(await requestSettingsSyncConsent()).toBe(true);
+    expect(await removeSettingsSyncConsent()).toBe(true);
+    expect(contains).not.toHaveBeenCalled();
+    expect(request).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  test("Firefox builds check, request and remove only technicalAndInteraction", async () => {
+    useBuild("firefox");
+    const contains = mock(async () => false);
+    const request = mock(async () => true);
+    const remove = mock(async () => true);
+    stubPermissions({ contains, request, remove });
+
+    const { hasSettingsSyncConsent, requestSettingsSyncConsent, removeSettingsSyncConsent } =
+      await importDataCollectionModule();
+
+    expect(await hasSettingsSyncConsent()).toBe(false);
+    expect(await requestSettingsSyncConsent()).toBe(true);
+    expect(await removeSettingsSyncConsent()).toBe(true);
+    expect(contains).toHaveBeenCalledWith(SETTINGS_DATA_COLLECTION);
+    expect(request).toHaveBeenCalledWith(SETTINGS_DATA_COLLECTION);
+    expect(remove).toHaveBeenCalledWith(SETTINGS_DATA_COLLECTION);
+  });
+
+  test("Firefox settings consent fails closed when the permissions API errors", async () => {
+    useBuild("firefox");
+    stubPermissions({
+      contains: mock(async () => {
+        throw new Error("permissions unavailable");
+      }),
+    });
+
+    const { hasSettingsSyncConsent } = await importDataCollectionModule();
+
+    expect(await hasSettingsSyncConsent()).toBe(false);
+  });
+});

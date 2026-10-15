@@ -1,5 +1,8 @@
 import { isFirefoxBuild } from "@/lib/browser/env";
-import { FIREFOX_ACCOUNT_DATA_COLLECTION } from "@/lib/browser/data-collection-permissions";
+import {
+  FIREFOX_ACCOUNT_DATA_COLLECTION,
+  FIREFOX_SETTINGS_DATA_COLLECTION,
+} from "@/lib/browser/data-collection-permissions";
 
 function accountDataCollection(): chrome.permissions.Permissions {
   return { data_collection: [...FIREFOX_ACCOUNT_DATA_COLLECTION] };
@@ -47,4 +50,49 @@ export function subscribeToPermissionChanges(listener: () => void): () => void {
     chrome.permissions.onAdded.removeListener(listener);
     chrome.permissions.onRemoved.removeListener(listener);
   };
+}
+
+function settingsDataCollection(): chrome.permissions.Permissions {
+  return { data_collection: [...FIREFOX_SETTINGS_DATA_COLLECTION] };
+}
+
+/**
+ * Whether view preferences may sync to the server. Always true outside
+ * Firefox; fails closed if Firefox can't answer.
+ */
+export async function hasSettingsSyncConsent(): Promise<boolean> {
+  if (!isFirefoxBuild()) {
+    return true;
+  }
+
+  try {
+    return await chrome.permissions.contains(settingsDataCollection());
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Shows Firefox's prompt for syncing view preferences. Call it synchronously
+ * from a user input handler, before any await.
+ */
+export function requestSettingsSyncConsent(): Promise<boolean> {
+  if (!isFirefoxBuild()) {
+    return Promise.resolve(true);
+  }
+
+  return chrome.permissions.request(settingsDataCollection());
+}
+
+/** Withdraws the consent for syncing view preferences. */
+export async function removeSettingsSyncConsent(): Promise<boolean> {
+  if (!isFirefoxBuild()) {
+    return true;
+  }
+
+  try {
+    return await chrome.permissions.remove(settingsDataCollection());
+  } catch {
+    return false;
+  }
 }

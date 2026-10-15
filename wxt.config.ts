@@ -2,6 +2,7 @@ import { defineConfig } from "wxt";
 import {
   FIREFOX_ACCOUNT_DATA_COLLECTION,
   FIREFOX_REQUIRED_DATA_COLLECTION,
+  FIREFOX_SETTINGS_DATA_COLLECTION,
 } from "./lib/browser/data-collection-permissions";
 
 function getPermissions(): string[] {
@@ -53,11 +54,12 @@ export default defineConfig({
               id: "support@cs.tabslate.com",
               strict_min_version: "142.0",
               // What leaves the browser is documented next to each list in
-              // lib/browser/data-collection-permissions.ts. Analytics is not
-              // declared because Firefox builds never send it (lib/analytics.ts).
+              // lib/browser/data-collection-permissions.ts. technicalAndInteraction
+              // covers synced view preferences only; Firefox builds never send
+              // analytics (lib/analytics.ts).
               data_collection_permissions: {
                 required: [...FIREFOX_REQUIRED_DATA_COLLECTION],
-                optional: [...FIREFOX_ACCOUNT_DATA_COLLECTION],
+                optional: [...FIREFOX_ACCOUNT_DATA_COLLECTION, ...FIREFOX_SETTINGS_DATA_COLLECTION],
               },
             },
           },
