@@ -116,6 +116,17 @@ export function SidebarTagsSection() {
   }, [tags, trimmedQuery]);
   const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);
 
+  // Another device can delete a selected tag; with no chip left to clear it, it would keep filtering bookmarks.
+  React.useEffect(() => {
+    const tagIds = new Set(tags.map((tag) => tag.id));
+    // Reads the live selection, so running again cannot toggle a dropped tag back on.
+    for (const tagId of useBookmarksStore.getState().selectedTags) {
+      if (!tagIds.has(tagId)) {
+        toggleTag(tagId);
+      }
+    }
+  }, [tags, toggleTag]);
+
   const handleToggleOpen = React.useCallback(() => setOpen((value) => !value), []);
   const handleOpenSearch = React.useCallback(() => {
     setOpen(true);
@@ -292,6 +303,10 @@ export function SidebarTagsSection() {
             // A no-op when another device deleted the tag while the dialog was open.
             if (tags.some((tag) => tag.id === deletingTag.id)) {
               deleteTag(deletingTag.id);
+            }
+            // A deleted tag has no chip left to clear, so it must not keep filtering bookmarks.
+            if (selectedTags.includes(deletingTag.id)) {
+              toggleTag(deletingTag.id);
             }
           }}
         />

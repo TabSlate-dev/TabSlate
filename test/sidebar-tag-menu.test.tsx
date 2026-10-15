@@ -119,6 +119,18 @@ describe("tag context menu", () => {
     expect(tag("frontend")).toBeUndefined();
   });
 
+  test("deleting a selected tag also takes it out of the bookmark filter", async () => {
+    act(() => {
+      app.useBookmarksStore.setState({ selectedTags: ["frontend", "go"] });
+    });
+    await openTagMenu("frontend");
+    click(getByText("tagMenu_delete"));
+    click(getByText("tagDeleteDialog_confirm"));
+
+    expect(tag("frontend")).toBeUndefined();
+    expect(app.useBookmarksStore.getState().selectedTags).toEqual(["go"]);
+  });
+
   test("cancel leaves the tag available", async () => {
     await openTagMenu("frontend");
     click(getByText("tagMenu_delete"));

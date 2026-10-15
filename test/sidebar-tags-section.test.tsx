@@ -1,6 +1,6 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { createElement } from "react";
+import { act, createElement } from "react";
 import { createModuleReplacer } from "./helpers/module-replacer";
 import {
   click,
@@ -79,6 +79,18 @@ describe("SidebarTagsSection", () => {
     click(chip("go"));
     expect(app.useBookmarksStore.getState().selectedTags).toEqual(["go"]);
     expect(chip("go").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("a selected tag deleted on another device drops out of the bookmark filter", () => {
+    click(chip("go"));
+    click(chip("design"));
+    expect(app.useBookmarksStore.getState().selectedTags).toEqual(["go", "design"]);
+
+    act(() => {
+      app.useWorkspaceStore.setState({ tags: [makeTag("frontend", "Frontend"), makeTag("design", "Design")] });
+    });
+
+    expect(app.useBookmarksStore.getState().selectedTags).toEqual(["design"]);
   });
 
   test("search narrows the tags, highlights the match and leaves the filter alone", () => {
