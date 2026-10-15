@@ -1,4 +1,5 @@
 import type { Bookmark } from "@/lib/types";
+import { strictUrlKey } from "@/lib/url-match";
 
 /**
  * Always derive the favicon from a trusted icon service based on the
@@ -16,9 +17,9 @@ export function normalizeFavicon(_favicon: string | undefined, url: string): str
   }
 }
 
-/** Remove trailing slash and lowercase for URL comparison. */
+/** Key used to detect duplicate saves; lib/url-match.ts documents the rules. */
 export function normalizeUrl(url: string): string {
-  return url.toLowerCase().replace(/\/$/, "");
+  return strictUrlKey(url);
 }
 
 /** Returns the first existing bookmark whose URL matches, or undefined. */
