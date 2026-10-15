@@ -1,10 +1,10 @@
 // @ts-expect-error Bun provides this test module at runtime.
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
-import { GlobalRegistrator } from "@happy-dom/global-registrator";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { installAppModules, setupDom, teardownDom } from "./helpers/dom-environment";
+import { createModuleReplacer } from "./helpers/module-replacer";
 import { act, createElement, Profiler } from "react";
 
-const FRESH = "?bookmarks-header-subscription";
-const previousExports = new Map<string, object>();
+const replacer = createModuleReplacer();
 let createRoot: typeof import("react-dom/client").createRoot;
 let useBookmarksStore: typeof import("../store/bookmarks-store").useBookmarksStore;
 let SidebarProvider: typeof import("../components/ui/sidebar").SidebarProvider;
@@ -13,44 +13,16 @@ let BookmarksHeader: typeof import("../components/dashboard/header").BookmarksHe
 // Bun runs afterAll even when beforeAll fails part-way, so a broken setup
 // cannot leave the DOM globals or module replacements behind for later files.
 afterAll(async () => {
-  for (const [specifier, exports] of previousExports) {
-    mock.module(specifier, () => exports);
-  }
-  Reflect.deleteProperty(globalThis, "indexedDB");
-  Reflect.deleteProperty(globalThis, "IS_REACT_ACT_ENVIRONMENT");
-  if (GlobalRegistrator.isRegistered) {
-    await GlobalRegistrator.unregister();
-  }
+  replacer.restore();
+  await teardownDom();
 });
 
 beforeAll(async () => {
   // react-dom/client checks for a DOM when it is first imported.
-  GlobalRegistrator.register();
-  Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
-  // Store modules open IndexedDB while loading. A request that never settles
-  // keeps persistence inert so the test only exercises rendering.
-  Reflect.set(globalThis, "indexedDB", { open: () => ({}) });
-
-  // Other test files replace these modules with partial fakes, and Bun keeps
-  // module mocks for the rest of the run, patching already-loaded modules in
-  // place. Point them at fresh real copies (a query string bypasses a mock)
-  // and remember the previous exports so afterAll can put them back. Bun
-  // ignores a module namespace returned from a mock factory, so replacements
-  // are handed over as plain object copies.
-  const replaceModule = async (specifier: string, replacement: object) => {
-    previousExports.set(specifier, { ...(await import(specifier)) });
-    mock.module(specifier, () => ({ ...replacement }));
-  };
-  const reactDomClient: typeof import("react-dom/client") = await import(`../node_modules/react-dom/client.js${FRESH}`);
-  const bookmarksStore: typeof import("../store/bookmarks-store") = await import(`../store/bookmarks-store.ts${FRESH}`);
-  await replaceModule("react-dom/client", reactDomClient);
-  await replaceModule("@/hooks/use-translation", { useTranslation: () => ({ t: (key: string) => key }) });
-  await replaceModule("@/store/bookmarks-store", bookmarksStore);
-  await replaceModule("@/store/workspace-store", await import(`../store/workspace-store.ts${FRESH}`));
-  await replaceModule("@/store/i18n-store", await import(`../store/i18n-store.ts${FRESH}`));
-
-  createRoot = reactDomClient.createRoot;
-  useBookmarksStore = bookmarksStore.useBookmarksStore;
+  setupDom();
+  const app = await installAppModules(replacer);
+  createRoot = app.createRoot;
+  useBookmarksStore = app.useBookmarksStore;
   ({ SidebarProvider } = await import("../components/ui/sidebar"));
   ({ BookmarksHeader } = await import("../components/dashboard/header"));
 });

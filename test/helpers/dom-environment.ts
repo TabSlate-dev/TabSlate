@@ -10,7 +10,11 @@ export function setupDom(): void {
   }
   Reflect.set(globalThis, "IS_REACT_ACT_ENVIRONMENT", true);
   // Store modules open IndexedDB while loading. A request that never settles keeps persistence inert.
-  Reflect.set(globalThis, "indexedDB", { open: () => ({}) });
+  Object.defineProperty(globalThis, "indexedDB", {
+    configurable: true,
+    writable: true,
+    value: { open: () => ({}) },
+  });
 }
 
 export async function teardownDom(): Promise<void> {
@@ -57,6 +61,11 @@ function createMemoryStorage(): StateStorage {
  * which tests don't have, so it gets an in-memory adapter.
  */
 export async function installAppModules(replacer: ModuleReplacer): Promise<AppModules> {
+  // Store initialization must never cache the inert DOM request in the shared IDB module.
+  await replacer.replace(
+    "@/lib/idb",
+    await importFresh<typeof import("@/lib/idb")>("lib/idb.ts"),
+  );
   const reactDomClient = await importFresh<typeof import("react-dom/client")>("node_modules/react-dom/client.js");
   await replacer.replace("react-dom/client", reactDomClient);
   // Radix picks its layout-effect hook once, when it first loads. A test file that renders to a string
