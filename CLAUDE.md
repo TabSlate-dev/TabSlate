@@ -211,6 +211,7 @@ v3 迁移（`oldVersion < 3`）：为 `groups` 添加 `workspaceId` 索引，供
 | `ADD_BOOKMARK` | popup/background → newtab | 保存书签（优先路径） |
 | `WORKSPACE_CHANGED` | popup → newtab | popup 新建标签（直接写 IDB `tags`）后通知所有 newtab 标签页，newtab 重新 `hydrate()` workspace store |
 | `AUTH_LOGOUT` | newtab → 其他扩展页面（其余 newtab、search popup） | `useAuthStore.logout()` 完成本地清理后广播，接收方调 `applyRemoteLogout()` 清除各自内存中的登录态 |
+| `GET_PAGE_INFO` | background / popup / newtab（`tabs-store`）→ content script | 保存书签前取页面信息（响应字段见注意事项「GET_PAGE_INFO 响应字段」）：右键菜单保存（background）、popup 打开时预取、`tabs-store` 把窗口/标签组存为集合时逐个标签页请求；经 `chrome.tabs.sendMessage` 发出，content script 未注册（未授予可选权限）或页面不可注入时请求失败，调用方静默回退到 tab 默认值 |
 | `OPEN_SEARCH` | background → active tab | 触发全局搜索快捷键：网页中由 content script 挂载搜索浮层 iframe；newtab 页派发 `tabslate-focus-search` 聚焦 `SearchBox` |
 | `REGISTER_SEARCH_OVERLAY_SESSION` | content script → background | 挂载浮层前注册一次性 `session`（绑定发送方 tab，30 秒后过期） |
 | `VALIDATE_SEARCH_OVERLAY_SESSION` | search-overlay iframe → background | iframe 渲染 `SearchOverlay` 前校验 URL 中的 `session` |
@@ -221,7 +222,7 @@ v3 迁移（`oldVersion < 3`）：为 `groups` 添加 `workspaceId` 索引，供
 | `SEARCH_BOOKMARKS` | search-overlay iframe → background | SearchOverlay 书签搜索；消息不携带认证信息，由 background 读取 `accessToken` 后请求服务端 |
 | `WEB_SEARCH` | search-overlay iframe → background | SearchOverlay 选中网页搜索回退时，由 background 调用 `runWebSearch`（`NEW_TAB`）交给浏览器默认搜索引擎 |
 
-类型定义见 `lib/messages.ts` 的 `ExtensionMessage`。浮层相关消息都携带 `session`：注册/撤销只接受网页 content script 发送，其余只在发送方 URL 为 `search-overlay.html` 且 `session` 对该 tab 有效时处理，否则回 `{ ok: false }`（详见注意事项「全局搜索 Overlay」）。浮层关闭不走 runtime 消息，而是 iframe 向宿主页 `postMessage` `SEARCH_OVERLAY_CLOSE_MESSAGE`。
+类型定义见 `lib/messages.ts` 的 `ExtensionMessage`，但 `GET_PAGE_INFO` 不在其中：发送方直接传 `{ type: "GET_PAGE_INFO" }` 字面量，`entrypoints/content.ts` 的处理函数把 `message` 声明为 `{ type?: string }`，各调用方内联声明自己用到的响应字段。浮层相关消息都携带 `session`：注册/撤销只接受网页 content script 发送，其余只在发送方 URL 为 `search-overlay.html` 且 `session` 对该 tab 有效时处理，否则回 `{ ok: false }`（详见注意事项「全局搜索 Overlay」）。浮层关闭不走 runtime 消息，而是 iframe 向宿主页 `postMessage` `SEARCH_OVERLAY_CLOSE_MESSAGE`。
 
 ### Highlight Timer 模式
 
@@ -322,7 +323,7 @@ Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对�
 ## 注意事项
 
 - **不要在 newtab/search popup 以外使用 store**：popup 和 background 不加载 Zustand；保存书签时优先通过 `chrome.tabs.sendMessage` 发 `{ type: "ADD_BOOKMARK", data }` 消息到 newtab（newtab 在 `App` 的 `useEffect` 中监听），newtab 不存在时回退到直接写 `chrome.storage.local`（`seq: 0`，下次 newtab 打开时由 `sweepUnsynced` 补推）
-- **Tab 变更广播**：background.ts 监听所有 tab/group 事件，写 `tabslate-tabs-changed` 信号；newtab 的 `TabsPanel` 和 `GroupsPanel` 监听此信号触发 `loadTabs()`
+- **Tab 变更广播**：background.ts 监听 `chrome.tabs`（created / removed / activated / moved，以及 `status` 为 complete 或 title / groupId 变化的 updated）与 `chrome.tabGroups`（created / removed / updated / moved）事件，经 100ms 防抖的 `broadcastTabChange()` 用 `chrome.runtime.sendMessage({ type: "TABS_CHANGED" })` 广播，不写任何 storage key。newtab 里有两处独立监听：`App.tsx` 的 `AppRoutes` 收到后调 `useTabsStore.getState().loadTabs(true)`（静默刷新 store）；`TabsRail` 不走 store，监听同一消息后刷新自己的本地 state。`TabsPanel` / `GroupsPanel` 自己不监听该消息，只订阅 `useTabsStore`（挂载时各调一次 `loadTabs()`），随 store 更新而更新。
 - **Store hydration**：`App.tsx` 中的 `StoreGate` 等待 bookmarks、workspace、auth、groups、settings 五个 store 全部 hydrate 后再渲染 dashboard；guest 与已认证用户走相同的 dashboard 路由，不再使用全屏认证守卫。若 hydrate 完成后会话是 guest 且本地没有 workspace，`StoreGate` 创建一个含 Default collection 的空 guest workspace。guest 创建的 workspace、collection、bookmark 等实体保持 `seq === 0` 并持久化在 IndexedDB；用户完成邮箱验证后 Verified-only `SyncEngine` 启动，通过首次 enqueue 或 `sweepUnsynced()` 将这些本地实体并入账号。
 - **认证生命周期与 AuthDialog**（`entrypoints/newtab/App.tsx`、`components/auth/auth-dialog.tsx`）：guest 始终可使用 dashboard；Sidebar 顶部 “Not logged in” / “未登录” 用户卡片以 login mode 打开 `AuthDialog`，底部同名同步状态区域的 “Register now” 入口以 register mode 打开。`LoginForm` 在同一 Dialog 内切换 login / register / forgot-password / reset-password，不离开 dashboard。若已登录用户 `user.is_verified === false`，同一 `AuthDialog` 强制切换为 `VerifyEmailScreen`；此时隐藏关闭按钮并阻止 X、Escape、outside click，只有验证成功或 “use different account” 完成 logout 后才能离开。浏览器重启时 `accessToken` 因 session storage 清除而为 null、但 verified user 与 `refreshToken` 仍在时，dashboard 保持显示并由 `silentRefresh` 后台恢复 token；临时网络失败保留用户资料并显示 Offline。显式 logout 或 refresh 返回 401/403 时，auth store 先 `clearDB()` 并清除账号数据，再转为 guest；`StoreGate` 随后 reset 各账号 store，并在空库中初始化全新的 guest workspace。
 - **API 客户端**：`lib/api.ts` 是纯函数 HTTP 客户端，不持有状态；server URL 由 `useAuthStore.serverUrl` 管理（默认读取 `VITE_API_URL` 环境变量）。自托管用户可在登录页"Advanced"中修改。`searchBookmarks(serverUrl, accessToken, query)` 调用 `GET /search?q=`，最少 2 个字符。`register`/`login`/`resendVerification`/`forgotPassword` 接受可选 `lang?: string`，非空时注入 `Accept-Language` 请求头，供服务端发送本地化 OTP 邮件。
@@ -337,7 +338,7 @@ Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对�
 - **网页搜索回退**：扩展不提供搜索引擎选择，网页搜索一律交给浏览器默认搜索引擎。为符合 Chrome Web Store 单一用途政策（不能同时修改新标签页与搜索体验），v0.1.3 已移除自定义搜索引擎列表，**不要重新引入搜索引擎列表或硬编码搜索 URL**。统一入口为 `runWebSearch({ text, disposition })`（`lib/browser/search.ts`，依赖 manifest 的 `search` 权限）：Chromium 调 `chrome.search.query`，Firefox 调 `browser.search.query`。`SearchBox` 使用 `CURRENT_TAB`；`SearchPanel` 使用 `NEW_TAB`；`SearchOverlay` 发送 `WEB_SEARCH` 消息，由 background 以 `NEW_TAB` 执行。
 - **Prosopo 验证码**：`components/procaptcha.tsx` 是 iframe 包装组件（Chrome MV3 `script-src 'self'` CSP 限制，无法直接加载外部 JS）。扩展通过 `<iframe>` 嵌入后端的 `GET /captcha/widget` 页面，由服务端加载 Prosopo bundle，验证完成后通过 `postMessage` 传回 token。`VITE_PROSOPO_SITE_KEY` 为空时不渲染验证码。注册页在同 IP 注册数达到 `REGISTER_CAPTCHA_THRESHOLD` 后条件展示（`GET /auth/register-captcha-status`，进入注册模式时查询）；登录页在同邮箱失败次数达到阈值后条件展示（`GET /auth/login-captcha-status`，邮箱 blur 时查询）；OTP 重发页：挂载时调 `GET /auth/otp-captcha-status`；若 `captcha_required=true`，点击 Resend 弹出 Dialog 展示 Procaptcha，验证通过后 Dialog 自动关闭并触发发送；无需验证码时直接发送。
 - **可选权限与动态注入**：为了规避安装时的“读取并更改所有网站数据”警告，`<all_urls>` 被配置为 `optional_host_permissions`。
-    - **wxt.config.ts**：通过 `hooks.build:manifestGenerated` 钩子强制删除 WXT 自动生成的 `host_permissions`，并在 `VITE_OPENPANEL_URL` 非空时将其 origin 写入 `host_permissions`（供扩展页面免 CORS 直接 fetch 分析接口；仅 Chromium 构建，Firefox 构建不发送分析）。
+    - **wxt.config.ts**：通过 `hooks.build:manifestGenerated` 钩子强制删除 WXT 自动生成的 `host_permissions`，再按构建时的 env var 写入最多两个 origin（`${origin}/*`；变量为空或不是合法 URL 时跳过该项，两项都没有则 manifest 不含 `host_permissions`）：`VITE_API_URL`（同步服务器，所有浏览器构建都写入，含 Firefox）和 `VITE_OPENPANEL_URL`（分析接口，仅 Chromium 构建，Firefox 构建不发送分析）。作用都是让扩展页面和 background 里的 `fetch`（`lib/api.ts`、`lib/analytics.ts`）免 CORS 直接访问这些 origin；只覆盖构建时配置的地址，用户在登录页 “Advanced” 里改成的自托管地址不在其中。
     - **content.ts**：配置 `registration: "runtime"`，防止 WXT 将其静态写入 manifest。
     - **background.ts**：实现 `syncContentScriptRegistration`，在权限变更（`chrome.permissions.onAdded/onRemoved`）或启动时使用 `chrome.scripting` API 动态注册/注销内容脚本。
     - **SettingsDialog**：提供开关，调用 `chrome.permissions.request/remove` 触发系统授权弹窗。
