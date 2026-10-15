@@ -2,20 +2,30 @@
 
 ## 总体结构
 
-TabSlate 是一个 Chrome MV3 扩展，由三个独立入口点组成，通过 `chrome.storage.local` 共享数据。
+TabSlate 是一个 Chrome MV3 扩展，共有六个入口点（`entrypoints/`）。数据主要存放在 IndexedDB（`tabslate-db`，见「状态管理」），`chrome.storage.local` / `chrome.storage.session` 只存认证、套餐缓存等少量状态；入口之间通过 runtime 消息传递轻量信号（见「跨进程通知」）。
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  newtab (主应用)                                      │
-│  React 19 + Zustand + React Router + dnd-kit        │
-│  覆盖 chrome://newtab                                 │
-├──────────────┬──────────────────────────────────────┤
-│  popup       │  background (Service Worker)          │
-│  快速保存当前 │  监听 tab/group 事件                    │
-│  页为书签     │  处理右键菜单保存                        │
-└──────────────┴──────────────────────────────────────┘
-              共享: chrome.storage.local
+┌──────────────────────────────────────────────────────────────────┐
+│  newtab (主应用)                                                 │
+│  React 19 + Zustand + React Router + dnd-kit                     │
+│  覆盖 chrome://newtab                                            │
+├──────────────┬───────────────────────────────────────────────────┤
+│  popup       │  background (Service Worker)                      │
+│  快速保存当前│  监听 tab/group 事件，广播 TABS_CHANGED           │
+│  页为书签    │  处理右键菜单保存、open-search 快捷键             │
+│              │  动态注册 content script，代理搜索浮层请求        │
+├──────────────┴───────────────────┬───────────────────────────────┤
+│  content script (运行时注册)     │  search-overlay (iframe 页面) │
+│  注入网页：回应 GET_PAGE_INFO、  │  全局搜索浮层 UI，            │
+│  挂载搜索浮层 iframe             │  由 content script 嵌入网页   │
+├──────────────────────────────────┴───────────────────────────────┤
+│  search (search.html，unlisted 页面；目前没有入口打开它)         │
+└──────────────────────────────────────────────────────────────────┘
+  数据: IndexedDB（tabslate-db）为主，少量状态在 chrome.storage.local / session
+  通信: runtime 消息（chrome.runtime.sendMessage / chrome.tabs.sendMessage）
 ```
+
+content script 不写入 manifest，只有用户授予可选主机权限后才由 background 动态注册（见「动态内容脚本注册流程」）。
 
 ## 目录结构
 
@@ -26,7 +36,7 @@ TabSlate/
 │   │   ├── main.tsx     # ReactDOM.createRoot
 │   │   └── App.tsx      # 路由、布局、StoreGate → SyncProvider → HashRouter/dashboard；AuthDialog 覆盖在 dashboard 之上
 │   ├── popup/           # 快速保存 popup
-│   │   └── App.tsx      # 独立 React 树，不使用 Zustand；保存时调用 GET_PAGE_INFO 获取 ogTitle/metaDescription
+│   │   └── App.tsx      # 独立 React 树，不使用 Zustand；打开时调用 GET_PAGE_INFO 预取 ogTitle/metaDescription，保存时使用
 │   ├── search-overlay/  # 全局搜索浮层页面（search-overlay.html），由 content.ts 以 iframe 嵌入网页；web_accessible_resources 对 <all_urls> 开放
 │   │   └── main.tsx     # 读取 URL 中的 session，经 VALIDATE_SEARCH_OVERLAY_SESSION 校验通过后才渲染 SearchOverlay，打开期间每 10 秒心跳校验续期；关闭、缺少 session 或校验失败时向宿主页 postMessage(SEARCH_OVERLAY_CLOSE_MESSAGE)
 │   ├── search/          # search popup 页面（search.html）；代码中目前没有入口打开它
@@ -169,7 +179,7 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 
 ### 跨进程通知
 
-chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome.runtime.sendMessage`（发给扩展页面与 background）或 `chrome.tabs.sendMessage`（发往指定标签页）传递轻量信号，类型定义见 `lib/messages.ts` 的 `ExtensionMessage`：
+chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome.runtime.sendMessage`（发给扩展页面与 background）或 `chrome.tabs.sendMessage`（发往指定标签页）传递轻量信号，类型定义见 `lib/messages.ts` 的 `ExtensionMessage`（`GET_PAGE_INFO` 除外，见表后说明）：
 
 | 消息 | 发送方 | 接收方 | 说明 |
 |---|---|---|---|
@@ -178,6 +188,7 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `ADD_BOOKMARK` | popup / background | newtab | 直接投递书签数据（优先路径） |
 | `WORKSPACE_CHANGED` | popup | newtab | popup 新建标签（直接写 IDB `tags`）后通知，newtab 重新 `hydrate()` workspace store |
 | `AUTH_LOGOUT` | newtab | 其他扩展页面（其余 newtab、search popup） | `useAuthStore.logout()` 完成本地清理后广播，接收方调 `applyRemoteLogout()` 清除各自内存中的登录态 |
+| `GET_PAGE_INFO` | background / popup / newtab（`tabs-store`） | content script | 保存书签前向目标标签页取页面信息，响应 `{ title, url, selectedText, favicon, ogTitle, metaDescription }`：右键菜单保存（background）、popup 打开时预取、`tabs-store` 把窗口/标签组存为集合时逐个标签页请求；经 `chrome.tabs.sendMessage` 发出，content script 未注册或页面不可注入时请求失败，调用方静默回退到 tab 默认值 |
 | `OPEN_SEARCH` | background | active tab | 触发全局搜索快捷键：网页中由 content script 挂载搜索浮层 iframe；newtab 页派发 `tabslate-focus-search` 聚焦 `SearchBox` |
 | `REGISTER_SEARCH_OVERLAY_SESSION` | content script | background | 挂载浮层前注册本次浮层的 `session`（绑定发送方 tab；自注册或上次成功校验起 30 秒后过期） |
 | `VALIDATE_SEARCH_OVERLAY_SESSION` | search-overlay iframe | background | 渲染 `SearchOverlay` 前校验 URL 中的 `session`；浮层打开期间每 10 秒再发一次作为心跳，校验成功即续期 |
@@ -187,6 +198,8 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `OPEN_TAB` | search-overlay iframe | background | SearchOverlay 在新标签页打开尚未打开的书签 |
 | `SEARCH_BOOKMARKS` | search-overlay iframe | background | SearchOverlay 书签搜索；消息不携带认证信息，background 自行读取 `accessToken` 后请求服务端 |
 | `WEB_SEARCH` | search-overlay iframe | background | SearchOverlay 网页搜索回退：background 调用 `runWebSearch`（`NEW_TAB`），交给浏览器默认搜索引擎 |
+
+`GET_PAGE_INFO` 是表中唯一不在 `ExtensionMessage` 里的消息：发送方直接传 `{ type: "GET_PAGE_INFO" }` 字面量，`content.ts` 的处理函数把 `message` 声明为 `{ type?: string }`，响应结构只在其 `sendResponse` 处定义，各调用方内联声明自己用到的字段。
 
 浮层相关消息都携带 `session`，由 background 的 `SearchOverlaySessionStore`（`lib/search-overlay-session.ts`）把关：注册/撤销只接受网页 content script 发送，其余只在发送方 URL 为 `search-overlay.html` 且 `session` 对该 tab 有效时处理，否则回 `{ ok: false }`。每次校验成功都把 `session` 的过期时间重置为 30 秒后，因此浮层的心跳能让会话在打开期间一直有效，同时重置 service worker 的空闲计时，保住只存在内存中的会话；浮层移除时撤销 `session`。浮层关闭不经过 runtime 消息，而是 iframe 向宿主页 `postMessage` `SEARCH_OVERLAY_CLOSE_MESSAGE`，content script 校验 `event.source` 后移除浮层；缺少 `session` 或校验失败（含心跳失败）时 iframe 也会发送该消息，不会留下拦截点击的透明 iframe。
 
@@ -446,7 +459,7 @@ BrowserTab { id, title, url, favIconUrl, groupId, active, windowId }
 | `scripting` | 配合 `optional_host_permissions` 动态注册 `content.ts`（搜索浮层 iframe 的宿主） |
 | `search` | 网页搜索回退：`runWebSearch`（`lib/browser/search.ts`）调用 `chrome.search.query`（Firefox 为 `browser.search.query`），由浏览器默认搜索引擎执行；扩展不内置搜索引擎列表 |
 | `optional_host_permissions: <all_urls>` | 用户在设置中手动开启后，用于读取任意页面的 favicon 及挂载搜索浮层；规避安装时的全站权限警告 |
-| `host_permissions: [VITE_OPENPANEL_URL origin]` | 由 `wxt.config.ts` 的 `build:manifestGenerated` hook 在构建时按 env var 动态注入；让扩展页面（newtab/popup/background）可直接 fetch 分析接口而无 CORS 限制；env var 未设置时此项不存在；仅 Chromium 构建（Firefox 构建不发送分析） |
+| `host_permissions: [VITE_API_URL origin, VITE_OPENPANEL_URL origin]` | 由 `wxt.config.ts` 的 `build:manifestGenerated` hook 先删除 WXT 自动生成的 `host_permissions`，再在构建时按 env var 注入 `${origin}/*`；env var 为空或不是合法 URL 时对应项不存在，两项都缺失则 manifest 不含 `host_permissions`。**`VITE_API_URL`**（同步服务器）：所有浏览器构建都带；让扩展页面与 background 里 `lib/api.ts` 的 `fetch` 可直接访问同步服务器而无 CORS 限制；只覆盖构建时配置的地址，用户在登录页 Advanced 里改成的自托管地址不在其中。**`VITE_OPENPANEL_URL`**（分析接口）：让扩展页面（newtab/popup/background）可直接 fetch 分析接口而无 CORS 限制；仅 Chromium 构建（Firefox 构建不发送分析，因此不注入此 origin） |
 | `browser_specific_settings.gecko.data_collection_permissions`（仅 Firefox） | `required: ["browsingActivity"]`（favicon 查询把书签域名发给第三方图标服务）；`optional` 为账户/同步数据，登录时通过 `permissions.request` 请求，未同意前 `lib/api.ts` 不发出任何服务器请求；类别定义见 `lib/browser/data-collection-permissions.ts` |
 | `web_accessible_resources: search-overlay.html`（matches `<all_urls>`） | 让 content script 能在任意网页中以 iframe 加载全局搜索浮层页面；content script 本身只在授予 `optional_host_permissions` 后注册，浮层页面渲染前还会向 background 校验 `session` |
 | `web_accessible_resources: newtab.html`（matches 见 `wxt.config.ts` 的 `getNewtabMatches`：`*://*.tabslate.com/*` 与 localhost——Chromium 为 `http://localhost:*/*`，Firefox 为 `http://localhost/*`） | 允许 `*.tabslate.com` 官网与 localhost 深链打开 dashboard；同一声明也允许这些源以 iframe 嵌入 newtab，因此 `entrypoints/newtab/App.tsx` 检测到被嵌入（`isFramed()`）时不渲染，并尝试让顶层窗口跳转到自身（防点击劫持） |
