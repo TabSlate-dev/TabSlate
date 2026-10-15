@@ -13,6 +13,7 @@ describe("strictUrlKey", () => {
   const same: Array<[string, string]> = [
     ["HTTPS://Example.COM/Path", "https://example.com/Path"],
     ["https://example.com:443/a", "https://example.com/a"],
+    ["HTTPS://alice:one@Example.COM:443/a", "https://alice:one@example.com/a"],
     ["http://example.com:80/a", "http://example.com/a"],
     ["https://example.com/docs/", "https://example.com/docs"],
     ["https://example.com/", "https://example.com"],
@@ -25,6 +26,9 @@ describe("strictUrlKey", () => {
     ["http://example.com/a", "https://example.com/a"],
     ["https://www.example.com/a", "https://example.com/a"],
     ["https://example.com:8443/a", "https://example.com/a"],
+    ["https://alice:one@example.com/private", "https://bob:two@example.com/private"],
+    ["https://alice:one@example.com/private", "https://example.com/private"],
+    ["https://alice@example.com/private", "https://bob@example.com/private"],
   ];
   for (const [a, b] of same) {
     test(`treats ${a} and ${b} as the same address`, () => {
@@ -54,6 +58,8 @@ describe("looseUrlKey", () => {
     ["https://bit.ly/3AbCd", "https://bit.ly/3abcd"],
     ["https://example.com/a?id=7", "https://example.com/a?id=8"],
     ["https://example.com/a", "https://example.org/a"],
+    ["https://alice:one@example.com/a", "https://bob:two@example.com/a"],
+    ["https://alice@example.com/a", "https://bob@example.com/a"],
   ];
   for (const [a, b] of same) {
     test(`treats ${a} and ${b} as the same page`, () => {

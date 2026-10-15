@@ -36,6 +36,13 @@ function parseWebUrl(url: string): URL | null {
   }
 }
 
+function serializeAuthority(parsed: URL, host: string): string {
+  const userInfo = parsed.username !== "" || parsed.password !== ""
+    ? `${parsed.username}${parsed.password ? `:${parsed.password}` : ""}@`
+    : "";
+  return `${userInfo}${host}`;
+}
+
 function trimTrailingSlash(pathname: string): string {
   return pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
 }
@@ -46,7 +53,7 @@ export function strictUrlKey(url: string): string {
     return url.trim();
   }
   // URL already lowercases the scheme and host and drops default ports.
-  return `${parsed.protocol}//${parsed.host}${trimTrailingSlash(parsed.pathname)}${parsed.search}${parsed.hash}`;
+  return `${parsed.protocol}//${serializeAuthority(parsed, parsed.host)}${trimTrailingSlash(parsed.pathname)}${parsed.search}${parsed.hash}`;
 }
 
 export function looseUrlKey(url: string): string {
@@ -54,7 +61,9 @@ export function looseUrlKey(url: string): string {
   if (!parsed) {
     return url.trim();
   }
-  const host = parsed.host.startsWith("www.") ? parsed.host.slice(4) : parsed.host;
+  const hostname = parsed.hostname.startsWith("www.") ? parsed.hostname.slice(4) : parsed.hostname;
+  const host = `${hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+  const authority = serializeAuthority(parsed, host);
   const params = new URLSearchParams(parsed.search);
   for (const name of Array.from(params.keys())) {
     if (isTrackingParam(name)) {
@@ -62,7 +71,7 @@ export function looseUrlKey(url: string): string {
     }
   }
   const query = params.toString();
-  return `${host}${trimTrailingSlash(parsed.pathname)}${query ? `?${query}` : ""}`;
+  return `${authority}${trimTrailingSlash(parsed.pathname)}${query ? `?${query}` : ""}`;
 }
 
 export function urlMatchKey(url: string, tier: UrlMatchTier): string {
