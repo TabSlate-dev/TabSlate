@@ -1708,7 +1708,15 @@
       }
     }
   },
-  "tagDeleteDialog_desc": {
+  "tagDeleteDialog_desc_one": {
+    "message": "这个标签会从 $1 个书签上移除，此操作无法撤销。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_desc_other": {
     "message": "这个标签会从 $1 个书签上移除，此操作无法撤销。",
     "placeholders": {
       "1": {

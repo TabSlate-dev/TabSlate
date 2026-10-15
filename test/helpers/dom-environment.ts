@@ -25,7 +25,7 @@ export async function teardownDom(): Promise<void> {
   }
 }
 
-/** Test translation: the key, followed by its substitutions in brackets, e.g. "tagDeleteDialog_desc[3]". */
+/** Test translation: the key, followed by its substitutions in brackets, e.g. "tagDeleteDialog_desc_other[3]". */
 export function translateKey(key: string, substitutions?: string | string[]): string {
   if (substitutions === undefined) {
     return key;

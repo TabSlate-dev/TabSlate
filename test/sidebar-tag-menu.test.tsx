@@ -111,12 +111,23 @@ describe("tag context menu", () => {
   test("delete asks first and names how many bookmarks in all workspaces lose the tag", async () => {
     await openTagMenu("frontend");
     click(getByText("tagMenu_delete"));
-    expect(getByText("tagDeleteDialog_desc[4]")).toBeTruthy();
+    expect(getByText("tagDeleteDialog_desc_other[4]")).toBeTruthy();
     expect(tag("frontend")?.name).toBe("Frontend");
 
     click(getByText("tagDeleteDialog_confirm"));
 
     expect(tag("frontend")).toBeUndefined();
+  });
+
+  test("delete names a single bookmark in the singular", async () => {
+    act(() => {
+      app.useBookmarksStore.setState({ bookmarks: bookmarkMap([makeBookmark("b5", { collectionId: "reading", tags: ["go"] })]) });
+    });
+    await openTagMenu("go");
+    click(getByText("tagMenu_delete"));
+
+    expect(getByText("tagDeleteDialog_desc_one[1]")).toBeTruthy();
+    click(getByText("settings_cancel"));
   });
 
   test("deleting a selected tag also takes it out of the bookmark filter", async () => {

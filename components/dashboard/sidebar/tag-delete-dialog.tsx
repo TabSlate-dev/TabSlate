@@ -32,7 +32,9 @@ export function TagDeleteDialog({ tag, bookmarkCount, onClose, onConfirm }: TagD
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>{t("tagDeleteDialog_title", [tag.name])}</DialogTitle>
-          <DialogDescription>{t("tagDeleteDialog_desc", [String(bookmarkCount)])}</DialogDescription>
+          <DialogDescription>
+            {t(bookmarkCount === 1 ? "tagDeleteDialog_desc_one" : "tagDeleteDialog_desc_other", [String(bookmarkCount)])}
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button type="button" variant="outline" size="sm" onClick={onClose}>

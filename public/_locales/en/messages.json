@@ -1708,7 +1708,15 @@
       }
     }
   },
-  "tagDeleteDialog_desc": {
+  "tagDeleteDialog_desc_one": {
+    "message": "This tag will be removed from $1 bookmark. This can't be undone.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_desc_other": {
     "message": "This tag will be removed from $1 bookmarks. This can't be undone.",
     "placeholders": {
       "1": {
