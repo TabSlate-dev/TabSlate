@@ -28,7 +28,7 @@ TabSlate/
 │   ├── popup/           # 快速保存 popup
 │   │   └── App.tsx      # 独立 React 树，不使用 Zustand；保存时调用 GET_PAGE_INFO 获取 ogTitle/metaDescription
 │   ├── search-overlay/  # 全局搜索浮层页面（search-overlay.html），由 content.ts 以 iframe 嵌入网页；web_accessible_resources 对 <all_urls> 开放
-│   │   └── main.tsx     # 读取 URL 中的 session，经 VALIDATE_SEARCH_OVERLAY_SESSION 校验通过后才渲染 SearchOverlay；关闭时向宿主页 postMessage(SEARCH_OVERLAY_CLOSE_MESSAGE)
+│   │   └── main.tsx     # 读取 URL 中的 session，经 VALIDATE_SEARCH_OVERLAY_SESSION 校验通过后才渲染 SearchOverlay，打开期间每 10 秒心跳校验续期；关闭、缺少 session 或校验失败时向宿主页 postMessage(SEARCH_OVERLAY_CLOSE_MESSAGE)
 │   ├── search/          # search popup 页面（search.html）；代码中目前没有入口打开它
 │   │   └── App.tsx      # 渲染 SearchPanel（autoFocus，不传 smartOpen）；监听 AUTH_LOGOUT
 │   ├── background.ts    # Service Worker：tab 事件广播 + 右键菜单 + open-search 快捷键监听 + 动态内容脚本注册（syncContentScriptRegistration）+ 搜索浮层会话校验与消息代理（SearchOverlaySessionStore）
@@ -179,8 +179,8 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `WORKSPACE_CHANGED` | popup | newtab | popup 新建标签（直接写 IDB `tags`）后通知，newtab 重新 `hydrate()` workspace store |
 | `AUTH_LOGOUT` | newtab | 其他扩展页面（其余 newtab、search popup） | `useAuthStore.logout()` 完成本地清理后广播，接收方调 `applyRemoteLogout()` 清除各自内存中的登录态 |
 | `OPEN_SEARCH` | background | active tab | 触发全局搜索快捷键：网页中由 content script 挂载搜索浮层 iframe；newtab 页派发 `tabslate-focus-search` 聚焦 `SearchBox` |
-| `REGISTER_SEARCH_OVERLAY_SESSION` | content script | background | 挂载浮层前注册一次性 `session`（绑定发送方 tab，30 秒后过期） |
-| `VALIDATE_SEARCH_OVERLAY_SESSION` | search-overlay iframe | background | 渲染 `SearchOverlay` 前校验 URL 中的 `session` |
+| `REGISTER_SEARCH_OVERLAY_SESSION` | content script | background | 挂载浮层前注册本次浮层的 `session`（绑定发送方 tab；自注册或上次成功校验起 30 秒后过期） |
+| `VALIDATE_SEARCH_OVERLAY_SESSION` | search-overlay iframe | background | 渲染 `SearchOverlay` 前校验 URL 中的 `session`；浮层打开期间每 10 秒再发一次作为心跳，校验成功即续期 |
 | `REVOKE_SEARCH_OVERLAY_SESSION` | content script | background | 浮层移除时撤销 `session` |
 | `GET_OPEN_TABS` | search-overlay iframe | background | SearchOverlay 请求打开的标签页列表 |
 | `FOCUS_TAB` | search-overlay iframe | background | SearchOverlay 请求切换到指定标签页（选中标签页，或选中的书签已在某个标签页打开） |
@@ -188,7 +188,7 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 | `SEARCH_BOOKMARKS` | search-overlay iframe | background | SearchOverlay 书签搜索；消息不携带认证信息，background 自行读取 `accessToken` 后请求服务端 |
 | `WEB_SEARCH` | search-overlay iframe | background | SearchOverlay 网页搜索回退：background 调用 `runWebSearch`（`NEW_TAB`），交给浏览器默认搜索引擎 |
 
-浮层相关消息都携带 `session`，由 background 的 `SearchOverlaySessionStore`（`lib/search-overlay-session.ts`）把关：注册/撤销只接受网页 content script 发送，其余只在发送方 URL 为 `search-overlay.html` 且 `session` 对该 tab 有效时处理，否则回 `{ ok: false }`。浮层关闭不经过 runtime 消息，而是 iframe 向宿主页 `postMessage` `SEARCH_OVERLAY_CLOSE_MESSAGE`，content script 校验 `event.source` 后移除浮层。
+浮层相关消息都携带 `session`，由 background 的 `SearchOverlaySessionStore`（`lib/search-overlay-session.ts`）把关：注册/撤销只接受网页 content script 发送，其余只在发送方 URL 为 `search-overlay.html` 且 `session` 对该 tab 有效时处理，否则回 `{ ok: false }`。每次校验成功都把 `session` 的过期时间重置为 30 秒后，因此浮层的心跳能让会话在打开期间一直有效，同时重置 service worker 的空闲计时，保住只存在内存中的会话；浮层移除时撤销 `session`。浮层关闭不经过 runtime 消息，而是 iframe 向宿主页 `postMessage` `SEARCH_OVERLAY_CLOSE_MESSAGE`，content script 校验 `event.source` 后移除浮层；缺少 `session` 或校验失败（含心跳失败）时 iframe 也会发送该消息，不会留下拦截点击的透明 iframe。
 
 ## 路由
 
