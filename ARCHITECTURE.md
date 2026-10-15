@@ -42,6 +42,7 @@ TabSlate/
 │   ├── ui/              # shadcn/ui 基础组件 + 自定义共享组件
 │   │   ├── alert.tsx           # 标准 shadcn Alert（内联提示 + 浮动通知）
 │   │   ├── color-picker.tsx    # Tab group 颜色选择器（共享）
+│   │   ├── context-menu.tsx    # 标准 shadcn ContextMenu（标签、集合行、书签卡片的右键菜单）
 │   │   ├── favicon-image.tsx   # 带 fallback 的 favicon 图片
 │   │   ├── input-otp.tsx       # 6 格 OTP 输入框（基于 input-otp 包）
 │   │   ├── quota-alert.tsx     # 配额上限浮动通知（fixed 定位，订阅 usePlanStore.quotaAlert，3s 自动消失）
@@ -50,8 +51,12 @@ TabSlate/
 │       ├── sidebar/            # 左侧书签导航栏
 │       │   ├── index.tsx       # BookmarksSidebar（主组件，接收 syncStatus + onForceSync）
 │       │   ├── sync-status.tsx # SyncStatusIndicator 按钮（idle/syncing/error/offline 四色指示）
+│       │   ├── section-header.tsx    # 可折叠分区标题
+│       │   ├── collection-row.tsx    # 集合行：⋯ 与右键菜单、编辑对话框
+│       │   ├── tags-section.tsx      # 标签分区：计数、搜索、右键菜单（重命名/改色/删除）
 │       │   ├── collection-dialog.tsx
-│       │   ├── tag-dialog.tsx
+│       │   ├── tag-dialog.tsx        # 新建/编辑标签（名称不可为空、不可重名）
+│       │   ├── tag-delete-dialog.tsx # 删除标签确认（显示受影响书签数）
 │       │   └── group-dialog.tsx
 │       ├── tabs-panel/         # /tabs 路由：当前标签页管理
 │       │   ├── index.tsx       # TabsPanel（主组件）
@@ -67,6 +72,7 @@ TabSlate/
 │       │   └── create-group-bar.tsx
 │       ├── group-detail/       # /groups/:groupId 路由：单个保存组详情
 │       │   └── index.tsx       # GroupDetail（标签列表、内联编辑、拖拽支持）
+│       ├── shared/             # 跨视图复用组件：书签/标签对话框、菜单项（menu-primitives + collection/bookmark-menu-items，⋯ 与右键共用）、duplicate-notice
 │       ├── tabs-dnd-provider.tsx # 全局 DnD context（tab → collection/saved-group）
 │       ├── tab-row.tsx         # 单行 tab 组件（React.memo）
 │       ├── stats-cards.tsx     # 书签统计卡片
@@ -88,7 +94,7 @@ TabSlate/
 │   ├── workspace-store.ts  # 工作区/集合/标签配置；含 localSeq、mergeFromServer、setLocalSeq
 │   ├── groups-store.ts     # 保存的标签组（含 dnd-kit 排序数据）
 │   ├── plan-store.ts       # 套餐配额状态；fetchPlan (GET /api/plan)，5 分钟 TTL；checkQuota(resource, localCount)/showQuotaAlert/incrementUsage/decrementUsage；持久化到 chrome.storage.local (key "tabslate-plan")
-│   ├── settings-store.ts   # 搜索引擎列表（启用状态、顺序、自定义引擎）；持久化到 IDB kv["searchEngines"]；pullFromServer 从服务端拉取偏好
+│   ├── settings-store.ts   # 书签视图偏好（viewMode/sortBy）：本机 kv["bookmark-view-prefs"] + 经 /preferences 跨设备同步
 │   └── tabs-store.ts       # Chrome 当前窗口标签页（非持久化）
 │
 ├── types/
@@ -107,6 +113,12 @@ TabSlate/
 │   ├── chrome-storage-adapter.ts  # 通用 Zustand persist 的 chrome.storage 适配器（非 auth 用）
 │   ├── id.ts               # generateId()
 │   ├── bookmark-utils.ts   # normalizeFavicon()、findDuplicateBookmark()、normalizeUrl()、getNormalizedUrlSet()
+│   ├── url-match.ts        # 重复检测 URL 规则：strictUrlKey()（拦截）/ looseUrlKey()（提示）/ findUrlMatches()
+│   ├── duplicate-lookup.ts # findVisibleDuplicates()：只匹配可见书签，附带集合/工作区位置
+│   ├── view-preferences.ts # 书签视图偏好：类型、校验、本机 kv 与 /preferences 读写、updatedAt 先后判定
+│   ├── reveal-bookmark.ts  # revealBookmark(id)：切换到书签所在工作区/集合、清空筛选并高亮
+│   ├── context-menu-save.ts # 右键菜单保存的重复判定（严格规则，当前工作区）
+│   ├── browser/            # 浏览器差异封装：data-collection（Firefox 同意）、action-badge（保存角标）、commands（保存快捷键）等
 │   ├── analytics.ts        # 匿名分析模块；`analytics.init()` + `analytics.track(name, props?)`；fire-and-forget POST 到自部署 OpenPanel `/api/track`；两个 env var 均为空时 no-op；Firefox 构建（编译期 `import.meta.env.FIREFOX`）导出 no-op 客户端；session ID 存 `chrome.storage.local["tabslate-analytics-id"]`
 │   └── chrome/
 │       ├── tabs.ts         # Chrome tabs API 封装
@@ -115,6 +127,9 @@ TabSlate/
 ├── hooks/
 │   ├── use-tab-drag-drop.ts   # 原生 HTML drag-and-drop（tab → 书签内容区）
 │   ├── use-group-drag-drop.ts # 原生 HTML drag-and-drop（tab → 保存组详情页）
+│   ├── use-preference-sync-consent.ts   # Firefox 视图偏好同步开关的授权状态
+│   ├── use-workspace-collection-reset.ts # 所选集合不在当前工作区时回退到 "all"
+│   ├── use-highlight-deep-link.ts       # 处理 #/?highlight=<id> 深链
 │   └── use-mobile.ts          # 响应式断点检测
 │
 └── wxt.config.ts            # 扩展 manifest、权限配置
@@ -133,8 +148,7 @@ useBookmarksStore  ──手动 idbPut/Get──▶  IndexedDB  bookmarks / arch
 useWorkspaceStore  ──手动 idbPut/Get──▶  IndexedDB  workspaces / collections / tags / kv
 useGroupsStore     ──手动 idbPut/Get──▶  IndexedDB  groups / group-tabs
 usePlanStore       (不持久化，GET /api/plan 内存缓存，5 分钟 TTL)
-useSettingsStore   ──手动 idbPut/Get──▶  IndexedDB  kv["searchEngines"]
-                   ──StoreGate 镜像──▶  chrome.storage.local  "tabslate-search-engines"（供 content script 读取）
+useSettingsStore   ──手动 idbPut/Get──▶  IndexedDB  kv["bookmark-view-prefs"]（视图模式与排序，跨设备经 /preferences 同步）
 useTabsStore       (不持久化，运行时从 Chrome API 加载)
 SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  （30s TTL）
 ```
@@ -160,7 +174,7 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并，工作区 `is_deleted∈{0,1}` 时 update+keep（保留墓碑供恢复），`is_deleted===2` 才从 state+IDB 删除；`deleteWorkspace`/`restoreWorkspace`/`permanentlyDeleteWorkspace` 通过工作区生命周期协议实现（见下方专节），不再是普通字段更新；`permanentlyDeleteCollection` 采用 push-first 模式（`forcePush` → `idbDelete` → `decrementUsage`），失败时回滚；书签 tombstone 同步由服务端级联兜底（集合 `is_deleted=2` 被接受时，服务端将其书签自动升级为 `is_trashed=2`） |
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 采用 push-first 模式（`forcePush` → `idbDelete`），失败时回滚；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
 | `usePlanStore` | chrome.storage.local | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；书签配额以 `is_trashed < 2` 计（active + trashed），仅 `permanentlyDelete` 时 `decrementUsage`；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 维护本地计数；`clear` 在登出时调用 |
-| `useSettingsStore` | IndexedDB (kv) + chrome.storage.local | 搜索引擎列表（`SearchEngine[]`）：启用状态、顺序、自定义引擎；`updateSearchEngines` 写 IDB 并推服务端；`pullFromServer` 从服务端拉取偏好；`StoreGate` 将变更镜像到 `chrome.storage.local["tabslate-search-engines"]` 供 content script 读取 |
+| `useSettingsStore` | IndexedDB (kv) + `/preferences` | 书签视图偏好同步：`hydrate` 载入本机副本并订阅 `useBookmarksStore` 的 `viewMode`/`sortBy`；`startPreferenceSync(getCredentials)`/`resyncPreferences()`/`stopPreferenceSync()` 按 `updatedAt` 与服务端 `bookmarkView` 键协调（Firefox 另需 `technicalAndInteraction` 同意） |
 | `useTabsStore` | 不持久化（tab-group-titles + kv 写 IDB） | Chrome 当前窗口的实时标签页和 tab group 数据；`fullTitles: Record<number, string>` 维护 compact group 的完整标题，`loadTabs` 通过两层恢复逻辑（孤儿条目对账 + kv 稳定回退）在重启后重新关联（详见 CLAUDE.md Compact group title） |
 
 ### 跨进程通知
@@ -184,7 +198,7 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 
 | 路径 | 组件 | 说明 |
 |---|---|---|
-| `/` | `BookmarksContent` | 书签主界面（grid/list）；顶部搜索栏（书签 + open tabs + Google 回退） |
+| `/` | `BookmarksContent` | 书签主界面（grid/list）；顶部搜索栏（书签 + open tabs + Google 回退）；支持 `?highlight=<bookmarkId>` 深链（`useHighlightDeepLink`） |
 | `/favorites` | `FavoritesContent` | 收藏夹 |
 | `/archive` | `ArchiveContent` | 已归档集合卡片（含一键还原）+ 已归档单个书签 |
 | `/trash` | `TrashContent` | 已删除集合 + 已删除保存组（含还原 + 永久删除）+ 已删除单个书签 |
