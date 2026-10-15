@@ -39,6 +39,12 @@ export default defineConfig({
       { resources: ["search-overlay.html"], matches: ["<all_urls>"] },
     ],
     commands: {
+      _execute_action: {
+        // Firefox reserves Ctrl+Shift+S for its screenshot tool.
+        suggested_key: browser === "firefox"
+          ? { default: "Alt+Shift+S" }
+          : { default: "Ctrl+Shift+S", mac: "Command+Shift+S" },
+      },
       "open-search": {
         suggested_key: {
           default: "Ctrl+Shift+K",

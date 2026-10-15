@@ -48,6 +48,18 @@ const withEnv = async (key: string, value: string, run: () => Promise<void>) => 
 };
 
 describe("wxt cross-browser manifest", () => {
+  test("suggests a shortcut that opens the save popup", async () => {
+    const chromium = await getManifest("chrome", 3);
+    const firefox = await getManifest("firefox", 3);
+
+    expect(chromium.commands?._execute_action?.suggested_key).toEqual({
+      default: "Ctrl+Shift+S",
+      mac: "Command+Shift+S",
+    });
+    // Firefox reserves Ctrl+Shift+S for its screenshot tool.
+    expect(firefox.commands?._execute_action?.suggested_key).toEqual({ default: "Alt+Shift+S" });
+  });
+
   test("adds Firefox gecko metadata for MV3", async () => {
     const manifest = await getManifest("firefox", 3);
 

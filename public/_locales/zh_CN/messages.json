@@ -61,6 +61,17 @@
   "popup_pressEnter": {
     "message": "按回车键快速保存"
   },
+  "popup_saveShortcutHint": {
+    "message": "按 $1 可快速打开此窗口",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_saveShortcutUnset": {
+    "message": "可以在浏览器的扩展快捷键设置里为此窗口设置快捷键"
+  },
   "popup_notLoggedIn": {
     "message": "未登录"
   },

@@ -13,6 +13,7 @@ import {
 import { storageService, getWorkspaceState, findSavedDuplicates, type BookmarkInput } from "@/lib/storage";
 import { DuplicateNotice } from "@/components/dashboard/shared/duplicate-notice";
 import type { DuplicateMatch } from "@/lib/duplicate-lookup";
+import { findSaveShortcut } from "@/lib/browser/commands";
 import { HIGHLIGHT_PARAM } from "@/lib/highlight-link";
 import { authStorageAdapter } from "@/lib/auth-storage-adapter";
 import {
@@ -57,6 +58,11 @@ function PopupContent() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
+  const [saveShortcut, setSaveShortcut] = useState("");
+
+  useEffect(() => {
+    chrome.commands.getAll((commands) => setSaveShortcut(findSaveShortcut(commands)));
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -485,6 +491,9 @@ function PopupContent() {
             {saveState === "error"
               ? t("popup_somethingWentWrong")
               : t("popup_pressEnter")}
+          </p>
+          <p className="text-[11px] text-center text-muted-foreground">
+            {saveShortcut ? t("popup_saveShortcutHint", [saveShortcut]) : t("popup_saveShortcutUnset")}
           </p>
         </div>
       )}

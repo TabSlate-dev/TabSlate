@@ -61,6 +61,17 @@
   "popup_pressEnter": {
     "message": "Press Enter to save quickly"
   },
+  "popup_saveShortcutHint": {
+    "message": "Open this popup with $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "popup_saveShortcutUnset": {
+    "message": "Set a shortcut for this popup in your browser's extension shortcut settings"
+  },
   "popup_notLoggedIn": {
     "message": "Not logged in"
   },
