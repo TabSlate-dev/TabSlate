@@ -1,4 +1,6 @@
 {
+  "badge_alreadySavedShort": { "message": "已存" },
+  "badge_alreadySavedTitle": { "message": "已保存在 TabSlate 中" },
   "extensionName": {
     "message": "TabSlate (标签石板)"
   },

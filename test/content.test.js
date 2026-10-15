@@ -56,6 +56,8 @@ if (runsInIsolatedProcess(import.meta.filename)) {
     generateId: () => "bookmark-id",
   }));
   mock.module("@/lib/idb", () => ({
+    idbGetAll: mock(async () => []),
+    idbGet: mock(async () => undefined),
     idbPut: mock(async () => {}),
   }));
   mock.module("@/lib/chrome/tabs", () => ({

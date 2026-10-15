@@ -1,5 +1,5 @@
 import { generateId } from "@/lib/id";
-import { idbPut } from "@/lib/idb";
+import { idbGetAll, idbPut } from "@/lib/idb";
 import { getAllTabs, focusTab } from "@/lib/chrome/tabs";
 import { supportsDynamicContentScripts } from "@/lib/browser/capabilities";
 import { runWebSearch } from "@/lib/browser/search";
@@ -8,6 +8,21 @@ import { searchBookmarks } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import type { ExtensionMessage } from "@/lib/messages";
 import { SearchOverlaySessionStore } from "@/lib/search-overlay-session";
+
+import { getWorkspaceState } from "@/lib/storage";
+import { resolveContextMenuSave, type ContextMenuLibrary } from "@/lib/context-menu-save";
+import { flashSaveBadge } from "@/lib/browser/action-badge";
+import type { Bookmark } from "@/lib/types";
+
+async function loadContextMenuLibrary(): Promise<ContextMenuLibrary> {
+  const [bookmarks, state] = await Promise.all([idbGetAll<Bookmark>("bookmarks"), getWorkspaceState()]);
+  return {
+    bookmarks,
+    collections: state.collections,
+    workspaces: state.workspaces,
+    activeWorkspaceId: state.activeWorkspaceId,
+  };
+}
 
 export default defineBackground(() => {
   const searchOverlaySessions = new SearchOverlaySessionStore();
@@ -99,11 +114,17 @@ export default defineBackground(() => {
       seq: 0,
     };
 
+    if (await resolveContextMenuSave(bookmarkData.url, loadContextMenuLibrary) === "duplicate") {
+      await flashSaveBadge(tab.id, "duplicate");
+      return;
+    }
+
     // Primary path: send to newtab so syncEngine picks it up immediately
     const [newtabTab] = await chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") });
     if (newtabTab?.id) {
       try {
         await chrome.tabs.sendMessage(newtabTab.id, { type: "ADD_BOOKMARK", data: bookmarkData });
+        await flashSaveBadge(tab.id, "saved");
         return;
       } catch { /* newtab not ready, fall through to storage */ }
     }
@@ -122,6 +143,7 @@ export default defineBackground(() => {
       return;
     }
     chrome.runtime.sendMessage({ type: "BOOKMARKS_CHANGED" } as ExtensionMessage).catch(() => {});
+    await flashSaveBadge(tab.id, "saved");
   });
 
   // -------------------------------------------------------------------------

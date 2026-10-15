@@ -1,4 +1,6 @@
 {
+  "badge_alreadySavedShort": { "message": "Dup" },
+  "badge_alreadySavedTitle": { "message": "Already saved in TabSlate" },
   "extensionName": {
     "message": "TabSlate"
   },
