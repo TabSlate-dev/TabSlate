@@ -209,7 +209,7 @@ v3 迁移（`oldVersion < 3`）：为 `groups` 添加 `workspaceId` 索引，供
 |---|---|---|
 | `TABS_CHANGED` | background → newtab | 任意 tab/group 增删改 |
 | `BOOKMARKS_CHANGED` | background → newtab | background 回退写 IDB 后通知刷新 |
-| `ADD_BOOKMARK` | popup/background → newtab | 保存书签（优先路径） |
+| `ADD_BOOKMARK` | popup/background → newtab | 保存书签（优先路径）；响应 `AddBookmarkResponse`：`saved` + 非空 `bookmarkId` 或 `rejected`，background 仅在 accepted 时显示成功角标，rejected 不回退写入 |
 | `OPEN_SEARCH` | background → active tab | 触发全局搜索快捷键，通知 content script 挂载 SearchOverlay |
 | `GET_OPEN_TABS` | content script → background | SearchOverlay 获取当前所有打开的标签页 |
 | `FOCUS_TAB` | content script → background | SearchOverlay 选中某个标签页时请求切换 |
@@ -314,7 +314,7 @@ Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对�
 
 ## 注意事项
 
-- **视图偏好同步**（`lib/view-preferences.ts`、`store/settings-store.ts`）：`viewMode`/`sortBy` 仍在 `useBookmarksStore`；`useSettingsStore.hydrate()` 在仪表盘渲染前载入本机副本，并订阅这两个字段写回本机（`dirty=true`）、1 秒防抖推送。服务端存于 `/preferences` 的 `bookmarkView` 键（读取-合并-写回，保留其他键），按 `updatedAt` 较新者胜出。`App.tsx` 的同步 effect 调 `startPreferenceSync(getCredentials)`，cleanup 调 `stopPreferenceSync()`。未知取值回退默认值。会话版本与本地修订号守卫防止迟到响应覆盖新编辑或旧会话更新本机状态；`pushViewPrefs` 在读取服务端偏好后通过可选资格回调再次校验凭据、授权与修订号，再发送写入。
+- **视图偏好同步**（`lib/view-preferences.ts`、`store/settings-store.ts`）：`viewMode`/`sortBy` 仍在 `useBookmarksStore`；`useSettingsStore.hydrate()` 在仪表盘渲染前载入本机副本，并订阅这两个字段写回本机（`dirty=true`）、1 秒防抖推送。服务端存于 `/preferences` 的 `bookmarkView` 键（读取-合并-写回，保留其他键），按 `updatedAt` 较新者胜出。`App.tsx` 的同步 effect 调 `startPreferenceSync(getCredentials)`，cleanup 调 `stopPreferenceSync()`。未知取值回退默认值。会话版本与本地修订号守卫防止迟到响应覆盖新编辑或旧会话更新本机状态；`pushViewPrefs` 在读取服务端偏好后通过可选资格回调再次校验凭据、授权与修订号，再发送写入。同页推送串行执行并在在途请求结束后补推最新本地修订；merge GET 已观察到的较新服务端值通过 typed outcome 返回并在会话/修订守卫下应用。
 - **重复检测两级规则**（`lib/url-match.ts`、`lib/duplicate-lookup.ts`）：严格规则（协议与域名小写、去默认端口与末尾斜杠，路径/参数/片段区分大小写）用于拦截：拖拽、批量保存标签页、右键菜单保存；宽松规则（另忽略 http/https、`www.`、`#` 片段、跟踪参数）只用于提示：添加书签对话框与 popup，可“仍然保存”。两级规则都保留 URL 中的用户名/密码，避免不同凭据被误判为相同页面。只匹配活跃书签，且其集合与工作区都可见。`normalizeUrl` 即严格规则。
 - **定位书签与深链**：`revealBookmark(id)`（`lib/reveal-bookmark.ts`）切到书签所在工作区与集合、清空标签/筛选/搜索并高亮；新标签页支持 `#/?highlight=<id>`（`useHighlightDeepLink`），处理后移除参数（空值也会消耗）。
 - **右键菜单**：`components/ui/context-menu.tsx`；集合与书签卡片的菜单项各定义一次（`components/dashboard/shared/*-menu-items.tsx`），通过 `menu-primitives.tsx` 同时用于 ⋯ 下拉和右键菜单；标签只用右键菜单（重命名、改色、删除前确认）。

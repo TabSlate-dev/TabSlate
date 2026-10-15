@@ -8,9 +8,11 @@ describe("createModuleReplacer", () => {
   test("restores the exports registered before the replacement", async () => {
     const replacer = createModuleReplacer();
     await replacer.replace(FIXTURE, { value: "replacement" });
-    expect((await import(FIXTURE)).value).toBe("replacement");
-
-    replacer.restore();
+    try {
+      expect((await import(FIXTURE)).value).toBe("replacement");
+    } finally {
+      replacer.restore();
+    }
 
     expect((await import(FIXTURE)).value).toBe("original");
   });
@@ -19,11 +21,33 @@ describe("createModuleReplacer", () => {
     const replacer = createModuleReplacer();
     await replacer.replace(FIXTURE, { value: "replacement" });
 
-    const fresh = await importFresh<typeof import("@/test/fixtures/replaceable-module")>(
-      "test/fixtures/replaceable-module.ts",
-    );
+    try {
+      const fresh = await importFresh<typeof import("@/test/fixtures/replaceable-module")>(
+        "test/fixtures/replaceable-module.ts",
+      );
 
-    expect(fresh.value).toBe("original");
-    replacer.restore();
+      expect(fresh.value).toBe("original");
+    } finally {
+      replacer.restore();
+    }
+  });
+
+  test("restores stacked replacements in reverse order even after an assertion throws", async () => {
+    const replacer = createModuleReplacer();
+    try {
+      await replacer.replace(FIXTURE, { value: "first" });
+      await replacer.replace(FIXTURE, { value: "second" });
+      expect((await import(FIXTURE)).value).toBe("second");
+      expect(() => {
+        try {
+          expect("intentional failure").toBe("different");
+        } finally {
+          replacer.restore();
+        }
+      }).toThrow();
+      expect((await import(FIXTURE)).value).toBe("original");
+    } finally {
+      replacer.restore();
+    }
   });
 });

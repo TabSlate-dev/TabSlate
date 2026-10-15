@@ -12,6 +12,7 @@ let updateWait: Promise<void> | null = null;
 let consent = true;
 let consentWait: Promise<void> | null = null;
 let getCalls = 0;
+let updateStarts = 0;
 
 function deferred() {
   let release = () => {};
@@ -68,7 +69,10 @@ beforeAll(async () => {
       if (failPushes) {
         throw new Error("offline");
       }
-      await updateWait;
+      updateStarts += 1;
+      const wait = updateWait;
+      updateWait = null;
+      await wait;
       updateCalls.push(preferences);
       serverPreferences = structuredClone(preferences);
     },
@@ -101,6 +105,7 @@ beforeEach(async () => {
   consent = true;
   getCalls = 0;
   updateCalls.length = 0;
+  updateStarts = 0;
 });
 
 describe("view preference sync", () => {
@@ -267,6 +272,46 @@ describe("view preference sync", () => {
 
     expect(updateCalls).toEqual([]);
     expect(kv.get("bookmark-view-prefs")).toMatchObject({ dirty: true });
+  });
+
+  test("serializes slow PUTs and drains the latest edit before marking it clean", async () => {
+    await useSettingsStore.getState().hydrate();
+    await useSettingsStore.getState().startPreferenceSync(() => credentials);
+    const firstPut = deferred();
+    updateWait = firstPut.promise;
+    try {
+      useBookmarksStore.getState().setViewMode("list");
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(updateStarts).toBe(1);
+      useBookmarksStore.getState().setSortBy("alpha-az");
+      await new Promise((resolve) => setTimeout(resolve, 1100));
+      expect(kv.get("bookmark-view-prefs")).toMatchObject({ sortBy: "alpha-az", dirty: true });
+      expect(updateStarts).toBe(1);
+    } finally {
+      firstPut.release();
+    }
+    await flush();
+    await flush();
+    expect(updateStarts).toBe(2);
+    expect(serverPreferences.bookmarkView).toMatchObject({ viewMode: "list", sortBy: "alpha-az" });
+    const prefs = await importFresh<typeof import("@/lib/view-preferences")>("lib/view-preferences.ts");
+    expect(prefs.parseViewPrefs(kv.get("bookmark-view-prefs"))).toEqual(serverPreferences.bookmarkView);
+    expect(kv.get("bookmark-view-prefs")).toMatchObject({ dirty: false });
+  });
+
+  test("a newer remote appearing after reconciliation wins the push merge read", async () => {
+    await useSettingsStore.getState().hydrate();
+    await useSettingsStore.getState().startPreferenceSync(() => credentials);
+    useBookmarksStore.getState().setViewMode("list");
+    await flush();
+    const remote = { viewMode: "grid", sortBy: "alpha-za", updatedAt: Date.now() + 10000 };
+    serverPreferences = { theme: "dark", bookmarkView: remote };
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    expect(updateCalls).toEqual([]);
+    expect(useBookmarksStore.getState().viewMode).toBe("grid");
+    expect(useBookmarksStore.getState().sortBy).toBe("alpha-za");
+    expect(kv.get("bookmark-view-prefs")).toEqual({ ...remote, dirty: false });
+    expect(serverPreferences).toEqual({ theme: "dark", bookmarkView: remote });
   });
 
 });

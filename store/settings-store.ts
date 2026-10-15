@@ -9,6 +9,7 @@ import {
   writeLocalViewPrefs,
   type BookmarkViewPrefs,
   type PreferenceCredentials,
+  type PushViewPrefsResult,
 } from "@/lib/view-preferences";
 
 const PUSH_DEBOUNCE_MS = 1000;
@@ -32,6 +33,7 @@ let applyingRemote = false;
 let sessionVersion = 0;
 let localRevision = 0;
 let localWrites: Promise<void> = Promise.resolve();
+let pushWrites: Promise<void> = Promise.resolve();
 let unsubscribeViewPrefs: (() => void) | null = null;
 
 /** Keep async read/modify/write operations ordered with user edits. */
@@ -71,7 +73,20 @@ async function eligibleCredentials(version: number): Promise<PreferenceCredentia
   return preferenceCredentials?.() ?? null;
 }
 
-async function pushDirtyViewPrefs(version = sessionVersion): Promise<void> {
+/** Dispatched PUTs cannot be revoked. Order them, then drain edits made while waiting. */
+function pushDirtyViewPrefs(version = sessionVersion): Promise<void> {
+  const pending = pushWrites.then(async () => {
+    let revision: number;
+    do {
+      revision = localRevision;
+      await pushDirtySnapshot(version);
+    } while (isCurrentSession(version) && revision !== localRevision);
+  });
+  pushWrites = pending.catch(() => {});
+  return pending;
+}
+
+async function pushDirtySnapshot(version: number): Promise<void> {
   const credentials = await eligibleCredentials(version);
   if (!credentials) {
     return;
@@ -83,8 +98,9 @@ async function pushDirtyViewPrefs(version = sessionVersion): Promise<void> {
     return;
   }
   let dispatched = false;
+  let outcome: PushViewPrefsResult;
   try {
-    await pushViewPrefs(credentials, local, async () => {
+    outcome = await pushViewPrefs(credentials, local, async () => {
       const current = await eligibleCredentials(version);
       dispatched = current !== null && current.baseUrl === credentials.baseUrl &&
         current.accessToken === credentials.accessToken && revision === localRevision;
@@ -94,7 +110,9 @@ async function pushDirtyViewPrefs(version = sessionVersion): Promise<void> {
     // Stays dirty; the next change or pull retries.
     return;
   }
-  if (!dispatched || !(await eligibleCredentials(version))) {
+  const current = await eligibleCredentials(version);
+  if (!dispatched || outcome.status === "ineligible" || !current ||
+    current.baseUrl !== credentials.baseUrl || current.accessToken !== credentials.accessToken) {
     return;
   }
   await queueLocalWrite(async () => {
@@ -103,7 +121,12 @@ async function pushDirtyViewPrefs(version = sessionVersion): Promise<void> {
       isCurrentSession(version) && revision === localRevision && latest &&
       latest.updatedAt === local.updatedAt && latest.viewMode === local.viewMode && latest.sortBy === local.sortBy
     ) {
-      await writeLocalViewPrefs({ ...latest, dirty: false });
+      if (outcome.status === "remote-newer") {
+        applyViewPrefs(outcome.prefs);
+        await writeLocalViewPrefs({ ...outcome.prefs, dirty: false });
+      } else {
+        await writeLocalViewPrefs({ ...latest, dirty: false });
+      }
     }
   });
 }

@@ -29,6 +29,11 @@ export interface PreferenceCredentials {
   accessToken: string;
 }
 
+export type PushViewPrefsResult =
+  | { status: "pushed" }
+  | { status: "ineligible" }
+  | { status: "remote-newer"; prefs: BookmarkViewPrefs };
+
 export type PullAction = "apply-remote" | "push-local" | "none";
 
 interface KvRecord {
@@ -98,13 +103,18 @@ export async function pushViewPrefs(
   credentials: PreferenceCredentials,
   prefs: BookmarkViewPrefs,
   isEligible: () => boolean | Promise<boolean> = () => true,
-): Promise<void> {
+): Promise<PushViewPrefsResult> {
   const preferences = await getPreferences(credentials.baseUrl, credentials.accessToken);
   if (!(await isEligible())) {
-    return;
+    return { status: "ineligible" };
+  }
+  const remote = parseViewPrefs(preferences[VIEW_PREFS_SERVER_KEY]);
+  if (remote && remote.updatedAt > prefs.updatedAt) {
+    return { status: "remote-newer", prefs: remote };
   }
   await updatePreferences(credentials.baseUrl, credentials.accessToken, {
     ...preferences,
     [VIEW_PREFS_SERVER_KEY]: { viewMode: prefs.viewMode, sortBy: prefs.sortBy, updatedAt: prefs.updatedAt },
   });
+  return { status: "pushed" };
 }

@@ -505,10 +505,10 @@ export function BookmarksContent() {
     );
     if (rowIndex === -1) {
       const targetBookmark = filteredBookmarks.find((b) => b.id === highlightedBookmarkId);
-      if (targetBookmark && targetBookmark.collectionId) {
+      if (targetBookmark) {
         setExpandedCollectionIds((prev) => ({
           ...prev,
-          [targetBookmark.collectionId]: true,
+          [targetBookmark.collectionId || "uncategorized"]: true,
         }));
       }
       return;

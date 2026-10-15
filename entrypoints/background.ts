@@ -6,7 +6,7 @@ import { runWebSearch } from "@/lib/browser/search";
 import { restrictSessionStorageToTrustedContexts } from "@/lib/browser/storage-session";
 import { searchBookmarks } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
-import type { ExtensionMessage } from "@/lib/messages";
+import type { AddBookmarkResponse, ExtensionMessage } from "@/lib/messages";
 import { SearchOverlaySessionStore } from "@/lib/search-overlay-session";
 
 import { getWorkspaceState } from "@/lib/storage";
@@ -123,8 +123,13 @@ export default defineBackground(() => {
     const [newtabTab] = await chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") });
     if (newtabTab?.id) {
       try {
-        await chrome.tabs.sendMessage(newtabTab.id, { type: "ADD_BOOKMARK", data: bookmarkData });
-        await flashSaveBadge(tab.id, "saved");
+        const response = await chrome.tabs.sendMessage<ExtensionMessage, AddBookmarkResponse | undefined>(
+          newtabTab.id, { type: "ADD_BOOKMARK", data: bookmarkData },
+        );
+        if (response?.status === "saved" && response.bookmarkId) {
+          await flashSaveBadge(tab.id, "saved");
+        }
+        // A delivered rejection must never bypass the newtab's quota guard.
         return;
       } catch { /* newtab not ready, fall through to storage */ }
     }

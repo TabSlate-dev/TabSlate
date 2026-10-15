@@ -11,6 +11,7 @@ export function FavoritesContent() {
   const { t } = useTranslation();
   const bookmarks = useBookmarksStore(s => bookmarksAsArray(s.bookmarks));
   const viewMode = useBookmarksStore(s => s.viewMode);
+  const selectedTags = useBookmarksStore(s => s.selectedTags);
 
   const collections = useWorkspaceStore(s => s.collections);
   const workspaces = useWorkspaceStore(s => s.workspaces);
@@ -23,9 +24,10 @@ export function FavoritesContent() {
 
   const favoriteBookmarks = React.useMemo(
     () => bookmarks.filter(
-      b => b.isFavorite && (b.collectionId === "" || workspaceCollectionIds.has(b.collectionId))
+      b => b.isFavorite && (b.collectionId === "" || workspaceCollectionIds.has(b.collectionId)) &&
+        (selectedTags.length === 0 || selectedTags.some(tag => b.tags.includes(tag)))
     ),
-    [bookmarks, workspaceCollectionIds]
+    [bookmarks, workspaceCollectionIds, selectedTags]
   );
 
   return (

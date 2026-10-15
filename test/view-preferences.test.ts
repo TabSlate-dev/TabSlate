@@ -120,4 +120,13 @@ describe("server preferences", () => {
     expect(updateCalls).toEqual([]);
   });
 
+  test("push returns the newer remote winner without replacing server preferences", async () => {
+    const remote = { viewMode: "grid", sortBy: "alpha-za", updatedAt: 200 };
+    serverPreferences = { theme: "dark", bookmarkView: remote };
+    expect(await viewPrefs.pushViewPrefs(credentials, { viewMode: "list", sortBy: "date-newest", updatedAt: 100 }))
+      .toEqual({ status: "remote-newer", prefs: remote });
+    expect(updateCalls).toEqual([]);
+    expect(serverPreferences).toEqual({ theme: "dark", bookmarkView: remote });
+  });
+
 });

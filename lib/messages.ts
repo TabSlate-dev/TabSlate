@@ -8,6 +8,11 @@ import type { Bookmark } from "@/lib/types";
  */
 export const SEARCH_OVERLAY_CLOSE_MESSAGE = "tabslate-search-overlay-close";
 
+/** A delivered save request reports whether the newtab accepted a bookmark. */
+export type AddBookmarkResponse =
+  | { status: "saved"; bookmarkId: string }
+  | { status: "rejected" };
+
 export type ExtensionMessage =
   | { type: "ADD_BOOKMARK"; data: Omit<Bookmark, "id" | "createdAt" | "isFavorite"> }
   | { type: "BOOKMARKS_CHANGED" }

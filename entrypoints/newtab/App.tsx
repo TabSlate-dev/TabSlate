@@ -24,7 +24,7 @@ import { QuotaAlert } from "@/components/ui/quota-alert";
 import { SyncRecoveryAlert } from "@/components/ui/sync-recovery-alert";
 import { useTranslation } from "@/hooks/use-translation";
 import { useAccountDataConsent } from "@/hooks/use-account-data-consent";
-import type { ExtensionMessage } from "@/lib/messages";
+import type { AddBookmarkResponse, ExtensionMessage } from "@/lib/messages";
 import { analytics } from "@/lib/analytics";
 import { type SyncStatus, initSyncEngine, syncEngine, releaseSyncEngine } from "@/lib/sync-engine";
 import { createSyncEngine } from "@/lib/sync-engine-runtime";
@@ -726,9 +726,11 @@ export default function App() {
 
 function AppRoutes() {
   useEffect(() => {
-    const listener = (message: ExtensionMessage) => {
+    const listener = (message: ExtensionMessage, _sender: chrome.runtime.MessageSender, sendResponse: (response: AddBookmarkResponse) => void) => {
       if (message.type === "ADD_BOOKMARK") {
-        useBookmarksStore.getState().addBookmark(message.data);
+        const bookmark = useBookmarksStore.getState().addBookmark(message.data);
+        sendResponse(bookmark.id ? { status: "saved", bookmarkId: bookmark.id } : { status: "rejected" });
+        return false;
       }
       if (message.type === "BOOKMARKS_CHANGED") {
         void useBookmarksStore.getState().reloadActive();
