@@ -36,7 +36,7 @@ TabSlate/
 │   │   ├── main.tsx     # ReactDOM.createRoot
 │   │   └── App.tsx      # 路由、布局、StoreGate → SyncProvider → HashRouter/dashboard；AuthDialog 覆盖在 dashboard 之上
 │   ├── popup/           # 快速保存 popup
-│   │   └── App.tsx      # 独立 React 树，不使用 Zustand；打开时调用 GET_PAGE_INFO 预取 ogTitle/metaDescription，保存时使用
+│   │   └── App.tsx      # 独立 React 树，不加载应用 store（仅经 useTranslation 用到 i18n-store）；打开时调用 GET_PAGE_INFO 预取 ogTitle/metaDescription，保存时使用
 │   ├── search-overlay/  # 全局搜索浮层页面（search-overlay.html），由 content.ts 以 iframe 嵌入网页；web_accessible_resources 对 <all_urls> 开放
 │   │   └── main.tsx     # 读取 URL 中的 session，经 VALIDATE_SEARCH_OVERLAY_SESSION 校验通过后才渲染 SearchOverlay，打开期间每 10 秒心跳校验续期；关闭、缺少 session 或校验失败时向宿主页 postMessage(SEARCH_OVERLAY_CLOSE_MESSAGE)
 │   ├── search/          # search popup 页面（search.html）；代码中目前没有入口打开它
@@ -119,9 +119,9 @@ TabSlate/
 │   ├── types.ts            # Workspace, Collection, Tag, Bookmark 接口定义（含 seq, deletedAt 同步字段）
 │   ├── sync-engine.ts      # SyncEngine：协调 SyncQueue + SSEClient + 定期拉取；模块单例 syncEngine
 │   ├── sync-queue.ts       # SyncQueue：按实体 ID 去重、2s 防抖、指数退避推送（2s→60s）
-│   ├── sse-client.ts       # SSEClient：leader election via chrome.storage + EventSource 自动重连（1s→30s）
+│   ├── sse-client.ts       # SSEClient：leader election via IndexedDB kv["sync-leader"] + EventSource 自动重连（1s→30s）
 │   ├── utils.ts            # cn() 等工具函数
-│   ├── storage.ts          # popup 用的轻量 chrome.storage 读写工具
+│   ├── storage.ts          # popup 用的轻量 IndexedDB 读写工具：getWorkspaceState() 读工作区/集合/标签；storageService.addBookmark/addTag 直接写 IDB（seq: 0）
 │   ├── auth-storage-adapter.ts    # Zustand persist 适配器：accessToken → session storage，其余 → local storage；含旧版迁移路径
 │   ├── sync-recovery.ts           # 401 时保存同步快照；内存缓冲区 + chrome.storage.session 双层持久化（页面重载后仍可恢复）；SyncQueue 构造时通过 `loadSyncRecoverySnapshot()` 异步读取并重入队列
 │   ├── chrome-storage-adapter.ts  # 通用 Zustand persist 的 chrome.storage 适配器（非 auth 用）
@@ -304,6 +304,7 @@ background（右键菜单"Save to TabSlate"）
     │    └── 已保存 → flashSaveBadge(tabId, "duplicate")，不保存
 popup / background
     │  chrome.tabs.sendMessage(newtabTabId, { type: "ADD_BOOKMARK", data })
+    │  （newtab 不存在或投递失败时回退到直接写 IndexedDB bookmarks，seq=0；仅 background 随后广播 BOOKMARKS_CHANGED）
     ▼
 newtab App（chrome.runtime.onMessage）
   └── useBookmarksStore.getState().addBookmark(data)   ← 配额拦截时返回空 id
@@ -355,7 +356,7 @@ SyncEngine
 **SSE 连接（实时通知）：**
 - `POST /auth/sse-token` 获取 30s 单次使用令牌（EventSource 无法携带 Authorization header）
 - `GET /sync/stream?token=<token>` 建立 SSE 连接
-- 多窗口 leader election：`chrome.storage.local["tabslate-sync-leader"]` TTL 30s，leader 每 25s 续约；非 leader 每 25s 竞选
+- 多窗口 leader election：IndexedDB `kv["sync-leader"]` TTL 30s，leader 每 25s 续约；非 leader 每 25s 竞选
 - `SyncEngine` 在 SSE 连续失败 3 次后切换到 `"offline"` 状态，纯依赖定期拉取
 
 ### App.tsx 中的 SyncProvider
