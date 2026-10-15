@@ -10,7 +10,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { storageService, getWorkspaceState, type BookmarkInput } from "@/lib/storage";
+import { storageService, getWorkspaceState, findSavedDuplicates, type BookmarkInput } from "@/lib/storage";
+import { DuplicateNotice } from "@/components/dashboard/shared/duplicate-notice";
+import type { DuplicateMatch } from "@/lib/duplicate-lookup";
+import { HIGHLIGHT_PARAM } from "@/lib/highlight-link";
 import { authStorageAdapter } from "@/lib/auth-storage-adapter";
 import {
   Bookmark,
@@ -53,6 +56,7 @@ function PopupContent() {
   const [pageInfo, setPageInfo] = useState<{ ogTitle: string; metaDescription: string } | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
 
   useEffect(() => {
     Promise.all([
@@ -64,6 +68,9 @@ function PopupContent() {
               url: activeTab.url ?? "",
               favIconUrl: activeTab.favIconUrl ?? "",
             });
+          }
+          if (activeTab?.url) {
+            void findSavedDuplicates(activeTab.url).then(setDuplicates);
           }
           if (activeTab?.id) {
             chrome.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_INFO" })
@@ -181,6 +188,13 @@ function PopupContent() {
     window.close();
   };
 
+  const handleOpenExistingBookmark = (bookmarkId: string) => {
+    chrome.tabs.create({
+      url: `${chrome.runtime.getURL("newtab.html")}#/?${HIGHLIGHT_PARAM}=${encodeURIComponent(bookmarkId)}`,
+    });
+    window.close();
+  };
+
   if (loading || isLoggedIn === null) {
     return (
       <div className="flex items-center justify-center h-32 w-[360px]">
@@ -283,6 +297,8 @@ function PopupContent() {
               </p>
             </div>
           </div>
+
+          <DuplicateNotice matches={duplicates} onOpenExisting={handleOpenExistingBookmark} />
 
           {targetUnavailable && (
             <Alert variant="destructive">
@@ -455,7 +471,7 @@ function PopupContent() {
             ) : (
               <>
                 <Bookmark className="size-4 mr-2" />
-                {t("popup_saveBookmark")}
+                {duplicates.length > 0 ? t("popup_saveAnyway") : t("popup_saveBookmark")}
               </>
             )}
           </Button>

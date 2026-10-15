@@ -2,6 +2,7 @@ import type { Bookmark, Collection, Tag, Workspace } from "@/lib/types";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut } from "@/lib/idb";
 import { resolveActiveWorkspaceCollectionTarget } from "@/lib/workspace-visibility";
+import { findVisibleDuplicates, type DuplicateMatch } from "@/lib/duplicate-lookup";
 
 export type BookmarkInput = {
   title: string;
@@ -36,6 +37,24 @@ export async function getWorkspaceState(): Promise<WorkspaceStorageState> {
     tags,
     activeWorkspaceId: activeWsKv?.value ?? "",
   };
+}
+
+/**
+ * Saved bookmarks that look like the given page (loose tier), for the popup's
+ * notice. A failed lookup reports no duplicates so saving still works.
+ */
+export async function findSavedDuplicates(url: string): Promise<DuplicateMatch[]> {
+  try {
+    const [bookmarks, state] = await Promise.all([idbGetAll<Bookmark>("bookmarks"), getWorkspaceState()]);
+    return findVisibleDuplicates(
+      url,
+      { bookmarks, collections: state.collections, workspaces: state.workspaces },
+      "loose",
+    );
+  } catch (err) {
+    console.warn("[TabSlate] duplicate lookup failed:", err);
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------

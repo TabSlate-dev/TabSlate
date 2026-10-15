@@ -47,6 +47,9 @@
   "popup_failedTryAgain": {
     "message": "保存失败，请重试"
   },
+  "popup_saveAnyway": {
+    "message": "仍然保存"
+  },
   "popup_saveBookmark": {
     "message": "保存书签"
   },
