@@ -72,7 +72,7 @@ TabSlate/
 │       │   └── create-group-bar.tsx
 │       ├── group-detail/       # /groups/:groupId 路由：单个保存组详情
 │       │   └── index.tsx       # GroupDetail（标签列表、内联编辑、拖拽支持）
-│       ├── shared/             # 跨视图复用组件：书签/标签对话框、菜单项（menu-primitives + collection/bookmark-menu-items，⋯ 与右键共用）、duplicate-notice
+│       ├── shared/             # 跨视图复用组件：书签/标签对话框、菜单项（menu-primitives + collection/bookmark-menu-items，⋯ 与右键共用）、duplicate-notice、active-filter-chips（书签库与收藏共用的筛选 chip 栏）
 │       ├── tabs-dnd-provider.tsx # 全局 DnD context（tab → collection/saved-group）
 │       ├── tab-row.tsx         # 单行 tab 组件（React.memo）
 │       ├── stats-cards.tsx     # 书签统计卡片
@@ -185,7 +185,7 @@ chrome.storage.local 不再用于跨页面数据同步。各进程通过 `chrome
 |---|---|---|---|
 | `TABS_CHANGED` | background | newtab | tab/group 有变化，触发 `loadTabs()` |
 | `BOOKMARKS_CHANGED` | background | newtab | background 回退写 IDB 后通知刷新 |
-| `ADD_BOOKMARK` | popup / background | newtab | 直接投递书签数据（优先路径） |
+| `ADD_BOOKMARK` | popup / background | newtab | 直接投递书签数据（优先路径）；newtab 同步回复 `AddBookmarkResponse`：`{ status: "saved", bookmarkId }` 或 `{ status: "rejected" }`（配额拦截）。两个发送方都只把带非空 `bookmarkId` 的 `saved` 视为成功，收到其他回复时不回退写入（见下方「保存书签流程」） |
 | `OPEN_SEARCH` | background | active tab | 触发全局搜索快捷键，挂载 SearchOverlay |
 | `GET_OPEN_TABS` | active tab | background | SearchOverlay 请求打开的标签页列表 |
 | `FOCUS_TAB` | active tab | background | SearchOverlay 请求切换到指定标签页 |
@@ -271,15 +271,27 @@ TabsPanel   GroupsPanel
 （useTabsStore 订阅者，自动更新）
 ```
 
+### 保存书签流程（popup / 右键菜单）
+
 ```
-popup / background（右键菜单）
+background（右键菜单"Save to TabSlate"）
+    │  resolveContextMenuSave(url)：严格规则，只查当前工作区可见的活跃书签
+    │    └── 已保存 → flashSaveBadge(tabId, "duplicate")，不保存
+popup / background
     │  chrome.tabs.sendMessage(newtabTabId, { type: "ADD_BOOKMARK", data })
-    │  （newtab 不存在时回退到直接写 chrome.storage，seq=0）
     ▼
 newtab App（chrome.runtime.onMessage）
-  └── useBookmarksStore.getState().addBookmark(data)
-        └── syncEngine?.enqueue(...)  ← 立即推送到服务器
+  └── useBookmarksStore.getState().addBookmark(data)   ← 配额拦截时返回空 id
+        ├── syncEngine?.enqueue(...)  ← 立即推送到服务器
+        └── sendResponse(AddBookmarkResponse)
+              ├── { status: "saved", bookmarkId } → background：绿色 ✓ 角标；popup：已保存
+              └── { status: "rejected" }          → background：无角标；popup：未保存提示
 ```
+
+- **右键菜单查重**（`lib/context-menu-save.ts`）：右键保存没有可询问的界面，所以严格规则命中当前工作区的可见活跃书签时直接跳过保存，只显示琥珀色角标；查重失败不阻止保存。
+- **`AddBookmarkResponse` 契约**（`lib/messages.ts`）：只有带非空 `bookmarkId` 的 `saved` 算成功。newtab 已送达的其他回复是最终结果，发送方不回退直写，否则会绕过 newtab 的配额拦截。没有回复时，background 同样不回退、不显示角标；popup 则视为未送达。
+- **回退直写**：`chrome.tabs.sendMessage` 抛错（newtab 不存在或尚未就绪）时，background 直接写 IndexedDB `bookmarks`（`seq=0`），发送 `BOOKMARKS_CHANGED` 并显示绿色角标；popup 在抛错或没有回复时通过 `storageService.addBookmark` 写 IndexedDB。newtab 下次 hydrate 时载入，由 `sweepUnsynced` 补推。
+- **保存角标**（`lib/browser/action-badge.ts` 的 `flashSaveBadge`）：只作用于发起保存的 tab。成功为绿色 ✓；重复为琥珀色短文本（`badge_alreadySavedShort`），并把工具栏提示改为 `badge_alreadySavedTitle`。每个 tab 独立维护 3 秒清理计时器，结束时恢复原提示；被新角标取代的异步步骤会被忽略。
 
 ## 跨设备同步系统
 

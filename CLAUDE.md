@@ -135,6 +135,7 @@ const tabs = React.useMemo(
 - **SearchBox** (`components/dashboard/search-box.tsx`) — 新标签页英雄区和集合内联搜索栏，合并了原 `HeroSection` 内联搜索与已删除的 `CollectionSearch`；Props：`collectionId?: string`（传入时按集合过滤书签结果，`undefined` 则搜全部；空字符串 `""` 代表未分类集合，同样会过滤，用 `collectionId !== undefined` 判断而非 `collectionId ?`）、`size?: "sm" | "lg"`、`className?: string`；下拉结果顺序：open tabs → bookmarks → search engine fallback；`getEngineIconSrc(engine)` 已导出供复用
 - **SearchPanel** (`components/search/search-panel.tsx`) — 全页内联搜索浮层，用于 BookmarksContent 顶部（smartOpen 模式，Ctrl+K 唤起）和 search popup；Props：`openTabs`、`onClose?`、`autoFocus?`、`smartOpen?`；fallback 搜索使用 `useSettingsStore` 中第一个 enabled 引擎（非硬编码 Google）
 - **Select** (`components/ui/select.tsx`) — 标准 shadcn Select（基于 `@radix-ui/react-select`），用于 ImportDialog 等表单
+- **ActiveFilterChips** (`components/dashboard/shared/active-filter-chips.tsx`) — 当前标签筛选的 chip 栏：每个 chip 带移除按钮，另有一键清除；`includeTypeFilter` 时还显示类型筛选（仅书签库使用）。`BookmarksContent` 与 `FavoritesContent` 共用，不要各自复制
 - **shadcn/ui** (`components/ui/`) — Button、Input、Dialog 等基础组件
 
 ### Favicon 规范化
@@ -209,7 +210,7 @@ v3 迁移（`oldVersion < 3`）：为 `groups` 添加 `workspaceId` 索引，供
 |---|---|---|
 | `TABS_CHANGED` | background → newtab | 任意 tab/group 增删改 |
 | `BOOKMARKS_CHANGED` | background → newtab | background 回退写 IDB 后通知刷新 |
-| `ADD_BOOKMARK` | popup/background → newtab | 保存书签（优先路径）；响应 `AddBookmarkResponse`：`saved` + 非空 `bookmarkId` 或 `rejected`，background 仅在 accepted 时显示成功角标，rejected 不回退写入 |
+| `ADD_BOOKMARK` | popup/background → newtab | 保存书签（优先路径）；响应 `AddBookmarkResponse`：`saved` + 非空 `bookmarkId` 或 `rejected`。两个发送方都只把带非空 `bookmarkId` 的 `saved` 视为成功：background 显示成功角标，popup 显示已保存；收到 `rejected` 时都不回退写入，popup 显示未保存提示（`popup_saveRejected`）。`sendMessage` 抛错时两者都回退直写 IndexedDB；没有回复时 popup 回退，background 不回退也不显示角标 |
 | `OPEN_SEARCH` | background → active tab | 触发全局搜索快捷键，通知 content script 挂载 SearchOverlay |
 | `GET_OPEN_TABS` | content script → background | SearchOverlay 获取当前所有打开的标签页 |
 | `FOCUS_TAB` | content script → background | SearchOverlay 选中某个标签页时请求切换 |
@@ -320,7 +321,7 @@ Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对�
 - **右键菜单**：`components/ui/context-menu.tsx`；集合与书签卡片的菜单项各定义一次（`components/dashboard/shared/*-menu-items.tsx`），通过 `menu-primitives.tsx` 同时用于 ⋯ 下拉和右键菜单；标签只用右键菜单（重命名、改色、删除前确认）。
 - **保存反馈角标**（`lib/browser/action-badge.ts`）：右键保存成功显示绿色 ✓，严格重复时显示琥珀色角标与提示、不再保存。每个 tab 独立维护 3 秒清理计时器，并校验异步响应所属的 flash，防止旧反馈覆盖新反馈；结束时恢复原工具栏标题。
 
-- **不要在 newtab/search popup 以外使用 store**：popup 和 background 不加载 Zustand；保存书签时优先通过 `chrome.tabs.sendMessage` 发 `{ type: "ADD_BOOKMARK", data }` 消息到 newtab（newtab 在 `App` 的 `useEffect` 中监听），newtab 不存在时回退到直接写 `chrome.storage.local`（`seq: 0`，下次 newtab 打开时由 `sweepUnsynced` 补推）
+- **不要在 newtab/search popup 以外使用 store**：popup 和 background 不加载 Zustand；保存书签时优先通过 `chrome.tabs.sendMessage` 发 `{ type: "ADD_BOOKMARK", data }` 消息到 newtab（newtab 在 `App` 的 `useEffect` 中监听），newtab 不存在时回退到直接写 IndexedDB `bookmarks`（`seq: 0`，下次 newtab 打开时由 `hydrate()` 载入、`sweepUnsynced` 补推）；newtab 回复 `rejected` 时不回退
 - **Tab 变更广播**：background.ts 监听所有 tab/group 事件，写 `tabslate-tabs-changed` 信号；newtab 的 `TabsPanel` 和 `GroupsPanel` 监听此信号触发 `loadTabs()`
 - **Store hydration**：`App.tsx` 中的 `StoreGate` 等待 bookmarks、workspace、auth、groups、settings 五个 store 全部 hydrate 后再渲染 dashboard；guest 与已认证用户走相同的 dashboard 路由，不再使用全屏认证守卫。若 hydrate 完成后会话是 guest 且本地没有 workspace，`StoreGate` 创建一个含 Default collection 的空 guest workspace。guest 创建的 workspace、collection、bookmark 等实体保持 `seq === 0` 并持久化在 IndexedDB；用户完成邮箱验证后 Verified-only `SyncEngine` 启动，通过首次 enqueue 或 `sweepUnsynced()` 将这些本地实体并入账号。
 - **认证生命周期与 AuthDialog**（`entrypoints/newtab/App.tsx`、`components/auth/auth-dialog.tsx`）：guest 始终可使用 dashboard；Sidebar 顶部 “Not logged in” / “未登录” 用户卡片以 login mode 打开 `AuthDialog`，底部同名同步状态区域的 “Register now” 入口以 register mode 打开。`LoginForm` 在同一 Dialog 内切换 login / register / forgot-password / reset-password，不离开 dashboard。若已登录用户 `user.is_verified === false`，同一 `AuthDialog` 强制切换为 `VerifyEmailScreen`；此时隐藏关闭按钮并阻止 X、Escape、outside click，只有验证成功或 “use different account” 完成 logout 后才能离开。浏览器重启时 `accessToken` 因 session storage 清除而为 null、但 verified user 与 `refreshToken` 仍在时，dashboard 保持显示并由 `silentRefresh` 后台恢复 token；临时网络失败保留用户资料并显示 Offline。显式 logout 或 refresh 返回 401/403 时，auth store 先 `clearDB()` 并清除账号数据，再转为 guest；`StoreGate` 随后 reset 各账号 store，并在空库中初始化全新的 guest workspace。
