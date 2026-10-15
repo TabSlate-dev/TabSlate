@@ -1,4 +1,8 @@
 import * as React from "react";
+import { useNavigate } from "react-router-dom";
+import { findVisibleDuplicates } from "@/lib/duplicate-lookup";
+import { revealBookmark } from "@/lib/reveal-bookmark";
+import { DuplicateNotice } from "@/components/dashboard/shared/duplicate-notice";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +23,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChevronDown, FolderPlus } from "lucide-react";
-import { useBookmarksStore } from "@/store/bookmarks-store";
+import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { CollectionDialog } from "@/components/dashboard/sidebar/collection-dialog";
 import { useTranslation } from "@/hooks/use-translation";
@@ -61,10 +65,43 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
   const [collectionMenuOpen, setCollectionMenuOpen] = React.useState(false);
   const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
+  const navigate = useNavigate();
+  const bookmarks = useBookmarksStore(s => open ? s.bookmarks : null);
+  const [urlInput, setUrlInput] = React.useState("");
+  const [duplicateUrl, setDuplicateUrl] = React.useState("");
+
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const timer = setTimeout(() => setDuplicateUrl(urlInput.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [open, urlInput]);
+
+  const duplicateMatches = React.useMemo(() => {
+    if (!duplicateUrl || !bookmarks) {
+      return [];
+    }
+    const candidate = /^https?:\/\//i.test(duplicateUrl) ? duplicateUrl : `https://${duplicateUrl}`;
+    return findVisibleDuplicates(
+      candidate,
+      { bookmarks: bookmarksAsArray(bookmarks), collections, workspaces },
+      "loose",
+    );
+  }, [duplicateUrl, bookmarks, collections, workspaces]);
+
+  const handleOpenExisting = (bookmarkId: string) => {
+    onOpenChange(false);
+    navigate("/");
+    revealBookmark(bookmarkId);
+  };
+
   // Reset form when dialog opens
   React.useEffect(() => {
     if (open) {
       setCollectionId(defaultCollectionId);
+      setUrlInput("");
+      setDuplicateUrl("");
       setSelectedTags([]);
       setTargetUnavailable(false);
     }
@@ -172,12 +209,15 @@ export function AddBookmarkDialog({ open, onOpenChange }: AddBookmarkDialogProps
             <Field>
               <FieldLabel htmlFor="bm-url">{t("addBookmark_fieldUrl")}</FieldLabel>
               <Input
+                value={urlInput}
+                onChange={(event) => setUrlInput(event.target.value)}
                 id="bm-url"
                 name="url"
                 placeholder={t("addBookmark_placeholderUrl")}
                 required
               />
             </Field>
+            <DuplicateNotice matches={duplicateMatches} onOpenExisting={handleOpenExisting} />
             <Field>
               <FieldLabel htmlFor="bm-description">{t("addBookmark_fieldDesc")}</FieldLabel>
               <Input

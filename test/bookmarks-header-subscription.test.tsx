@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { installAppModules, setupDom, teardownDom } from "./helpers/dom-environment";
 import { createModuleReplacer } from "./helpers/module-replacer";
 import { act, createElement, Profiler } from "react";
+import { MemoryRouter } from "react-router-dom";
 
 const replacer = createModuleReplacer();
 let createRoot: typeof import("react-dom/client").createRoot;
@@ -36,12 +37,16 @@ function renderHeader() {
   act(() => {
     root.render(
       createElement(
-        SidebarProvider,
+        MemoryRouter,
         null,
         createElement(
-          Profiler,
-          { id: "bookmarks-header", onRender: () => { commits += 1; } },
-          createElement(BookmarksHeader),
+          SidebarProvider,
+          null,
+          createElement(
+            Profiler,
+            { id: "bookmarks-header", onRender: () => { commits += 1; } },
+            createElement(BookmarksHeader),
+          ),
         ),
       ),
     );

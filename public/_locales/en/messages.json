@@ -1706,5 +1706,38 @@
   },
   "collectionDialog_save": {
     "message": "Save"
+  },
+  "duplicateNotice_alreadySaved": {
+    "message": "Already saved in $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "duplicateNotice_location": {
+    "message": "$1 · $2",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "duplicateNotice_uncategorized": {
+    "message": "Uncategorized"
+  },
+  "duplicateNotice_more": {
+    "message": "and $1 more",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "duplicateNotice_openExisting": {
+    "message": "Open existing bookmark"
   }
 }

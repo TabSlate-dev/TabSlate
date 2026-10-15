@@ -1706,5 +1706,38 @@
   },
   "collectionDialog_save": {
     "message": "保存"
+  },
+  "duplicateNotice_alreadySaved": {
+    "message": "已保存在 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "duplicateNotice_location": {
+    "message": "$1 · $2",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "duplicateNotice_uncategorized": {
+    "message": "未分类"
+  },
+  "duplicateNotice_more": {
+    "message": "另有 $1 处",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "duplicateNotice_openExisting": {
+    "message": "打开已有书签"
   }
 }
