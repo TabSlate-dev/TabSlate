@@ -1,6 +1,13 @@
 // @ts-expect-error Bun provides this test module at runtime.
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
 import { ApiError } from "@/lib/api";
+
+// The tests below replace this module for the rest of the run, so keep the current one to put back afterwards.
+const realBrowserEnv = { ...(await import("@/lib/browser/env")) };
+
+afterAll(() => {
+  mock.module("@/lib/browser/env", () => realBrowserEnv);
+});
 
 function importApiModule() {
   return import(`../lib/api.ts?test=${Date.now()}-${Math.random()}`);
@@ -23,6 +30,8 @@ describe("api Firefox network error diagnostics", () => {
   test("maps Firefox fetch failures to an actionable ApiError", async () => {
     mock.module("@/lib/browser/env", () => ({
       isFirefoxBuild: () => true,
+      getBrowserBuild: () => "firefox",
+      isChromiumBuild: () => false,
     }));
     stubAccountDataConsent(true);
 
@@ -47,6 +56,8 @@ describe("api Firefox data collection consent", () => {
   test("never contacts the sync server before account data consent is granted", async () => {
     mock.module("@/lib/browser/env", () => ({
       isFirefoxBuild: () => true,
+      getBrowserBuild: () => "firefox",
+      isChromiumBuild: () => false,
     }));
     const contains = stubAccountDataConsent(false);
     const fetchMock = mock(async () => new Response("{}"));

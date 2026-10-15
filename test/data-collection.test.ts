@@ -1,5 +1,12 @@
 // @ts-expect-error Bun provides this test module at runtime.
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, describe, expect, mock, test } from "bun:test";
+
+// The tests below replace this module for the rest of the run, so keep the current one to put back afterwards.
+const realBrowserEnv = { ...(await import("@/lib/browser/env")) };
+
+afterAll(() => {
+  mock.module("@/lib/browser/env", () => realBrowserEnv);
+});
 
 const ACCOUNT_DATA_COLLECTION = {
   data_collection: [
@@ -15,6 +22,8 @@ const originalChrome = (globalThis as { chrome?: unknown }).chrome;
 function useBuild(browser: "chrome" | "firefox") {
   mock.module("@/lib/browser/env", () => ({
     isFirefoxBuild: () => browser === "firefox",
+    getBrowserBuild: () => browser,
+    isChromiumBuild: () => browser !== "firefox",
   }));
 }
 

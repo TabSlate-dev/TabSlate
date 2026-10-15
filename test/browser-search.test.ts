@@ -1,5 +1,12 @@
 // @ts-expect-error Bun provides this test module at runtime.
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+
+// The tests below replace this module for the rest of the run, so keep the current one to put back afterwards.
+const realBrowserEnv = { ...(await import("@/lib/browser/env")) };
+
+afterAll(() => {
+  mock.module("@/lib/browser/env", () => realBrowserEnv);
+});
 
 async function importSearchModule() {
   return import(`../lib/browser/search.ts?test=${Date.now()}-${Math.random()}`);
@@ -9,6 +16,8 @@ describe("runWebSearch", () => {
   beforeEach(() => {
     mock.module("@/lib/browser/env", () => ({
       isFirefoxBuild: () => false,
+      getBrowserBuild: () => "chrome",
+      isChromiumBuild: () => true,
     }));
 
     globalThis.chrome = {
@@ -39,6 +48,8 @@ describe("runWebSearch", () => {
   test("dispatches to browser.search.query for Firefox builds", async () => {
     mock.module("@/lib/browser/env", () => ({
       isFirefoxBuild: () => true,
+      getBrowserBuild: () => "firefox",
+      isChromiumBuild: () => false,
     }));
 
     const { runWebSearch } = await importSearchModule();

@@ -1,218 +1,221 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { runsInIsolatedProcess } from "./helpers/isolated-run";
 
-const putCalls = [];
-const deleteCalls = [];
-const bulkWriteCalls = [];
-const decrementCalls = [];
-const trashUsageCalls = [];
-const trashedStore = new Map();
+if (runsInIsolatedProcess(import.meta.filename)) {
+  const putCalls = [];
+  const deleteCalls = [];
+  const bulkWriteCalls = [];
+  const decrementCalls = [];
+  const trashUsageCalls = [];
+  const trashedStore = new Map();
 
-mock.module("@/lib/idb", () => ({
-  idbGet: async () => undefined,
-  idbGetAll: async () => [],
-  idbGetByIndex: async () => [],
-  idbGetMany: async (_store, keys) => keys.map((key) => trashedStore.get(key)),
-  idbPut: async (store, value) => {
-    putCalls.push({ store, value });
-    if (store === "trashed-bookmarks") {
-      trashedStore.set(value.id, value);
-    }
-  },
-  idbDelete: async (store, key) => {
-    deleteCalls.push({ store, key });
-    if (store === "trashed-bookmarks") {
-      trashedStore.delete(key);
-    }
-  },
-  idbBulkWrite: async (ops) => {
-    bulkWriteCalls.push(ops);
-    for (const op of ops) {
-      if (op.store !== "trashed-bookmarks") {
-        continue;
+  mock.module("@/lib/idb", () => ({
+    idbGet: async () => undefined,
+    idbGetAll: async () => [],
+    idbGetByIndex: async () => [],
+    idbGetMany: async (_store, keys) => keys.map((key) => trashedStore.get(key)),
+    idbPut: async (store, value) => {
+      putCalls.push({ store, value });
+      if (store === "trashed-bookmarks") {
+        trashedStore.set(value.id, value);
       }
-      if (op.type === "put") {
-        trashedStore.set(op.value.id, op.value);
+    },
+    idbDelete: async (store, key) => {
+      deleteCalls.push({ store, key });
+      if (store === "trashed-bookmarks") {
+        trashedStore.delete(key);
       }
-      if (op.type === "delete") {
-        trashedStore.delete(op.key);
+    },
+    idbBulkWrite: async (ops) => {
+      bulkWriteCalls.push(ops);
+      for (const op of ops) {
+        if (op.store !== "trashed-bookmarks") {
+          continue;
+        }
+        if (op.type === "put") {
+          trashedStore.set(op.value.id, op.value);
+        }
+        if (op.type === "delete") {
+          trashedStore.delete(op.key);
+        }
       }
-    }
-  },
-}));
+    },
+  }));
 
-mock.module("@/lib/sync-engine", () => ({
-  syncEngine: null,
-}));
+  mock.module("@/lib/sync-engine", () => ({
+    syncEngine: null,
+  }));
 
-mock.module("@/store/plan-store", () => ({
-  usePlanStore: {
-    getState: () => ({
-      decrementUsage: (resource, count) => {
-        decrementCalls.push({ resource, count });
-      },
-      incrementUsage: () => {},
-      moveUsageToTrash: (resource, count) => {
-        trashUsageCalls.push(["moveToTrash", resource, count]);
-      },
-      restoreUsageFromTrash: (resource, count) => {
-        trashUsageCalls.push(["restoreFromTrash", resource, count]);
-      },
-      ensureFresh: async () => {},
-      limits: null,
-      showQuotaAlert: () => {},
-      fetchPlan: async () => {},
-      usage: { bookmarks: 0 },
-    }),
-  },
-  guardQuota: (_resource, _currentCount, fallback, fn) => {
-    const value = fn();
-    return value ?? fallback;
-  },
-}));
-
-mock.module("@/lib/id", () => ({
-  generateId: () => "generated-id",
-}));
-
-const bookmarkUtils = await import("../lib/bookmark-utils.ts");
-mock.module("@/lib/bookmark-utils", () => ({
-  ...bookmarkUtils,
-  normalizeFavicon: (favicon) => favicon,
-}));
-
-const { useBookmarksStore } = await import(`../store/bookmarks-store.ts?test=${Date.now()}-${Math.random()}`);
-
-function createBookmark(id, overrides = {}) {
-  return {
-    id,
-    title: `Bookmark ${id}`,
-    url: `https://example.com/${id}`,
-    description: "",
-    favicon: "",
-    collectionId: "collection-1",
-    tags: [],
-    createdAt: "2026-05-28T00:00:00.000Z",
-    isFavorite: false,
-    seq: 5,
-    deletedAt: 1,
-    ...overrides,
-  };
-}
-
-describe("bookmarks store offline permanent delete", () => {
-  beforeEach(() => {
-    putCalls.length = 0;
-    deleteCalls.length = 0;
-    bulkWriteCalls.length = 0;
-    decrementCalls.length = 0;
-    trashUsageCalls.length = 0;
-    trashedStore.clear();
-    useBookmarksStore.setState({
-      bookmarks: [],
-      archivedBookmarks: [],
-      trashedBookmarks: [],
-      _archivedLoaded: true,
-      _trashedLoaded: true,
-    });
-  });
-
-  test("keeps an IDB tombstone instead of deleting it", async () => {
-    const bookmark = createBookmark("bookmark-offline");
-    trashedStore.set(bookmark.id, bookmark);
-    useBookmarksStore.setState({
-      trashedBookmarks: [bookmark],
-      _trashedLoaded: true,
-    });
-
-    useBookmarksStore.getState().permanentlyDelete(bookmark.id);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(deleteCalls).toHaveLength(0);
-    expect(putCalls).toContainEqual(
-      expect.objectContaining({
-        store: "trashed-bookmarks",
-        value: expect.objectContaining({
-          id: "bookmark-offline",
-          seq: 0,
-          isTrashed: 2,
-        }),
+  mock.module("@/store/plan-store", () => ({
+    usePlanStore: {
+      getState: () => ({
+        decrementUsage: (resource, count) => {
+          decrementCalls.push({ resource, count });
+        },
+        incrementUsage: () => {},
+        moveUsageToTrash: (resource, count) => {
+          trashUsageCalls.push(["moveToTrash", resource, count]);
+        },
+        restoreUsageFromTrash: (resource, count) => {
+          trashUsageCalls.push(["restoreFromTrash", resource, count]);
+        },
+        ensureFresh: async () => {},
+        limits: null,
+        showQuotaAlert: () => {},
+        fetchPlan: async () => {},
+        usage: { bookmarks: 0 },
       }),
-    );
-    expect(decrementCalls).toHaveLength(0);
-  });
+    },
+    guardQuota: (_resource, _currentCount, fallback, fn) => {
+      const value = fn();
+      return value ?? fallback;
+    },
+  }));
 
-  test("offline permanentlyDeleteBatch writes seq-0 permanent tombstones and keeps quota unchanged", async () => {
-    const firstBookmark = createBookmark("bookmark-batch-1");
-    const secondBookmark = createBookmark("bookmark-batch-2");
-    trashedStore.set(firstBookmark.id, firstBookmark);
-    trashedStore.set(secondBookmark.id, secondBookmark);
-    useBookmarksStore.setState({
-      trashedBookmarks: [firstBookmark, secondBookmark],
-      _trashedLoaded: true,
+  mock.module("@/lib/id", () => ({
+    generateId: () => "generated-id",
+  }));
+
+  const bookmarkUtils = await import("../lib/bookmark-utils.ts");
+  mock.module("@/lib/bookmark-utils", () => ({
+    ...bookmarkUtils,
+    normalizeFavicon: (favicon) => favicon,
+  }));
+
+  const { useBookmarksStore } = await import(`../store/bookmarks-store.ts?test=${Date.now()}-${Math.random()}`);
+
+  function createBookmark(id, overrides = {}) {
+    return {
+      id,
+      title: `Bookmark ${id}`,
+      url: `https://example.com/${id}`,
+      description: "",
+      favicon: "",
+      collectionId: "collection-1",
+      tags: [],
+      createdAt: "2026-05-28T00:00:00.000Z",
+      isFavorite: false,
+      seq: 5,
+      deletedAt: 1,
+      ...overrides,
+    };
+  }
+
+  describe("bookmarks store offline permanent delete", () => {
+    beforeEach(() => {
+      putCalls.length = 0;
+      deleteCalls.length = 0;
+      bulkWriteCalls.length = 0;
+      decrementCalls.length = 0;
+      trashUsageCalls.length = 0;
+      trashedStore.clear();
+      useBookmarksStore.setState({
+        bookmarks: [],
+        archivedBookmarks: [],
+        trashedBookmarks: [],
+        _archivedLoaded: true,
+        _trashedLoaded: true,
+      });
     });
 
-    useBookmarksStore.getState().permanentlyDeleteBatch([firstBookmark.id, secondBookmark.id]);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    test("keeps an IDB tombstone instead of deleting it", async () => {
+      const bookmark = createBookmark("bookmark-offline");
+      trashedStore.set(bookmark.id, bookmark);
+      useBookmarksStore.setState({
+        trashedBookmarks: [bookmark],
+        _trashedLoaded: true,
+      });
 
-    expect(deleteCalls).toHaveLength(0);
-    expect(bulkWriteCalls).toEqual([
-      [
+      useBookmarksStore.getState().permanentlyDelete(bookmark.id);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(deleteCalls).toHaveLength(0);
+      expect(putCalls).toContainEqual(
         expect.objectContaining({
-          type: "put",
           store: "trashed-bookmarks",
-          value: expect.objectContaining({ id: "bookmark-batch-1", seq: 0, isTrashed: 2 }),
+          value: expect.objectContaining({
+            id: "bookmark-offline",
+            seq: 0,
+            isTrashed: 2,
+          }),
         }),
-        expect.objectContaining({
-          type: "put",
-          store: "trashed-bookmarks",
-          value: expect.objectContaining({ id: "bookmark-batch-2", seq: 0, isTrashed: 2 }),
-        }),
-      ],
-    ]);
-    expect(trashedStore.get("bookmark-batch-1")).toEqual(
-      expect.objectContaining({ id: "bookmark-batch-1", seq: 0, isTrashed: 2 }),
-    );
-    expect(trashedStore.get("bookmark-batch-2")).toEqual(
-      expect.objectContaining({ id: "bookmark-batch-2", seq: 0, isTrashed: 2 }),
-    );
-    expect(useBookmarksStore.getState().trashedBookmarks).toEqual([]);
-    expect(decrementCalls).toHaveLength(0);
-  });
-
-  test("trashCollectionBookmarks returns a Promise so callers can await it", async () => {
-    const bookmark = createBookmark("bookmark-active");
-    useBookmarksStore.setState({
-      bookmarks: [bookmark],
-      archivedBookmarks: [],
-      trashedBookmarks: [],
-      _archivedLoaded: true,
-      _trashedLoaded: true,
+      );
+      expect(decrementCalls).toHaveLength(0);
     });
 
-    const action = Reflect.get(useBookmarksStore.getState(), "trashCollectionBookmarks");
-    const result = Reflect.apply(action, useBookmarksStore.getState(), ["collection-1"]);
+    test("offline permanentlyDeleteBatch writes seq-0 permanent tombstones and keeps quota unchanged", async () => {
+      const firstBookmark = createBookmark("bookmark-batch-1");
+      const secondBookmark = createBookmark("bookmark-batch-2");
+      trashedStore.set(firstBookmark.id, firstBookmark);
+      trashedStore.set(secondBookmark.id, secondBookmark);
+      useBookmarksStore.setState({
+        trashedBookmarks: [firstBookmark, secondBookmark],
+        _trashedLoaded: true,
+      });
 
-    expect(result).toBeInstanceOf(Promise);
-    await result;
-    expect(bulkWriteCalls).toHaveLength(1);
-  });
+      useBookmarksStore.getState().permanentlyDeleteBatch([firstBookmark.id, secondBookmark.id]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
-  test("trashBookmark moves quota to trash and restoreFromTrash moves it back", async () => {
-    const bookmark = createBookmark("bookmark-single");
-    useBookmarksStore.setState({
-      bookmarks: new Map([[bookmark.id, bookmark]]),
-      archivedBookmarks: [],
-      trashedBookmarks: [],
-      countsByCollection: {},
-      _archivedLoaded: true,
-      _trashedLoaded: true,
+      expect(deleteCalls).toHaveLength(0);
+      expect(bulkWriteCalls).toEqual([
+        [
+          expect.objectContaining({
+            type: "put",
+            store: "trashed-bookmarks",
+            value: expect.objectContaining({ id: "bookmark-batch-1", seq: 0, isTrashed: 2 }),
+          }),
+          expect.objectContaining({
+            type: "put",
+            store: "trashed-bookmarks",
+            value: expect.objectContaining({ id: "bookmark-batch-2", seq: 0, isTrashed: 2 }),
+          }),
+        ],
+      ]);
+      expect(trashedStore.get("bookmark-batch-1")).toEqual(
+        expect.objectContaining({ id: "bookmark-batch-1", seq: 0, isTrashed: 2 }),
+      );
+      expect(trashedStore.get("bookmark-batch-2")).toEqual(
+        expect.objectContaining({ id: "bookmark-batch-2", seq: 0, isTrashed: 2 }),
+      );
+      expect(useBookmarksStore.getState().trashedBookmarks).toEqual([]);
+      expect(decrementCalls).toHaveLength(0);
     });
 
-    useBookmarksStore.getState().trashBookmark(bookmark.id);
-    expect(trashUsageCalls).toEqual([["moveToTrash", "bookmark", undefined]]);
+    test("trashCollectionBookmarks returns a Promise so callers can await it", async () => {
+      const bookmark = createBookmark("bookmark-active");
+      useBookmarksStore.setState({
+        bookmarks: [bookmark],
+        archivedBookmarks: [],
+        trashedBookmarks: [],
+        _archivedLoaded: true,
+        _trashedLoaded: true,
+      });
 
-    trashUsageCalls.length = 0;
-    useBookmarksStore.getState().restoreFromTrash(bookmark.id);
-    expect(trashUsageCalls).toEqual([["restoreFromTrash", "bookmark", undefined]]);
+      const action = Reflect.get(useBookmarksStore.getState(), "trashCollectionBookmarks");
+      const result = Reflect.apply(action, useBookmarksStore.getState(), ["collection-1"]);
+
+      expect(result).toBeInstanceOf(Promise);
+      await result;
+      expect(bulkWriteCalls).toHaveLength(1);
+    });
+
+    test("trashBookmark moves quota to trash and restoreFromTrash moves it back", async () => {
+      const bookmark = createBookmark("bookmark-single");
+      useBookmarksStore.setState({
+        bookmarks: new Map([[bookmark.id, bookmark]]),
+        archivedBookmarks: [],
+        trashedBookmarks: [],
+        countsByCollection: {},
+        _archivedLoaded: true,
+        _trashedLoaded: true,
+      });
+
+      useBookmarksStore.getState().trashBookmark(bookmark.id);
+      expect(trashUsageCalls).toEqual([["moveToTrash", "bookmark", undefined]]);
+
+      trashUsageCalls.length = 0;
+      useBookmarksStore.getState().restoreFromTrash(bookmark.id);
+      expect(trashUsageCalls).toEqual([["restoreFromTrash", "bookmark", undefined]]);
+    });
   });
-});
+}

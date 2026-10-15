@@ -348,18 +348,11 @@ Object.defineProperty(globalThis, "indexedDB", {
   configurable: true,
   value: fakeIndexedDB,
 });
-const canonicalIdb = await import("../lib/idb.ts");
-const canonicalIdbModule: unknown = canonicalIdb;
-let idbMockedByAnotherTest = true;
-if (typeof canonicalIdbModule === "object" && canonicalIdbModule !== null &&
-  "getDB" in canonicalIdbModule && typeof canonicalIdbModule.getDB === "function") {
-  const canonicalDatabase: unknown = await canonicalIdbModule.getDB();
-  idbMockedByAnotherTest = typeof canonicalDatabase !== "object" ||
-    canonicalDatabase === null || !("transaction" in canonicalDatabase) ||
-    typeof canonicalDatabase.transaction !== "function";
-}
 
-if (idbMockedByAnotherTest && process.env.TABSLATE_AGGREGATE_ISOLATED !== "1") {
+// Always run in a subprocess, like guest-workspace-orphan-recovery.test.ts. The tests need the real lib/idb, and
+// probing the shared process for one is unreliable: any file that loads lib/idb while indexedDB is a stub that never
+// settles (setupDom, bookmarks-header-subscription) leaves getDB() pending forever, which hangs the probe itself.
+if (process.env.TABSLATE_AGGREGATE_ISOLATED !== "1") {
   test("runs Workspace aggregate persistence tests isolated from process-global module mocks", () => {
     const result = spawnSync(
       "bun",
