@@ -132,8 +132,8 @@ const tabs = React.useMemo(
 - **Alert** (`components/ui/alert.tsx`) — 标准 shadcn Alert，用于内联提示和浮动通知（duplicate tab 检测等）
 - **InputOTP** (`components/ui/input-otp.tsx`) — 6 格 OTP 输入框（基于 `input-otp` 包），用于邮箱验证和密码重置
 - **QuotaAlert** (`components/ui/quota-alert.tsx`) — 配额上限通知，fixed 定位，订阅 `usePlanStore.quotaAlert`，3 秒自动消失；已挂载于 `App.tsx` 根部，无需在各调用方处理
-- **SearchBox** (`components/dashboard/search-box.tsx`) — 新标签页英雄区和集合内联搜索栏，合并了原 `HeroSection` 内联搜索与已删除的 `CollectionSearch`；Props：`collectionId?: string`（传入时按集合过滤书签结果，`undefined` 则搜全部；空字符串 `""` 代表未分类集合，同样会过滤，用 `collectionId !== undefined` 判断而非 `collectionId ?`）、`size?: "sm" | "lg"`、`className?: string`；下拉结果顺序：open tabs → bookmarks → search engine fallback；`getEngineIconSrc(engine)` 已导出供复用
-- **SearchPanel** (`components/search/search-panel.tsx`) — 全页内联搜索浮层，用于 BookmarksContent 顶部（smartOpen 模式，Ctrl+K 唤起）和 search popup；Props：`openTabs`、`onClose?`、`autoFocus?`、`smartOpen?`；fallback 搜索使用 `useSettingsStore` 中第一个 enabled 引擎（非硬编码 Google）
+- **SearchBox** (`components/dashboard/search-box.tsx`) — 新标签页英雄区和集合内联搜索栏，合并了原 `HeroSection` 内联搜索与已删除的 `CollectionSearch`；Props：`collectionId?: string`（传入时按集合过滤书签结果，`undefined` 则搜全部；空字符串 `""` 代表未分类集合，同样会过滤，用 `collectionId !== undefined` 判断而非 `collectionId ?`）、`size?: "sm" | "lg"`、`className?: string`；下拉结果顺序：open tabs → bookmarks → 网页搜索回退（`runWebSearch`，`CURRENT_TAB`，详见注意事项「网页搜索回退」）
+- **SearchPanel** (`components/search/search-panel.tsx`) — 独立搜索面板，下拉结果顺序：bookmarks → open tabs → 网页搜索回退。目前只有 search popup 页面（`entrypoints/search/App.tsx`，构建为 `search.html`）使用：以 `autoFocus` 渲染、不传 `smartOpen`，`onClose` 调 `window.close()`；代码中目前没有任何入口打开 `search.html`。BookmarksContent 已不再嵌入 SearchPanel，newtab 页的搜索入口是 `SearchBox`（快捷键行为见注意事项「全局搜索 Overlay」）。Props：`openTabs`、`onClose?`、`autoFocus?`、`smartOpen?`（为 true 时书签经 `smartOpenUrl` 打开：已打开则切换过去，否则在当前页跳转；默认 `chrome.tabs.create` 新开标签页）；fallback 网页搜索以 `NEW_TAB` 调用 `runWebSearch`，由浏览器默认搜索引擎执行（详见注意事项「网页搜索回退」）
 - **Select** (`components/ui/select.tsx`) — 标准 shadcn Select（基于 `@radix-ui/react-select`），用于 ImportDialog 等表单
 - **ActiveFilterChips** (`components/dashboard/shared/active-filter-chips.tsx`) — 当前标签筛选的 chip 栏：每个 chip 带移除按钮，另有一键清除；`includeTypeFilter` 时还显示类型筛选（仅书签库使用）。`BookmarksContent` 与 `FavoritesContent` 共用，不要各自复制
 - **shadcn/ui** (`components/ui/`) — Button、Input、Dialog 等基础组件
@@ -178,7 +178,6 @@ Dialog 必须使用标准 shadcn 结构，禁止在 `DialogContent` 上添加破
 | Key | 格式 | 用途 |
 |---|---|---|
 | `tabslate-auth` | Zustand JSON `{state: {...}}`（不含 accessToken） | 用户认证持久部分：user、refreshToken、serverUrl、otpSentAt |
-| `tabslate-search-engines` | `JSON.stringify(SearchEngine[])` | 用户搜索引擎配置，供 `SearchOverlay`（content script）读取；由 newtab `StoreGate` 在 `searchEngines` 变更时写入 |
 | `tabslate-analytics-id` | 随机字符串（`generateId()`） | 匿名分析会话 ID；首次使用时由 `lib/analytics.ts` 生成并持久化；不含任何可识别个人信息，不与账号关联；Firefox 构建不启用分析，不会生成 |
 
 适配器：`lib/auth-storage-adapter.ts`（透明合并两个 storage 供 Zustand `persist` 中间件使用；含从旧 `accessToken`-in-local 的迁移路径）。
@@ -202,7 +201,7 @@ v3 迁移（`oldVersion < 3`）：为 `groups` 添加 `workspaceId` 索引，供
 | `groups` | `id` | `workspaceId` | 保存的标签组 |
 | `group-tabs` | `id` | `groupId` | 保存组内的 tab |
 | `tab-group-titles` | `groupId` | — | Chrome tab group 完整标题（compact 模式下 Chrome 侧只存首字母）；keyed by ephemeral Chrome group ID，重启后由 `loadTabs` 通过两层恢复逻辑重新关联 |
-| `kv` | `key` | — | 键值对：`activeWorkspaceId`、`compactGroupTitles`、`localSeq`、`sync-leader`、`searchEngines`、`bookmark-view-prefs`（书签视图模式与排序的本机副本 `{ viewMode, sortBy, updatedAt, dirty }`，见 `lib/view-preferences.ts`）、`guest-workspace-provenance-v1`（自动 guest seed 的 workspace/default collection 身份）、`sync-conflicts-v1`（持久化同步冲突）、`workspace-lifecycle-intents-v1`（待确认的 workspace 生命周期意图）、`workspace-lifecycle-deferred-sync-v1`（按 workspace 隔离的延迟推送快照）、`guest-workspace-orphan-recovery-v1`（legacy guest 孤儿聚合恢复标记）；按 `origin + userId` 作用域的 `workspace-parent-tombstone-capability-v1:*` 与 `workspace-parent-tombstone-full-pull-v1:*`；以及 compact group 稳定标题条目 `compact-group-title:${color}:${firstChar}`（详见 Compact group title 注意事项） |
+| `kv` | `key` | — | 键值对：`activeWorkspaceId`、`compactGroupTitles`、`localSeq`、`sync-leader`、`bookmark-view-prefs`（书签视图模式与排序的本机副本 `{ viewMode, sortBy, updatedAt, dirty }`，见 `lib/view-preferences.ts`）、`guest-workspace-provenance-v1`（自动 guest seed 的 workspace/default collection 身份）、`sync-conflicts-v1`（持久化同步冲突）、`workspace-lifecycle-intents-v1`（待确认的 workspace 生命周期意图）、`workspace-lifecycle-deferred-sync-v1`（按 workspace 隔离的延迟推送快照）、`guest-workspace-orphan-recovery-v1`（legacy guest 孤儿聚合恢复标记）；按 `origin + userId` 作用域的 `workspace-parent-tombstone-capability-v1:*` 与 `workspace-parent-tombstone-full-pull-v1:*`；以及 compact group 稳定标题条目 `compact-group-title:${color}:${firstChar}`（详见 Compact group title 注意事项） |
 
 #### 跨进程消息信号（不存储，runtime 消息）
 
@@ -211,11 +210,20 @@ v3 迁移（`oldVersion < 3`）：为 `groups` 添加 `workspaceId` 索引，供
 | `TABS_CHANGED` | background → newtab | 任意 tab/group 增删改 |
 | `BOOKMARKS_CHANGED` | background → newtab | background 回退写 IDB 后通知刷新 |
 | `ADD_BOOKMARK` | popup/background → newtab | 保存书签（优先路径）；响应 `AddBookmarkResponse`：`saved` + 非空 `bookmarkId` 或 `rejected`。两个发送方都只把带非空 `bookmarkId` 的 `saved` 视为成功：background 显示成功角标，popup 显示已保存；收到 `rejected` 时都不回退写入，popup 显示未保存提示（`popup_saveRejected`）。`sendMessage` 抛错时两者都回退直写 IndexedDB；没有回复时 popup 回退，background 不回退也不显示角标 |
-| `OPEN_SEARCH` | background → active tab | 触发全局搜索快捷键，通知 content script 挂载 SearchOverlay |
-| `GET_OPEN_TABS` | content script → background | SearchOverlay 获取当前所有打开的标签页 |
-| `FOCUS_TAB` | content script → background | SearchOverlay 选中某个标签页时请求切换 |
-| `OPEN_TAB` | content script → background | SearchOverlay 打开新标签页（content script 无法直接调用 `chrome.tabs.create`） |
-| `SEARCH_BOOKMARKS` | content script → background | SearchOverlay 代理搜索请求，绕过跨域限制 |
+| `WORKSPACE_CHANGED` | popup → newtab | popup 新建标签（直接写 IDB `tags`）后通知所有 newtab 标签页，newtab 重新 `hydrate()` workspace store |
+| `AUTH_LOGOUT` | newtab → 其他扩展页面（其余 newtab、search popup） | `useAuthStore.logout()` 完成本地清理后广播，接收方调 `applyRemoteLogout()` 清除各自内存中的登录态 |
+| `GET_PAGE_INFO` | background / popup / newtab（`tabs-store`）→ content script | 保存书签前取页面信息（响应字段见注意事项「GET_PAGE_INFO 响应字段」）：右键菜单保存（background）、popup 打开时预取、`tabs-store` 把窗口/标签组存为集合时逐个标签页请求；经 `chrome.tabs.sendMessage` 发出，content script 未注册（未授予可选权限）或页面不可注入时请求失败，调用方静默回退到 tab 默认值 |
+| `OPEN_SEARCH` | background → active tab | 触发全局搜索快捷键：网页中由 content script 挂载搜索浮层 iframe；newtab 页派发 `tabslate-focus-search` 聚焦 `SearchBox` |
+| `REGISTER_SEARCH_OVERLAY_SESSION` | content script → background | 挂载浮层前注册本次浮层的 `session`（绑定发送方 tab；自注册或上次成功校验起 30 秒后过期） |
+| `VALIDATE_SEARCH_OVERLAY_SESSION` | search-overlay iframe → background | iframe 渲染 `SearchOverlay` 前校验 URL 中的 `session`；浮层打开期间每 10 秒再发一次作为心跳，校验成功即续期 |
+| `REVOKE_SEARCH_OVERLAY_SESSION` | content script → background | 浮层移除时撤销 `session` |
+| `GET_OPEN_TABS` | search-overlay iframe → background | SearchOverlay 获取当前所有打开的标签页 |
+| `FOCUS_TAB` | search-overlay iframe → background | SearchOverlay 选中标签页，或选中的书签已在某个标签页打开时请求切换 |
+| `OPEN_TAB` | search-overlay iframe → background | SearchOverlay 选中的书签尚未打开时，在新标签页打开 |
+| `SEARCH_BOOKMARKS` | search-overlay iframe → background | SearchOverlay 书签搜索；消息不携带认证信息，由 background 读取 `accessToken` 后请求服务端 |
+| `WEB_SEARCH` | search-overlay iframe → background | SearchOverlay 选中网页搜索回退时，由 background 调用 `runWebSearch`（`NEW_TAB`）交给浏览器默认搜索引擎 |
+
+类型定义见 `lib/messages.ts` 的 `ExtensionMessage`，但 `GET_PAGE_INFO` 不在其中：发送方直接传 `{ type: "GET_PAGE_INFO" }` 字面量，`entrypoints/content.ts` 的处理函数把 `message` 声明为 `{ type?: string }`，各调用方内联声明自己用到的响应字段。浮层相关消息都携带 `session`：注册/撤销只接受网页 content script 发送，其余只在发送方 URL 为 `search-overlay.html` 且 `session` 对该 tab 有效时处理，否则回 `{ ok: false }`（详见注意事项「全局搜索 Overlay」）。浮层关闭不走 runtime 消息，而是 iframe 向宿主页 `postMessage` `SEARCH_OVERLAY_CLOSE_MESSAGE`。
 
 ### Highlight Timer 模式
 
@@ -322,15 +330,22 @@ Dialog 中的简单表单可使用 React 19 的 `form action` 模式。**但对�
 - **保存反馈角标**（`lib/browser/action-badge.ts`）：右键保存成功显示绿色 ✓，严格重复时显示琥珀色角标与提示、不再保存。每个 tab 独立维护 3 秒清理计时器，并校验异步响应所属的 flash，防止旧反馈覆盖新反馈；结束时恢复原工具栏标题。
 
 - **不要在 newtab/search popup 以外使用 store**：popup 和 background 不加载 Zustand；保存书签时优先通过 `chrome.tabs.sendMessage` 发 `{ type: "ADD_BOOKMARK", data }` 消息到 newtab（newtab 在 `App` 的 `useEffect` 中监听），newtab 不存在时回退到直接写 IndexedDB `bookmarks`（`seq: 0`，下次 newtab 打开时由 `hydrate()` 载入、`sweepUnsynced` 补推）；newtab 回复 `rejected` 时不回退
-- **Tab 变更广播**：background.ts 监听所有 tab/group 事件，写 `tabslate-tabs-changed` 信号；newtab 的 `TabsPanel` 和 `GroupsPanel` 监听此信号触发 `loadTabs()`
+- **Tab 变更广播**：background.ts 监听 `chrome.tabs`（created / removed / activated / moved，以及 `status` 为 complete 或 title / groupId 变化的 updated）与 `chrome.tabGroups`（created / removed / updated / moved）事件，经 100ms 防抖的 `broadcastTabChange()` 用 `chrome.runtime.sendMessage({ type: "TABS_CHANGED" })` 广播，不写任何 storage key。newtab 里有两处独立监听：`App.tsx` 的 `AppRoutes` 收到后调 `useTabsStore.getState().loadTabs(true)`（静默刷新 store）；`TabsRail` 不走 store，监听同一消息后刷新自己的本地 state。`TabsPanel` / `GroupsPanel` 自己不监听该消息，只订阅 `useTabsStore`（挂载时各调一次 `loadTabs()`），随 store 更新而更新。
 - **Store hydration**：`App.tsx` 中的 `StoreGate` 等待 bookmarks、workspace、auth、groups、settings 五个 store 全部 hydrate 后再渲染 dashboard；guest 与已认证用户走相同的 dashboard 路由，不再使用全屏认证守卫。若 hydrate 完成后会话是 guest 且本地没有 workspace，`StoreGate` 创建一个含 Default collection 的空 guest workspace。guest 创建的 workspace、collection、bookmark 等实体保持 `seq === 0` 并持久化在 IndexedDB；用户完成邮箱验证后 Verified-only `SyncEngine` 启动，通过首次 enqueue 或 `sweepUnsynced()` 将这些本地实体并入账号。
 - **认证生命周期与 AuthDialog**（`entrypoints/newtab/App.tsx`、`components/auth/auth-dialog.tsx`）：guest 始终可使用 dashboard；Sidebar 顶部 “Not logged in” / “未登录” 用户卡片以 login mode 打开 `AuthDialog`，底部同名同步状态区域的 “Register now” 入口以 register mode 打开。`LoginForm` 在同一 Dialog 内切换 login / register / forgot-password / reset-password，不离开 dashboard。若已登录用户 `user.is_verified === false`，同一 `AuthDialog` 强制切换为 `VerifyEmailScreen`；此时隐藏关闭按钮并阻止 X、Escape、outside click，只有验证成功或 “use different account” 完成 logout 后才能离开。浏览器重启时 `accessToken` 因 session storage 清除而为 null、但 verified user 与 `refreshToken` 仍在时，dashboard 保持显示并由 `silentRefresh` 后台恢复 token；临时网络失败保留用户资料并显示 Offline。显式 logout 或 refresh 返回 401/403 时，auth store 先 `clearDB()` 并清除账号数据，再转为 guest；`StoreGate` 随后 reset 各账号 store，并在空库中初始化全新的 guest workspace。
 - **API 客户端**：`lib/api.ts` 是纯函数 HTTP 客户端，不持有状态；server URL 由 `useAuthStore.serverUrl` 管理（默认读取 `VITE_API_URL` 环境变量）。自托管用户可在登录页"Advanced"中修改。`searchBookmarks(serverUrl, accessToken, query)` 调用 `GET /search?q=`，最少 2 个字符。`register`/`login`/`resendVerification`/`forgotPassword` 接受可选 `lang?: string`，非空时注入 `Accept-Language` 请求头，供服务端发送本地化 OTP 邮件。
 - **GET_PAGE_INFO 响应字段**：content script 在 `GET_PAGE_INFO` 消息响应中返回 `{ title, url, selectedText, favicon, ogTitle, metaDescription }`。三条保存路径（tabs-store `_saveTabsToCollectionHelper`、popup `handleSave`、background 右键菜单）均优先使用 `ogTitle` 作为书签标题，`metaDescription` 作为描述；content script 无响应时静默回退到 tab 默认值。
-- **全局搜索 Overlay**：通过 `chrome.commands.onCommand("open-search")` (`Ctrl+Shift+K`) 触发。background 拦截后向当前 active tab 发送 `OPEN_SEARCH` 消息。Content script (`entrypoints/content.ts`) 收到后，使用 WXT 的 `createShadowRootUi` 将 `SearchOverlay` 组件注入到当前页面的 Shadow DOM 中（使用 `isolateEvents: true` 防止键盘事件冒泡到宿主页）。由于 content script 受宿主页面的 CORS 限制，Overlay 内的书签搜索请求通过 `SEARCH_BOOKMARKS { query }` 消息代理到 background 执行（**不携带认证信息**，background 自行从 `chrome.storage.session` 读取 `accessToken`）；打开新标签页通过 `OPEN_TAB` 消息代理（content script 无权直接调用 `chrome.tabs.create`）。搜索引擎图标（`search-engine-icon/*.svg`）需在 `wxt.config.ts` 的 `web_accessible_resources` 中声明，否则 Shadow DOM 内的 `<img>` 无法加载扩展资源。对于无法注入 content script 的页面（如 `chrome://`），扩展会静默忽略快捷键。
+- **全局搜索 Overlay**：通过 `chrome.commands.onCommand("open-search")` (`Ctrl+Shift+K`) 触发。background 拦截后向当前 active tab 发送 `OPEN_SEARCH` 消息：active tab 是 newtab 时，`App` 派发 `tabslate-focus-search` 窗口事件，由当前挂载的 `SearchBox` 聚焦输入框；普通网页由 content script 挂载搜索浮层。浮层运行在扩展源的 iframe 中（不再直接渲染进宿主页的 Shadow DOM），宿主页无法读取其 DOM、注入合成输入或监听其中的键盘输入；浮层的所有特权操作都由 background 校验 `session` 后执行。
+    - **content.ts**：用 `crypto.randomUUID()` 生成 `session`，先发 `REGISTER_SEARCH_OVERLAY_SESSION` 注册（失败则不挂载），再用 WXT 的 `createShadowRootUi`（`mode: "closed"`，宿主页拿不到 iframe 引用）挂载全屏 iframe，地址为 `search-overlay.html?session=…`；浮层移除（`onRemove`）时发 `REVOKE_SEARCH_OVERLAY_SESSION` 撤销会话。
+    - **search-overlay 页**（`entrypoints/search-overlay/main.tsx`）：用 `getSearchOverlaySession(location.search)` 读取 `session`，经 `VALIDATE_SEARCH_OVERLAY_SESSION` 校验通过后才渲染 `SearchOverlay`；缺少 `session` 或校验失败（包括消息发送失败）时不渲染，直接请求关闭，避免透明全屏 iframe 留在页面上拦截点击。渲染后每 `SEARCH_OVERLAY_HEARTBEAT_MS`（10 秒）再发一次 `VALIDATE_SEARCH_OVERLAY_SESSION` 作为心跳；心跳校验失败（会话已撤销或过期，或 service worker 重启后丢失会话）时停止心跳并请求关闭。标签页长时间在后台时浏览器会节流定时器，心跳可能晚于过期时间，浮层同样会自行关闭。关闭时向父窗口 `postMessage({ type: SEARCH_OVERLAY_CLOSE_MESSAGE }, "*")`（常量在 `lib/messages.ts`），content script 只接受 `event.source` 为自己 iframe 的消息并移除浮层。
+    - **background.ts**：`SearchOverlaySessionStore`（`lib/search-overlay-session.ts`）只接受 UUID 格式的 `session`，绑定注册它的 tab ID；自注册或上次成功校验起 30 秒过期——每次校验成功（浮层心跳以及下列各请求）都会续期，因此浮层打开期间持续有效，浮层消失却未撤销时至多 30 秒后失效；撤销后立即失效。会话只保存在 service worker 内存中，不写入 `chrome.storage.session`：心跳每次都会重置 service worker 的 30 秒空闲计时，浮层打开期间 worker 不会因空闲被回收；若 worker 仍被重启，会话丢失，下一次心跳校验失败后浮层自行关闭，再按快捷键即注册新会话。注册/撤销只接受网页 content script 发送（`sender.url` 不是扩展页面）；校验以及 `GET_OPEN_TABS` / `FOCUS_TAB` / `OPEN_TAB` / `SEARCH_BOOKMARKS` / `WEB_SEARCH`（均携带 `session`）只在 `sender.url` 为 `search-overlay.html` 且 `session` 对发送方 tab 有效时处理，否则回 `{ ok: false }`。
+    - **书签搜索与网页搜索**：`SEARCH_BOOKMARKS { session, query }` **不携带认证信息**，background 自行从 `chrome.storage.session` 读取 `accessToken` 后调用 `searchBookmarks`；`WEB_SEARCH { session, query }` 由 background 调用 `runWebSearch`（`NEW_TAB`）执行。
+    - **wxt.config.ts**：`search-overlay.html` 在 `web_accessible_resources` 中对 `<all_urls>` 声明，否则网页无法以 iframe 加载它。
+    - 对于无法注入 content script 的页面（如 `chrome://`），或未授予可选权限、content script 未注册时（见「可选权限与动态注入」），扩展会静默忽略快捷键。
+- **网页搜索回退**：扩展不提供搜索引擎选择，网页搜索一律交给浏览器默认搜索引擎。为符合 Chrome Web Store 单一用途政策（不能同时修改新标签页与搜索体验），v0.1.3 已移除自定义搜索引擎列表，**不要重新引入搜索引擎列表或硬编码搜索 URL**。统一入口为 `runWebSearch({ text, disposition })`（`lib/browser/search.ts`，依赖 manifest 的 `search` 权限）：Chromium 调 `chrome.search.query`，Firefox 调 `browser.search.query`。`SearchBox` 使用 `CURRENT_TAB`；`SearchPanel` 使用 `NEW_TAB`；`SearchOverlay` 发送 `WEB_SEARCH` 消息，由 background 以 `NEW_TAB` 执行。
 - **Prosopo 验证码**：`components/procaptcha.tsx` 是 iframe 包装组件（Chrome MV3 `script-src 'self'` CSP 限制，无法直接加载外部 JS）。扩展通过 `<iframe>` 嵌入后端的 `GET /captcha/widget` 页面，由服务端加载 Prosopo bundle，验证完成后通过 `postMessage` 传回 token。`VITE_PROSOPO_SITE_KEY` 为空时不渲染验证码。注册页在同 IP 注册数达到 `REGISTER_CAPTCHA_THRESHOLD` 后条件展示（`GET /auth/register-captcha-status`，进入注册模式时查询）；登录页在同邮箱失败次数达到阈值后条件展示（`GET /auth/login-captcha-status`，邮箱 blur 时查询）；OTP 重发页：挂载时调 `GET /auth/otp-captcha-status`；若 `captcha_required=true`，点击 Resend 弹出 Dialog 展示 Procaptcha，验证通过后 Dialog 自动关闭并触发发送；无需验证码时直接发送。
 - **可选权限与动态注入**：为了规避安装时的“读取并更改所有网站数据”警告，`<all_urls>` 被配置为 `optional_host_permissions`。
-    - **wxt.config.ts**：通过 `hooks.build:manifestGenerated` 钩子强制删除 WXT 自动生成的 `host_permissions`，并在 `VITE_OPENPANEL_URL` 非空时将其 origin 写入 `host_permissions`（供扩展页面免 CORS 直接 fetch 分析接口；仅 Chromium 构建，Firefox 构建不发送分析）。
+    - **wxt.config.ts**：通过 `hooks.build:manifestGenerated` 钩子强制删除 WXT 自动生成的 `host_permissions`，再按构建时的 env var 写入最多两个 origin（`${origin}/*`；变量为空或不是合法 URL 时跳过该项，两项都没有则 manifest 不含 `host_permissions`）：`VITE_API_URL`（同步服务器，所有浏览器构建都写入，含 Firefox）和 `VITE_OPENPANEL_URL`（分析接口，仅 Chromium 构建，Firefox 构建不发送分析）。作用都是让扩展页面和 background 里的 `fetch`（`lib/api.ts`、`lib/analytics.ts`）免 CORS 直接访问这些 origin；只覆盖构建时配置的地址，用户在登录页 “Advanced” 里改成的自托管地址不在其中。
     - **content.ts**：配置 `registration: "runtime"`，防止 WXT 将其静态写入 manifest。
     - **background.ts**：实现 `syncContentScriptRegistration`，在权限变更（`chrome.permissions.onAdded/onRemoved`）或启动时使用 `chrome.scripting` API 动态注册/注销内容脚本。
     - **SettingsDialog**：提供开关，调用 `chrome.permissions.request/remove` 触发系统授权弹窗。

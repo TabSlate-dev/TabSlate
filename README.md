@@ -36,7 +36,7 @@ It is an open-source alternative to [Toby](https://www.gettoby.com/) and [Workon
 
 ### Find the right thing without losing your place
 
-- Search open tabs, bookmarks, and enabled search engines from the new tab.
+- Search open tabs and bookmarks from the new tab, or search the web with your browser's default search engine.
 - Open the global search overlay with `Ctrl+Shift+K` on Windows and Linux, or `Command+Shift+K` on macOS.
 - Sort, filter, and work in grid or list views when a collection grows.
 

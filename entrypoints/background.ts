@@ -181,7 +181,7 @@ export default defineBackground(() => {
   chrome.tabGroups.onMoved.addListener(broadcastTabChange);
 
   // -------------------------------------------------------------------------
-  // Global search shortcut — send OPEN_SEARCH to active tab, fallback to popup
+  // Global search shortcut — send OPEN_SEARCH to the active tab
   // -------------------------------------------------------------------------
   chrome.commands.onCommand.addListener(async (command) => {
     if (command !== "open-search") { return; }
@@ -194,7 +194,7 @@ export default defineBackground(() => {
   });
 
   // -------------------------------------------------------------------------
-  // Message routing for content script — proxy tab APIs
+  // Search overlay message routing — sessions, then proxied extension APIs
   // -------------------------------------------------------------------------
   function getSenderTabID(sender: chrome.runtime.MessageSender): number | null {
     return typeof sender.tab?.id === "number" ? sender.tab.id : null;
@@ -256,7 +256,8 @@ export default defineBackground(() => {
       return true;
     }
     if (message.type === "SEARCH_BOOKMARKS") {
-      // Content scripts can't make cross-origin fetch calls; proxy through background.
+      // The overlay page holds no credentials: the message carries only the
+      // query, and background reads the access token itself.
       interface SessionAuthBlob {
         accessToken?: string | null;
       }
