@@ -7,6 +7,7 @@ import { click, getBySelector, render, setupDom, teardownDom, wait } from "./hel
 const replacer = createModuleReplacer();
 const originalChrome = Reflect.get(globalThis, "chrome");
 let permissionGranted = false;
+let requestFails = false;
 const resyncPreferences = mock(async () => {});
 let createRoot: typeof import("react-dom/client").createRoot;
 let usePreferenceSyncConsent: typeof import("@/hooks/use-preference-sync-consent").usePreferenceSyncConsent;
@@ -17,6 +18,9 @@ beforeAll(async () => {
     permissions: {
       contains: async () => permissionGranted,
       request: async () => {
+        if (requestFails) {
+          throw new Error("permissions.request may only be called from a user input handler");
+        }
         permissionGranted = true;
         return true;
       },
@@ -73,5 +77,26 @@ describe("usePreferenceSyncConsent", () => {
     expect(toggle.textContent).toBe("false");
     expect(resyncPreferences).toHaveBeenCalledTimes(1);
     view.unmount();
+  });
+
+  test("a failed consent request shows the permission Firefox actually holds", async () => {
+    permissionGranted = false;
+    const view = render({ createRoot }, createElement(Probe));
+    try {
+      await wait(0);
+      const toggle = getBySelector("#toggle");
+      expect(toggle.textContent).toBe("false");
+
+      // Firefox already holds the permission, but the prompt fails, e.g. after losing the user gesture.
+      permissionGranted = true;
+      requestFails = true;
+      click(toggle);
+      await wait(0);
+
+      expect(toggle.textContent).toBe("true");
+    } finally {
+      requestFails = false;
+      view.unmount();
+    }
   });
 });

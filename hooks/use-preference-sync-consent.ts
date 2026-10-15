@@ -38,12 +38,17 @@ export function usePreferenceSyncConsent(): { granted: boolean | null; setGrante
   const setGranted = useCallback((enabled: boolean) => {
     if (enabled) {
       // Firefox only accepts the request while handling the click, before any await.
-      void requestSettingsSyncConsent().then((value) => {
-        setGrantedState(value);
-        if (value) {
-          void useSettingsStore.getState().resyncPreferences();
-        }
-      });
+      void requestSettingsSyncConsent()
+        .then((value) => {
+          setGrantedState(value);
+          if (value) {
+            void useSettingsStore.getState().resyncPreferences();
+          }
+        })
+        .catch(() => {
+          // The prompt can fail, e.g. when Firefox no longer sees the user gesture; show the permission it holds.
+          void hasSettingsSyncConsent().then(setGrantedState);
+        });
       return;
     }
     void removeSettingsSyncConsent().then((removed) => {
