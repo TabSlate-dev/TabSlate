@@ -14,7 +14,8 @@ import type {
  * sensor.  When the pointer goes down on a `[data-drag-handle]` element the
  * drag activates with a tiny distance-1 constraint (virtually immediate).
  * Everywhere else it falls back to the configurable `activationConstraint`
- * passed via options (e.g. `{ delay: 250, tolerance: 5 }`).
+ * passed via options (e.g. `{ delay: 250, tolerance: 5 }`). A press inside an
+ * open menu (`role="menu"`) never activates.
  */
 
 function isDragHandle(event: React.PointerEvent): boolean {
@@ -37,13 +38,19 @@ export class SmartPointerSensor extends PointerSensor {
           return false;
         }
 
-        // If the pointer landed on a drag-handle, force near-immediate
-        // activation by patching the constraint to distance: 1.
         const target = (event.target as Element | null);
         const el = target?.nodeType === Node.TEXT_NODE
           ? target.parentElement
           : target;
 
+        // Menus render in portals, but React still bubbles their presses to
+        // the draggable they belong to; a press in a menu never starts a drag.
+        if (el?.closest?.('[role="menu"]')) {
+          return false;
+        }
+
+        // If the pointer landed on a drag-handle, force near-immediate
+        // activation by patching the constraint to distance: 1.
         if (el?.closest?.("[data-drag-handle]")) {
           options.activationConstraint = { distance: 1 };
         }

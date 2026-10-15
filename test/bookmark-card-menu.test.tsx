@@ -1,6 +1,7 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
-import { act, createElement } from "react";
+import { act, createElement, type PointerEvent as ReactPointerEvent } from "react";
+import type { PointerSensorOptions } from "@dnd-kit/core";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
 import {
   click,
@@ -13,6 +14,7 @@ import {
   rightClick,
   setupDom,
   teardownDom,
+  wait,
   type AppModules,
   type RenderResult,
 } from "./helpers/dom-environment";
@@ -32,6 +34,7 @@ const handleEdit = mock(() => {});
 const handleAddTags = mock(() => {});
 let app: AppModules;
 let BookmarkCard: typeof import("@/components/dashboard/bookmark-card").BookmarkCard;
+let SmartPointerSensor: typeof import("@/lib/drag-sensors").SmartPointerSensor;
 let view: RenderResult | null = null;
 
 const MENU_ITEMS = [
@@ -57,6 +60,7 @@ beforeAll(async () => {
   ({ BookmarkCard } = await importFresh<typeof import("@/components/dashboard/bookmark-card")>(
     "components/dashboard/bookmark-card.tsx",
   ));
+  ({ SmartPointerSensor } = await import("@/lib/drag-sensors"));
 });
 
 afterAll(async () => {
@@ -90,9 +94,10 @@ beforeEach(() => {
 const itemTexts = (slot: string) =>
   Array.from(document.querySelectorAll(`[data-slot="${slot}"]`)).map((item) => item.textContent?.trim());
 
-function pointerDown(element: Element): void {
+/** A primary mouse press, like the ones that start a card drag. */
+function pointerDown(target: EventTarget): void {
   act(() => {
-    element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" }));
+    target.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, isPrimary: true, pointerType: "mouse" }));
   });
 }
 
@@ -143,31 +148,74 @@ for (const variant of variants) {
       expect(itemTexts("dropdown-menu-item")).toEqual(MENU_ITEMS_WITHOUT_EDITING);
     });
 
-    test("presses inside an open card menu never reach a parent pointerdown handler", async () => {
-      const handleParentPointerDown = mock(() => {});
+    test("the drag sensor ignores presses inside an open card menu but not presses on the card", async () => {
+      const presses: ReactPointerEvent[] = [];
       view?.rerender(createElement(
         "div",
-        { onPointerDown: handleParentPointerDown },
-        createElement(BookmarkCard, { bookmark: article, variant }),
+        { onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => { presses.push(event); } },
+        createElement(BookmarkCard, { bookmark: article, variant, dragHandleProps: { "data-drag-handle": true } }),
       ));
+      const [activator] = SmartPointerSensor.activators;
+      // Card menus render in portals, but React still bubbles their presses to the card's drag wrapper.
+      const activates = (target: EventTarget, options: PointerSensorOptions = {}): boolean => {
+        const before = presses.length;
+        pointerDown(target);
+        const press = presses[before];
+        if (!press) {
+          throw new Error("the press did not reach the card's parent");
+        }
+        return activator.handler(press, options);
+      };
 
       await act(async () => {
         rightClick(getBySelector('[data-bookmark-id="b1"]'));
       });
-      pointerDown(getBySelector('[data-slot="context-menu-item"]'));
-      expect(handleParentPointerDown).not.toHaveBeenCalled();
-      pressKey(getByText("bookmarkCard_openSmart"), "Escape");
+      const archive = getByText("bookmarkCard_archive");
+      expect(activates(archive)).toBe(false);
+      const archiveLabel = Array.from(archive.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
+      if (!archiveLabel) {
+        throw new Error("the menu item has no text node");
+      }
+      expect(activates(archiveLabel)).toBe(false);
+      pressKey(archive, "Escape");
 
       await act(async () => {
         openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
       });
-      // Opening the ⋯ menu is itself a press on the card.
-      handleParentPointerDown.mockClear();
-      pointerDown(getBySelector('[data-slot="dropdown-menu-item"]'));
-      expect(handleParentPointerDown).not.toHaveBeenCalled();
+      expect(activates(getByText("bookmarkCard_delete"))).toBe(false);
+      pressKey(getByText("bookmarkCard_delete"), "Escape");
 
-      pointerDown(getBySelector('[data-bookmark-id="b1"]'));
-      expect(handleParentPointerDown).toHaveBeenCalledTimes(1);
+      expect(activates(getBySelector('[data-bookmark-id="b1"] h3'))).toBe(true);
+      const handleOptions: PointerSensorOptions = { activationConstraint: { delay: 250, tolerance: 5 } };
+      expect(activates(getBySelector("[data-drag-handle]"), handleOptions)).toBe(true);
+      expect(handleOptions.activationConstraint).toEqual({ distance: 1 });
+    });
+
+    test("after a press on an open menu's padding, an outside press still closes the menu", async () => {
+      const outside = document.createElement("div");
+      document.body.appendChild(outside);
+      try {
+        await act(async () => {
+          rightClick(getBySelector('[data-bookmark-id="b1"]'));
+        });
+        // Radix starts listening for outside presses on the next tick.
+        await wait(10);
+        pointerDown(getBySelector('[data-slot="context-menu-content"]'));
+        pointerDown(outside);
+        await wait(0);
+        expect(document.querySelector('[data-slot="context-menu-content"]')).toBeNull();
+
+        await act(async () => {
+          openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
+        });
+        await wait(10);
+        pointerDown(getBySelector('[data-slot="dropdown-menu-content"]'));
+        pointerDown(outside);
+        await wait(0);
+        expect(document.querySelector('[data-slot="dropdown-menu-content"]')).toBeNull();
+      } finally {
+        outside.remove();
+      }
     });
 
     test("archiving from the right-click menu removes the bookmark from the active list", async () => {
