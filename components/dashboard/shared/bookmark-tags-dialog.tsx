@@ -25,6 +25,7 @@ interface BookmarkTagsDialogProps {
 export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTagsDialogProps) {
   const { t } = useTranslation();
   const tags = useWorkspaceStore(s => s.tags);
+  const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);
   const createTag = useWorkspaceStore(s => s.createTag);
   const updateBookmark = useBookmarksStore(s => s.updateBookmark);
   const [selected, setSelected] = React.useState<Set<string>>(new Set(bookmark.tags));
@@ -105,6 +106,7 @@ export function BookmarkTagsDialog({ bookmark, open, onOpenChange }: BookmarkTag
       </DialogContent>
       </Dialog>
       <TagDialog
+        takenNames={tagNames}
         open={newTagOpen}
         onOpenChange={setNewTagOpen}
         onSubmit={(name, color) => {

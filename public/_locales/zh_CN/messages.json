@@ -1594,5 +1594,46 @@
   },
   "import_failedUnexpected": {
     "message": "导入意外失败，请使用同一文件重试。"
+  },
+  "tagDialog_newTitle": {
+    "message": "新建标签"
+  },
+  "tagDialog_editTitle": {
+    "message": "编辑标签"
+  },
+  "tagDialog_newDesc": {
+    "message": "创建一个标签来标记书签。"
+  },
+  "tagDialog_editDesc": {
+    "message": "修改这个标签的名称和颜色。"
+  },
+  "tagDialog_nameLabel": {
+    "message": "名称"
+  },
+  "tagDialog_namePlaceholder": {
+    "message": "标签名称"
+  },
+  "tagDialog_colorLabel": {
+    "message": "颜色"
+  },
+  "tagDialog_colorOption": {
+    "message": "颜色 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDialog_create": {
+    "message": "创建"
+  },
+  "tagDialog_save": {
+    "message": "保存"
+  },
+  "tagDialog_errorEmpty": {
+    "message": "请输入标签名称。"
+  },
+  "tagDialog_errorDuplicate": {
+    "message": "已有同名标签。"
   }
 }

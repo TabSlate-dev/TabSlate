@@ -207,6 +207,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const collections = useWorkspaceStore(s => s.collections);
   const workspaces = useWorkspaceStore(s => s.workspaces);
   const tags = useWorkspaceStore(s => s.tags);
+  const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
   const groups = React.useMemo(
@@ -563,6 +564,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
       />
 
       <TagDialog
+        takenNames={tagNames}
         open={newTagOpen}
         onOpenChange={setNewTagOpen}
         onSubmit={(name, color) => {

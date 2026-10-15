@@ -1594,5 +1594,46 @@
   },
   "import_failedUnexpected": {
     "message": "Import failed unexpectedly. Try again with the same file."
+  },
+  "tagDialog_newTitle": {
+    "message": "New tag"
+  },
+  "tagDialog_editTitle": {
+    "message": "Edit tag"
+  },
+  "tagDialog_newDesc": {
+    "message": "Create a tag to label your bookmarks."
+  },
+  "tagDialog_editDesc": {
+    "message": "Change this tag's name and color."
+  },
+  "tagDialog_nameLabel": {
+    "message": "Name"
+  },
+  "tagDialog_namePlaceholder": {
+    "message": "Tag name"
+  },
+  "tagDialog_colorLabel": {
+    "message": "Color"
+  },
+  "tagDialog_colorOption": {
+    "message": "Color $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDialog_create": {
+    "message": "Create"
+  },
+  "tagDialog_save": {
+    "message": "Save"
+  },
+  "tagDialog_errorEmpty": {
+    "message": "Enter a tag name."
+  },
+  "tagDialog_errorDuplicate": {
+    "message": "A tag with this name already exists."
   }
 }

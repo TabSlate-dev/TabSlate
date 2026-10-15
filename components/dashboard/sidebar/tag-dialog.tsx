@@ -12,77 +12,105 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TAG_COLORS } from "@/store/workspace-store";
+import { useTranslation } from "@/hooks/use-translation";
+import type { Tag } from "@/lib/types";
 
 interface TagDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The tag being edited; omitted when creating one. */
+  initial?: Tag;
+  /** Names of the other tags, used to reject duplicates. */
+  takenNames: readonly string[];
   onSubmit: (name: string, color: string) => void;
 }
 
-export function TagDialog({ open, onOpenChange, onSubmit }: TagDialogProps) {
-  const [color, setColor] = React.useState<string>(TAG_COLORS[0]);
+export function TagDialog({ open, onOpenChange, initial, takenNames, onSubmit }: TagDialogProps) {
+  const { t } = useTranslation();
+  const [name, setName] = React.useState(initial?.name ?? "");
+  const [color, setColor] = React.useState<string>(initial?.color ?? TAG_COLORS[0]);
+  const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
-      setColor(TAG_COLORS[0]);
+      setName(initial?.name ?? "");
+      setColor(initial?.color ?? TAG_COLORS[0]);
+      setError(null);
     }
-  }, [open]);
+  }, [open, initial]);
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) {
+      setError(t("tagDialog_errorEmpty"));
+      return;
+    }
+    const lower = trimmed.toLowerCase();
+    if (takenNames.some((taken) => taken.toLowerCase() === lower)) {
+      setError(t("tagDialog_errorDuplicate"));
+      return;
+    }
+    onSubmit(trimmed, color);
+    onOpenChange(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xs">
         <DialogHeader>
-          <DialogTitle>New Tag</DialogTitle>
+          <DialogTitle>{t(initial ? "tagDialog_editTitle" : "tagDialog_newTitle")}</DialogTitle>
           <DialogDescription className="sr-only">
-            Create a new tag to label your bookmarks.
+            {t(initial ? "tagDialog_editDesc" : "tagDialog_newDesc")}
           </DialogDescription>
         </DialogHeader>
-        <form
-          className="space-y-4 pt-1"
-          action={(formData) => {
-            const name = formData.get("name") as string;
-            if (!name?.trim()) { return; }
-            onSubmit(name.trim(), color);
-            onOpenChange(false);
-          }}
-        >
+        <form className="space-y-4 pt-1" onSubmit={handleSubmit} noValidate>
           <Field>
-            <FieldLabel htmlFor="tag-name">Name</FieldLabel>
+            <FieldLabel htmlFor="tag-name">{t("tagDialog_nameLabel")}</FieldLabel>
             <Input
               id="tag-name"
               name="name"
-              defaultValue=""
-              placeholder="Tag name"
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                setError(null);
+              }}
+              placeholder={t("tagDialog_namePlaceholder")}
+              aria-invalid={error !== null}
+              aria-describedby={error ? "tag-name-error" : undefined}
               autoFocus
-              required
             />
+            {error && (
+              <p id="tag-name-error" role="alert" className="text-xs text-destructive">
+                {error}
+              </p>
+            )}
           </Field>
           <Field>
-            <FieldLabel>Color</FieldLabel>
+            <FieldLabel>{t("tagDialog_colorLabel")}</FieldLabel>
             <div className="flex flex-wrap gap-1.5">
-              {TAG_COLORS.map((c) => {
-                const bgColor = c.split(" ")[0];
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setColor(c)}
-                    className={cn(
-                      "size-7 rounded-full transition-all",
-                      bgColor.replace("/10", ""),
-                      color === c ? "ring-2 ring-primary ring-offset-2" : "opacity-50 hover:opacity-100"
-                    )}
-                  />
-                );
-              })}
+              {TAG_COLORS.map((option, index) => (
+                <button
+                  key={option}
+                  type="button"
+                  aria-label={t("tagDialog_colorOption", [String(index + 1)])}
+                  aria-pressed={color === option}
+                  onClick={() => setColor(option)}
+                  className={cn(
+                    "size-7 rounded-full transition-all",
+                    option.split(" ")[0].replace("/10", ""),
+                    color === option ? "ring-2 ring-primary ring-offset-2" : "opacity-50 hover:opacity-100",
+                  )}
+                />
+              ))}
             </div>
           </Field>
           <DialogFooter>
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("settings_cancel")}
             </Button>
             <Button type="submit" size="sm">
-              Create
+              {t(initial ? "tagDialog_save" : "tagDialog_create")}
             </Button>
           </DialogFooter>
         </form>
