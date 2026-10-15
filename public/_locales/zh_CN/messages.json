@@ -104,6 +104,10 @@
   "sidebar_addGroup": {
     "message": "新建分组"
   },
+  "sidebar_searchTags": { "message": "搜索标签" },
+  "sidebar_searchTagsPlaceholder": { "message": "筛选标签" },
+  "sidebar_closeTagSearch": { "message": "关闭标签搜索" },
+  "sidebar_newTag": { "message": "新建标签" },
   "sidebar_tags": {
     "message": "标签"
   },

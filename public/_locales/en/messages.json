@@ -104,6 +104,10 @@
   "sidebar_addGroup": {
     "message": "Add Group"
   },
+  "sidebar_searchTags": { "message": "Search tags" },
+  "sidebar_searchTagsPlaceholder": { "message": "Filter tags" },
+  "sidebar_closeTagSearch": { "message": "Close tag search" },
+  "sidebar_newTag": { "message": "New tag" },
   "sidebar_tags": {
     "message": "TAGS"
   },

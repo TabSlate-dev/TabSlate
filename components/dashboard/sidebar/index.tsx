@@ -8,7 +8,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -19,7 +18,6 @@ import { cn } from "@/lib/utils";
 import {
   Bookmark,
   BookOpen,
-  ChevronDown,
   ChevronRight,
   Code,
   Folder,
@@ -32,7 +30,6 @@ import {
   Search,
   Sparkles,
   Star,
-  Tag,
   Archive,
   MoreHorizontal,
   Trash2,
@@ -52,7 +49,8 @@ import { useWorkspaceStore } from "@/store/workspace-store";
 import { TAB_GROUP_COLORS } from "@/lib/chrome/tab-groups";
 import type { Collection } from "@/lib/types";
 import { CollectionDialog } from "./collection-dialog";
-import { TagDialog } from "./tag-dialog";
+import { SidebarTagsSection } from "./tags-section";
+import { SectionHeader } from "./section-header";
 import { GroupDialog } from "./group-dialog";
 import { SyncStatusIndicator } from "./sync-status";
 import type { SyncStatus } from "@/lib/sync-engine";
@@ -130,28 +128,6 @@ function DroppableZone({ id, children }: { id: string; children: React.ReactNode
 }
 
 // ---------------------------------------------------------------------------
-// SectionHeader
-// ---------------------------------------------------------------------------
-interface SectionHeaderProps {
-  label: string;
-  open: boolean;
-  onToggle: () => void;
-  actions?: React.ReactNode;
-}
-
-function SectionHeader({ label, open, onToggle, actions }: SectionHeaderProps) {
-  return (
-    <SidebarGroupLabel className="flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wider text-muted-foreground">
-      <button onClick={onToggle} className="flex items-center gap-1.5 cursor-pointer">
-        <ChevronDown className={cn("size-3.5 transition-transform", !open && "-rotate-90")} />
-        {label}
-      </button>
-      {actions}
-    </SidebarGroupLabel>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // AddItemButton
 // ---------------------------------------------------------------------------
 function AddItemButton({ label, onClick }: { label: string; onClick: () => void }) {
@@ -182,9 +158,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const { pathname } = useLocation();
   const [collectionsOpen, setCollectionsOpen] = React.useState(true);
   const [groupsOpen, setGroupsOpen] = React.useState(true);
-  const [tagsOpen, setTagsOpen] = React.useState(false);
   const [newCollectionOpen, setNewCollectionOpen] = React.useState(false);
-  const [newTagOpen, setNewTagOpen] = React.useState(false);
   const [newGroupOpen, setNewGroupOpen] = React.useState(false);
   const [authDialogOpen, setAuthDialogOpen] = React.useState(false);
   const [authEntryMode, setAuthEntryMode] = React.useState<AuthEntryMode>("login");
@@ -196,8 +170,6 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   // Fine-grained selectors — each value has its own subscription
   const selectedCollection = useBookmarksStore(s => s.selectedCollection);
   const setSelectedCollection = useBookmarksStore(s => s.setSelectedCollection);
-  const selectedTags = useBookmarksStore(s => s.selectedTags);
-  const toggleTag = useBookmarksStore(s => s.toggleTag);
   const clearTags = useBookmarksStore(s => s.clearTags);
   const countsByCollection = useBookmarksStore(s => s.countsByCollection);
 
@@ -206,8 +178,6 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
 
   const collections = useWorkspaceStore(s => s.collections);
   const workspaces = useWorkspaceStore(s => s.workspaces);
-  const tags = useWorkspaceStore(s => s.tags);
-  const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
   const groups = React.useMemo(
@@ -224,8 +194,6 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
   const createCollection = useWorkspaceStore(s => s.createCollection);
   const deleteCollection = useWorkspaceStore(s => s.deleteCollection);
   const archiveCollection = useWorkspaceStore(s => s.archiveCollection);
-  const createTag = useWorkspaceStore(s => s.createTag);
-  const deleteTag = useWorkspaceStore(s => s.deleteTag);
   const highlightedCollectionIds = useWorkspaceStore(s => s.highlightedCollectionIds);
 
   const isHomePage = pathname === "/";
@@ -256,7 +224,6 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
 
   const handleToggleCollections = React.useCallback(() => setCollectionsOpen(v => !v), []);
   const handleToggleGroups = React.useCallback(() => setGroupsOpen(v => !v), []);
-  const handleToggleTags = React.useCallback(() => setTagsOpen(v => !v), []);
   const handleOpenLogin = React.useCallback(() => {
     setAuthEntryMode("login");
     setAuthDialogOpen(true);
@@ -443,67 +410,7 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
           </SidebarGroup>
 
           {/* Tags */}
-          <SidebarGroup className="p-0">
-            <SectionHeader
-              label={t("sidebar_tags")}
-              open={tagsOpen}
-              onToggle={handleToggleTags}
-              actions={
-                <div className="ml-auto flex items-center gap-1">
-                  {selectedTags.length > 0 && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        clearTags();
-                      }}
-                      className="text-[10px] text-muted-foreground hover:text-foreground"
-                    >
-                      {t("sidebar_clearTags")}
-                    </button>
-                  )}
-                  <button
-                    onClick={() => setNewTagOpen(true)}
-                    className="text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <Plus className="size-3.5" />
-                  </button>
-                </div>
-              }
-            />
-
-            {tagsOpen && (
-              <SidebarGroupContent>
-                <div className="flex flex-wrap gap-1.5 mt-2 px-1">
-                  {tags.length === 0 && (
-                    <p className="text-xs text-muted-foreground w-full py-1">{t("sidebar_noTagsYet")}</p>
-                  )}
-                  {tags.map((tag) => (
-                    <button
-                      key={tag.id}
-                      onClick={() => toggleTag(tag.id)}
-                      className={cn(
-                        "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium transition-colors group/tag",
-                        selectedTags.includes(tag.id) ? "bg-primary text-primary-foreground" : tag.color
-                      )}
-                    >
-                      <Tag className="size-3" />
-                      {tag.name}
-                      <span
-                        role="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteTag(tag.id);
-                        }}
-                        className="hidden group-hover/tag:inline ml-0.5 hover:opacity-70"
-                      >
-                        ×
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </SidebarGroupContent>
-            )}
-          </SidebarGroup>
+          <SidebarTagsSection />
 
           {/* Nav */}
           <SidebarGroup className="p-0 mt-1">
@@ -560,16 +467,6 @@ export function BookmarksSidebar({ syncStatus, syncErrorMessage, onForceSync, ..
           createCollection(state.activeWorkspaceId, name, icon);
           setTargetUnavailable(false);
           setNewCollectionOpen(false);
-        }}
-      />
-
-      <TagDialog
-        takenNames={tagNames}
-        open={newTagOpen}
-        onOpenChange={setNewTagOpen}
-        onSubmit={(name, color) => {
-          createTag(name, color);
-          setNewTagOpen(false);
         }}
       />
 
