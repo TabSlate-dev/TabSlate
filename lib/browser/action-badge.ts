@@ -29,12 +29,21 @@ export async function flashSaveBadge(
   activeFlashes.set(tabId, flash);
   try {
     await chrome.action.setBadgeBackgroundColor({ tabId, color: kind === "saved" ? SAVED_COLOR : DUPLICATE_COLOR });
+    if (activeFlashes.get(tabId) !== flash) {
+      return;
+    }
     await chrome.action.setBadgeText({
       tabId,
       text: kind === "saved" ? "✓" : chrome.i18n.getMessage("badge_alreadySavedShort"),
     });
+    if (activeFlashes.get(tabId) !== flash) {
+      return;
+    }
     if (kind === "duplicate") {
       flash.defaultTitle = await chrome.action.getTitle({});
+      if (activeFlashes.get(tabId) !== flash) {
+        return;
+      }
       await chrome.action.setTitle({ tabId, title: chrome.i18n.getMessage("badge_alreadySavedTitle") });
     } else if (flash.defaultTitle !== undefined) {
       await chrome.action.setTitle({ tabId, title: flash.defaultTitle });
