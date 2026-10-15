@@ -80,6 +80,12 @@ beforeEach(() => {
 const itemTexts = (slot: string) =>
   Array.from(document.querySelectorAll(`[data-slot="${slot}"]`)).map((item) => item.textContent?.trim());
 
+function pointerDown(element: Element): void {
+  act(() => {
+    element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, pointerType: "mouse" }));
+  });
+}
+
 const variants: Array<"grid" | "list"> = ["grid", "list"];
 for (const variant of variants) {
   describe(`BookmarkCard ${variant} menus`, () => {
@@ -97,6 +103,33 @@ for (const variant of variants) {
         openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
       });
       expect(itemTexts("dropdown-menu-item")).toEqual(MENU_ITEMS);
+    });
+
+    test("presses inside an open card menu never reach a parent pointerdown handler", async () => {
+      const handleParentPointerDown = mock(() => {});
+      view?.rerender(createElement(
+        "div",
+        { onPointerDown: handleParentPointerDown },
+        createElement(BookmarkCard, { bookmark: article, variant }),
+      ));
+
+      await act(async () => {
+        rightClick(getBySelector('[data-bookmark-id="b1"]'));
+      });
+      pointerDown(getBySelector('[data-slot="context-menu-item"]'));
+      expect(handleParentPointerDown).not.toHaveBeenCalled();
+      pressKey(getByText("bookmarkCard_openSmart"), "Escape");
+
+      await act(async () => {
+        openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
+      });
+      // Opening the ⋯ menu is itself a press on the card.
+      handleParentPointerDown.mockClear();
+      pointerDown(getBySelector('[data-slot="dropdown-menu-item"]'));
+      expect(handleParentPointerDown).not.toHaveBeenCalled();
+
+      pointerDown(getBySelector('[data-bookmark-id="b1"]'));
+      expect(handleParentPointerDown).toHaveBeenCalledTimes(1);
     });
 
     test("archiving from the right-click menu removes the bookmark from the active list", async () => {

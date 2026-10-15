@@ -33,6 +33,14 @@ import {
 
 const EMPTY_TAGS: Tag[] = [];
 
+/**
+ * Card menus render in portals, but React still bubbles their events to the
+ * card's drag wrapper; a press inside a menu must never start a card drag.
+ */
+function stopMenuPointerDown(event: React.PointerEvent) {
+  event.stopPropagation();
+}
+
 interface BookmarkCardProps {
   bookmark: Bookmark;
   variant?: "grid" | "list";
@@ -162,12 +170,12 @@ export const BookmarkCard = React.memo(function BookmarkCard({
                     <MoreHorizontal className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">{renderMenuItems(dropdownMenuPrimitives)}</DropdownMenuContent>
+                <DropdownMenuContent align="end" onPointerDown={stopMenuPointerDown}>{renderMenuItems(dropdownMenuPrimitives)}</DropdownMenuContent>
               </DropdownMenu>
             </div>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent>{renderMenuItems(contextMenuPrimitives)}</ContextMenuContent>
+        <ContextMenuContent onPointerDown={stopMenuPointerDown}>{renderMenuItems(contextMenuPrimitives)}</ContextMenuContent>
       </ContextMenu>
     );
   }
@@ -267,7 +275,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
                     <MoreHorizontal className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">{renderMenuItems(dropdownMenuPrimitives)}</DropdownMenuContent>
+                <DropdownMenuContent align="end" onPointerDown={stopMenuPointerDown}>{renderMenuItems(dropdownMenuPrimitives)}</DropdownMenuContent>
               </DropdownMenu>
             </div>
           </div>
@@ -285,7 +293,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
           )}
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent>{renderMenuItems(contextMenuPrimitives)}</ContextMenuContent>
+      <ContextMenuContent onPointerDown={stopMenuPointerDown}>{renderMenuItems(contextMenuPrimitives)}</ContextMenuContent>
     </ContextMenu>
   );
 });
