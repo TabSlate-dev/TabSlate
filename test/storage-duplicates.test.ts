@@ -1,5 +1,5 @@
 // @ts-expect-error Bun provides this test module at runtime.
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
 import { makeBookmark, makeCollection, makeWorkspace } from "./helpers/library-fixtures";
 
@@ -48,6 +48,12 @@ describe("findSavedDuplicates", () => {
 
   test("reports no duplicates when IndexedDB cannot be read", async () => {
     failReads = true;
-    expect(await findSavedDuplicates("https://example.com/post")).toEqual([]);
+    const warning = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(await findSavedDuplicates("https://example.com/post")).toEqual([]);
+      expect(warning).toHaveBeenCalled();
+    } finally {
+      warning.mockRestore();
+    }
   });
 });
