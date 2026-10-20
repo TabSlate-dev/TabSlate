@@ -86,7 +86,8 @@ TabSlate/
 │       │   └── create-group-bar.tsx
 │       ├── group-detail/       # /groups/:groupId 路由：单个保存组详情
 │       │   └── index.tsx       # GroupDetail（标签列表、内联编辑、拖拽支持）
-│       ├── shared/             # 跨视图复用组件：书签/标签对话框、菜单项（menu-primitives + collection/bookmark-menu-items，⋯ 与右键共用）、duplicate-notice、active-filter-chips（书签库与收藏共用的筛选 chip 栏）
+│       ├── bulk-actions/       # 批量操作栏（移动、标签、收藏、归档、删除、打开、复制）与提示
+│       ├── shared/             # 跨视图复用组件：书签表单与对话框、收藏集/标签选择器、FilterableList、备注 popover、选择顺序 context、标签对话框、菜单项（menu-primitives + collection/bookmark-menu-items，⋯ 与右键共用）、duplicate-notice、active-filter-chips（书签库与收藏共用的筛选 chip 栏）
 │       ├── tabs-dnd-provider.tsx # 全局 DnD context（tab → collection/saved-group）
 │       ├── tab-row.tsx         # 单行 tab 组件（React.memo）
 │       ├── stats-cards.tsx     # 书签统计卡片
@@ -184,12 +185,13 @@ SSE leader         ──idbPut("kv")──▶    IndexedDB  kv["sync-leader"]  
 | Store | 持久化后端 | 职责 |
 |---|---|---|
 | `useAuthStore` | chrome.storage.session（accessToken）+ chrome.storage.local（其余） | 登录用户信息（含 `is_verified`）、access/refresh token、server URL；actions：login/register/resendVerification/verifyEmailOTP/forgotPassword/resetPassword/logout/silentRefresh；`silentRefresh` 在 rehydrate 时自动触发（refreshToken 存在但 accessToken 缺失），支持指数退避重试（2s→60s），仅在确切 401/403 时清除 token |
-| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时从所有 bucket 清除；`permanentlyDelete`（单条）/ `permanentlyDeleteBatch`（批量，≤900/请求）在线时采用 push-first 模式（`forcePush` → `idbBulkWrite` → `decrementUsage`），失败时回滚乐观 UI；**离线时（`syncEngine===null`）写 `isTrashed:2、seq:0` 墓碑到 IDB、从 state 过滤，`sweepUnsynced` 在下次在线时推送**；`permanentlyDeleteCollectionBookmarks` 不再 forcePush（服务端 cascade 已处理），仅执行本地 IDB 清理 |
+| `useBookmarksStore` | IndexedDB | 书签数据（active/archived/trashed）+ 过滤/排序/视图 UI 状态；`mergeFromServer` 执行 LWW 合并；`is_trashed===2` 时从所有 bucket 清除；`permanentlyDelete`（单条）/ `permanentlyDeleteBatch`（批量，≤900/请求）在线时采用 push-first 模式（`forcePush` → `idbBulkWrite` → `decrementUsage`），失败时回滚乐观 UI；**离线时（`syncEngine===null`）写 `isTrashed:2、seq:0` 墓碑到 IDB、从 state 过滤，`sweepUnsynced` 在下次在线时推送**；`permanentlyDeleteCollectionBookmarks` 不再 forcePush（服务端 cascade 已处理），仅执行本地 IDB 清理；批量操作 `updateBookmarks` / `archiveBookmarks` / `trashBookmarks`（有效操作一次 set、一次 `idbBulkWrite`、一次 enqueue）；每次用户改动写入 `updatedAt` |
 | `useWorkspaceStore` | IndexedDB | 工作区、集合、标签、高亮状态；`localSeq` 同步游标；`mergeFromServer` 执行 LWW 合并，工作区 `is_deleted∈{0,1}` 时 update+keep（保留墓碑供恢复），`is_deleted===2` 才从 state+IDB 删除；`deleteWorkspace`/`restoreWorkspace`/`permanentlyDeleteWorkspace` 通过工作区生命周期协议实现（见下方专节），不再是普通字段更新；`permanentlyDeleteCollection` 采用 push-first 模式（`forcePush` → `idbDelete` → `decrementUsage`），失败时回滚；书签 tombstone 同步由服务端级联兜底（集合 `is_deleted=2` 被接受时，服务端将其书签自动升级为 `is_trashed=2`） |
 | `useGroupsStore` | IndexedDB | 保存的标签组（含同步字段 seq、deletedAt）及其 tab；`permanentlyDeleteGroup` 采用 push-first 模式（`forcePush` → `idbDelete`），失败时回滚；`mergeFromServer` 中 state=2 records 被过滤出 state+IDB |
 | `usePlanStore` | chrome.storage.local | 套餐配额数据：subscription、limits、usage；`fetchPlan` 调用 `GET /api/plan`，5 分钟 TTL；书签配额以 `is_trashed < 2` 计（active + trashed），仅 `permanentlyDelete` 时 `decrementUsage`；`checkQuota(resource)` 在 create 类 action 中使用；`showQuotaAlert` 触发 `<QuotaAlert />` 显示；`incrementUsage`/`decrementUsage` 维护本地计数；`clear` 在登出时调用 |
 | `useSettingsStore` | IndexedDB (kv) + `/preferences` | 书签视图偏好同步：`hydrate` 载入本机副本并订阅 `useBookmarksStore` 的 `viewMode`/`sortBy`；`startPreferenceSync(getCredentials)`/`resyncPreferences()`/`stopPreferenceSync()` 按 `updatedAt` 与服务端 `bookmarkView` 键协调（Firefox 另需 `technicalAndInteraction` 同意） |
 | `useTabsStore` | 不持久化（tab-group-titles + kv 写 IDB） | Chrome 当前窗口的实时标签页和 tab group 数据；`fullTitles: Record<number, string>` 维护 compact group 的完整标题，`loadTabs` 通过两层恢复逻辑（孤儿条目对账 + kv 稳定回退）在重启后重新关联（详见 CLAUDE.md Compact group title） |
+| `useSelectionStore` | 不持久化 | 当前视图的多选：`selectedIds`（每次变更替换新 Set）、`anchorId`；`toggle` / `selectRange` / `setMany` / `retain` / `clear`；由 `useSelectionScope` 绑定到视图 |
 
 ### 跨进程通知
 
@@ -342,7 +344,7 @@ SyncEngine
 **推送（本地变更 → 服务器）：**
 1. 任意 store action 调用 `syncEngine?.enqueue({ bookmarks: [...] })` 等
 2. `SyncQueue` 以实体 ID 为 key 去重合并，等待 2s 防抖窗口
-3. `POST /sync/push` 发送 snapshot；大负载（>900 实体）由 `splitPayload` 自动切成多个顺序请求（非书签在前保证 FK，书签在后），每个请求服务端在单事务内 LWW upsert，`incrementSeq` 并广播新 seq 到 Hub
+3. `POST /sync/push` 发送 snapshot；大负载由 `splitSyncPushPayload` 按实体数（≤900）和实体字节预算（≤384 KiB，实体 JSON 的 UTF-8 长度加分隔符预算，不含请求 envelope）切成多个顺序请求（非书签在前保证 FK，书签在后）。正常完整请求体低于 512 KiB；超预算的单个实体独占一块，仍可能被服务端以不重试的 413 拒绝。每个请求服务端在单事务内 LWW upsert，`incrementSeq` 并广播新 seq 到 Hub
 4. 失败时将 snapshot 重新入队，指数退避重试（2s → 4s → … → 60s）
 
 **拉取（服务器变更 → 本地）：**
@@ -381,7 +383,8 @@ cleanup 函数依次调用 `engine.forceSync()`（fire-and-forget）、`engine.d
 
 - 实体级别：`updated_at`（Unix ms）较大者胜出
 - `ON CONFLICT (id) DO UPDATE ... WHERE updated_at < EXCLUDED.updated_at`（服务端）
-- 客户端 `mergeFromServer` 同样按 `updatedAt` 比较，忽略旧值
+- 客户端 `mergeFromServer` 按实体同步状态协调服务端结果；书签 `updatedAt` 映射客户端编辑时间，不作为服务端 LWW 的时间戳
+- 书签另有 `edited_at`（客户端上报的最后编辑时间），用于“更新时间”排序与展示，不参与 LWW；pull 优先读取它，旧服务端省略时回退 `updated_at`，因此兼容旧服务端只保证省略的备注不清空本地备注，不保证保留本地编辑时间
 
 ## 工作区生命周期管理（Workspace Lifecycle）
 
@@ -463,7 +466,7 @@ Offline 的 delete/restore 先在本地一个 IndexedDB 事务内提交：写工
 // lib/types.ts（同步字段已包含）
 Workspace { id, name, color, position, seq, deletedAt?, deletionModel? }  // deletionModel: 1=父级墓碑协议, 0=遗留级联删除迁移标记
   └── Collection[] { id, workspaceId, name, icon, position, isDefault?, seq, deletedAt?, archivedAt? }
-         └── Bookmark[] { id, title, url, favicon, description, collectionId, tags[], createdAt, isFavorite, seq, deletedAt? }
+         └── Bookmark[] { id, title, url, favicon, description, notes?, collectionId, tags[], createdAt, updatedAt?, isFavorite, seq, deletedAt? }
 Tag { id, name, color, seq, deletedAt? }
 
 // store/groups-store.ts

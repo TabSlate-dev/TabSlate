@@ -34,9 +34,8 @@ export const FIREFOX_REQUIRED_DATA_COLLECTION: readonly FirefoxDataCollectionPer
 /**
  * Sent to the sync server only after the user signs in and grants this
  * consent: account email, name and password (personallyIdentifyingInfo,
- * authenticationInfo), bookmark titles and descriptions taken from page
- * content (websiteContent), and server-side bookmark search queries
- * (searchTerms).
+ * authenticationInfo), bookmark titles, descriptions and notes
+ * (websiteContent), and server-side bookmark search queries (searchTerms).
  */
 export const FIREFOX_ACCOUNT_DATA_COLLECTION: readonly FirefoxDataCollectionPermission[] = [
   "authenticationInfo",
