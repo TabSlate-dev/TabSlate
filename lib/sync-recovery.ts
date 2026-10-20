@@ -9,6 +9,48 @@ import type { SyncEntityReference } from "./sync-conflicts";
 const RECOVERY_KEY = "tabslate-sync-recovery";
 export const MAX_SYNC_ENTITIES_PER_PUSH = 900;
 
+/**
+ * Maximum UTF-8 JSON bytes budgeted for entities in one sync push chunk.
+ * This excludes the request envelope, which is small relative to the 512 KiB
+ * server body limit.
+ */
+export const MAX_SYNC_PUSH_BYTES = 384 * 1024;
+
+const syncTextEncoder = new TextEncoder();
+
+/** An entity's JSON UTF-8 length plus one byte reserved for its array separator. */
+function syncEntityBytes(entity: SyncEntity): number {
+  return syncTextEncoder.encode(JSON.stringify(entity)).length + 1;
+}
+
+function chunkSyncEntries<T>(
+  entries: readonly T[],
+  entityOf: (entry: T) => SyncEntity,
+): T[][] {
+  const chunks: T[][] = [];
+  let current: T[] = [];
+  let currentBytes = 0;
+
+  for (const entry of entries) {
+    const bytes = syncEntityBytes(entityOf(entry));
+    const exceedsLimit = current.length >= MAX_SYNC_ENTITIES_PER_PUSH ||
+      currentBytes + bytes > MAX_SYNC_PUSH_BYTES;
+    if (current.length > 0 && exceedsLimit) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(entry);
+    currentBytes += bytes;
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+
+  return chunks;
+}
+
 function getSessionStorage() {
   return globalThis.chrome?.storage?.session;
 }
@@ -75,9 +117,9 @@ export function matchesCapturedSyncEntity(
 
 export function splitSyncPushPayload(full: SyncPushPayload): SyncPushPayload[] {
   const { workspaces, collections, bookmarks, tags, groups } = full.entities;
-  const total = workspaces.length + collections.length + bookmarks.length +
-    tags.length + groups.length;
-  if (total <= MAX_SYNC_ENTITIES_PER_PUSH) {
+  const all: SyncEntity[] = [...workspaces, ...collections, ...bookmarks, ...tags, ...groups];
+  const totalBytes = all.reduce((sum, entity) => sum + syncEntityBytes(entity), 0);
+  if (all.length <= MAX_SYNC_ENTITIES_PER_PUSH && totalBytes <= MAX_SYNC_PUSH_BYTES) {
     return [full];
   }
   const chunks: SyncPushPayload[] = [];
@@ -95,21 +137,16 @@ export function splitSyncPushPayload(full: SyncPushPayload): SyncPushPayload[] {
     ...entries("tags", tags),
     ...entries("groups", groups),
   ];
-  for (let index = 0; index < nonBookmarks.length; index += MAX_SYNC_ENTITIES_PER_PUSH) {
+  for (const group of chunkSyncEntries(nonBookmarks, (entry) => entry.entity)) {
     const chunk = createEmptySyncPushPayload();
-    for (const { payloadKey, entity } of nonBookmarks.slice(
-      index,
-      index + MAX_SYNC_ENTITIES_PER_PUSH,
-    )) {
+    for (const { payloadKey, entity } of group) {
       syncPayloadEntities(chunk, payloadKey).push(entity);
     }
     chunks.push(chunk);
   }
-  for (let index = 0; index < bookmarks.length; index += MAX_SYNC_ENTITIES_PER_PUSH) {
+  for (const group of chunkSyncEntries(bookmarks, (entity) => entity)) {
     const chunk = createEmptySyncPushPayload();
-    chunk.entities.bookmarks.push(
-      ...bookmarks.slice(index, index + MAX_SYNC_ENTITIES_PER_PUSH),
-    );
+    chunk.entities.bookmarks.push(...group);
     chunks.push(chunk);
   }
   return chunks;
