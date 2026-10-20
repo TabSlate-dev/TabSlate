@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Bookmark } from "@/lib/types";
+import type { Bookmark, BookmarkBatchPatch, BookmarkPatchEntry } from "@/lib/types";
 import { generateId } from "@/lib/id";
 import { idbGet, idbGetAll, idbGetByIndex, idbGetMany, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
@@ -150,6 +150,43 @@ function isStringArray(value: SyncEntity[string]): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
+function patchChangesBookmark(bookmark: Bookmark, patch: BookmarkBatchPatch): boolean {
+  return (patch.title !== undefined && patch.title !== bookmark.title) ||
+    (patch.url !== undefined && patch.url !== bookmark.url) ||
+    (patch.description !== undefined && patch.description !== bookmark.description) ||
+    (patch.notes !== undefined && patch.notes !== (bookmark.notes ?? "")) ||
+    (patch.collectionId !== undefined && patch.collectionId !== bookmark.collectionId) ||
+    (patch.tags !== undefined && !stringArraysEqual(patch.tags, bookmark.tags)) ||
+    (patch.isFavorite !== undefined && patch.isFavorite !== bookmark.isFavorite);
+}
+
+function applyBookmarkPatch(bookmark: Bookmark, patch: BookmarkBatchPatch): Bookmark {
+  return {
+    ...bookmark,
+    title: patch.title ?? bookmark.title,
+    url: patch.url ?? bookmark.url,
+    description: patch.description ?? bookmark.description,
+    notes: patch.notes ?? bookmark.notes,
+    collectionId: patch.collectionId ?? bookmark.collectionId,
+    tags: patch.tags ?? bookmark.tags,
+    isFavorite: patch.isFavorite ?? bookmark.isFavorite,
+  };
+}
+
+/** The active bookmarks among `ids`, each once, in the order given. */
+function uniqueActiveBookmarks(bookmarks: Map<string, Bookmark>, ids: readonly string[]): Bookmark[] {
+  const result: Bookmark[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    const bookmark = bookmarks.get(id);
+    if (bookmark && !seen.has(id)) {
+      seen.add(id);
+      result.push(bookmark);
+    }
+  }
+  return result;
+}
+
 function bookmarkMatchesSyncEntity(
   bookmark: Bookmark,
   entity: SyncEntity,
@@ -288,10 +325,14 @@ interface BookmarksState {
   addBookmarks: (bookmarks: Bookmark[]) => void;
   _bulkAddBookmarks: (bookmarks: Bookmark[]) => void;
   updateBookmark: (id: string, patch: Partial<Omit<Bookmark, "id" | "createdAt">>) => void;
+  /** Applies ordered per-bookmark patches to active bookmarks, skipping final results that change nothing. */
+  updateBookmarks: (patches: readonly BookmarkPatchEntry[]) => void;
   toggleFavorite: (bookmarkId: string) => void;
   archiveBookmark: (bookmarkId: string) => void;
+  archiveBookmarks: (ids: readonly string[]) => void;
   restoreFromArchive: (bookmarkId: string) => void;
   trashBookmark: (bookmarkId: string) => void;
+  trashBookmarks: (ids: readonly string[]) => void;
   restoreFromTrash: (bookmarkId: string, collectionIdOverride?: string) => void;
   permanentlyDelete: (bookmarkId: string) => void;
   permanentlyDeleteBatch: (bookmarkIds: string[]) => void;
@@ -659,6 +700,42 @@ export const useBookmarksStore = create<BookmarksState>()(
         })();
       },
 
+      updateBookmarks: (patches) => {
+        const state = get();
+        const candidates = new Map<string, Bookmark>();
+        for (const { id, patch } of patches) {
+          const current = candidates.get(id) ?? state.bookmarks.get(id);
+          if (!current) { continue; }
+          candidates.set(id, applyBookmarkPatch(current, patch));
+        }
+
+        const editedAt = Date.now();
+        const updated: Bookmark[] = [];
+        for (const [id, candidate] of candidates) {
+          const original = state.bookmarks.get(id);
+          if (!original || !patchChangesBookmark(original, candidate)) { continue; }
+          updated.push({ ...candidate, updatedAt: editedAt });
+        }
+        if (updated.length === 0) { return; }
+
+        const nextBookmarks = new Map(state.bookmarks);
+        const nextCounts = { ...state.countsByCollection };
+        for (const bookmark of updated) {
+          const previous = state.bookmarks.get(bookmark.id);
+          nextBookmarks.set(bookmark.id, bookmark);
+          if (previous && previous.collectionId !== bookmark.collectionId) {
+            decrementCollectionCount(nextCounts, previous.collectionId);
+            incrementCollectionCount(nextCounts, bookmark.collectionId);
+          }
+        }
+        set({ bookmarks: nextBookmarks, countsByCollection: nextCounts });
+        assertCountsInvariant(get());
+        void idbBulkWrite(
+          updated.map((bookmark) => ({ type: "put" as const, store: "bookmarks" as const, value: bookmark })),
+        );
+        syncEngine?.enqueue({ bookmarks: updated.map((bookmark) => toServerBookmark(bookmark)) });
+      },
+
       toggleFavorite: (bookmarkId) => {
         const bookmark = get().bookmarks.get(bookmarkId);
         if (!bookmark) { return; }
@@ -689,6 +766,31 @@ export const useBookmarksStore = create<BookmarksState>()(
           };
         });
         assertCountsInvariant(get());
+      },
+
+      archiveBookmarks: (ids) => {
+        const state = get();
+        const archivedAt = Date.now();
+        const archived = uniqueActiveBookmarks(state.bookmarks, ids).map((bookmark) => ({ ...bookmark, updatedAt: archivedAt }));
+        if (archived.length === 0) { return; }
+
+        const nextBookmarks = new Map(state.bookmarks);
+        const nextCounts = { ...state.countsByCollection };
+        for (const bookmark of archived) {
+          nextBookmarks.delete(bookmark.id);
+          decrementCollectionCount(nextCounts, bookmark.collectionId);
+        }
+        set({
+          bookmarks: nextBookmarks,
+          countsByCollection: nextCounts,
+          archivedBookmarks: state._archivedLoaded ? [...state.archivedBookmarks, ...archived] : state.archivedBookmarks,
+        });
+        assertCountsInvariant(get());
+        void idbBulkWrite(archived.flatMap((bookmark) => [
+          { type: "delete" as const, store: "bookmarks" as const, key: bookmark.id },
+          { type: "put" as const, store: "archived-bookmarks" as const, value: bookmark },
+        ]));
+        syncEngine?.enqueue({ bookmarks: archived.map((bookmark) => toServerBookmark(bookmark, { isArchived: true })) });
       },
 
       restoreFromArchive: (bookmarkId) => {
@@ -763,6 +865,33 @@ export const useBookmarksStore = create<BookmarksState>()(
         });
         usePlanStore.getState().moveUsageToTrash("bookmark");
         assertCountsInvariant(get());
+      },
+
+      trashBookmarks: (ids) => {
+        const state = get();
+        const trashedAt = Date.now();
+        const trashed = uniqueActiveBookmarks(state.bookmarks, ids)
+          .map((bookmark) => ({ ...bookmark, deletedAt: trashedAt, updatedAt: trashedAt }));
+        if (trashed.length === 0) { return; }
+
+        const nextBookmarks = new Map(state.bookmarks);
+        const nextCounts = { ...state.countsByCollection };
+        for (const bookmark of trashed) {
+          nextBookmarks.delete(bookmark.id);
+          decrementCollectionCount(nextCounts, bookmark.collectionId);
+        }
+        set({
+          bookmarks: nextBookmarks,
+          countsByCollection: nextCounts,
+          trashedBookmarks: state._trashedLoaded ? [...state.trashedBookmarks, ...trashed] : state.trashedBookmarks,
+        });
+        assertCountsInvariant(get());
+        void idbBulkWrite(trashed.flatMap((bookmark) => [
+          { type: "delete" as const, store: "bookmarks" as const, key: bookmark.id },
+          { type: "put" as const, store: "trashed-bookmarks" as const, value: bookmark },
+        ]));
+        syncEngine?.enqueue({ bookmarks: trashed.map((bookmark) => toServerBookmark(bookmark, { isTrashed: 1 })) });
+        usePlanStore.getState().moveUsageToTrash("bookmark", trashed.length);
       },
 
       restoreFromTrash: (bookmarkId, collectionIdOverride) => {
