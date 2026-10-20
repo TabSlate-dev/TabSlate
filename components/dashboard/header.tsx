@@ -1,6 +1,5 @@
 
 
-import { useState } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -28,7 +27,7 @@ import {
 } from "lucide-react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { cn } from "@/lib/utils";
-import { AddBookmarkDialog } from "@/components/dashboard/add-bookmark-dialog";
+import { openBookmarkDialog } from "@/lib/bookmark-dialog-events";
 
 
 interface BookmarksHeaderProps {
@@ -60,8 +59,6 @@ export function BookmarksHeader({ title }: BookmarksHeaderProps) {
   const setSortBy = useBookmarksStore(s => s.setSortBy);
   const filterType = useBookmarksStore(s => s.filterType);
   const setFilterType = useBookmarksStore(s => s.setFilterType);
-
-  const [addBookmarkOpen, setAddBookmarkOpen] = useState(false);
 
   const currentSort = sortOptions.find((opt) => opt.value === sortBy);
   const currentFilter = filterOptions.find((opt) => opt.value === filterType);
@@ -176,7 +173,7 @@ export function BookmarksHeader({ title }: BookmarksHeaderProps) {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          <Button size="sm" className="hidden sm:flex" onClick={() => setAddBookmarkOpen(true)}>
+          <Button size="sm" className="hidden sm:flex" onClick={() => openBookmarkDialog()}>
             <Plus className="size-4" />
             {t("header_addBookmark")}
           </Button>
@@ -197,8 +194,6 @@ export function BookmarksHeader({ title }: BookmarksHeaderProps) {
           </Button>
         </div>
       </div>
-
-      <AddBookmarkDialog open={addBookmarkOpen} onOpenChange={setAddBookmarkOpen} />
     </header>
   );
 }

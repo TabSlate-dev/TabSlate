@@ -839,42 +839,6 @@
       }
     }
   },
-  "addBookmark_title": {
-    "message": "Add Bookmark"
-  },
-  "addBookmark_desc": {
-    "message": "Manually add a bookmark to your collection."
-  },
-  "addBookmark_fieldTitle": {
-    "message": "Title"
-  },
-  "addBookmark_placeholderTitle": {
-    "message": "My Website"
-  },
-  "addBookmark_fieldUrl": {
-    "message": "URL"
-  },
-  "addBookmark_placeholderUrl": {
-    "message": "https://example.com"
-  },
-  "addBookmark_fieldDesc": {
-    "message": "Description"
-  },
-  "addBookmark_placeholderDesc": {
-    "message": "Optional description..."
-  },
-  "addBookmark_fieldCollection": {
-    "message": "Collection"
-  },
-  "addBookmark_selectCollection": {
-    "message": "Select collection"
-  },
-  "addBookmark_fieldTags": {
-    "message": "Tags"
-  },
-  "addBookmark_btnSubmit": {
-    "message": "Add Bookmark"
-  },
   "import_step0_desc": {
     "message": "Choose the export source you want to import from."
   },
@@ -1400,45 +1364,6 @@
   },
   "trashContent_deleteConfirmDesc": {
     "message": "These items will be permanently deleted and cannot be recovered."
-  },
-  "bookmarkTagsDialog_title": {
-    "message": "Manage Tags"
-  },
-  "bookmarkTagsDialog_desc": {
-    "message": "Select tags for this bookmark."
-  },
-  "bookmarkTagsDialog_noTags": {
-    "message": "No tags available. Create tags in the sidebar first."
-  },
-  "bookmarkTagsDialog_createTag": {
-    "message": "Create new tag"
-  },
-  "bookmarkTagsDialog_cancel": {
-    "message": "Cancel"
-  },
-  "bookmarkTagsDialog_save": {
-    "message": "Save"
-  },
-  "editBookmarkDialog_title": {
-    "message": "Edit Bookmark"
-  },
-  "editBookmarkDialog_desc": {
-    "message": "Edit the title, url and description of this bookmark."
-  },
-  "editBookmarkDialog_titleField": {
-    "message": "Title"
-  },
-  "editBookmarkDialog_urlField": {
-    "message": "URL"
-  },
-  "editBookmarkDialog_descField": {
-    "message": "Description"
-  },
-  "editBookmarkDialog_cancel": {
-    "message": "Cancel"
-  },
-  "editBookmarkDialog_save": {
-    "message": "Save changes"
   },
   "languageSelector_auto": {
     "message": "Auto Detect"

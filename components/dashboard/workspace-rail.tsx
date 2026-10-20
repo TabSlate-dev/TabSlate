@@ -1,5 +1,6 @@
 import * as React from "react";
 import { Layers, Settings } from "lucide-react";
+import { BookmarkDialog } from "@/components/dashboard/shared/bookmark-dialog";
 import { ImportDialog } from "@/components/dashboard/import-dialog";
 import { SettingsDialog } from "@/components/dashboard/settings-dialog";
 import { WorkspaceManager } from "@/components/dashboard/workspace-manager";
@@ -165,6 +166,7 @@ export function WorkspaceRail({ syncStatus }: WorkspaceRailProps) {
         initialTab={settingsTab}
       />
       <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+      <BookmarkDialog />
     </TooltipProvider>
   );
 }

@@ -39,8 +39,6 @@ import type { Bookmark as BookmarkType } from "@/lib/types";
 
 import { HeroSection } from "./hero-section";
 import { useTabsStore } from "@/store/tabs-store";
-import { EditBookmarkDialog } from "@/components/dashboard/shared/edit-bookmark-dialog";
-import { BookmarkTagsDialog } from "@/components/dashboard/shared/bookmark-tags-dialog";
 import { ActiveFilterChips } from "@/components/dashboard/shared/active-filter-chips";
 import { SearchBox } from "./search-box";
 import { useTranslation } from "@/hooks/use-translation";
@@ -270,11 +268,9 @@ interface DraggableBookmarkCardProps {
   bookmark: BookmarkType;
   variant?: "grid" | "list";
   isHighlighted?: boolean;
-  onEdit?: (bookmark: BookmarkType) => void;
-  onAddTags?: (bookmark: BookmarkType) => void;
 }
 
-const DraggableBookmarkCard = React.memo(function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted, onEdit, onAddTags }: DraggableBookmarkCardProps) {
+const DraggableBookmarkCard = React.memo(function DraggableBookmarkCard({ bookmark, variant = "grid", isHighlighted }: DraggableBookmarkCardProps) {
   const dragData: BookmarkDragData = {
     type: "bookmark",
     bookmarkId: bookmark.id,
@@ -296,8 +292,6 @@ const DraggableBookmarkCard = React.memo(function DraggableBookmarkCard({ bookma
           variant={variant}
           isHighlighted={isHighlighted}
           dragHandleProps={{ "data-drag-handle": true }}
-          onEdit={onEdit}
-          onAddTags={onAddTags}
         />
       </div>
       {isDragging && (
@@ -347,8 +341,6 @@ export function BookmarksContent() {
   const workspaces = useWorkspaceStore(s => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore(s => s.activeWorkspaceId);
 
-  const [editingBookmark, setEditingBookmark] = React.useState<BookmarkType | null>(null);
-  const [taggingBookmark, setTaggingBookmark] = React.useState<BookmarkType | null>(null);
   const [expandedCollectionIds, setExpandedCollectionIds] = React.useState<Record<string, boolean>>({});
 
   const highlightedBookmarkId = useBookmarksStore((state) => state.highlightedBookmarkId);
@@ -698,8 +690,6 @@ export function BookmarksContent() {
                       bookmark={bookmark}
                       variant={viewMode}
                       isHighlighted={bookmark.id === highlightedBookmarkId}
-                      onEdit={setEditingBookmark}
-                      onAddTags={setTaggingBookmark}
                     />
                   ))}
                 </DroppableCollectionBand>
@@ -710,20 +700,6 @@ export function BookmarksContent() {
           })}
         </div>
 
-        {editingBookmark && (
-          <EditBookmarkDialog
-            bookmark={editingBookmark}
-            open={!!editingBookmark}
-            onOpenChange={(open) => !open && setEditingBookmark(null)}
-          />
-        )}
-        {taggingBookmark && (
-          <BookmarkTagsDialog
-            bookmark={taggingBookmark}
-            open={!!taggingBookmark}
-            onOpenChange={(open) => !open && setTaggingBookmark(null)}
-          />
-        )}
         <BulkActionBar />
       </div>
     </SelectionOrdersProvider>

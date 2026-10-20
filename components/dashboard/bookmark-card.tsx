@@ -33,6 +33,7 @@ import {
 
 import { useSelectionStore } from "@/store/selection-store";
 import { isToggleSelectionClick } from "@/lib/platform";
+import { openBookmarkDialog } from "@/lib/bookmark-dialog-events";
 import { useSelectionOrders } from "@/components/dashboard/shared/selection-orders";
 
 const EMPTY_TAGS: Tag[] = [];
@@ -44,8 +45,6 @@ interface BookmarkCardProps {
   dragHandleProps?: React.HTMLAttributes<HTMLDivElement> & {
     "data-drag-handle"?: boolean;
   };
-  onEdit?: (bookmark: Bookmark) => void;
-  onAddTags?: (bookmark: Bookmark) => void;
 }
 
 interface SelectionCheckboxProps {
@@ -88,8 +87,6 @@ export const BookmarkCard = React.memo(function BookmarkCard({
   variant = "grid",
   isHighlighted = false,
   dragHandleProps,
-  onEdit,
-  onAddTags,
 }: BookmarkCardProps) {
   const { t } = useTranslation();
   const toggleFavorite = useBookmarksStore((s) => s.toggleFavorite);
@@ -124,8 +121,11 @@ export const BookmarkCard = React.memo(function BookmarkCard({
   const handleSmartOpen = React.useCallback(() => smartOpenUrl(bookmark.url), [bookmark.url]);
   const handleNewTabOpen = React.useCallback(() => openInNewTab(bookmark.url), [bookmark.url]);
 
-  const handleEdit = React.useCallback(() => onEdit?.(bookmark), [onEdit, bookmark]);
-  const handleAddTags = React.useCallback(() => onAddTags?.(bookmark), [onAddTags, bookmark]);
+  const handleEdit = React.useCallback(() => openBookmarkDialog({ bookmarkId: bookmark.id }), [bookmark.id]);
+  const handleAddTags = React.useCallback(
+    () => openBookmarkDialog({ bookmarkId: bookmark.id, focus: "tags" }),
+    [bookmark.id],
+  );
   const handleArchive = React.useCallback(() => archiveBookmark(bookmark.id), [archiveBookmark, bookmark.id]);
   const handleDelete = React.useCallback(() => trashBookmark(bookmark.id), [trashBookmark, bookmark.id]);
 
@@ -164,8 +164,8 @@ export const BookmarkCard = React.memo(function BookmarkCard({
       menu={menu}
       onOpenSmart={handleSmartOpen}
       onOpenNewTab={handleNewTabOpen}
-      onEdit={onEdit ? handleEdit : undefined}
-      onAddTags={onAddTags ? handleAddTags : undefined}
+      onEdit={handleEdit}
+      onAddTags={handleAddTags}
       onArchive={handleArchive}
       onDelete={handleDelete}
     />

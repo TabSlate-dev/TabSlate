@@ -6,9 +6,8 @@ interface BookmarkMenuItemsProps {
   menu: MenuPrimitives;
   onOpenSmart: () => void;
   onOpenNewTab: () => void;
-  /** Edit and Add tags are left out where the view has no dialog for them, e.g. Favorites. */
-  onEdit?: () => void;
-  onAddTags?: () => void;
+  onEdit: () => void;
+  onAddTags: () => void;
   onArchive: () => void;
   onDelete: () => void;
 }
@@ -34,18 +33,14 @@ export function BookmarkMenuItems({
         <ExternalLink className="size-4" />
         {t("bookmarkCard_openNewTab")}
       </Item>
-      {onEdit && (
-        <Item onSelect={onEdit}>
-          <Pencil className="size-4" />
-          {t("bookmarkCard_edit")}
-        </Item>
-      )}
-      {onAddTags && (
-        <Item onSelect={onAddTags}>
-          <TagIcon className="size-4" />
-          {t("bookmarkCard_addTags")}
-        </Item>
-      )}
+      <Item onSelect={onEdit}>
+        <Pencil className="size-4" />
+        {t("bookmarkCard_edit")}
+      </Item>
+      <Item onSelect={onAddTags}>
+        <TagIcon className="size-4" />
+        {t("bookmarkCard_addTags")}
+      </Item>
       <Separator />
       <Item onSelect={onArchive}>
         <Archive className="size-4" />

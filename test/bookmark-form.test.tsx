@@ -326,12 +326,12 @@ describe("editing a bookmark", () => {
   test("a focus request puts the cursor in the notes or the tags field", () => {
     open({ bookmarkId: "saved", focus: "notes" });
     const notes = field<HTMLTextAreaElement>("notes");
-    expect(document.activeElement).toBe(notes);
+    expect(document.activeElement === notes).toBe(true);
     expect(notes.selectionStart).toBe(notes.value.length);
     click(getByText("settings_cancel"));
 
     open({ bookmarkId: "saved", focus: "tags" });
-    expect(document.activeElement).toBe(tagField());
+    expect(document.activeElement === tagField()).toBe(true);
   });
 
   test("shows when the bookmark was added and last updated", () => {

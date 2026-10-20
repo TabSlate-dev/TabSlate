@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act, createElement, type PointerEvent as ReactPointerEvent } from "react";
 import type { PointerSensorOptions } from "@dnd-kit/core";
+import { OPEN_BOOKMARK_DIALOG_EVENT, readOpenBookmarkDialogRequest, type OpenBookmarkDialogRequest } from "@/lib/bookmark-dialog-events";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
 import {
   click,
@@ -30,8 +31,6 @@ import {
 const replacer = createModuleReplacer();
 const smartOpenUrl = mock(async () => {});
 const openInNewTab = mock(async () => {});
-const handleEdit = mock(() => {});
-const handleAddTags = mock(() => {});
 let app: AppModules;
 let BookmarkCard: typeof import("@/components/dashboard/bookmark-card").BookmarkCard;
 let SmartPointerSensor: typeof import("@/lib/drag-sensors").SmartPointerSensor;
@@ -42,12 +41,6 @@ const MENU_ITEMS = [
   "bookmarkCard_openNewTab",
   "bookmarkCard_edit",
   "bookmarkCard_addTags",
-  "bookmarkCard_archive",
-  "bookmarkCard_delete",
-];
-const MENU_ITEMS_WITHOUT_EDITING = [
-  "bookmarkCard_openSmart",
-  "bookmarkCard_openNewTab",
   "bookmarkCard_archive",
   "bookmarkCard_delete",
 ];
@@ -75,8 +68,6 @@ beforeEach(() => {
   view?.unmount();
   smartOpenUrl.mockClear();
   openInNewTab.mockClear();
-  handleEdit.mockClear();
-  handleAddTags.mockClear();
   app.useWorkspaceStore.setState({
     activeWorkspaceId: "home",
     workspaces: [makeWorkspace("home")],
@@ -105,7 +96,7 @@ const variants: Array<"grid" | "list"> = ["grid", "list"];
 for (const variant of variants) {
   describe(`BookmarkCard ${variant} menus`, () => {
     beforeEach(() => {
-      view?.rerender(createElement(BookmarkCard, { bookmark: article, variant, onEdit: handleEdit, onAddTags: handleAddTags }));
+      view?.rerender(createElement(BookmarkCard, { bookmark: article, variant }));
     });
     test("right-click shows the same actions as the ⋯ menu", async () => {
       await act(async () => {
@@ -120,32 +111,25 @@ for (const variant of variants) {
       expect(itemTexts("dropdown-menu-item")).toEqual(MENU_ITEMS);
     });
 
-    test("Edit and Add tags hand the bookmark to their handlers", async () => {
-      await act(async () => {
-        rightClick(getBySelector('[data-bookmark-id="b1"]'));
-      });
-      click(getByText("bookmarkCard_edit"));
-      expect(handleEdit).toHaveBeenCalledWith(article);
-
-      await act(async () => {
-        openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
-      });
-      click(getByText("bookmarkCard_addTags"));
-      expect(handleAddTags).toHaveBeenCalledWith(article);
-    });
-
-    test("without edit and tag handlers, as on Favorites, the menus leave out Edit and Add tags", async () => {
-      view?.rerender(createElement(BookmarkCard, { bookmark: article, variant }));
-      await act(async () => {
-        rightClick(getBySelector('[data-bookmark-id="b1"]'));
-      });
-      expect(itemTexts("context-menu-item")).toEqual(MENU_ITEMS_WITHOUT_EDITING);
-      pressKey(getByText("bookmarkCard_openSmart"), "Escape");
-
-      await act(async () => {
-        openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
-      });
-      expect(itemTexts("dropdown-menu-item")).toEqual(MENU_ITEMS_WITHOUT_EDITING);
+    test("Edit and Add tags open the bookmark form", async () => {
+      const requests: OpenBookmarkDialogRequest[] = [];
+      const handleOpenRequest = (event: Event) => {
+        requests.push(readOpenBookmarkDialogRequest(event));
+      };
+      window.addEventListener(OPEN_BOOKMARK_DIALOG_EVENT, handleOpenRequest);
+      try {
+        await act(async () => {
+          rightClick(getBySelector('[data-bookmark-id="b1"]'));
+        });
+        click(getByText("bookmarkCard_edit"));
+        await act(async () => {
+          openDropdown(getBySelector('[aria-label="bookmarkCard_moreActions"]'));
+        });
+        click(getByText("bookmarkCard_addTags"));
+      } finally {
+        window.removeEventListener(OPEN_BOOKMARK_DIALOG_EVENT, handleOpenRequest);
+      }
+      expect(requests).toEqual([{ bookmarkId: "b1" }, { bookmarkId: "b1", focus: "tags" }]);
     });
 
     test("the drag sensor ignores presses inside an open card menu but not presses on the card", async () => {

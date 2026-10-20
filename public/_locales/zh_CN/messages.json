@@ -839,42 +839,6 @@
       }
     }
   },
-  "addBookmark_title": {
-    "message": "添加书签"
-  },
-  "addBookmark_desc": {
-    "message": "手动添加书签到您的收藏集中。"
-  },
-  "addBookmark_fieldTitle": {
-    "message": "标题"
-  },
-  "addBookmark_placeholderTitle": {
-    "message": "我的网站"
-  },
-  "addBookmark_fieldUrl": {
-    "message": "网址"
-  },
-  "addBookmark_placeholderUrl": {
-    "message": "https://example.com"
-  },
-  "addBookmark_fieldDesc": {
-    "message": "描述"
-  },
-  "addBookmark_placeholderDesc": {
-    "message": "选填描述…"
-  },
-  "addBookmark_fieldCollection": {
-    "message": "收藏集"
-  },
-  "addBookmark_selectCollection": {
-    "message": "选择收藏集"
-  },
-  "addBookmark_fieldTags": {
-    "message": "标签"
-  },
-  "addBookmark_btnSubmit": {
-    "message": "添加书签"
-  },
   "import_step0_desc": {
     "message": "选择要导入的数据来源。"
   },
@@ -1400,45 +1364,6 @@
   },
   "trashContent_deleteConfirmDesc": {
     "message": "这些项目将被永久删除且无法恢复。"
-  },
-  "bookmarkTagsDialog_title": {
-    "message": "管理标签"
-  },
-  "bookmarkTagsDialog_desc": {
-    "message": "为此书签选择标签。"
-  },
-  "bookmarkTagsDialog_noTags": {
-    "message": "暂无可选标签，请先在侧边栏创建标签。"
-  },
-  "bookmarkTagsDialog_createTag": {
-    "message": "新建标签"
-  },
-  "bookmarkTagsDialog_cancel": {
-    "message": "取消"
-  },
-  "bookmarkTagsDialog_save": {
-    "message": "保存"
-  },
-  "editBookmarkDialog_title": {
-    "message": "编辑书签"
-  },
-  "editBookmarkDialog_desc": {
-    "message": "编辑此书签的标题、网址和描述。"
-  },
-  "editBookmarkDialog_titleField": {
-    "message": "标题"
-  },
-  "editBookmarkDialog_urlField": {
-    "message": "网址"
-  },
-  "editBookmarkDialog_descField": {
-    "message": "描述"
-  },
-  "editBookmarkDialog_cancel": {
-    "message": "取消"
-  },
-  "editBookmarkDialog_save": {
-    "message": "保存更改"
   },
   "languageSelector_auto": {
     "message": "自动检测"

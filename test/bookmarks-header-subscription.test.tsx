@@ -1,9 +1,11 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { installAppModules, setupDom, teardownDom } from "./helpers/dom-environment";
+import { click, getByText, installAppModules, setupDom, teardownDom } from "./helpers/dom-environment";
 import { createModuleReplacer } from "./helpers/module-replacer";
 import { act, createElement, Profiler } from "react";
 import { MemoryRouter } from "react-router-dom";
+
+import { OPEN_BOOKMARK_DIALOG_EVENT, readOpenBookmarkDialogRequest, type OpenBookmarkDialogRequest } from "@/lib/bookmark-dialog-events";
 
 const replacer = createModuleReplacer();
 let createRoot: typeof import("react-dom/client").createRoot;
@@ -63,6 +65,22 @@ function renderHeader() {
 }
 
 describe("BookmarksHeader store subscription", () => {
+  test("Add bookmark opens the shared form in add mode", () => {
+    const requests: OpenBookmarkDialogRequest[] = [];
+    const handleOpenRequest = (event: Event) => {
+      requests.push(readOpenBookmarkDialogRequest(event));
+    };
+    const header = renderHeader();
+    window.addEventListener(OPEN_BOOKMARK_DIALOG_EVENT, handleOpenRequest);
+    try {
+      click(getByText("header_addBookmark"));
+      expect(requests).toEqual([{}]);
+    } finally {
+      window.removeEventListener(OPEN_BOOKMARK_DIALOG_EVENT, handleOpenRequest);
+      header.unmount();
+    }
+  });
+
   test("labels the sort button with the current order's short name", () => {
     act(() => {
       useBookmarksStore.getState().setSortBy("updated-newest");

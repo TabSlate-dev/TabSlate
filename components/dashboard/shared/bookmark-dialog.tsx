@@ -59,12 +59,29 @@ export function BookmarkDialog() {
     return () => window.removeEventListener(OPEN_BOOKMARK_DIALOG_EVENT, handleOpenRequest);
   }, []);
 
+  const handleOpenAutoFocus = React.useCallback((event: Event) => {
+    if (!request?.focus || !(event.currentTarget instanceof HTMLElement)) {
+      return;
+    }
+    const selector = request.focus === "tags" ? '[role="combobox"]' : 'textarea[name="notes"]';
+    const field = event.currentTarget.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
+    if (!field) {
+      return;
+    }
+    // React autoFocus runs while an opening menu may still trap focus. Radix
+    // invokes this after activating the dialog's own focus scope.
+    event.preventDefault();
+    field.focus();
+    if (request.focus === "notes") {
+      field.setSelectionRange(field.value.length, field.value.length);
+    }
+  }, [request?.focus]);
   const handleClose = React.useCallback(() => setOpen(false), []);
   const editing = request?.bookmark !== undefined;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg" onOpenAutoFocus={handleOpenAutoFocus}>
         <DialogHeader>
           <DialogTitle>{t(editing ? "bookmarkForm_editTitle" : "bookmarkForm_addTitle")}</DialogTitle>
           <DialogDescription>{t(editing ? "bookmarkForm_editDesc" : "bookmarkForm_addDesc")}</DialogDescription>
