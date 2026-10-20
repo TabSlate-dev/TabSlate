@@ -4,6 +4,7 @@ import type {
   SyncPushPayload,
 } from "@/lib/api";
 import type { StoreName } from "@/lib/idb";
+import { bookmarkEditedAt } from "@/lib/bookmark-utils";
 import {
   WORKSPACE_LIFECYCLE_DEFERRED_SYNC_KEY,
   WORKSPACE_LIFECYCLE_INTENTS_KEY,
@@ -166,6 +167,8 @@ function matchesBookmark(
     readString(record, "url") === entity.url &&
     readString(record, "favicon") === entity.favicon_url &&
     readString(record, "description") === entity.description &&
+    (readString(record, "notes") ?? "") === (entity.notes ?? "") &&
+    entity.edited_at === bookmarkEditedAt(readNumber(record, "updatedAt"), readString(record, "createdAt") ?? "") &&
     readBoolean(record, "isFavorite") === entity.is_favorite &&
     entity.is_archived === (store === "archived-bookmarks") &&
     entity.is_trashed === expectedTrash &&

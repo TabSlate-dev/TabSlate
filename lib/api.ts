@@ -102,6 +102,8 @@ export interface ServerBookmark {
   url: string;
   favicon_url?: string;
   description?: string;
+  /** Absent when the server predates notes. */
+  notes?: string;
   is_favorite: boolean;
   is_archived: boolean;
   is_trashed: number;
@@ -111,6 +113,8 @@ export interface ServerBookmark {
   deleted_at?: number;
   created_at: number;
   updated_at: number;
+  /** The client-reported time of the user's last edit; absent from older servers and older rows. */
+  edited_at?: number;
 }
 
 export interface ServerTag {

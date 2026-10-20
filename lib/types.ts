@@ -33,12 +33,26 @@ export interface Bookmark {
   title: string;
   url: string;
   description: string;
+  /** Plain-text notes; a missing value means "". */
+  notes?: string;
   favicon: string;
   collectionId: string;
   tags: string[]; // tag IDs
   createdAt: string;
+  /** Unix ms of the user's last change; missing for bookmarks saved before edit times existed. */
+  updatedAt?: number;
   isFavorite: boolean;
   hasDarkIcon?: boolean;
   seq: number;
   deletedAt?: number;
+}
+
+/** The fields a batch update may change. */
+export type BookmarkBatchPatch = Partial<
+  Pick<Bookmark, "title" | "url" | "description" | "notes" | "collectionId" | "tags" | "isFavorite">
+>;
+
+export interface BookmarkPatchEntry {
+  id: string;
+  patch: BookmarkBatchPatch;
 }

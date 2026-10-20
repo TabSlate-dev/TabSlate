@@ -35,7 +35,7 @@ const cases: Array<{
     name: store,
     store,
     persisted: { id: store, collectionId: "c", title: "Page", url: "https://example.test", favicon: "icon", description: "d", isFavorite: true, tags: ["t"], createdAt: "2026-01-01", seq: 0 },
-    pushed: { id: store, collection_id: "c", title: "Page", url: "https://example.test", favicon_url: "icon", description: "d", is_favorite: true, is_archived: store === "archived-bookmarks", is_trashed: store === "trashed-bookmarks" ? 1 : 0, tag_ids: ["t"], position: 0, seq: 0, updated_at: 99, deleted_at: null },
+    pushed: { id: store, collection_id: "c", title: "Page", url: "https://example.test", favicon_url: "icon", description: "d", notes: "", is_favorite: true, is_archived: store === "archived-bookmarks", is_trashed: store === "trashed-bookmarks" ? 1 : 0, tag_ids: ["t"], position: 0, seq: 0, updated_at: 99, edited_at: Date.parse("2026-01-01"), deleted_at: null },
   })),
   {
     name: "Saved Group including tabs",
@@ -47,6 +47,18 @@ const cases: Array<{
 ];
 
 describe("sync confirmation", () => {
+  test("bookmark notes and edit time must match the stored bookmark", () => {
+    const bookmark = cases.find((confirmationCase) => confirmationCase.store === "bookmarks");
+    if (!bookmark) {
+      throw new Error("bookmark fixture is missing");
+    }
+    const { store, persisted, pushed } = bookmark;
+    expect(matchesPersistedSyncEntity(store, { ...persisted, notes: "local" }, pushed, [], [])).toBe(false);
+    expect(matchesPersistedSyncEntity(store, { ...persisted, notes: "local" }, { ...pushed, notes: "local" }, [], [])).toBe(true);
+    expect(matchesPersistedSyncEntity(store, { ...persisted, updatedAt: 5 }, pushed, [], [])).toBe(false);
+    expect(matchesPersistedSyncEntity(store, { ...persisted, updatedAt: 5 }, { ...pushed, edited_at: 5 }, [], [])).toBe(true);
+  });
+
   for (const confirmationCase of cases) {
     test(`matches canonical ${confirmationCase.name} fields while ignoring seq and updated_at`, () => {
       const { store, persisted, pushed, tabs } = confirmationCase;

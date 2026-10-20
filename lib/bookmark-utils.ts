@@ -60,6 +60,17 @@ export function bookmarkCreatedAtTime(createdAt: string): number {
   return Number.isFinite(epoch) ? epoch : 0;
 }
 
+/** The longest note a bookmark may carry, in UTF-16 code units (what `maxLength` counts). */
+export const MAX_BOOKMARK_NOTES_LENGTH = 10_000;
+
+/**
+ * When the user last changed a bookmark. Bookmarks saved before edit times
+ * existed report their creation time.
+ */
+export function bookmarkEditedAt(updatedAt: number | undefined, createdAt: string): number {
+  return updatedAt ?? bookmarkCreatedAtTime(createdAt);
+}
+
 /**
  * Newest first, breaking ties by id.
  *

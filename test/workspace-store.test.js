@@ -1052,6 +1052,8 @@ if (runsInIsolatedProcess(import.meta.filename)) {
         url: item.url,
         favicon_url: item.favicon,
         description: item.description,
+        notes: item.notes ?? "",
+        edited_at: item.updatedAt ?? Date.parse(item.createdAt),
         is_favorite: item.isFavorite,
         is_archived: isArchived,
         is_trashed: isTrashed,
