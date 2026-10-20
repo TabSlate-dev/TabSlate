@@ -140,6 +140,7 @@ export default defineBackground(() => {
       createdAt: new Date().toISOString(),
       isFavorite: false,
       ...bookmarkData,
+      updatedAt: Date.now(),
     };
     try {
       await idbPut("bookmarks", fullBookmark);

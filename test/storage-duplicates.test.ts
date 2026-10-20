@@ -1,5 +1,5 @@
 // @ts-expect-error Bun provides this test module at runtime.
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
 import { makeBookmark, makeCollection, makeWorkspace } from "./helpers/library-fixtures";
 
@@ -14,12 +14,15 @@ const stores = new Map<string, object[]>([
   ["collections", [makeCollection("reading", "home"), makeCollection("old", "home", { archivedAt: 1 })]],
   ["tags", []],
 ]);
+const puts: object[] = [];
+let storageService: typeof import("@/lib/storage").storageService;
 let findSavedDuplicates: typeof import("@/lib/storage").findSavedDuplicates;
 
 beforeAll(async () => {
   const realIdb = await importFresh<typeof import("@/lib/idb")>("lib/idb.ts");
   await replacer.replace("@/lib/idb", {
     ...realIdb,
+    idbPut: async (_store: string, value: object) => { puts.push(value); },
     idbGetAll: async (store: string) => {
       if (failReads) {
         throw new Error("IndexedDB unavailable");
@@ -29,7 +32,7 @@ beforeAll(async () => {
     idbGet: async (_store: string, key: string) =>
       key === "activeWorkspaceId" ? { key, value: "home" } : undefined,
   });
-  ({ findSavedDuplicates } = await importFresh<typeof import("@/lib/storage")>("lib/storage.ts"));
+  ({ findSavedDuplicates, storageService } = await importFresh<typeof import("@/lib/storage")>("lib/storage.ts"));
 });
 
 afterAll(() => {
@@ -54,6 +57,23 @@ describe("findSavedDuplicates", () => {
       expect(warning).toHaveBeenCalled();
     } finally {
       warning.mockRestore();
+    }
+  });
+});
+
+
+describe("storageService.addBookmark", () => {
+  test("writes the note and stamps the edit time", async () => {
+    setSystemTime(new Date(70_000));
+    try {
+      const saved = await storageService.addBookmark({
+        title: "Page", url: "https://example.com/new", favicon: "", collectionId: "reading", notes: "Why",
+      });
+      expect(saved.notes).toBe("Why");
+      expect(saved.updatedAt).toBe(70_000);
+      expect(puts.at(-1)).toEqual(saved);
+    } finally {
+      setSystemTime();
     }
   });
 });

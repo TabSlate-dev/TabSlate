@@ -5,11 +5,13 @@ import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
 import {
   click,
   getByText,
+  getBySelector,
   installAppModules,
   queryByText,
   render,
   setupDom,
   teardownDom,
+  typeInto,
   wait,
   type AppModules,
   type RenderResult,
@@ -128,4 +130,27 @@ test("a newtab that cannot be reached falls back to the direct write", async () 
 
   expect(fallbackWrite).toHaveBeenCalledTimes(1);
   expect(queryByText("popup_saved")).not.toBeNull();
+});
+
+
+test("a note added in the popup travels with the save", async () => {
+  answerSave = async () => ({ status: "saved", bookmarkId: "saved-1" });
+  expect(document.querySelector("#popup-note")).toBeNull();
+  click(getByText("popup_addNote"));
+  const field = getBySelector<HTMLTextAreaElement>("#popup-note");
+  expect(field.maxLength).toBe(10_000);
+  typeInto(field, "  Read before Friday  ");
+  await save();
+
+  const [message] = delivered;
+  expect(message?.type === "ADD_BOOKMARK" ? message.data.notes : undefined).toBe("Read before Friday");
+});
+
+test("the storage fallback keeps the trimmed note", async () => {
+  answerSave = async () => undefined;
+  click(getByText("popup_addNote"));
+  typeInto(getBySelector<HTMLTextAreaElement>("#popup-note"), "  Fallback note  ");
+  await save();
+
+  expect(fallbackWrite.mock.calls[0]?.[0].notes).toBe("Fallback note");
 });

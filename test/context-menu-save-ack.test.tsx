@@ -17,6 +17,7 @@ const listeners: Array<(message: ExtensionMessage, sender: chrome.runtime.Messag
 let handleSave: (info: chrome.contextMenus.OnClickData, tab?: chrome.tabs.Tab) => Promise<void> = async () => {};
 const badges: string[] = [];
 let fallbackWrites = 0;
+let lastFallback: object | null = null;
 let transportFails = false;
 const event = { addListener: () => {}, removeListener: () => {} };
 const input = { title: "New bookmark", url: "https://new.example.com", favicon: "", description: "", collectionId: "", tags: [], seq: 0 };
@@ -26,7 +27,7 @@ beforeAll(async () => {
   app = await installAppModules(replacer);
   plan = (await import("@/store/plan-store")).usePlanStore;
   const realIdb = await import("@/lib/idb");
-  await replacer.replace("@/lib/idb", { ...realIdb, idbPut: async () => { fallbackWrites += 1; }, idbGetAll: async () => [] });
+  await replacer.replace("@/lib/idb", { ...realIdb, idbPut: async (_store: string, value: object) => { fallbackWrites += 1; lastFallback = value; }, idbGetAll: async () => [] });
   const realStorage = await import("@/lib/storage");
   await replacer.replace("@/lib/storage", { ...realStorage, getWorkspaceState: async () => ({ activeWorkspaceId: "", workspaces: [], collections: [], tags: [] }) });
   const realBadge = await import("@/lib/browser/action-badge");
@@ -81,6 +82,7 @@ beforeEach(() => {
   badges.length = 0;
   responses.length = 0;
   fallbackWrites = 0;
+  lastFallback = null;
   transportFails = false;
   app.useBookmarksStore.setState({ bookmarks: new Map(), countsByCollection: {} });
 });
@@ -109,6 +111,7 @@ test("accepted saves acknowledge the nonempty ID before showing success", async 
   expect(app.useBookmarksStore.getState().bookmarks.size).toBe(1);
   expect(badges).toEqual(["saved"]);
   const [bookmark] = app.useBookmarksStore.getState().bookmarks.values();
+  expect(typeof bookmark.updatedAt).toBe("number");
   expect(bookmark.id.length).toBeGreaterThan(0);
   expect(responses).toContainEqual({ status: "saved", bookmarkId: bookmark.id });
 });
@@ -118,5 +121,6 @@ test("transport failure retains direct persistence and success feedback", async 
   const writesBefore = fallbackWrites;
   await handleSave({ menuItemId: "save-to-tabslate", editable: false }, page);
   expect(fallbackWrites).toBe(writesBefore + 1);
+  expect(typeof Reflect.get(lastFallback ?? {}, "updatedAt")).toBe("number");
   expect(badges).toEqual(["saved"]);
 });

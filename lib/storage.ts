@@ -4,14 +4,15 @@ import { idbGetAll, idbGet, idbPut } from "@/lib/idb";
 import { resolveActiveWorkspaceCollectionTarget } from "@/lib/workspace-visibility";
 import { findVisibleDuplicates, type DuplicateMatch } from "@/lib/duplicate-lookup";
 
-export type BookmarkInput = {
+export interface BookmarkInput {
   title: string;
   url: string;
   favicon: string;
   description?: string;
+  notes?: string;
   collectionId: string;
   tags?: string[];
-};
+}
 
 // ---------------------------------------------------------------------------
 // Workspace data (read-only for popup)
@@ -79,9 +80,11 @@ export const storageService = {
       url: input.url,
       favicon: input.favicon || "",
       description: input.description ?? "",
+      notes: input.notes ?? "",
       collectionId: target.id,
       tags: input.tags ?? [],
       createdAt: new Date().toISOString(),
+      updatedAt: Date.now(),
       isFavorite: false,
       seq: 0,
     };

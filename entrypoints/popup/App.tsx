@@ -3,6 +3,8 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { MAX_BOOKMARK_NOTES_LENGTH } from "@/lib/bookmark-utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +56,8 @@ function PopupContent() {
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   const [tagInput, setTagInput] = useState("");
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [note, setNote] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [pageInfo, setPageInfo] = useState<{ ogTitle: string; metaDescription: string } | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
@@ -159,6 +163,7 @@ function PopupContent() {
         url: tab.url,
         favicon: tab.favIconUrl,
         description: pageInfo?.metaDescription || "",
+        notes: note.trim(),
         collectionId: currentTargetId,
         tags: selectedTags.map((t) => t.id),
         seq: 0,
@@ -474,6 +479,33 @@ function PopupContent() {
               )}
             </div>
           </div>
+
+          {/* Note */}
+          {noteOpen ? (
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="popup-note" className="text-xs font-medium text-muted-foreground">
+                {t("popup_note")}
+              </label>
+              <Textarea
+                id="popup-note"
+                value={note}
+                maxLength={MAX_BOOKMARK_NOTES_LENGTH}
+                autoFocus
+                onChange={(e) => setNote(e.target.value)}
+                className="min-h-20 max-h-40 text-sm"
+              />
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="link"
+              size="xs"
+              className="self-start px-0"
+              onClick={() => setNoteOpen(true)}
+            >
+              {t("popup_addNote")}
+            </Button>
+          )}
 
           {/* Save button */}
           <Button
