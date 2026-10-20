@@ -1957,5 +1957,54 @@
   },
   "bulkTags_apply": {
     "message": "应用"
+  },
+  "bulkActions_open": {
+    "message": "打开"
+  },
+  "bulkActions_openAll": {
+    "message": "在新标签页中全部打开"
+  },
+  "bulkActions_openAsGroup": {
+    "message": "作为标签组打开"
+  },
+  "bulkActions_more": {
+    "message": "更多操作"
+  },
+  "bulkActions_copyLinks": {
+    "message": "复制链接"
+  },
+  "bulkActions_copyMarkdown": {
+    "message": "复制为 Markdown 列表"
+  },
+  "bulkActions_copiedOne": {
+    "message": "已复制 1 个链接"
+  },
+  "bulkActions_copiedOther": {
+    "message": "已复制 $1 个链接",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_copyFailed": {
+    "message": "无法复制到剪贴板"
+  },
+  "bulkActions_openFailed": {
+    "message": "无法打开标签页"
+  },
+  "bulkActions_confirmOpenTitle": {
+    "message": "打开 $1 个标签页？",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_confirmOpenDesc": {
+    "message": "每个选中的书签都会在新的后台标签页中打开。"
+  },
+  "bulkActions_confirmOpen": {
+    "message": "打开标签页"
   }
 }

@@ -69,6 +69,8 @@ interface TabsState {
   saveWindowAsCollection: (name: string, deduplicate: boolean) => Promise<SaveTabsToCollectionResult>;
   saveGroupAsCollection: (groupId: number, name: string, deduplicate: boolean) => Promise<SaveTabsToCollectionResult>;
   openCollectionAsGroup: (collectionId: string, title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
+  /** Opens URLs as background tabs in a new group, honoring the compact-title setting. */
+  openUrlsAsGroup: (urls: string[], title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
   openCollection: (collectionId: string) => Promise<void>;
   
   // Group actions
@@ -439,25 +441,16 @@ export const useTabsStore = create<TabsState>((set, get) => ({
     return await _saveTabsToCollectionHelper(groupTabs, name, deduplicate);
   },
 
-  openCollectionAsGroup: async (collectionId, title, color, compact) => {
-    const { bookmarks: bookmarksMap } = useBookmarksStore.getState();
-    const bookmarks = Array.from(bookmarksMap.values());
-    const urls = bookmarks
-      .filter((b) => b.collectionId === collectionId)
-      .map((b) => b.url);
+  openUrlsAsGroup: async (urls, title, color, compact) => {
     if (!urls.length) { return; }
 
     const { compactGroupTitles } = useWorkspaceStore.getState();
     const isCompact = compact !== undefined ? compact : compactGroupTitles;
-    
-    let fullTitle = title.trim();
-    if (!fullTitle) {
-      fullTitle = getAutoGroupName();
-    }
+    const fullTitle = title.trim() || getAutoGroupName();
     const chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
 
     const groupId = await openAsTabGroup(urls, chromeTitle, color);
-    
+
     const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
     idbPut("tab-group-titles", { groupId, title: fullTitle });
 
@@ -467,6 +460,14 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       getCurrentWindowGroups(),
     ]);
     set({ openTabs: tabs, tabGroups: groups, fullTitles: currentTitles });
+  },
+
+  openCollectionAsGroup: async (collectionId, title, color, compact) => {
+    const { bookmarks: bookmarksMap } = useBookmarksStore.getState();
+    const urls = Array.from(bookmarksMap.values())
+      .filter((b) => b.collectionId === collectionId)
+      .map((b) => b.url);
+    await get().openUrlsAsGroup(urls, title, color, compact);
   },
 
   openCollection: async (collectionId) => {

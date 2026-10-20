@@ -1957,5 +1957,54 @@
   },
   "bulkTags_apply": {
     "message": "Apply"
+  },
+  "bulkActions_open": {
+    "message": "Open"
+  },
+  "bulkActions_openAll": {
+    "message": "Open all in new tabs"
+  },
+  "bulkActions_openAsGroup": {
+    "message": "Open as a tab group"
+  },
+  "bulkActions_more": {
+    "message": "More actions"
+  },
+  "bulkActions_copyLinks": {
+    "message": "Copy links"
+  },
+  "bulkActions_copyMarkdown": {
+    "message": "Copy as Markdown list"
+  },
+  "bulkActions_copiedOne": {
+    "message": "Copied 1 link"
+  },
+  "bulkActions_copiedOther": {
+    "message": "Copied $1 links",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_copyFailed": {
+    "message": "Couldn't copy to the clipboard"
+  },
+  "bulkActions_openFailed": {
+    "message": "Couldn't open the tabs"
+  },
+  "bulkActions_confirmOpenTitle": {
+    "message": "Open $1 tabs?",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_confirmOpenDesc": {
+    "message": "Each selected bookmark opens in a new background tab."
+  },
+  "bulkActions_confirmOpen": {
+    "message": "Open tabs"
   }
 }

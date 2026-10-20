@@ -79,6 +79,13 @@ export async function openUrls(urls: string[]): Promise<void> {
   }
 }
 
+/** Open URLs, in order, as background tabs in the current window. */
+export async function openUrlsInBackground(urls: readonly string[]): Promise<void> {
+  for (const url of urls) {
+    await chrome.tabs.create({ url, active: false });
+  }
+}
+
 /**
  * Open a URL in a new background tab via the extension API, rather than
  * window.open(url, "_blank"), which leaves window.opener set in some

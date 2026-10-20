@@ -1,6 +1,12 @@
 import * as React from "react";
-import { Archive, FolderInput, Heart, Trash2, X } from "lucide-react";
+import { Archive, ChevronDown, ExternalLink, FolderInput, Heart, MoreHorizontal, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { supportsTabGroups } from "@/lib/browser/capabilities";
+import { formatLinkList, formatMarkdownLinkList } from "@/lib/bookmark-clipboard";
+import { openUrlsInBackground } from "@/lib/chrome/tabs";
+import { useTabsStore } from "@/store/tabs-store";
+import { OpenTabsConfirmDialog } from "./open-tabs-confirm-dialog";
 import { CollectionPicker } from "@/components/dashboard/shared/collection-picker";
 import { useSelectionOrders } from "@/components/dashboard/shared/selection-orders";
 import { useTranslation } from "@/hooks/use-translation";
@@ -12,6 +18,10 @@ import { useSelectionStore } from "@/store/selection-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { BulkNotice, useBulkNotice } from "./bulk-notice";
 import { BulkTagsMenu } from "./tags-menu";
+
+/** Opening more tabs than this asks first. */
+const OPEN_CONFIRM_THRESHOLD = 10;
+type OpenMode = "tabs" | "group";
 
 /** The active bookmarks behind `ids`, in the order of `ids`. */
 function activeBookmarks(ids: Iterable<string>, bookmarks: ReadonlyMap<string, Bookmark>): Bookmark[] {
@@ -41,8 +51,22 @@ export function BulkActionBar() {
   const archiveBookmarks = useBookmarksStore((s) => s.archiveBookmarks);
   const trashBookmarks = useBookmarksStore((s) => s.trashBookmarks);
   const [notice, showNotice] = useBulkNotice();
+  const openUrlsAsGroup = useTabsStore((s) => s.openUrlsAsGroup);
+  const [pendingOpen, setPendingOpen] = React.useState<OpenMode | null>(null);
+
+  // Observe empty transitions directly: clear and reselect can share a React batch.
+  React.useEffect(() => useSelectionStore.subscribe((state) => {
+    if (state.selectedIds.size === 0) {
+      setPendingOpen(null);
+    }
+  }), []);
 
   const selected = React.useMemo(() => activeBookmarks(selectedIds, bookmarks), [selectedIds, bookmarks]);
+  React.useEffect(() => {
+    if (selected.length === 0) {
+      setPendingOpen(null);
+    }
+  }, [selected.length]);
   const allFavorites = selected.length > 0 && selected.every((bookmark) => bookmark.isFavorite);
   const countText = selected.length > 0 ? t("bulkActions_selectedCount", [String(selected.length)]) : "";
 
@@ -92,6 +116,65 @@ export function BulkActionBar() {
     setMany(orders?.current.onScreenOrder ?? [], true);
   };
 
+  /** The selected bookmarks in the view's display order. */
+  const selectedInViewOrder = () =>
+    activeBookmarks((orders?.current.viewOrder ?? []).filter((id) => selectedIds.has(id)), bookmarks);
+
+  /** The shared collection's name when the bookmarks share one, otherwise the active workspace's. */
+  const groupTitleFor = (ordered: readonly Bookmark[]): string => {
+    const state = useWorkspaceStore.getState();
+    const collectionIds = new Set(ordered.map((bookmark) => bookmark.collectionId));
+    const [onlyCollectionId] = collectionIds;
+    const shared = collectionIds.size === 1
+      ? state.collections.find((collection) => collection.id === onlyCollectionId)
+      : undefined;
+    return shared?.name ?? state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId)?.name ?? "";
+  };
+
+  const openSelection = async (mode: OpenMode) => {
+    const ordered = selectedInViewOrder();
+    const urls = ordered.map((bookmark) => bookmark.url);
+    try {
+      if (mode === "group") {
+        await openUrlsAsGroup(urls, groupTitleFor(ordered), "grey");
+      } else {
+        await openUrlsInBackground(urls);
+      }
+    } catch {
+      showNotice({ tone: "error", message: t("bulkActions_openFailed") });
+    }
+  };
+
+  const handleOpen = (mode: OpenMode) => {
+    if (selected.length > OPEN_CONFIRM_THRESHOLD) {
+      setPendingOpen(mode);
+      return;
+    }
+    void openSelection(mode);
+  };
+
+  const handleConfirmOpen = () => {
+    const mode = pendingOpen;
+    setPendingOpen(null);
+    if (mode) {
+      void openSelection(mode);
+    }
+  };
+
+  const handleCopy = async (format: "plain" | "markdown") => {
+    const ordered = selectedInViewOrder();
+    const text = format === "markdown" ? formatMarkdownLinkList(ordered) : formatLinkList(ordered);
+    try {
+      await navigator.clipboard.writeText(text);
+      showNotice({
+        tone: "success",
+        message: ordered.length === 1 ? t("bulkActions_copiedOne") : t("bulkActions_copiedOther", [String(ordered.length)]),
+      });
+    } catch {
+      showNotice({ tone: "error", message: t("bulkActions_copyFailed") });
+    }
+  };
+
   return (
     <>
       {notice && <BulkNotice notice={notice} />}
@@ -115,7 +198,7 @@ export function BulkActionBar() {
               <Heart className={cn("size-4", allFavorites && "fill-red-500 text-red-500")} />
               {t(allFavorites ? "bulkActions_unfavorite" : "bulkActions_favorite")}
             </Button>
-            <Button type="button" variant="ghost" size="sm" onClick={handleArchive}>
+            <Button type="button" variant="ghost" size="sm" className="hidden sm:inline-flex" onClick={handleArchive}>
               <Archive className="size-4" />
               {t("bulkActions_archive")}
             </Button>
@@ -123,6 +206,39 @@ export function BulkActionBar() {
               <Trash2 className="size-4" />
               {t("bulkActions_delete")}
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="hidden sm:inline-flex">
+                  <ExternalLink className="size-4" />
+                  {t("bulkActions_open")}
+                  <ChevronDown className="size-3.5 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="center">
+                <DropdownMenuItem onSelect={() => handleOpen("tabs")}>{t("bulkActions_openAll")}</DropdownMenuItem>
+                {supportsTabGroups() && (
+                  <DropdownMenuItem onSelect={() => handleOpen("group")}>{t("bulkActions_openAsGroup")}</DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="ghost" size="icon-sm" aria-label={t("bulkActions_more")}>
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => void handleCopy("plain")}>{t("bulkActions_copyLinks")}</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void handleCopy("markdown")}>{t("bulkActions_copyMarkdown")}</DropdownMenuItem>
+                {/* Below the sm breakpoint, Open and Archive live here. */}
+                <DropdownMenuSeparator className="sm:hidden" />
+                <DropdownMenuItem className="sm:hidden" onSelect={() => handleOpen("tabs")}>{t("bulkActions_openAll")}</DropdownMenuItem>
+                {supportsTabGroups() && (
+                  <DropdownMenuItem className="sm:hidden" onSelect={() => handleOpen("group")}>{t("bulkActions_openAsGroup")}</DropdownMenuItem>
+                )}
+                <DropdownMenuItem className="sm:hidden" onSelect={handleArchive}>{t("bulkActions_archive")}</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button type="button" variant="ghost" size="sm" onClick={handleSelectAll}>
               {t("bulkActions_selectAll")}
             </Button>
@@ -130,6 +246,16 @@ export function BulkActionBar() {
               <X className="size-4" />
             </Button>
           </div>
+          <OpenTabsConfirmDialog
+            count={selected.length}
+            open={pendingOpen !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setPendingOpen(null);
+              }
+            }}
+            onConfirm={handleConfirmOpen}
+          />
         </div>
       )}
     </>
