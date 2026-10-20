@@ -31,6 +31,10 @@ import {
   type MenuPrimitives,
 } from "@/components/dashboard/shared/menu-primitives";
 
+import { useSelectionStore } from "@/store/selection-store";
+import { isToggleSelectionClick } from "@/lib/platform";
+import { useSelectionOrders } from "@/components/dashboard/shared/selection-orders";
+
 const EMPTY_TAGS: Tag[] = [];
 
 interface BookmarkCardProps {
@@ -42,6 +46,41 @@ interface BookmarkCardProps {
   };
   onEdit?: (bookmark: Bookmark) => void;
   onAddTags?: (bookmark: Bookmark) => void;
+}
+
+interface SelectionCheckboxProps {
+  title: string;
+  checked: boolean;
+  /** Shown without hovering, e.g. while any card is selected. */
+  visible: boolean;
+  onClick: (event: React.MouseEvent<HTMLButtonElement>) => void;
+}
+
+/** Covers the favicon square, so showing it never shifts the card's layout. */
+export function SelectionCheckbox({ title, checked, visible, onClick }: SelectionCheckboxProps) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={t("bookmarkCard_select", [title])}
+      onClick={onClick}
+      className={cn(
+        "absolute inset-0 flex items-center justify-center bg-muted transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        visible ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+      )}
+    >
+      <span
+        className={cn(
+          "flex size-4 items-center justify-center rounded-sm border",
+          checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/60 bg-background",
+        )}
+      >
+        {checked && <Check className="size-3" />}
+      </span>
+    </button>
+  );
 }
 
 export const BookmarkCard = React.memo(function BookmarkCard({
@@ -58,6 +97,13 @@ export const BookmarkCard = React.memo(function BookmarkCard({
   const trashBookmark = useBookmarksStore((s) => s.trashBookmark);
   const selectedTags = useBookmarksStore((s) => s.selectedTags);
   const toggleTag = useBookmarksStore((s) => s.toggleTag);
+
+  const selectionOrders = useSelectionOrders();
+  const selectable = selectionOrders !== null;
+  const isSelected = useSelectionStore((s) => selectable && s.selectedIds.has(bookmark.id));
+  const selectionActive = useSelectionStore((s) => selectable && s.selectedIds.size > 0);
+  const toggleSelection = useSelectionStore((s) => s.toggle);
+  const selectRange = useSelectionStore((s) => s.selectRange);
 
   const tags = useWorkspaceStore((s) => s.tags);
   const bookmarkTags = React.useMemo(
@@ -83,6 +129,36 @@ export const BookmarkCard = React.memo(function BookmarkCard({
   const handleArchive = React.useCallback(() => archiveBookmark(bookmark.id), [archiveBookmark, bookmark.id]);
   const handleDelete = React.useCallback(() => trashBookmark(bookmark.id), [trashBookmark, bookmark.id]);
 
+  const handleCardClick = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (selectionOrders) {
+      if (event.shiftKey) {
+        selectRange(selectionOrders.current.onScreenOrder, bookmark.id);
+        return;
+      }
+      if (isToggleSelectionClick(event) || selectionActive) {
+        toggleSelection(bookmark.id);
+        return;
+      }
+    }
+    void handleSmartOpen();
+  }, [selectionOrders, selectionActive, selectRange, toggleSelection, bookmark.id, handleSmartOpen]);
+
+  const handleCheckboxClick = React.useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (selectionOrders && event.shiftKey) {
+      selectRange(selectionOrders.current.onScreenOrder, bookmark.id);
+      return;
+    }
+    toggleSelection(bookmark.id);
+  }, [selectionOrders, selectRange, toggleSelection, bookmark.id]);
+
+  // Shift+click selects a range of cards, not the page text between them.
+  const handleCardMouseDown = React.useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (selectable && event.shiftKey) {
+      event.preventDefault();
+    }
+  }, [selectable]);
+
   const renderMenuItems = (menu: MenuPrimitives) => (
     <BookmarkMenuItems
       menu={menu}
@@ -102,14 +178,17 @@ export const BookmarkCard = React.memo(function BookmarkCard({
         <ContextMenuTrigger asChild>
           <div
             data-bookmark-id={bookmark.id}
+            data-selected={isSelected || undefined}
             className={cn(
               "group flex items-center gap-4 p-4 rounded-lg border bg-card/40 hover:bg-accent/50 backdrop-blur-lg hover:shadow-md hover:border-primary/20 transition-all duration-200 z-0 hover:z-10 cursor-pointer",
               menuOpen &&
                 "bg-accent/50 backdrop-blur-lg shadow-md border-primary/20 z-10",
               isHighlighted &&
                 "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle",
+              isSelected && "border-primary/40 bg-primary/5 ring-2 ring-primary/60",
             )}
-            onClick={handleSmartOpen}
+            onClick={handleCardClick}
+            onMouseDown={handleCardMouseDown}
           >
             {dragHandleProps && (
               <div
@@ -121,13 +200,16 @@ export const BookmarkCard = React.memo(function BookmarkCard({
               </div>
             )}
 
-            <div className="size-10 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
+            <div className="relative size-10 rounded-lg bg-muted flex items-center justify-center overflow-hidden shrink-0">
               <FaviconImage
                 src={bookmark.favicon}
                 alt={bookmark.title}
                 className="size-6"
                 hasDarkIcon={bookmark.hasDarkIcon}
               />
+              {selectable && (
+                <SelectionCheckbox title={bookmark.title} checked={isSelected} visible={selectionActive} onClick={handleCheckboxClick} />
+              )}
             </div>
 
             <div className="flex-1 min-w-0">
@@ -178,14 +260,17 @@ export const BookmarkCard = React.memo(function BookmarkCard({
       <ContextMenuTrigger asChild>
         <div
           data-bookmark-id={bookmark.id}
+          data-selected={isSelected || undefined}
           className={cn(
             "group relative flex flex-col rounded-xl border bg-card/40 hover:bg-accent/50 backdrop-blur-lg hover:shadow-lg hover:border-primary/20 transition-all duration-200 cursor-pointer z-0 hover:z-10",
             menuOpen &&
               "bg-accent/50 backdrop-blur-lg shadow-lg border-primary/20 z-10",
             isHighlighted &&
               "ring-2 ring-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.3)] bg-amber-50/50 dark:ring-amber-400 dark:shadow-[0_0_20px_rgba(251,191,36,0.2)] dark:bg-amber-950/20 animate-pulse-subtle",
+            isSelected && "border-primary/40 bg-primary/5 ring-2 ring-primary/60",
           )}
-          onClick={handleSmartOpen}
+          onClick={handleCardClick}
+          onMouseDown={handleCardMouseDown}
         >
           {/* Header: favicon + title + slide-in actions */}
           <div className="flex items-center gap-2 px-3 pt-3 pb-2">
@@ -200,13 +285,16 @@ export const BookmarkCard = React.memo(function BookmarkCard({
               </div>
             )}
             {/* Favicon */}
-            <div className="size-7 rounded-md bg-muted shrink-0 flex items-center justify-center overflow-hidden">
+            <div className="relative size-7 rounded-md bg-muted shrink-0 flex items-center justify-center overflow-hidden">
               <FaviconImage
                 src={bookmark.favicon}
                 alt={bookmark.title}
                 className="size-4"
                 hasDarkIcon={bookmark.hasDarkIcon}
               />
+              {selectable && (
+                <SelectionCheckbox title={bookmark.title} checked={isSelected} visible={selectionActive} onClick={handleCheckboxClick} />
+              )}
             </div>
 
             {/* Title */}

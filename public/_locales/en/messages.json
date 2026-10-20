@@ -1,4 +1,20 @@
 {
+  "bookmarkCard_select": {
+    "message": "Select $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarksContent_selectCollection": {
+    "message": "Select all bookmarks in $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "badge_alreadySavedShort": { "message": "Dup" },
   "badge_alreadySavedTitle": { "message": "Already saved in TabSlate" },
   "extensionName": {

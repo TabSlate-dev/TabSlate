@@ -127,9 +127,9 @@ export function render(app: Pick<AppModules, "createRoot">, element: ReactNode):
   };
 }
 
-export function click(element: Element): void {
+export function click(element: Element, init: MouseEventInit = {}): void {
   act(() => {
-    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
+    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, ...init }));
   });
 }
 

@@ -1,3 +1,7 @@
+import { selectionStateOf, useSelectionStore } from "@/store/selection-store";
+import { SelectionOrdersProvider } from "@/components/dashboard/shared/selection-orders";
+import { useSelectionScope } from "@/hooks/use-selection-scope";
+
 import { useWorkspaceCollectionReset } from "@/hooks/use-workspace-collection-reset";
 import { useHighlightDeepLink } from "@/hooks/use-highlight-deep-link";
 import * as React from "react";
@@ -14,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   Bookmark,
+  Check,
+  Minus,
   ChevronDown,
   ChevronRight,
   Folder,
@@ -61,16 +67,57 @@ function CollectionIcon({ icon }: { icon: string }) {
   return <Icon className="size-4" />;
 }
 
+interface CollectionHeaderRow {
+  collectionId: string;
+  collectionName: string;
+  count: number;
+  icon: string;
+  isDefault: boolean;
+  /** The group's bookmarks in view order, including a collapsed group's. */
+  bookmarkIds: readonly string[];
+}
+
 interface DroppableCollectionHeaderProps {
-  rowData: {
-    collectionId: string;
-    collectionName: string;
-    count: number;
-    icon: string;
-    isDefault: boolean;
-  };
+  rowData: CollectionHeaderRow;
   isExpanded: boolean;
   onToggle: () => void;
+}
+
+interface CollectionSelectionCheckboxProps {
+  name: string;
+  bookmarkIds: readonly string[];
+}
+
+/** Checked when the whole group is selected, mixed when part of it is; clicking selects or clears the group. */
+export function CollectionSelectionCheckbox({ name, bookmarkIds }: CollectionSelectionCheckboxProps) {
+  const { t } = useTranslation();
+  const state = useSelectionStore((s) => selectionStateOf(s.selectedIds, bookmarkIds));
+  const selectionActive = useSelectionStore((s) => s.selectedIds.size > 0);
+  const setMany = useSelectionStore((s) => s.setMany);
+  if (bookmarkIds.length === 0) {
+    return null;
+  }
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    setMany(bookmarkIds, state !== "all");
+  };
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={state === "all" ? true : state === "some" ? "mixed" : false}
+      aria-label={t("bookmarksContent_selectCollection", [name])}
+      onClick={handleClick}
+      className={cn(
+        "flex size-4 shrink-0 items-center justify-center rounded-sm border transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        state === "none" ? "border-muted-foreground/60 bg-background" : "border-primary bg-primary text-primary-foreground",
+        selectionActive || state !== "none" ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+      )}
+    >
+      {state === "all" && <Check className="size-3" />}
+      {state === "some" && <Minus className="size-3" />}
+    </button>
+  );
 }
 
 function DroppableCollectionHeader({ rowData, isExpanded, onToggle }: DroppableCollectionHeaderProps) {
@@ -95,6 +142,7 @@ function DroppableCollectionHeader({ rowData, isExpanded, onToggle }: DroppableC
       )}
     >
       <div className="flex items-center gap-3">
+        <CollectionSelectionCheckbox name={rowData.collectionName} bookmarkIds={rowData.bookmarkIds} />
         <ChevronDown
           className={cn(
             "size-4 text-muted-foreground group-hover:text-primary transition-all duration-300",
@@ -260,10 +308,18 @@ const DraggableBookmarkCard = React.memo(function DraggableBookmarkCard({ bookma
 
 type VirtualItem =
   | { type: "hero_and_title" }
-  | { type: "collection_header"; collectionId: string; collectionName: string; count: number; icon: string; isDefault: boolean }
+  | ({ type: "collection_header" } & CollectionHeaderRow)
   | { type: "bookmarks_row"; collectionId: string; bookmarks: BookmarkType[]; rowIndex: number }
   | { type: "collection_dropzone"; collectionId: string }
   | { type: "empty_state"; title: string; description: string };
+
+interface BookmarkGroup {
+  collectionId: string;
+  collectionName: string;
+  icon: string;
+  isDefault: boolean;
+  bookmarks: BookmarkType[];
+}
 
 export function BookmarksContent() {
   const { t } = useTranslation();
@@ -326,12 +382,61 @@ export function BookmarksContent() {
 
   const actualCols = viewMode === "grid" ? gridCols : 1;
 
+  /** "All bookmarks" groups: active collections in sidebar order, then uncategorized when it has bookmarks. */
+  const groups = React.useMemo<BookmarkGroup[] | null>(() => {
+    if (selectedCollection !== "all") {
+      return null;
+    }
+    const byCollection = new Map<string, BookmarkType[]>(activeCollections.map((collection) => [collection.id, []]));
+    const uncategorized: BookmarkType[] = [];
+    for (const bookmark of filteredBookmarks) {
+      const group = byCollection.get(bookmark.collectionId);
+      if (group) {
+        group.push(bookmark);
+      } else {
+        uncategorized.push(bookmark);
+      }
+    }
+    const result: BookmarkGroup[] = activeCollections.map((collection) => ({
+      collectionId: collection.id,
+      collectionName: collection.name,
+      icon: collection.icon,
+      isDefault: collection.isDefault ?? false,
+      bookmarks: byCollection.get(collection.id) ?? [],
+    }));
+    if (uncategorized.length > 0) {
+      result.push({
+        collectionId: "uncategorized",
+        collectionName: t("bookmarksContent_uncategorized"),
+        icon: "bookmark",
+        isDefault: false,
+        bookmarks: uncategorized,
+      });
+    }
+    return result;
+  }, [selectedCollection, filteredBookmarks, activeCollections, t]);
+
+  const isGroupExpanded = React.useCallback(
+    (group: BookmarkGroup) => expandedCollectionIds[group.collectionId] ?? group.isDefault,
+    [expandedCollectionIds],
+  );
+
+  const viewOrder = React.useMemo(
+    () => groups
+      ? groups.flatMap((group) => group.bookmarks.map((bookmark) => bookmark.id))
+      : filteredBookmarks.map((bookmark) => bookmark.id),
+    [groups, filteredBookmarks],
+  );
+  const onScreenOrder = React.useMemo(
+    () => groups
+      ? groups.filter(isGroupExpanded).flatMap((group) => group.bookmarks.map((bookmark) => bookmark.id))
+      : viewOrder,
+    [groups, isGroupExpanded, viewOrder],
+  );
+  useSelectionScope(viewOrder);
+
   const virtualRows = React.useMemo<VirtualItem[]>(() => {
-    const rows: VirtualItem[] = [];
-
-    // 1. Header (contains hero section + category title + filters info)
-    rows.push({ type: "hero_and_title" });
-
+    const rows: VirtualItem[] = [{ type: "hero_and_title" }];
     if (filteredBookmarks.length === 0) {
       rows.push({
         type: "empty_state",
@@ -340,113 +445,42 @@ export function BookmarksContent() {
       });
       return rows;
     }
-
-    if (selectedCollection !== "all") {
-      // Flat view for specific collection
-      const colCols = viewMode === "grid" ? gridCols : 1;
-      const totalRows = Math.ceil(filteredBookmarks.length / colCols);
-      for (let r = 0; r < totalRows; r++) {
-        const startIndex = r * colCols;
-        const rowItems = filteredBookmarks.slice(startIndex, startIndex + colCols);
+    const columns = viewMode === "grid" ? gridCols : 1;
+    const pushBookmarkRows = (collectionId: string, bookmarks: BookmarkType[]) => {
+      for (let rowIndex = 0; rowIndex * columns < bookmarks.length; rowIndex += 1) {
         rows.push({
           type: "bookmarks_row",
-          collectionId: selectedCollection,
-          bookmarks: rowItems,
-          rowIndex: r,
+          collectionId,
+          bookmarks: bookmarks.slice(rowIndex * columns, (rowIndex + 1) * columns),
+          rowIndex,
         });
       }
-    } else {
-      // Group by Collection view under "All Bookmarks"
-      const groups: Record<string, BookmarkType[]> = {};
-
-      const activeCols = activeCollections;
-
-      activeCols.forEach((c) => {
-        groups[c.id] = [];
+    };
+    if (!groups) {
+      pushBookmarkRows(selectedCollection, filteredBookmarks);
+      return rows;
+    }
+    for (const group of groups) {
+      rows.push({
+        type: "collection_header",
+        collectionId: group.collectionId,
+        collectionName: group.collectionName,
+        count: group.bookmarks.length,
+        icon: group.icon,
+        isDefault: group.isDefault,
+        bookmarkIds: group.bookmarks.map((bookmark) => bookmark.id),
       });
-      groups["uncategorized"] = [];
-
-      filteredBookmarks.forEach((b) => {
-        const colId = b.collectionId || "uncategorized";
-        if (groups[colId]) {
-          groups[colId].push(b);
-        } else {
-          groups["uncategorized"].push(b);
-        }
-      });
-
-      // Render active collections
-      activeCols.forEach((col) => {
-        const colBookmarks = groups[col.id] || [];
-
-        rows.push({
-          type: "collection_header",
-          collectionId: col.id,
-          collectionName: col.name,
-          count: colBookmarks.length,
-          icon: col.icon,
-          isDefault: col.isDefault ?? false,
-        });
-
-        const isExpanded = expandedCollectionIds[col.id] ?? col.isDefault;
-        if (isExpanded && colBookmarks.length > 0) {
-          const colCols = viewMode === "grid" ? gridCols : 1;
-          const totalColRows = Math.ceil(colBookmarks.length / colCols);
-          for (let r = 0; r < totalColRows; r++) {
-            const startIndex = r * colCols;
-            const rowItems = colBookmarks.slice(startIndex, startIndex + colCols);
-            rows.push({
-              type: "bookmarks_row",
-              collectionId: col.id,
-              bookmarks: rowItems,
-              rowIndex: r,
-            });
-          }
-        } else if (isExpanded) {
-          rows.push({ type: "collection_dropzone", collectionId: col.id });
-        }
-      });
-
-      // Render Uncategorized bookmarks if any
-      const uncategorizedBookmarks = groups["uncategorized"] || [];
-      if (uncategorizedBookmarks.length > 0) {
-        rows.push({
-          type: "collection_header",
-          collectionId: "uncategorized",
-          collectionName: t("bookmarksContent_uncategorized"),
-          count: uncategorizedBookmarks.length,
-          icon: "bookmark",
-          isDefault: false,
-        });
-
-        const isExpanded = expandedCollectionIds["uncategorized"] ?? false;
-        if (isExpanded) {
-          const colCols = viewMode === "grid" ? gridCols : 1;
-          const totalColRows = Math.ceil(uncategorizedBookmarks.length / colCols);
-          for (let r = 0; r < totalColRows; r++) {
-            const startIndex = r * colCols;
-            const rowItems = uncategorizedBookmarks.slice(startIndex, startIndex + colCols);
-            rows.push({
-              type: "bookmarks_row",
-              collectionId: "uncategorized",
-              bookmarks: rowItems,
-              rowIndex: r,
-            });
-          }
-        }
+      if (!isGroupExpanded(group)) {
+        continue;
+      }
+      if (group.bookmarks.length > 0) {
+        pushBookmarkRows(group.collectionId, group.bookmarks);
+      } else {
+        rows.push({ type: "collection_dropzone", collectionId: group.collectionId });
       }
     }
-
     return rows;
-  }, [
-    selectedCollection,
-    filteredBookmarks,
-    activeCollections,
-    expandedCollectionIds,
-    viewMode,
-    gridCols,
-    t
-  ]);
+  }, [filteredBookmarks, groups, isGroupExpanded, selectedCollection, viewMode, gridCols, t]);
 
   const virtualizer = useVirtualizer({
     count: virtualRows.length,
@@ -510,184 +544,186 @@ export function BookmarksContent() {
   }, [highlightedBookmarkId, virtualRows, virtualizer, filteredBookmarks]);
 
   return (
-    <div ref={parentRef} className="flex-1 w-full overflow-auto relative">
-      <div
-        style={{
-          height: `${virtualizer.getTotalSize()}px`,
-          width: '100%',
-          position: 'relative',
-        }}
-      >
-        {virtualizer.getVirtualItems().map((virtualRow) => {
-          const rowData = virtualRows[virtualRow.index];
-          if (!rowData) return null;
+    <SelectionOrdersProvider viewOrder={viewOrder} onScreenOrder={onScreenOrder}>
+      <div ref={parentRef} className="flex-1 w-full overflow-auto relative">
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            width: '100%',
+            position: 'relative',
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const rowData = virtualRows[virtualRow.index];
+            if (!rowData) return null;
 
-          if (rowData.type === "hero_and_title") {
-            return (
-              <div
-                key={virtualRow.key}
-                ref={virtualizer.measureElement}
-                data-index={virtualRow.index}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                  zIndex: 10,
-                }}
-              >
-                <div className="p-4 md:p-6 space-y-6 pb-4">
-                  {selectedCollection === "all" && !hasActiveFilters && <HeroSection />}
+            if (rowData.type === "hero_and_title") {
+              return (
+                <div
+                  key={virtualRow.key}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                    zIndex: 10,
+                  }}
+                >
+                  <div className="p-4 md:p-6 space-y-6 pb-4">
+                    {selectedCollection === "all" && !hasActiveFilters && <HeroSection />}
 
-                  <div className="space-y-4">
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                        <div>
-                          <h2 className="text-lg font-semibold">
-                            {currentCollection?.name || t("bookmarksContent_allBookmarks")}
-                          </h2>
-                          <p className="text-sm text-muted-foreground">
-                            {t(filteredBookmarks.length === 1 ? "bookmarksContent_bookmarkCount_one" : "bookmarksContent_bookmarkCount_other", [filteredBookmarks.length.toString()])}
-                            {hasActiveFilters && t("bookmarksContent_filtered")}
-                          </p>
+                    <div className="space-y-4">
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                          <div>
+                            <h2 className="text-lg font-semibold">
+                              {currentCollection?.name || t("bookmarksContent_allBookmarks")}
+                            </h2>
+                            <p className="text-sm text-muted-foreground">
+                              {t(filteredBookmarks.length === 1 ? "bookmarksContent_bookmarkCount_one" : "bookmarksContent_bookmarkCount_other", [filteredBookmarks.length.toString()])}
+                              {hasActiveFilters && t("bookmarksContent_filtered")}
+                            </p>
+                          </div>
+                          {selectedCollection !== "all" && (
+                            <SearchBox size="sm" collectionId={selectedCollection} className="w-full sm:w-72 md:w-80" />
+                          )}
                         </div>
-                        {selectedCollection !== "all" && (
-                          <SearchBox size="sm" collectionId={selectedCollection} className="w-full sm:w-72 md:w-80" />
-                        )}
-                      </div>
 
-                      <ActiveFilterChips includeTypeFilter />
+                        <ActiveFilterChips includeTypeFilter />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            );
-          }
+              );
+            }
 
-          if (rowData.type === "empty_state") {
-            return (
-              <DroppableCollectionBand
-                key={virtualRow.key}
-                collectionId={selectedCollection}
-                suffix="empty-state"
-                measureElement={virtualizer.measureElement}
-                index={virtualRow.index}
-                start={virtualRow.start}
-                className="px-4 md:px-6 py-8"
-              >
-                <EmptyState
-                  icon={Bookmark}
-                  title={rowData.title}
-                  description={rowData.description}
-                  action={
-                    hasActiveFilters ? (
-                      <Button variant="outline" size="sm" onClick={() => setFilterType("all")}>
-                        {t("bookmarksContent_clearFilters")}
-                      </Button>
-                    ) : undefined
-                  }
-                />
-              </DroppableCollectionBand>
-            );
-          }
-
-          if (rowData.type === "collection_header") {
-            const isExpanded = expandedCollectionIds[rowData.collectionId] ?? rowData.isDefault;
-            return (
-              <div
-                key={virtualRow.key}
-                ref={virtualizer.measureElement}
-                data-index={virtualRow.index}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-                className="px-4 md:px-6 py-1.5"
-              >
-                <DroppableCollectionHeader
-                  rowData={rowData}
-                  isExpanded={isExpanded}
-                  onToggle={() => {
-                    setExpandedCollectionIds((prev) => ({
-                      ...prev,
-                      [rowData.collectionId]: !isExpanded,
-                    }));
-                  }}
-                />
-              </div>
-            );
-          }
-
-          if (rowData.type === "collection_dropzone") {
-            return (
-              <DroppableCollectionBand
-                key={virtualRow.key}
-                collectionId={rowData.collectionId}
-                suffix="dropzone"
-                measureElement={virtualizer.measureElement}
-                index={virtualRow.index}
-                start={virtualRow.start}
-                className="px-4 md:px-6 py-2"
-              >
-                <div className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/10 text-xs text-muted-foreground">
-                  {t("bookmarksContent_emptyCollectionDropHint")}
-                </div>
-              </DroppableCollectionBand>
-            );
-          }
-
-          if (rowData.type === "bookmarks_row") {
-            return (
-              <DroppableCollectionBand
-                key={virtualRow.key}
-                collectionId={rowData.collectionId}
-                suffix={`row-${rowData.rowIndex}`}
-                measureElement={virtualizer.measureElement}
-                index={virtualRow.index}
-                start={virtualRow.start}
-                style={viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : undefined}
-                className={
-                  viewMode === "grid"
-                    ? "grid gap-4 px-4 md:px-6 py-2"
-                    : "flex flex-col gap-2 px-4 md:px-6 py-2"
-                }
-              >
-                {rowData.bookmarks.map((bookmark) => (
-                  <DraggableBookmarkCard
-                    key={bookmark.id}
-                    bookmark={bookmark}
-                    variant={viewMode}
-                    isHighlighted={bookmark.id === highlightedBookmarkId}
-                    onEdit={setEditingBookmark}
-                    onAddTags={setTaggingBookmark}
+            if (rowData.type === "empty_state") {
+              return (
+                <DroppableCollectionBand
+                  key={virtualRow.key}
+                  collectionId={selectedCollection}
+                  suffix="empty-state"
+                  measureElement={virtualizer.measureElement}
+                  index={virtualRow.index}
+                  start={virtualRow.start}
+                  className="px-4 md:px-6 py-8"
+                >
+                  <EmptyState
+                    icon={Bookmark}
+                    title={rowData.title}
+                    description={rowData.description}
+                    action={
+                      hasActiveFilters ? (
+                        <Button variant="outline" size="sm" onClick={() => setFilterType("all")}>
+                          {t("bookmarksContent_clearFilters")}
+                        </Button>
+                      ) : undefined
+                    }
                   />
-                ))}
-              </DroppableCollectionBand>
-            );
-          }
+                </DroppableCollectionBand>
+              );
+            }
 
-          return null;
-        })}
+            if (rowData.type === "collection_header") {
+              const isExpanded = expandedCollectionIds[rowData.collectionId] ?? rowData.isDefault;
+              return (
+                <div
+                  key={virtualRow.key}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                  className="px-4 md:px-6 py-1.5"
+                >
+                  <DroppableCollectionHeader
+                    rowData={rowData}
+                    isExpanded={isExpanded}
+                    onToggle={() => {
+                      setExpandedCollectionIds((prev) => ({
+                        ...prev,
+                        [rowData.collectionId]: !isExpanded,
+                      }));
+                    }}
+                  />
+                </div>
+              );
+            }
+
+            if (rowData.type === "collection_dropzone") {
+              return (
+                <DroppableCollectionBand
+                  key={virtualRow.key}
+                  collectionId={rowData.collectionId}
+                  suffix="dropzone"
+                  measureElement={virtualizer.measureElement}
+                  index={virtualRow.index}
+                  start={virtualRow.start}
+                  className="px-4 md:px-6 py-2"
+                >
+                  <div className="flex items-center justify-center h-14 rounded-xl border-2 border-dashed border-muted-foreground/20 bg-muted/10 text-xs text-muted-foreground">
+                    {t("bookmarksContent_emptyCollectionDropHint")}
+                  </div>
+                </DroppableCollectionBand>
+              );
+            }
+
+            if (rowData.type === "bookmarks_row") {
+              return (
+                <DroppableCollectionBand
+                  key={virtualRow.key}
+                  collectionId={rowData.collectionId}
+                  suffix={`row-${rowData.rowIndex}`}
+                  measureElement={virtualizer.measureElement}
+                  index={virtualRow.index}
+                  start={virtualRow.start}
+                  style={viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : undefined}
+                  className={
+                    viewMode === "grid"
+                      ? "grid gap-4 px-4 md:px-6 py-2"
+                      : "flex flex-col gap-2 px-4 md:px-6 py-2"
+                  }
+                >
+                  {rowData.bookmarks.map((bookmark) => (
+                    <DraggableBookmarkCard
+                      key={bookmark.id}
+                      bookmark={bookmark}
+                      variant={viewMode}
+                      isHighlighted={bookmark.id === highlightedBookmarkId}
+                      onEdit={setEditingBookmark}
+                      onAddTags={setTaggingBookmark}
+                    />
+                  ))}
+                </DroppableCollectionBand>
+              );
+            }
+
+            return null;
+          })}
+        </div>
+
+        {editingBookmark && (
+          <EditBookmarkDialog
+            bookmark={editingBookmark}
+            open={!!editingBookmark}
+            onOpenChange={(open) => !open && setEditingBookmark(null)}
+          />
+        )}
+        {taggingBookmark && (
+          <BookmarkTagsDialog
+            bookmark={taggingBookmark}
+            open={!!taggingBookmark}
+            onOpenChange={(open) => !open && setTaggingBookmark(null)}
+          />
+        )}
       </div>
-
-      {editingBookmark && (
-        <EditBookmarkDialog
-          bookmark={editingBookmark}
-          open={!!editingBookmark}
-          onOpenChange={(open) => !open && setEditingBookmark(null)}
-        />
-      )}
-      {taggingBookmark && (
-        <BookmarkTagsDialog
-          bookmark={taggingBookmark}
-          open={!!taggingBookmark}
-          onOpenChange={(open) => !open && setTaggingBookmark(null)}
-        />
-      )}
-    </div>
+    </SelectionOrdersProvider>
   );
 }

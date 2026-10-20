@@ -6,6 +6,8 @@ import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
 import { click, getBySelector, getByText, installAppModules, render, setupDom, teardownDom, type AppModules, type RenderResult } from "./helpers/dom-environment";
 import { bookmarkMap, countsByCollection, makeBookmark, makeCollection, makeTag, makeWorkspace } from "./helpers/library-fixtures";
 
+import { installMeasuredVirtualizer, installQuietTabsStore } from "./helpers/virtualizer";
+
 const replacer = createModuleReplacer();
 let app: AppModules;
 let FavoritesContent: typeof import("@/components/dashboard/favorites-content").FavoritesContent;
@@ -17,23 +19,8 @@ const scrollOffsets: number[] = [];
 beforeAll(async () => {
   setupDom();
   app = await installAppModules(replacer);
-  const virtual = await import("@tanstack/react-virtual");
-  const useRealVirtualizer = virtual.useVirtualizer;
-  await replacer.replace("@tanstack/react-virtual", {
-    ...virtual,
-    useVirtualizer: (options: Parameters<typeof virtual.useVirtualizer>[0]) => useRealVirtualizer({
-      ...options,
-      initialRect: { width: 1200, height: 2000 },
-      observeElementRect: (_instance, callback) => {
-        callback({ width: 1200, height: 2000 });
-        return () => {};
-      },
-      scrollToFn: (offset) => { scrollOffsets.push(offset); },
-    }),
-  });
-  const tabs = await importFresh<typeof import("@/store/tabs-store")>("store/tabs-store.ts");
-  tabs.useTabsStore.setState({ loadTabs: async () => {} });
-  await replacer.replace("@/store/tabs-store", tabs);
+  await installMeasuredVirtualizer(replacer, scrollOffsets);
+  await installQuietTabsStore(replacer);
   ({ FavoritesContent } = await importFresh<typeof import("@/components/dashboard/favorites-content")>("components/dashboard/favorites-content.tsx"));
   ({ BookmarksContent } = await importFresh<typeof import("@/components/dashboard/content")>("components/dashboard/content.tsx"));
   ({ revealBookmark } = await importFresh<typeof import("@/lib/reveal-bookmark")>("lib/reveal-bookmark.ts"));

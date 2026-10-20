@@ -1,3 +1,6 @@
+import { SelectionOrdersProvider } from "@/components/dashboard/shared/selection-orders";
+import { useSelectionScope } from "@/hooks/use-selection-scope";
+
 import * as React from "react";
 import { sortBookmarks } from "@/lib/bookmark-utils";
 import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
@@ -44,59 +47,64 @@ export function FavoritesContent() {
     [allFavorites, selectedTags, sortBy]
   );
 
+  const viewOrder = React.useMemo(() => favoriteBookmarks.map((bookmark) => bookmark.id), [favoriteBookmarks]);
+  useSelectionScope(viewOrder);
+
   return (
-    <div className="flex-1 w-full overflow-auto">
-      <div className="p-4 md:p-6 space-y-6">
-        <div className="flex items-center gap-3 p-4 rounded-xl border bg-card">
-          <div className="size-10 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center">
-            <Heart className="size-5" />
+    <SelectionOrdersProvider viewOrder={viewOrder} onScreenOrder={viewOrder}>
+      <div className="flex-1 w-full overflow-auto">
+        <div className="p-4 md:p-6 space-y-6">
+          <div className="flex items-center gap-3 p-4 rounded-xl border bg-card">
+            <div className="size-10 rounded-lg bg-red-500/10 text-red-500 flex items-center justify-center">
+              <Heart className="size-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">{t("favoritesContent_title")}</h2>
+              <p className="text-sm text-muted-foreground">
+                {t(favoriteBookmarks.length === 1 ? "favoritesContent_count_one" : "favoritesContent_count_other", [favoriteBookmarks.length.toString()])} {t("favoritesContent_markedAsFavorite")}
+                {selectedTags.length > 0 && t("favoritesContent_filtered")}
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-lg font-semibold">{t("favoritesContent_title")}</h2>
-            <p className="text-sm text-muted-foreground">
-              {t(favoriteBookmarks.length === 1 ? "favoritesContent_count_one" : "favoritesContent_count_other", [favoriteBookmarks.length.toString()])} {t("favoritesContent_markedAsFavorite")}
-              {selectedTags.length > 0 && t("favoritesContent_filtered")}
-            </p>
-          </div>
+
+          <ActiveFilterChips />
+
+          {viewMode === "grid" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {favoriteBookmarks.map((bookmark) => (
+                <BookmarkCard key={bookmark.id} bookmark={bookmark} />
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {favoriteBookmarks.map((bookmark) => (
+                <BookmarkCard key={bookmark.id} bookmark={bookmark} variant="list" />
+              ))}
+            </div>
+          )}
+
+          {favoriteBookmarks.length === 0 && allFavorites.length > 0 && (
+            <EmptyState
+              icon={Heart}
+              title={t("favoritesContent_noMatchTitle")}
+              description={t("favoritesContent_noMatchDesc")}
+              action={
+                <Button variant="outline" size="sm" onClick={() => clearTags()}>
+                  {t("favoritesContent_clearTagFilter")}
+                </Button>
+              }
+            />
+          )}
+
+          {allFavorites.length === 0 && (
+            <EmptyState
+              icon={Heart}
+              title={t("favoritesContent_emptyTitle")}
+              description={t("favoritesContent_emptyDesc")}
+            />
+          )}
         </div>
-
-        <ActiveFilterChips />
-
-        {viewMode === "grid" ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {favoriteBookmarks.map((bookmark) => (
-              <BookmarkCard key={bookmark.id} bookmark={bookmark} />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {favoriteBookmarks.map((bookmark) => (
-              <BookmarkCard key={bookmark.id} bookmark={bookmark} variant="list" />
-            ))}
-          </div>
-        )}
-
-        {favoriteBookmarks.length === 0 && allFavorites.length > 0 && (
-          <EmptyState
-            icon={Heart}
-            title={t("favoritesContent_noMatchTitle")}
-            description={t("favoritesContent_noMatchDesc")}
-            action={
-              <Button variant="outline" size="sm" onClick={() => clearTags()}>
-                {t("favoritesContent_clearTagFilter")}
-              </Button>
-            }
-          />
-        )}
-
-        {allFavorites.length === 0 && (
-          <EmptyState
-            icon={Heart}
-            title={t("favoritesContent_emptyTitle")}
-            description={t("favoritesContent_emptyDesc")}
-          />
-        )}
       </div>
-    </div>
+    </SelectionOrdersProvider>
   );
 }
