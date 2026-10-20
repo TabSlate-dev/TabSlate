@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { TAG_COLORS } from "@/store/workspace-store";
 import { useTranslation } from "@/hooks/use-translation";
 import type { Tag } from "@/lib/types";
+import { tagNameError } from "@/lib/tag-name";
 
 interface TagDialogProps {
   open: boolean;
@@ -41,17 +42,12 @@ export function TagDialog({ open, onOpenChange, initial, takenNames, onSubmit }:
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError(t("tagDialog_errorEmpty"));
+    const problem = tagNameError(name, takenNames);
+    if (problem) {
+      setError(t(problem === "empty" ? "tagDialog_errorEmpty" : "tagDialog_errorDuplicate"));
       return;
     }
-    const lower = trimmed.toLowerCase();
-    if (takenNames.some((taken) => taken.toLowerCase() === lower)) {
-      setError(t("tagDialog_errorDuplicate"));
-      return;
-    }
-    onSubmit(trimmed, color);
+    onSubmit(name.trim(), color);
     onOpenChange(false);
   };
 

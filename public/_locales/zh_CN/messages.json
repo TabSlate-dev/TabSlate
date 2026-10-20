@@ -1838,5 +1838,33 @@
   },
   "duplicateNotice_openExisting": {
     "message": "打开已有书签"
+  },
+  "filterableList_create": {
+    "message": "创建“$1”",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "collectionPicker_filterPlaceholder": {
+    "message": "查找收藏集…"
+  },
+  "collectionPicker_empty": {
+    "message": "没有匹配的收藏集"
+  },
+  "tagPicker_placeholder": {
+    "message": "添加标签…"
+  },
+  "tagPicker_empty": {
+    "message": "没有匹配的标签"
+  },
+  "tagPicker_remove": {
+    "message": "移除 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
   }
 }

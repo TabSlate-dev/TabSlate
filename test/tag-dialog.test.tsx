@@ -78,7 +78,7 @@ describe("TagDialog", () => {
   });
 
   test("rejects a name another tag already uses, ignoring case", async () => {
-    const dialog = renderDialog(undefined, ["Frontend"]);
+    const dialog = renderDialog(undefined, ["  Frontend "]);
     typeInto(dialog.input, "frontend");
     await submitForm(dialog.form);
 

@@ -146,9 +146,9 @@ export function openDropdown(trigger: Element): void {
   });
 }
 
-export function pressKey(element: Element, key: string): void {
+export function pressKey(element: Element, key: string, init: KeyboardEventInit = {}): void {
   act(() => {
-    element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key }));
+    element.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key, ...init }));
   });
 }
 

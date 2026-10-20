@@ -1838,5 +1838,33 @@
   },
   "duplicateNotice_openExisting": {
     "message": "Open existing bookmark"
+  },
+  "filterableList_create": {
+    "message": "Create “$1”",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "collectionPicker_filterPlaceholder": {
+    "message": "Find a collection…"
+  },
+  "collectionPicker_empty": {
+    "message": "No matching collections"
+  },
+  "tagPicker_placeholder": {
+    "message": "Add tags…"
+  },
+  "tagPicker_empty": {
+    "message": "No matching tags"
+  },
+  "tagPicker_remove": {
+    "message": "Remove $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
   }
 }
