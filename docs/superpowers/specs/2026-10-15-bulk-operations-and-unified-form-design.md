@@ -236,7 +236,7 @@ The server answers 413 to a push with more than 1,000 entities or a body larger 
 
 - **Model** (`internal/model/model.go`): `Bookmark` gains `Notes *string json:"notes,omitempty"` and `EditedAt *int64 json:"edited_at,omitempty"`. A nil pointer means the client did not send the field. `BookmarkRequest` gains `Notes *string json:"notes" binding:"omitempty,max=10000"`.
 - **Sync push** (`internal/handler/sync.go`):
-  - A bookmark whose notes exceed 10,000 characters (runes) is rejected with reason `invalid_field`. The extension's limit counts UTF-16 units, which is never more than the rune count, so this only stops malformed clients.
+  - A bookmark whose notes exceed 10,000 characters (runes) is rejected with reason `invalid_field`. The extension's limit counts UTF-16 units, which are at least the rune count for valid Unicode text (astral characters use two units). The client limit is therefore stricter and fits within the server limit; this rejection protects against clients that exceed it.
   - Insert: `notes = COALESCE($notes, '')`, `edited_at = COALESCE($edited_at, $now)`.
   - Update: `notes = COALESCE($notes, bookmarks.notes)`, `edited_at = COALESCE($edited_at, $now)`, under the existing `updated_at < $now` condition.
   - The upsert ends with `RETURNING notes`. No returned row means the existing stale rejection; otherwise the search document is built from the returned notes, so a push from an older extension never blanks the indexed notes.

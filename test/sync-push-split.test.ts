@@ -55,8 +55,12 @@ function expectNormalChunkBodiesUnderServerLimit(chunks: SyncPushPayload[]): voi
   for (const chunk of chunks) {
     const entities = Object.values(chunk.entities).flat();
     const entityBudget = entities.reduce((sum, entity) => sum + entityBytes(entity), 0);
+    expect(entities.length).toBeLessThanOrEqual(MAX_SYNC_ENTITIES_PER_PUSH);
     if (entityBudget <= MAX_SYNC_PUSH_BYTES) {
       expect(bodyBytes(chunk)).toBeLessThan(SERVER_MAX_BODY_BYTES);
+    } else {
+      expect(entities).toHaveLength(1);
+      expect(entityBytes(entities[0])).toBeGreaterThan(MAX_SYNC_PUSH_BYTES);
     }
   }
 }
@@ -67,6 +71,7 @@ describe("splitSyncPushPayload", () => {
     const chunks = splitSyncPushPayload(payload);
     expect(chunks).toHaveLength(1);
     expect(chunks[0]).toBe(payload);
+    expectNormalChunkBodiesUnderServerLimit(chunks);
   });
 
   test("splits bookmarks with long notes so every normal body stays below the server limit", () => {
@@ -114,6 +119,7 @@ describe("splitSyncPushPayload", () => {
       ["huge"],
       ["after"],
     ]);
+    expectNormalChunkBodiesUnderServerLimit(chunks);
   });
 
   test("still limits each request to the entity count", () => {

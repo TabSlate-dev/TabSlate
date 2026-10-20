@@ -18,11 +18,12 @@ const ITEMS = [
   { id: "beta", label: "Beta" },
   { id: "alphabet", label: "Alphabet" },
 ];
+let items = ITEMS;
 
 function Host() {
   const [query, setQuery] = useState("");
   return createElement(FilterableList<{ id: string; label: string }>, {
-    items: ITEMS,
+    items,
     listHidden,
     query,
     onQueryChange: setQuery,
@@ -49,6 +50,7 @@ beforeEach(() => {
   handleCreate.mockClear();
   creatable = true;
   listHidden = false;
+  items = ITEMS;
   view = render(app, createElement(Host));
 });
 
@@ -123,4 +125,27 @@ describe("FilterableList", () => {
     click(getByText("Beta"));
     expect(handleActivate).toHaveBeenCalledWith(ITEMS[1]);
   });
+});
+
+
+test("keeps the active row visible through long-list navigation, filtering, and list changes", () => {
+  const scrolled: string[] = [];
+  const original = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = function (options) {
+    expect(options).toEqual({ block: "nearest", inline: "nearest" });
+    scrolled.push(this.textContent ?? "");
+  };
+  try {
+    items = Array.from({ length: 30 }, (_, index) => ({ id: String(index), label: `Item ${index}` }));
+    view?.rerender(createElement(Host));
+    for (let index = 0; index < 20; index += 1) { pressKey(input(), "ArrowDown"); }
+    expect(scrolled.at(-1)).toBe("Item 20");
+    typeInto(input(), "Item 2");
+    expect(scrolled.at(-1)).toBe("Item 2");
+    items = [{ id: "29", label: "Item 29" }];
+    view?.rerender(createElement(Host));
+    expect(scrolled.at(-1)).toBe("Item 29");
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original;
+  }
 });

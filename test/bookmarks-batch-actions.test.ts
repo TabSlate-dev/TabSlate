@@ -262,4 +262,3 @@ describe("active-only batches", () => {
     }
   });
 });
-

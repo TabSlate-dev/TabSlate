@@ -68,6 +68,7 @@ export function FilterableList<T extends FilterableListItem>({
 }: FilterableListProps<T>) {
   const { t } = useTranslation();
   const listId = React.useId();
+  const listRef = React.useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [navigated, setNavigated] = React.useState(false);
 
@@ -89,6 +90,13 @@ export function FilterableList<T extends FilterableListItem>({
   }, [query]);
 
   const highlighted = Math.min(activeIndex, rows.length - 1);
+
+  React.useEffect(() => {
+    if (listHidden) {
+      return;
+    }
+    listRef.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [highlighted, rows, listHidden]);
 
   const handleActivateRow = (row: Row<T>) => {
     if (row.kind === "item") {
@@ -145,7 +153,7 @@ export function FilterableList<T extends FilterableListItem>({
         className="h-8"
       />
       {!listHidden && (
-        <div id={listId} role="listbox" className={cn("max-h-56 overflow-y-auto", listClassName)}>
+        <div ref={listRef} id={listId} role="listbox" className={cn("max-h-56 overflow-y-auto", listClassName)}>
           {rows.length === 0 ? (
             <p className="px-2 py-1.5 text-xs text-muted-foreground">{emptyText}</p>
           ) : (

@@ -59,6 +59,16 @@ export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: Coll
     }
   }, [open, initial]);
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
+    if (event.nativeEvent.isComposing || !(event.target instanceof Element) || event.target.closest("form") !== event.currentTarget) {
+      return;
+    }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      event.currentTarget.requestSubmit();
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-xs">
@@ -70,6 +80,7 @@ export function CollectionDialog({ open, onOpenChange, initial, onSubmit }: Coll
         </DialogHeader>
         <form
           className="space-y-4 pt-1"
+          onKeyDown={handleKeyDown}
           action={(formData) => {
             const name = formData.get("name") as string;
             if (!name?.trim()) { return; }

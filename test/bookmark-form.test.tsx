@@ -356,3 +356,65 @@ describe("editing a bookmark", () => {
     expect(getByText("bookmarkForm_uncategorized")).toBeTruthy();
   });
 });
+
+
+describe("nested collection creation", () => {
+  for (const editing of [false, true]) {
+    for (const gesture of ["submit", "ctrl", "meta"]) {
+      test(`${editing ? "edit" : "add"}: child ${gesture} creates a collection without saving the parent`, async () => {
+        open(editing ? { bookmarkId: "saved" } : undefined);
+        fillRequired("Draft title", "https://draft.example.com");
+        typeInto(field("description"), "Draft description");
+        typeInto(field<HTMLTextAreaElement>("notes"), "Draft notes");
+        const before = app.useBookmarksStore.getState().bookmarks;
+        await act(async () => click(getByText("Reading")));
+        click(getByText("groupsPanel_newCollection"));
+        const name = getBySelector<HTMLInputElement>("#collection-name");
+        typeInto(name, "Ideas");
+        pressKey(name, "Enter", { ctrlKey: true, isComposing: true });
+        expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(2);
+        expect(app.useWorkspaceStore.getState().collections.some((collection) => collection.name === "Ideas")).toBe(false);
+        if (gesture === "submit") {
+          // The submit event is also the browser default action of plain Enter.
+          pressKey(name, "Enter");
+          const childForm = name.form;
+          if (!childForm) { throw new Error("Missing child form"); }
+          await submitForm(childForm);
+        } else {
+          await act(async () => pressKey(name, "Enter", { ctrlKey: gesture === "ctrl", metaKey: gesture === "meta" }));
+        }
+        const created = app.useWorkspaceStore.getState().collections.find((collection) => collection.name === "Ideas");
+        expect(created?.id).toBeTruthy();
+        expect(app.useBookmarksStore.getState().bookmarks).toBe(before);
+        expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1);
+        expect(getByText("Ideas")).toBeTruthy();
+        expect(field("title").value).toBe("Draft title");
+        expect(field("url").value).toBe("https://draft.example.com");
+        expect(field("description").value).toBe("Draft description");
+        expect(field<HTMLTextAreaElement>("notes").value).toBe("Draft notes");
+        pressKey(field<HTMLTextAreaElement>("notes"), "Enter", { metaKey: true });
+        const stored = editing ? app.useBookmarksStore.getState().bookmarks.get("saved") : added();
+        expect(stored?.collectionId).toBe(created?.id);
+        expect(stored?.title).toBe("Draft title");
+        expect(dialogOpen()).toBe(false);
+      });
+    }
+  }
+});
+
+test("a cross-workspace edit shows the saved parent but move options stay in the active workspace", async () => {
+  act(() => {
+    app.useWorkspaceStore.setState({
+      workspaces: [makeWorkspace("home"), makeWorkspace("other")],
+      collections: [...app.useWorkspaceStore.getState().collections, makeCollection("remote", "other", { name: "Remote collection" })],
+    });
+    seed([{ ...saved, collectionId: "remote" }]);
+  });
+  open({ bookmarkId: "saved" });
+  await act(async () => click(getByText("Remote collection")));
+  const options = Array.from(document.querySelectorAll('[role="option"]')).map((option) => option.textContent);
+  expect(options).toEqual(["Reading", "Projects"]);
+  pressKey(getBySelector('[role="listbox"]'), "Escape");
+  await save();
+  expect(app.useBookmarksStore.getState().bookmarks.get("saved")?.collectionId).toBe("remote");
+});

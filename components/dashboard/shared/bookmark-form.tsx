@@ -140,9 +140,17 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
     [language],
   );
 
+  const selectedCollectionName = React.useMemo(() => {
+    const collection = collections.find((candidate) => candidate.id === collectionId);
+    if (!collection || collection.deletedAt || collection.archivedAt) {
+      return undefined;
+    }
+    const workspace = workspaces.find((candidate) => candidate.id === collection.workspaceId);
+    return isActiveWorkspace(workspace) ? collection.name : undefined;
+  }, [collectionId, collections, workspaces]);
   const collectionLabel = collectionId === ""
     ? t("bookmarkForm_uncategorized")
-    : activeCollections.find((collection) => collection.id === collectionId)?.name ?? t("bookmarkForm_chooseCollection");
+    : selectedCollectionName ?? t("bookmarkForm_chooseCollection");
 
   const handleOpenExisting = (bookmarkId: string) => {
     onCancel();
@@ -240,13 +248,17 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
   };
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    // Portal descendants bubble through React even when another form owns the submit.
+    if (event.target !== event.currentTarget) {
+      return;
+    }
     event.preventDefault();
     handleSave();
   };
 
   // Cmd/Ctrl+Enter saves from any field; plain Enter in the notes adds a line.
   const handleKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
-    if (event.nativeEvent.isComposing) {
+    if (event.nativeEvent.isComposing || !(event.target instanceof Element) || event.target.closest("form") !== event.currentTarget) {
       return;
     }
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {

@@ -81,7 +81,7 @@ export function BookmarkDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-lg" onOpenAutoFocus={handleOpenAutoFocus}>
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg" onOpenAutoFocus={handleOpenAutoFocus}>
         <DialogHeader>
           <DialogTitle>{t(editing ? "bookmarkForm_editTitle" : "bookmarkForm_addTitle")}</DialogTitle>
           <DialogDescription>{t(editing ? "bookmarkForm_editDesc" : "bookmarkForm_addDesc")}</DialogDescription>
