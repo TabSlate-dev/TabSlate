@@ -11,6 +11,7 @@ import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useSelectionStore } from "@/store/selection-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { BulkNotice, useBulkNotice } from "./bulk-notice";
+import { BulkTagsMenu } from "./tags-menu";
 
 /** The active bookmarks behind `ids`, in the order of `ids`. */
 function activeBookmarks(ids: Iterable<string>, bookmarks: ReadonlyMap<string, Bookmark>): Bookmark[] {
@@ -109,6 +110,7 @@ export function BulkActionBar() {
                 {t("bulkActions_moveTo")}
               </Button>
             </CollectionPicker>
+            <BulkTagsMenu bookmarks={selected} />
             <Button type="button" variant="ghost" size="sm" onClick={handleFavorite}>
               <Heart className={cn("size-4", allFavorites && "fill-red-500 text-red-500")} />
               {t(allFavorites ? "bulkActions_unfavorite" : "bulkActions_favorite")}

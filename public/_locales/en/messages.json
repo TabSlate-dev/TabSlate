@@ -1945,5 +1945,17 @@
   },
   "bulkActions_viewTrash": {
     "message": "Open Trash"
+  },
+  "bulkActions_tags": {
+    "message": "Tags…"
+  },
+  "bulkTags_filterPlaceholder": {
+    "message": "Find or create a tag…"
+  },
+  "bulkTags_empty": {
+    "message": "No matching tags"
+  },
+  "bulkTags_apply": {
+    "message": "Apply"
   }
 }

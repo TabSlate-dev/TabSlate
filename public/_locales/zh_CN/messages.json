@@ -1945,5 +1945,17 @@
   },
   "bulkActions_viewTrash": {
     "message": "查看回收站"
+  },
+  "bulkActions_tags": {
+    "message": "标签…"
+  },
+  "bulkTags_filterPlaceholder": {
+    "message": "查找或创建标签…"
+  },
+  "bulkTags_empty": {
+    "message": "没有匹配的标签"
+  },
+  "bulkTags_apply": {
+    "message": "应用"
   }
 }
