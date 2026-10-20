@@ -111,6 +111,17 @@ describe("bookmark notes on cards", () => {
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
   });
 
+  test("a parenthesized URL keeps its whole destination and leaves sentence punctuation as text", async () => {
+    const notes = "Read https://en.wikipedia.org/wiki/Function_(mathematics).";
+    view?.unmount();
+    view = render(app, createElement(BookmarkCard, { bookmark: { ...noted, notes }, variant: "list" }));
+    await act(async () => { click(notesButton()); });
+    const link = getBySelector<HTMLAnchorElement>('[data-slot="popover-content"] a');
+    expect(link.getAttribute("href")).toBe("https://en.wikipedia.org/wiki/Function_(mathematics)");
+    expect(link.textContent).toBe("https://en.wikipedia.org/wiki/Function_(mathematics)");
+    expect(link.nextSibling?.textContent).toBe(".");
+  });
+
   test("clicks on the button and inside the popover neither open the bookmark nor change the selection", async () => {
     act(() => {
       useSelectionStore.getState().toggle("plain");

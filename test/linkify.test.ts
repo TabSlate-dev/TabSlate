@@ -13,6 +13,31 @@ describe("linkifySegments", () => {
     ]);
   });
 
+  test("keeps balanced parentheses in a URL followed by sentence punctuation", () => {
+    expect(linkifySegments("Read https://en.wikipedia.org/wiki/Function_(mathematics).")).toEqual([
+      { kind: "text", text: "Read " },
+      { kind: "link", text: "https://en.wikipedia.org/wiki/Function_(mathematics)" },
+      { kind: "text", text: "." },
+    ]);
+  });
+
+  test("keeps nested parentheses but trims unmatched wrapping parentheses and sentence punctuation", () => {
+    expect(linkifySegments("(See https://example.com/a_(b_(c))). Next https://example.com/docs))!?;")).toEqual([
+      { kind: "text", text: "(See " },
+      { kind: "link", text: "https://example.com/a_(b_(c))" },
+      { kind: "text", text: "). Next " },
+      { kind: "link", text: "https://example.com/docs" },
+      { kind: "text", text: "))!?;" },
+    ]);
+  });
+
+  test("does not mistake an earlier unmatched parenthesis for the balanced closing parenthesis at the end", () => {
+    expect(linkifySegments("https://example.com/a)b(c).")).toEqual([
+      { kind: "link", text: "https://example.com/a)b(c)" },
+      { kind: "text", text: "." },
+    ]);
+  });
+
   test("keeps text without links, and other schemes, as text", () => {
     expect(linkifySegments("javascript:alert(1) and ftp://files.example")).toEqual([
       { kind: "text", text: "javascript:alert(1) and ftp://files.example" },
