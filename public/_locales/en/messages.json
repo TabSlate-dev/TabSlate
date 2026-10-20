@@ -432,6 +432,36 @@
   "header_sortDateOldest": {
     "message": "Date Added (Oldest)"
   },
+  "header_sortUpdatedNewest": {
+    "message": "Date Updated (Newest)"
+  },
+  "header_sortUpdatedOldest": {
+    "message": "Date Updated (Oldest)"
+  },
+  "header_sortSiteAZ": {
+    "message": "Website (A-Z)"
+  },
+  "header_sortShortAddedNewest": {
+    "message": "Added ↓"
+  },
+  "header_sortShortAddedOldest": {
+    "message": "Added ↑"
+  },
+  "header_sortShortUpdatedNewest": {
+    "message": "Updated ↓"
+  },
+  "header_sortShortUpdatedOldest": {
+    "message": "Updated ↑"
+  },
+  "header_sortShortAlphaAZ": {
+    "message": "A–Z"
+  },
+  "header_sortShortAlphaZA": {
+    "message": "Z–A"
+  },
+  "header_sortShortSite": {
+    "message": "Site"
+  },
   "header_sortAlphaAZ": {
     "message": "Alphabetical (A-Z)"
   },

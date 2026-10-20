@@ -63,6 +63,23 @@ function renderHeader() {
 }
 
 describe("BookmarksHeader store subscription", () => {
+  test("labels the sort button with the current order's short name", () => {
+    act(() => {
+      useBookmarksStore.getState().setSortBy("updated-newest");
+    });
+    const header = renderHeader();
+    expect(header.container.textContent).toContain("header_sortShortUpdatedNewest");
+
+    act(() => {
+      useBookmarksStore.getState().setSortBy("site-az");
+    });
+    expect(header.container.textContent).toContain("header_sortShortSite");
+    header.unmount();
+    act(() => {
+      useBookmarksStore.getState().setSortBy("date-newest");
+    });
+  });
+
   test("does not re-render when bookmark data changes", () => {
     const header = renderHeader();
     const commitsAfterMount = header.getCommits();

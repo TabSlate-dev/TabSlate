@@ -1,4 +1,5 @@
 import * as React from "react";
+import { sortBookmarks } from "@/lib/bookmark-utils";
 import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { BookmarkCard } from "./bookmark-card";
@@ -13,6 +14,7 @@ export function FavoritesContent() {
   const { t } = useTranslation();
   const bookmarks = useBookmarksStore(s => bookmarksAsArray(s.bookmarks));
   const viewMode = useBookmarksStore(s => s.viewMode);
+  const sortBy = useBookmarksStore(s => s.sortBy);
   const selectedTags = useBookmarksStore(s => s.selectedTags);
   const clearTags = useBookmarksStore(s => s.clearTags);
 
@@ -33,10 +35,13 @@ export function FavoritesContent() {
   );
 
   const favoriteBookmarks = React.useMemo(
-    () => selectedTags.length === 0
-      ? allFavorites
-      : allFavorites.filter(b => selectedTags.some(tag => b.tags.includes(tag))),
-    [allFavorites, selectedTags]
+    () => sortBookmarks(
+      selectedTags.length === 0
+        ? allFavorites
+        : allFavorites.filter(b => selectedTags.some(tag => b.tags.includes(tag))),
+      sortBy,
+    ),
+    [allFavorites, selectedTags, sortBy]
   );
 
   return (

@@ -36,10 +36,13 @@ interface BookmarksHeaderProps {
 }
 
 const sortOptions = [
-  { value: "date-newest", labelKey: "header_sortDateNewest" },
-  { value: "date-oldest", labelKey: "header_sortDateOldest" },
-  { value: "alpha-az", labelKey: "header_sortAlphaAZ" },
-  { value: "alpha-za", labelKey: "header_sortAlphaZA" },
+  { value: "date-newest", labelKey: "header_sortDateNewest", shortLabelKey: "header_sortShortAddedNewest" },
+  { value: "date-oldest", labelKey: "header_sortDateOldest", shortLabelKey: "header_sortShortAddedOldest" },
+  { value: "updated-newest", labelKey: "header_sortUpdatedNewest", shortLabelKey: "header_sortShortUpdatedNewest" },
+  { value: "updated-oldest", labelKey: "header_sortUpdatedOldest", shortLabelKey: "header_sortShortUpdatedOldest" },
+  { value: "alpha-az", labelKey: "header_sortAlphaAZ", shortLabelKey: "header_sortShortAlphaAZ" },
+  { value: "alpha-za", labelKey: "header_sortAlphaZA", shortLabelKey: "header_sortShortAlphaZA" },
+  { value: "site-az", labelKey: "header_sortSiteAZ", shortLabelKey: "header_sortShortSite" },
 ] as const;
 
 const filterOptions = [
@@ -109,7 +112,7 @@ export function BookmarksHeader({ title }: BookmarksHeaderProps) {
             <DropdownMenuTrigger asChild>
               <Button variant="outline" size="sm" className="hidden sm:flex">
                 <ArrowUpDown className="size-4" />
-                <span className="hidden lg:inline">{t(currentSort?.labelKey || "header_sortDateNewest").split(" ")[0]}</span>
+                <span className="hidden lg:inline">{t(currentSort?.shortLabelKey ?? "header_sortShortAddedNewest")}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">

@@ -141,3 +141,16 @@ test("reveal expands a collapsed Uncategorized group before rendering and scroll
   expect(card.className).toContain("ring-2");
   expect(scrollOffsets.length).toBeGreaterThan(0);
 });
+
+test("Favorites lists favorites in the current sort order", () => {
+  const bookmarks = [
+    makeBookmark("zeta", { title: "Zeta", collectionId: "reading", isFavorite: true }),
+    makeBookmark("alpha", { title: "Alpha", collectionId: "reading", isFavorite: true }),
+  ];
+  app.useBookmarksStore.setState({ bookmarks: bookmarkMap(bookmarks), sortBy: "alpha-az" });
+  view = render(app, createElement(FavoritesContent));
+  const order = () => Array.from(document.querySelectorAll("[data-bookmark-id]")).map((card) => card.getAttribute("data-bookmark-id"));
+  expect(order()).toEqual(["alpha", "zeta"]);
+  act(() => { app.useBookmarksStore.getState().setSortBy("alpha-za"); });
+  expect(order()).toEqual(["zeta", "alpha"]);
+});

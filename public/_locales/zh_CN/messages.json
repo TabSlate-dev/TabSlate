@@ -432,6 +432,36 @@
   "header_sortDateOldest": {
     "message": "添加时间（最早优先）"
   },
+  "header_sortUpdatedNewest": {
+    "message": "更新时间（最新优先）"
+  },
+  "header_sortUpdatedOldest": {
+    "message": "更新时间（最早优先）"
+  },
+  "header_sortSiteAZ": {
+    "message": "网站（A-Z）"
+  },
+  "header_sortShortAddedNewest": {
+    "message": "添加 ↓"
+  },
+  "header_sortShortAddedOldest": {
+    "message": "添加 ↑"
+  },
+  "header_sortShortUpdatedNewest": {
+    "message": "更新 ↓"
+  },
+  "header_sortShortUpdatedOldest": {
+    "message": "更新 ↑"
+  },
+  "header_sortShortAlphaAZ": {
+    "message": "A–Z"
+  },
+  "header_sortShortAlphaZA": {
+    "message": "Z–A"
+  },
+  "header_sortShortSite": {
+    "message": "网站"
+  },
   "header_sortAlphaAZ": {
     "message": "名称（A-Z）"
   },

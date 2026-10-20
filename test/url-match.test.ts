@@ -4,7 +4,7 @@ import { importFresh } from "./helpers/module-replacer";
 import { makeBookmark } from "./helpers/library-fixtures";
 
 // Other test files register partial fakes for lib/bookmark-utils; load real copies.
-const { strictUrlKey, looseUrlKey, findUrlMatches } =
+const { strictUrlKey, looseUrlKey, findUrlMatches, siteSortKey } =
   await importFresh<typeof import("@/lib/url-match")>("lib/url-match.ts");
 const { findDuplicateBookmark } =
   await importFresh<typeof import("@/lib/bookmark-utils")>("lib/bookmark-utils.ts");
@@ -98,5 +98,18 @@ describe("findDuplicateBookmark", () => {
   test("still matches the same address with a different host case and trailing slash", () => {
     const docs = makeBookmark("docs", { url: "https://Example.com/docs/" });
     expect(findDuplicateBookmark([docs], "https://example.com/docs")?.id).toBe("docs");
+  });
+});
+
+describe("siteSortKey", () => {
+  test("lowercases the host and drops a leading www.", () => {
+    expect(siteSortKey("https://WWW.Example.com/Path")).toBe("example.com");
+  });
+  test("keeps subdomains apart", () => {
+    expect(siteSortKey("https://docs.example.com")).toBe("docs.example.com");
+  });
+  test("returns null for an address that is not a web URL", () => {
+    expect(siteSortKey("chrome://extensions")).toBeNull();
+    expect(siteSortKey("not a url")).toBeNull();
   });
 });

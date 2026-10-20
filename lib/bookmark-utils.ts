@@ -1,5 +1,6 @@
 import type { Bookmark } from "@/lib/types";
-import { strictUrlKey } from "@/lib/url-match";
+import type { BookmarkSortBy } from "@/lib/view-preferences";
+import { siteSortKey, strictUrlKey } from "@/lib/url-match";
 
 /**
  * Always derive the favicon from a trusted icon service based on the
@@ -85,4 +86,48 @@ export function compareBookmarksNewestFirst(a: Bookmark, b: Bookmark): number {
 /** Most recently trashed first, falling back to creation time when unset. */
 export function compareBookmarksTrashedFirst(a: Bookmark, b: Bookmark): number {
   return (b.deletedAt ?? 0) - (a.deletedAt ?? 0) || compareBookmarksNewestFirst(a, b);
+}
+
+function compareIds(a: Bookmark, b: Bookmark): number {
+  return a.id.localeCompare(b.id);
+}
+
+function sortBySite(bookmarks: Bookmark[]): Bookmark[] {
+  const sites = new Map(bookmarks.map((bookmark) => [bookmark.id, siteSortKey(bookmark.url)]));
+  return bookmarks.sort((a, b) => {
+    const siteA = sites.get(a.id) ?? null;
+    const siteB = sites.get(b.id) ?? null;
+    if (siteA !== siteB) {
+      if (siteA === null) { return 1; }
+      if (siteB === null) { return -1; }
+      return siteA.localeCompare(siteB);
+    }
+    return a.title.localeCompare(b.title) || compareIds(a, b);
+  });
+}
+
+/**
+ * Returns a sorted copy. Bookmarks saved or edited in one batch share a
+ * timestamp, so every order ends with the ID to stay stable across reloads.
+ */
+export function sortBookmarks(bookmarks: readonly Bookmark[], sortBy: BookmarkSortBy): Bookmark[] {
+  const sorted = [...bookmarks];
+  switch (sortBy) {
+    case "date-newest":
+      return sorted.sort(compareBookmarksNewestFirst);
+    case "date-oldest":
+      return sorted.sort((a, b) => -compareBookmarksNewestFirst(a, b));
+    case "updated-newest":
+      return sorted.sort((a, b) =>
+        bookmarkEditedAt(b.updatedAt, b.createdAt) - bookmarkEditedAt(a.updatedAt, a.createdAt) || compareIds(a, b));
+    case "updated-oldest":
+      return sorted.sort((a, b) =>
+        bookmarkEditedAt(a.updatedAt, a.createdAt) - bookmarkEditedAt(b.updatedAt, b.createdAt) || compareIds(a, b));
+    case "alpha-az":
+      return sorted.sort((a, b) => a.title.localeCompare(b.title) || compareIds(a, b));
+    case "alpha-za":
+      return sorted.sort((a, b) => b.title.localeCompare(a.title) || compareIds(a, b));
+    case "site-az":
+      return sortBySite(sorted);
+  }
 }

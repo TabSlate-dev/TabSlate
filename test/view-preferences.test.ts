@@ -42,6 +42,12 @@ beforeEach(() => {
 });
 
 describe("parseViewPrefs", () => {
+  test("keeps the edit time and website orders", () => {
+    for (const sortBy of ["updated-newest", "updated-oldest", "site-az"]) {
+      expect(viewPrefs.parseViewPrefs({ viewMode: "grid", sortBy, updatedAt: 1 })?.sortBy).toBe(sortBy);
+    }
+  });
+
   test("keeps valid values", () => {
     expect(viewPrefs.parseViewPrefs({ viewMode: "list", sortBy: "alpha-za", updatedAt: 42 })).toEqual({
       viewMode: "list",

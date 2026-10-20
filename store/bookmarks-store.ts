@@ -10,6 +10,7 @@ import {
   compareBookmarksNewestFirst,
   compareBookmarksTrashedFirst,
   normalizeFavicon,
+  sortBookmarks,
 } from "@/lib/bookmark-utils";
 import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
@@ -225,27 +226,6 @@ function applySearch(bookmarks: Bookmark[], query: string): Bookmark[] {
       b.url.toLowerCase().includes(lower) ||
       (b.notes ?? "").toLowerCase().includes(lower)
   );
-}
-
-/**
- * Bookmarks saved in one batch share a timestamp, so every comparison needs a
- * tiebreaker to stay deterministic across reloads.
- */
-function applySort(bookmarks: Bookmark[], sortBy: SortBy): Bookmark[] {
-  const arr = [...bookmarks];
-  const byId = (a: Bookmark, b: Bookmark) => a.id.localeCompare(b.id);
-  switch (sortBy) {
-    case "date-newest":
-      return arr.sort(compareBookmarksNewestFirst);
-    case "date-oldest":
-      return arr.sort((a, b) => -compareBookmarksNewestFirst(a, b));
-    case "alpha-az":
-      return arr.sort((a, b) => a.title.localeCompare(b.title) || byId(a, b));
-    case "alpha-za":
-      return arr.sort((a, b) => b.title.localeCompare(a.title) || byId(a, b));
-    default:
-      return arr;
-  }
 }
 
 function migrateBookmarkForStore(store: BookmarkStoreName, bookmark: Bookmark): Bookmark {
@@ -1562,13 +1542,13 @@ export const useBookmarksStore = create<BookmarksState>()(
             break;
         }
 
-        return applySort(applySearch(filtered, state.searchQuery), state.sortBy);
+        return sortBookmarks(applySearch(filtered, state.searchQuery), state.sortBy);
       },
 
       getFavoriteBookmarks: () => {
         const state = get();
         const filtered = Array.from(state.bookmarks.values()).filter((b) => b.isFavorite);
-        return applySort(applySearch(filtered, state.searchQuery), state.sortBy);
+        return sortBookmarks(applySearch(filtered, state.searchQuery), state.sortBy);
       },
 
       getArchivedBookmarks: () => {

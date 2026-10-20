@@ -74,6 +74,15 @@ export function looseUrlKey(url: string): string {
   return `${authority}${trimTrailingSlash(parsed.pathname)}${query ? `?${query}` : ""}`;
 }
 
+/**
+ * The site part of a sort by website: the host, lowercased, without a leading
+ * "www.". Subdomains stay separate sites. Null for an address that is not a web URL.
+ */
+export function siteSortKey(url: string): string | null {
+  const parsed = parseWebUrl(url);
+  return parsed ? parsed.hostname.replace(/^www\./, "") : null;
+}
+
 export function urlMatchKey(url: string, tier: UrlMatchTier): string {
   return tier === "strict" ? strictUrlKey(url) : looseUrlKey(url);
 }

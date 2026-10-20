@@ -2,10 +2,25 @@ import { idbGet, idbPut } from "@/lib/idb";
 import { getPreferences, updatePreferences } from "@/lib/api";
 
 export type BookmarkViewMode = "grid" | "list";
-export type BookmarkSortBy = "date-newest" | "date-oldest" | "alpha-az" | "alpha-za";
+export type BookmarkSortBy =
+  | "date-newest"
+  | "date-oldest"
+  | "updated-newest"
+  | "updated-oldest"
+  | "alpha-az"
+  | "alpha-za"
+  | "site-az";
 
 const VIEW_MODES: readonly BookmarkViewMode[] = ["grid", "list"];
-const SORT_OPTIONS: readonly BookmarkSortBy[] = ["date-newest", "date-oldest", "alpha-az", "alpha-za"];
+const SORT_OPTIONS: readonly BookmarkSortBy[] = [
+  "date-newest",
+  "date-oldest",
+  "updated-newest",
+  "updated-oldest",
+  "alpha-az",
+  "alpha-za",
+  "site-az",
+];
 
 export const DEFAULT_VIEW_MODE: BookmarkViewMode = "grid";
 export const DEFAULT_SORT_BY: BookmarkSortBy = "date-newest";
