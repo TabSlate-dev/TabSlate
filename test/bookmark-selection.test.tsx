@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "b
 import { act, createElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
-import { click, getBySelector, installAppModules, pressKey, render, setupDom, teardownDom, type AppModules, type RenderResult } from "./helpers/dom-environment";
+import { click, getBySelector, getByText, installAppModules, pressKey, render, setupDom, teardownDom, type AppModules, type RenderResult } from "./helpers/dom-environment";
 import { bookmarkMap, countsByCollection, makeBookmark, makeCollection, makeTag, makeWorkspace } from "./helpers/library-fixtures";
 
 const replacer = createModuleReplacer();
@@ -68,6 +68,22 @@ const selected = () => [...useSelectionStore.getState().selectedIds].sort();
 const toggleModifier = (): MouseEventInit => (isMacPlatform() ? { metaKey: true } : { ctrlKey: true });
 
 describe("selecting bookmark cards", () => {
+  test("archiving all Favorites keeps its result notice visible in the empty view", () => {
+    for (const id of ["a", "b", "c", "d"]) {
+      click(checkbox(id));
+    }
+    click(getByText("bulkActions_archive"));
+    expect(document.querySelector('[role="toolbar"]')).toBeNull();
+    expect(document.querySelector('[data-bookmark-id]')).toBeNull();
+    expect(getBySelector('[role="status"]').textContent).toContain("bulkActions_archivedOther[4]");
+  });
+
+  test("selecting a card shows the bulk action bar", () => {
+    expect(document.querySelector('[role="toolbar"]')).toBeNull();
+    click(checkbox("b"));
+    expect(document.querySelector('[role="toolbar"]')).not.toBeNull();
+  });
+
   test("each card offers a labeled checkbox, and checking it does not open the bookmark", () => {
     expect(checkbox("a").getAttribute("aria-label")).toBe("bookmarkCard_select[A]");
     expect(checkbox("a").getAttribute("aria-checked")).toBe("false");

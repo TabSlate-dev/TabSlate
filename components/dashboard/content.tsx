@@ -1,3 +1,4 @@
+import { BulkActionBar } from "@/components/dashboard/bulk-actions";
 import { selectionStateOf, useSelectionStore } from "@/store/selection-store";
 import { SelectionOrdersProvider } from "@/components/dashboard/shared/selection-orders";
 import { useSelectionScope } from "@/hooks/use-selection-scope";
@@ -723,6 +724,7 @@ export function BookmarksContent() {
             onOpenChange={(open) => !open && setTaggingBookmark(null)}
           />
         )}
+        <BulkActionBar />
       </div>
     </SelectionOrdersProvider>
   );

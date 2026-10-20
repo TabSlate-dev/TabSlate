@@ -1866,5 +1866,84 @@
         "content": "$1"
       }
     }
+  },
+  "bulkActions_toolbarLabel": {
+    "message": "Bulk actions"
+  },
+  "bulkActions_selectedCount": {
+    "message": "$1 selected",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_moveTo": {
+    "message": "Move to…"
+  },
+  "bulkActions_favorite": {
+    "message": "Favorite"
+  },
+  "bulkActions_unfavorite": {
+    "message": "Unfavorite"
+  },
+  "bulkActions_archive": {
+    "message": "Archive"
+  },
+  "bulkActions_delete": {
+    "message": "Delete"
+  },
+  "bulkActions_selectAll": {
+    "message": "Select all"
+  },
+  "bulkActions_clear": {
+    "message": "Clear selection"
+  },
+  "bulkActions_movedOne": {
+    "message": "Moved 1 bookmark to $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_movedOther": {
+    "message": "Moved $1 bookmarks to $2",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "bulkActions_archivedOne": {
+    "message": "Archived 1 bookmark"
+  },
+  "bulkActions_archivedOther": {
+    "message": "Archived $1 bookmarks",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_trashedOne": {
+    "message": "Moved 1 bookmark to Trash"
+  },
+  "bulkActions_trashedOther": {
+    "message": "Moved $1 bookmarks to Trash",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_viewArchive": {
+    "message": "Open Archive"
+  },
+  "bulkActions_viewTrash": {
+    "message": "Open Trash"
   }
 }

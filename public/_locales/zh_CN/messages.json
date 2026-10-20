@@ -1866,5 +1866,84 @@
         "content": "$1"
       }
     }
+  },
+  "bulkActions_toolbarLabel": {
+    "message": "批量操作"
+  },
+  "bulkActions_selectedCount": {
+    "message": "已选择 $1 项",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_moveTo": {
+    "message": "移动到…"
+  },
+  "bulkActions_favorite": {
+    "message": "收藏"
+  },
+  "bulkActions_unfavorite": {
+    "message": "取消收藏"
+  },
+  "bulkActions_archive": {
+    "message": "归档"
+  },
+  "bulkActions_delete": {
+    "message": "删除"
+  },
+  "bulkActions_selectAll": {
+    "message": "全选"
+  },
+  "bulkActions_clear": {
+    "message": "取消选择"
+  },
+  "bulkActions_movedOne": {
+    "message": "已将 1 个书签移动到 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_movedOther": {
+    "message": "已将 $1 个书签移动到 $2",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "bulkActions_archivedOne": {
+    "message": "已归档 1 个书签"
+  },
+  "bulkActions_archivedOther": {
+    "message": "已归档 $1 个书签",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_trashedOne": {
+    "message": "已将 1 个书签移到回收站"
+  },
+  "bulkActions_trashedOther": {
+    "message": "已将 $1 个书签移到回收站",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bulkActions_viewArchive": {
+    "message": "查看归档"
+  },
+  "bulkActions_viewTrash": {
+    "message": "查看回收站"
   }
 }

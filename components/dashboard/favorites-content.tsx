@@ -1,3 +1,4 @@
+import { BulkActionBar } from "@/components/dashboard/bulk-actions";
 import { SelectionOrdersProvider } from "@/components/dashboard/shared/selection-orders";
 import { useSelectionScope } from "@/hooks/use-selection-scope";
 
@@ -104,6 +105,7 @@ export function FavoritesContent() {
             />
           )}
         </div>
+        <BulkActionBar />
       </div>
     </SelectionOrdersProvider>
   );
