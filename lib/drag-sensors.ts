@@ -15,7 +15,7 @@ import type {
  * drag activates with a tiny distance-1 constraint (virtually immediate).
  * Everywhere else it falls back to the configurable `activationConstraint`
  * passed via options (e.g. `{ delay: 250, tolerance: 5 }`). A press inside an
- * open menu (`role="menu"`) never activates.
+ * open menu (`role="menu"`) or popover (`role="dialog"`) never activates.
  */
 
 function isDragHandle(event: React.PointerEvent): boolean {
@@ -43,9 +43,9 @@ export class SmartPointerSensor extends PointerSensor {
           ? target.parentElement
           : target;
 
-        // Menus render in portals, but React still bubbles their presses to
-        // the draggable they belong to; a press in a menu never starts a drag.
-        if (el?.closest?.('[role="menu"]')) {
+        // Menus and popovers render in portals, but React still bubbles their
+        // presses to the draggable they belong to; such a press never starts a drag.
+        if (el?.closest?.('[role="menu"], [role="dialog"]')) {
           return false;
         }
 

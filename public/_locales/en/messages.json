@@ -1,4 +1,13 @@
 {
+  "bookmarkNotes_show": {
+    "message": "Show notes"
+  },
+  "bookmarkNotes_heading": {
+    "message": "Notes"
+  },
+  "bookmarkNotes_edit": {
+    "message": "Edit note"
+  },
   "bookmarkCard_select": {
     "message": "Select $1",
     "placeholders": {

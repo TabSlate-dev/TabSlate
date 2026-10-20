@@ -1,4 +1,13 @@
 {
+  "bookmarkNotes_show": {
+    "message": "显示备注"
+  },
+  "bookmarkNotes_heading": {
+    "message": "备注"
+  },
+  "bookmarkNotes_edit": {
+    "message": "编辑备注"
+  },
   "bookmarkCard_select": {
     "message": "选择 $1",
     "placeholders": {

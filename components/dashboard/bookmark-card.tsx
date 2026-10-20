@@ -24,6 +24,7 @@ import { TagList } from "@/components/ui/tag-list";
 import { useTranslation } from "@/hooks/use-translation";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
+import { BookmarkNotesPopover } from "@/components/dashboard/shared/bookmark-notes-popover";
 import { BookmarkMenuItems } from "@/components/dashboard/shared/bookmark-menu-items";
 import {
   contextMenuPrimitives,
@@ -110,6 +111,8 @@ export const BookmarkCard = React.memo(function BookmarkCard({
         : tags.filter((tag) => bookmark.tags.includes(tag.id)),
     [tags, bookmark.tags]
   );
+  const notes = bookmark.notes ?? "";
+  const hasNotes = notes.trim() !== "";
   const [copied, setCopied] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
 
@@ -223,6 +226,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
             </div>
 
             <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              {hasNotes && <BookmarkNotesPopover bookmarkId={bookmark.id} notes={notes} />}
               <Button
                 variant="ghost"
                 size="icon-xs"
@@ -348,6 +352,7 @@ export const BookmarkCard = React.memo(function BookmarkCard({
                 </Button>
               </div>
 
+              {hasNotes && <BookmarkNotesPopover bookmarkId={bookmark.id} notes={notes} />}
               {/* Always visible: three-dot menu */}
               <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
                 <DropdownMenuTrigger asChild>
