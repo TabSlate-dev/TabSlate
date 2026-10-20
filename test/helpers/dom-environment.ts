@@ -152,8 +152,9 @@ export function pressKey(element: Element, key: string, init: KeyboardEventInit 
   });
 }
 
-export function typeInto(input: HTMLInputElement, value: string): void {
-  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+export function typeInto(input: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const prototype = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setValue = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
   act(() => {
     setValue?.call(input, value);
     input.dispatchEvent(new Event("input", { bubbles: true }));

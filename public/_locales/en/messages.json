@@ -2006,5 +2006,95 @@
   },
   "bulkActions_confirmOpen": {
     "message": "Open tabs"
+  },
+  "bookmarkForm_addTitle": {
+    "message": "Add bookmark"
+  },
+  "bookmarkForm_addDesc": {
+    "message": "Save a page with notes, a collection and tags."
+  },
+  "bookmarkForm_editTitle": {
+    "message": "Edit bookmark"
+  },
+  "bookmarkForm_editDesc": {
+    "message": "Change the bookmark's details, notes, collection or tags."
+  },
+  "bookmarkForm_titleLabel": {
+    "message": "Title"
+  },
+  "bookmarkForm_titlePlaceholder": {
+    "message": "My Website"
+  },
+  "bookmarkForm_urlLabel": {
+    "message": "URL"
+  },
+  "bookmarkForm_urlPlaceholder": {
+    "message": "https://example.com"
+  },
+  "bookmarkForm_descriptionLabel": {
+    "message": "Description"
+  },
+  "bookmarkForm_descriptionPlaceholder": {
+    "message": "Optional description..."
+  },
+  "bookmarkForm_notesLabel": {
+    "message": "Notes"
+  },
+  "bookmarkForm_notesPlaceholder": {
+    "message": "Why you saved it, what to remember…"
+  },
+  "bookmarkForm_notesCounter": {
+    "message": "$1 / $2",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "bookmarkForm_collectionLabel": {
+    "message": "Collection"
+  },
+  "bookmarkForm_chooseCollection": {
+    "message": "Choose a collection"
+  },
+  "bookmarkForm_uncategorized": {
+    "message": "Uncategorized"
+  },
+  "bookmarkForm_tagsLabel": {
+    "message": "Tags"
+  },
+  "bookmarkForm_errorTitle": {
+    "message": "Enter a title."
+  },
+  "bookmarkForm_errorUrl": {
+    "message": "Enter a valid URL."
+  },
+  "bookmarkForm_changedElsewhere": {
+    "message": "This bookmark was changed on another device. Close this dialog to see its current state."
+  },
+  "bookmarkForm_added": {
+    "message": "Added $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarkForm_updated": {
+    "message": "Updated $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarkForm_add": {
+    "message": "Add bookmark"
+  },
+  "bookmarkForm_save": {
+    "message": "Save changes"
   }
 }

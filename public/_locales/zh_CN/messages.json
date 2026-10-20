@@ -2006,5 +2006,95 @@
   },
   "bulkActions_confirmOpen": {
     "message": "打开标签页"
+  },
+  "bookmarkForm_addTitle": {
+    "message": "添加书签"
+  },
+  "bookmarkForm_addDesc": {
+    "message": "保存网页，并附上备注、收藏集和标签。"
+  },
+  "bookmarkForm_editTitle": {
+    "message": "编辑书签"
+  },
+  "bookmarkForm_editDesc": {
+    "message": "修改书签的信息、备注、收藏集或标签。"
+  },
+  "bookmarkForm_titleLabel": {
+    "message": "标题"
+  },
+  "bookmarkForm_titlePlaceholder": {
+    "message": "我的网站"
+  },
+  "bookmarkForm_urlLabel": {
+    "message": "网址"
+  },
+  "bookmarkForm_urlPlaceholder": {
+    "message": "https://example.com"
+  },
+  "bookmarkForm_descriptionLabel": {
+    "message": "描述"
+  },
+  "bookmarkForm_descriptionPlaceholder": {
+    "message": "选填描述…"
+  },
+  "bookmarkForm_notesLabel": {
+    "message": "备注"
+  },
+  "bookmarkForm_notesPlaceholder": {
+    "message": "为什么保存它、需要记住什么…"
+  },
+  "bookmarkForm_notesCounter": {
+    "message": "$1 / $2",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
+  "bookmarkForm_collectionLabel": {
+    "message": "收藏集"
+  },
+  "bookmarkForm_chooseCollection": {
+    "message": "选择收藏集"
+  },
+  "bookmarkForm_uncategorized": {
+    "message": "未分类"
+  },
+  "bookmarkForm_tagsLabel": {
+    "message": "标签"
+  },
+  "bookmarkForm_errorTitle": {
+    "message": "请输入标题。"
+  },
+  "bookmarkForm_errorUrl": {
+    "message": "请输入有效的网址。"
+  },
+  "bookmarkForm_changedElsewhere": {
+    "message": "此书签已在其他设备上更改。关闭对话框即可查看它的当前状态。"
+  },
+  "bookmarkForm_added": {
+    "message": "添加于 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarkForm_updated": {
+    "message": "更新于 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarkForm_add": {
+    "message": "添加书签"
+  },
+  "bookmarkForm_save": {
+    "message": "保存更改"
   }
 }
