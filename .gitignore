@@ -31,5 +31,5 @@ web-ext.config.ts
 
 # Claude
 .claude
-.superpowers
+.superpowers/
 .worktrees
