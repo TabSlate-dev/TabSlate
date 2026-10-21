@@ -271,9 +271,9 @@ Guests see no snapshot entry points; the settings section says snapshots are ava
 - MeiliSearch's bookmark document gains `content`: plain text from the reader version, at most 50,000 characters. The searchable attributes become title, URL, description, notes, then content.
 - The worker updates the document when it saves or replaces a snapshot, and the API does when a snapshot is deleted. `cmd/reindex` includes content, reading reader versions from storage.
 - `GET /search` never returns content. When a match is in the content, the result adds a `snippet` of about 30 words around it, produced by MeiliSearch's cropping.
-- The new tab's `SearchBox` adds a "Snapshot text" group after the local bookmark results when the user is signed in, the server supports snapshots, and the query has at least 2 characters. The request is debounced by 300 ms. The group lists only bookmarks missing from the local results, with their title and snippet, and opens the snapshot viewer.
+- The new tab's `SearchBox` already takes its bookmark results from `GET /search` for signed-in users, debounced by 300 ms. With content indexed, a result that matched only in snapshot text shows its snippet under the title and opens the snapshot viewer; other results open the page as today. (G later adds local results ahead of the server's.)
 - The search overlay on web pages already uses server search, so content matches appear there automatically. It shows the snippet and keeps opening the page itself.
-- Without MeiliSearch there is no full-text search, and the group never appears.
+- Without MeiliSearch there is no server search, so no snippets appear.
 
 ### 8. Deployment
 
@@ -389,7 +389,7 @@ Each behavior is implemented test-first.
   - queue: backfill selection and the free-space reserve; re-enqueuing stuck jobs; the Asynq queue with miniredis.
 - **Integration tests** (tagged, need Docker): obscura against a local test site, covering navigation, metadata, screenshots, request interception, download links, and video pages. This is also the plan's first task.
 - **Cloud:** the Hatchet queue implementation against a fake client; `go test ./...`.
-- **Extension tests:** merging pulled snapshot rows; the IndexedDB v4 upgrade; card icons and menu items; bulk "Save snapshots"; the viewer's states and views, including the iframes' `sandbox` attributes and `srcdoc`; the settings section (switch and storage bar); the storage-full alert; the large card's cover order; the "Snapshot text" search group.
+- **Extension tests:** merging pulled snapshot rows; the IndexedDB v4 upgrade; card icons and menu items; bulk "Save snapshots"; the viewer's states and views, including the iframes' `sandbox` attributes and `srcdoc`; the settings section (switch and storage bar); the storage-full alert; the large card's cover order; snippets and snapshot-viewer links for search results that matched in snapshot text.
 - **Browser capture and broken links:** the pending-upload queue (waiting for the bookmark to reach the server, retries, discarding after 7 days); the upload endpoint's checks; the worker deriving the reader version and cover from an upload; automatic captures never replacing a browser capture; `isPossiblyBroken` for each failure code; the popup option, the settings switch, the "Possibly broken" filter, and the card icon.
 - **Manual check:** a browser capture of a signed-in page (for example a private repository page), and a link to a deleted page showing as possibly broken; a full docker-compose setup; snapshots of an article, a single-page app, a YouTube page, a PDF link, an image link, and an archive download link; the reader, screenshot, and full-page archive views; Firefox; MinIO as S3-compatible storage; a full quota; a URL change; and an update after the original site went offline, which must keep the earlier snapshot.
 
