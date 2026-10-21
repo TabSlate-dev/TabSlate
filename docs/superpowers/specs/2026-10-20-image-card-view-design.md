@@ -8,6 +8,8 @@ Covers cost nothing to run and are free for every user, guests included. Server-
 
 So that covers can be read when the optional all-sites permission is not granted, the extension adds the `activeTab` permission and injects its page reader when the user saves from the toolbar popup, the save shortcut, or the context menu.
 
+For bookmarks that were not saved from an open page (typed into the form, imported, or saved before this change), the bookmark form gains a "Fetch details" button. It reads the page's title, description, and cover from the browser, without going through TabSlate's server.
+
 ## Roadmap Context
 
 This is the third sub-project derived from the faved.to comparison (see `docs/superpowers/specs/2026-10-15-library-management-basics-design.md`). Each has its own spec, plan, and implementation cycle.
@@ -32,11 +34,12 @@ C originally covered preview images, metadata refetch, AI summaries, and archive
 - Read covers at save time, with no server-side fetching.
 - Read page metadata when saving from the popup, the save shortcut, or the context menu, even without the optional all-sites permission.
 - Sync covers across devices.
+- Let users fetch a page's title, description, and cover into the bookmark form on request, including for typed-in and older bookmarks.
 
 ## Non-goals
 
 - Server-side fetching of covers or metadata, and stored copies of cover images (C2).
-- Covers for existing bookmarks, imports, tabs dragged onto a collection, or bookmarks added by typing a URL into the form.
+- Automatic covers for existing bookmarks, imports, tabs dragged onto a collection, or bookmarks added by typing a URL into the form. The form's "Fetch details" button covers them on request; nothing fetches them in the background.
 - Choosing or editing a cover by hand.
 - Screenshots as covers.
 - Covers in the small card view, the Archive and Trash pages, search results, or the popup.
@@ -52,7 +55,8 @@ C originally covered preview images, metadata refetch, AI summaries, and archive
 | Cost and availability | Free for every user, guests included. The server never fetches pages for covers. |
 | Saves without the optional all-sites permission | Add `activeTab` and inject the page reader for popup, shortcut, and context-menu saves. |
 | Sync | A new `image_url` bookmark field, additive like B's notes. |
-| URL edits | Saving a changed URL in the form clears the cover. |
+| URL edits | Saving a changed URL in the form clears the cover, unless details were fetched for the new URL. |
+| Typed-in and older bookmarks | A "Fetch details" button in the bookmark form reads the page from the browser, asking for access to that one site when needed. |
 
 ## Design
 
@@ -109,7 +113,7 @@ The popup and the background pass `allowInjection: true`. Bulk tab saves from th
 
 Bookmarks added by typing a URL into the form, tabs dragged onto a collection (that path reads no page info today and keeps it that way), imported bookmarks, and the existing library have no cover.
 
-**URL edits.** When the bookmark form saves a changed URL, it also saves `imageUrl: ""`, which clears the cover. Bulk actions never change covers.
+**URL edits.** When the bookmark form saves a changed URL, it also saves `imageUrl: ""`, which clears the cover, unless "Fetch details" ran for the new URL (section 6). Bulk actions never change covers.
 
 **Manifest.** `wxt.config.ts` adds `activeTab` to the permissions of the Chromium and Firefox builds. Neither browser shows an install or update warning for it. `test/wxt-config.test.ts` asserts it for both builds.
 
@@ -158,6 +162,25 @@ Bookmarks added by typing a URL into the form, tabs dragged onto a collection (t
 - The large card view loads images from the sites, or their image hosts, of the bookmarks on screen. Like the favicon lookups, this falls under the already required `browsingActivity` category. The requests carry no referrer.
 - The declared categories do not change. The comment on `FIREFOX_ACCOUNT_DATA_COLLECTION` in `lib/browser/data-collection-permissions.ts` and the Firefox bullet in `CLAUDE.md` mention covers.
 - `activeTab` grants temporary access only to the tab the user acted on, and the injected function only reads metadata from the page.
+- "Fetch details" (section 6) requests the page straight from the user's browser, without cookies, like opening the link. Nothing is sent to TabSlate's server or to third parties, so no data-collection category is involved.
+
+### 6. Fetch details in the bookmark form
+
+B's bookmark form gains a "Fetch details" button next to the URL field, in add and edit mode. It is how typed-in, imported, and older bookmarks get a title, description, and cover, and how users refresh them.
+
+- **Access.** The page is fetched from the new tab page, which needs host access to the URL's origin. If the optional all-sites permission is not granted, the click handler requests `<origin>/*` before any `await` (allowed by the existing `optional_host_permissions: ["<all_urls>"]`). The browser's prompt names the site. A refusal shows "Allow access to this site to fetch its details" and changes nothing.
+- **Request.** `fetch(url, { credentials: "omit", redirect: "follow" })` with a 10-second timeout. At most 2 MB of the body is read, and only `text/html` and `application/xhtml+xml` responses are parsed.
+- **Parsing.** `DOMParser` parses the HTML, so page scripts never run.
+  - Title: `og:title`, else `<title>`.
+  - Description: `og:description`, else `meta[name="description"]`.
+  - Cover: `og:image`, else `twitter:image`, normalized with `normalizeCoverUrl` against the final response URL.
+- **Applying.**
+  - Empty title and description fields are filled.
+  - A non-empty field shows a one-line suggestion, "Use fetched: «…»", which replaces the value when clicked. The user's text is never overwritten silently.
+  - A fetched cover replaces the bookmark's cover and shows as a small thumbnail beside the button.
+  - Nothing is saved until the form is saved.
+- **Errors.** Timeouts, network errors, non-HTML responses, and pages without metadata show an inline message and change nothing.
+- The logic lives in `lib/page-metadata.ts` (`fetchPageMetadata(url)`), which shares its tag selectors with `readPageInfo`.
 
 ## Components and Files
 
@@ -165,6 +188,7 @@ Frontend, new:
 
 - `lib/page-info.ts` — `PageInfo`, `readPageInfo()`, and `requestPageInfo()`.
 - `components/dashboard/bookmark-cover.tsx` — `BookmarkCover` and `BookmarkCoverPlaceholder`.
+- `lib/page-metadata.ts` — `fetchPageMetadata(url)` for the form's "Fetch details" button.
 
 Frontend, modified:
 
@@ -191,6 +215,7 @@ Each behavior is implemented test-first, with the happy-dom helpers and module s
 
 - **Unit tests:** `normalizeCoverUrl` (relative URLs, schemes, `data:` URIs, length); `readPageInfo` against happy-dom documents (`og:image`, the `twitter:image` fallback, neither); `requestPageInfo` (content-script path, injection fallback, `null` when both fail, no injection without `allowInjection`); view-preference parsing (`gallery` accepted, `list` falls back to `grid`); `toServerBookmark`, `mergeFromServer`, and both confirmation comparisons with covers, including clearing and the old-server fallback; a stable placeholder color for a host.
 - **Component tests:** the header toggle; a large card with a cover, without one, and after an image error, including no retry after the row mounts again; the checkbox on the cover; `BookmarksContent` and `FavoritesContent` in the large card view; the form clearing the cover when the URL changes.
+- **Fetch details:** `fetchPageMetadata` against stubbed responses (Open Graph tags, fallbacks, relative cover URLs, non-HTML, oversized bodies, timeouts); the form's button requesting site access in the click handler, filling empty fields, offering replacements for filled ones, keeping the fetched cover through a URL change, and showing errors.
 - **Entry points:** the popup and the context-menu save pass the normalized cover through `ADD_BOOKMARK` and their IndexedDB fallbacks; saving a window or a tab group stores each tab's cover from the content script.
 - **Manifest test:** `activeTab` in the Chromium and Firefox builds.
 - **Server tests** (Go, in the existing handler test style): push stores, keeps (absent field), clears (`""`), and rejects (bad scheme, too long) covers; pull and REST return the field; REST update keeps an absent cover; the schema migration runs twice without error.

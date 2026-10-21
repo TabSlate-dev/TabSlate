@@ -2,7 +2,7 @@
 
 ## Summary
 
-TabSlate's tags are flat, and importing browser bookmarks loses every folder level below the first: each first-level folder becomes a collection and deeper subfolders are flattened into it. This sub-project lets tags nest. A tag can have a parent, the sidebar shows tags as a tree, selecting a parent tag also matches its descendants, and typing `编程/后端/Go` creates all three levels at once. Imports keep the full folder hierarchy as a tag tree under one root tag per import, so imported bookmarks can be reviewed and reorganized with B's bulk actions.
+TabSlate's tags are flat, and importing browser bookmarks loses every folder level below the first: each first-level folder becomes a collection and deeper subfolders are flattened into it. This sub-project lets tags nest. A tag can have a parent, the sidebar shows tags as a tree, selecting a parent tag also matches its descendants, and typing `编程/后端/Go` creates all three levels at once. Imports keep the full folder hierarchy as a tag tree under one root tag per import, so imported bookmarks can be reviewed and reorganized with B's bulk actions. Two cleanup tools, borrowed from Karakeep, help afterwards: merging one tag into another, and deleting every tag that no bookmark uses.
 
 Collections stay one level deep. The hierarchy is added to tags only.
 
@@ -32,6 +32,7 @@ The comparison weighed nested collections against nested tags. Collections are t
 - Move, rename, and delete tags without losing their children.
 - Keep the full folder hierarchy of imported browser bookmarks, and make imported bookmarks easy to find and reorganize.
 - Sync the hierarchy, and keep older extensions and servers working.
+- Clean up tags after imports: merge duplicates and delete unused tags.
 
 ## Non-goals
 
@@ -56,6 +57,8 @@ The comparison weighed nested collections against nested tags. Collections are t
 | Sidebar layout | Tree rows styled like collection rows, replacing A's chips. |
 | Quick creation | `/` separates levels when creating a tag; existing levels are reused. |
 | Import | First-level folders still become collections. The full folder hierarchy becomes a tag tree under a root tag such as "Chrome import 2026-10-21". |
+| Merging | "Merge into…" moves a tag's bookmarks and children to another tag and deletes it. Same-named children merge too. |
+| Unused tags | "Delete unused tags" removes every tag that no bookmark uses, counting archived and trashed bookmarks in all workspaces. |
 
 ## Design
 
@@ -215,6 +218,27 @@ The comparison weighed nested collections against nested tags. Collections are t
 
 `ImportPlan` (`lib/import-types.ts`) carries the new tags with their parents, and `importFromPlan` in `store/workspace-store.ts` adds them with the collections and bookmarks.
 
+### 5. Merging tags and deleting unused tags
+
+**Merge into…** (a new item in a tag's right-click menu):
+
+- It opens the tag tree picker. The tag itself, its descendants, and targets that would put a descendant deeper than five levels are disabled.
+- A confirmation explains the result: "Merge «A» into «B»? N bookmarks will use «B» instead, A's child tags will move under B, and A will be deleted."
+- `mergeTag(sourceId, targetId)` in `store/workspace-store.ts`:
+  - Every bookmark that carries A gets B instead, without duplicates. This covers active, archived, and trashed bookmarks in every workspace. Buckets that are loaded change in state; buckets that are not loaded change in IndexedDB only, following the `_archivedLoaded` and `_trashedLoaded` rule.
+  - A's children move under B. A child whose name matches one of B's children (compared like sibling names) merges into it the same way, recursively.
+  - A, and any child merged away, is tombstoned.
+  - The changes go out in one sync enqueue, split by B's byte-limited push chunks.
+- If A was selected in the tag filter, B takes its place.
+- Merged-away tags stop counting against the tag quota once they are permanently deleted, like any deleted tag.
+
+**Delete unused tags** (a new item in a ⋯ menu on the Tags section header):
+
+- A tag is unused when no bookmark carries it or any of its descendants. Active, archived, and trashed bookmarks count, in every workspace, because tags are shared across workspaces.
+- Before counting, the action loads the archived and trashed buckets with `loadArchivedBookmarks()` and `loadTrashedBookmarks()`, which keep them loaded.
+- The menu item shows the count, "Delete unused tags (N)", and is disabled at zero. A confirmation lists up to ten of the names, then "and N more".
+- Confirming tombstones all of them in one update and one sync enqueue. No children need to move, because the descendants of an unused tag are unused too.
+
 ## Components and Files
 
 Frontend, new:
@@ -225,7 +249,8 @@ Frontend, new:
 Frontend, modified:
 
 - `lib/types.ts` (`Tag.parentId`), `lib/tag-name.ts` (sibling checks), `lib/api.ts` (`parent_id`), `lib/sync-confirmation.ts`, `lib/storage.ts` (popup tag creation)
-- `store/workspace-store.ts` (create with paths, `moveTag`, delete moving children up, sync mapping and merge, import), `store/bookmarks-store.ts` (filtering with an expanded tag set)
+- `store/workspace-store.ts` (create with paths, `moveTag`, delete moving children up, `mergeTag`, deleting unused tags, sync mapping and merge, import), `store/bookmarks-store.ts` (filtering with an expanded tag set, replacing a tag across all buckets)
+- `components/dashboard/sidebar/tag-merge-dialog.tsx` and `unused-tags-dialog.tsx` — the merge and cleanup confirmations
 - `components/dashboard/sidebar/tags-section.tsx`, `tag-dialog.tsx`, `tag-delete-dialog.tsx`
 - `components/ui/tag-list.tsx`, `components/dashboard/shared/active-filter-chips.tsx`, `shared/tag-picker.tsx`, `bulk-actions/tags-menu.tsx`, and the components that pass selected tags to the filter (`content.tsx`, `favorites-content.tsx`)
 - `entrypoints/popup/App.tsx`
@@ -253,10 +278,13 @@ Each behavior is implemented test-first, with the happy-dom helpers and module s
   - sync: `parent_id` absent, `""`, and an ID; merge; confirmation comparisons; dropping a local move after a rejection;
   - delete moving children up in one update;
   - the Chrome parser's folder paths: nesting, empty folders, same-named folders, more than five levels, and bookmarks directly in root folders;
-  - import plans: root tag name collisions, the root-only fallback, and Toby's root tag.
+  - import plans: root tag name collisions, the root-only fallback, and Toby's root tag;
+  - merging: bookmarks in all three buckets (loaded and not loaded) switching tags without duplicates, recursive merging of same-named children, the selected filter following the merge, and one sync enqueue;
+  - unused tags: counting across workspaces and buckets, parents of used tags staying, and one update.
 - **Component tests:**
   - the sidebar tree: expand and collapse persisting across mounts, ancestors expanding for a selected tag, and search keeping ancestors with highlights;
-  - the right-click menu: **New child tag…**, disabled **Move to…** targets, and the child count in the delete confirmation;
+  - the right-click menu: **New child tag…**, disabled **Move to…** and **Merge into…** targets, the merge confirmation, and the child count in the delete confirmation;
+  - the Tags section's ⋯ menu: the unused-tag count, the disabled state at zero, and the confirmation;
   - the tag dialog's Parent field, `/` creation, and errors;
   - path tooltips on card tags and paths in the filter chips;
   - B's tag picker and bulk Tags menu with paths and creation;

@@ -6,6 +6,8 @@ Bookmarks point at pages that change, move, or disappear. This sub-project gives
 
 Snapshots are the paid feature of the faved.to-derived roadmap. Their quota is storage space. The design follows Karakeep, an open-source bookmark manager that archives pages the same way: a headless browser renders each page, every saved file is an asset with a recorded size, and the viewer switches between the reader version, the screenshot, and the archive.
 
+Pages the server cannot fetch (sign-in pages, paywalls, sites that block automated browsers) can be captured from the user's own browser instead, the way Karakeep's extension does. Failed captures also reveal links whose pages are probably gone, and the library can filter for them.
+
 Pages are rendered by obscura, a lightweight headless browser that runs in its own container. A new Go worker (`cmd/fetcher`) runs the capture jobs. Jobs go through Hatchet on TabSlate Cloud and through a Redis queue (Asynq) on self-hosted servers. Files live in a local directory or in S3-compatible storage.
 
 ## Roadmap Context
@@ -34,6 +36,8 @@ C1 explains how the original sub-project C split in two. AI summaries are deferr
 - Charge snapshots against a per-plan storage quota that counts only saved files.
 - Keep the service safe to run against arbitrary URLs: no access to internal networks, bounded work per page, and no abuse through failed attempts.
 - Run the same open-source code on self-hosted servers and on TabSlate Cloud, with Cloud adding only its queue and billing.
+- Capture pages from the user's browser when the user asks, for pages the server cannot reach.
+- Show which bookmarks probably point at pages that are gone.
 
 ## Non-goals
 
@@ -41,9 +45,9 @@ C1 explains how the original sub-project C split in two. AI summaries are deferr
 - Viewing snapshots offline. Snapshot files are never stored in the extension.
 - Copies of the images inside the reader version. Like Karakeep, the reader version keeps the original image URLs; the full-page archive is the way to keep images.
 - Snapshot history. Each bookmark has one snapshot.
-- Detecting dead links.
+- Periodic link checks. Links are checked only when a snapshot is taken or updated.
 - Snapshots for guests, unverified users, or Firefox users without account-data consent.
-- Saving videos, PDF exports of web pages, or archives uploaded from the browser (such as SingleFile).
+- Saving videos, PDF exports of web pages, or uploads from the standalone SingleFile extension.
 - Sharing snapshots with other people.
 - Highlights or annotations on snapshots.
 - Screenshots as card covers.
@@ -64,6 +68,8 @@ C1 explains how the original sub-project C split in two. AI summaries are deferr
 | Updates | One snapshot per bookmark. A new capture replaces it only when the page returns HTTP 2xx. |
 | Viewer | A page inside the new tab app, `#/snapshot/<bookmarkId>`. |
 | File access | Capability URLs signed with an HMAC of the asset ID. They do not expire. |
+| Pages the server cannot fetch | Browser capture with SingleFile's core library, only when the user checks it in the popup or turns it on in Settings. |
+| Dead links | "Possibly broken" derived from capture failures (DNS, connection, HTTP 404 and 410), with a filter and a card icon. |
 
 ## Design
 
@@ -128,7 +134,7 @@ The worker's own requests (preflight, cover and file downloads) use an HTTP clie
 - When the page fails (an error status, a timeout, or a dead domain), the old snapshot stays and the failure is recorded. The viewer then says that the original page may be gone and that the earlier snapshot was kept. A page that returns 200 for a parked domain cannot be told apart.
 - A full-page archive is replaced only by a newer archive that was saved successfully.
 
-**Statuses.** A bookmark's snapshot is `queued`, `ready`, `failed` (with a reason code such as `timeout`, `blocked`, `http_error`, `too_large`, or `storage_full`), or `unsupported`. When an update fails, a `ready` snapshot stays `ready` and records the last failure.
+**Statuses.** A bookmark's snapshot is `queued`, `ready`, `failed` (with a reason code such as `timeout`, `blocked`, `dns_error`, `connect_error`, `http_error` with the status code, `too_large`, or `storage_full`), or `unsupported`. When an update fails, a `ready` snapshot stays `ready` and records the last failure.
 
 **Retries and stale jobs.**
 
@@ -203,6 +209,7 @@ The worker's own requests (preflight, cover and file downloads) use an HTTP clie
 | `POST /snapshots/:bookmarkId/archive` | Save a full-page archive. |
 | `DELETE /snapshots/:bookmarkId` | Delete the snapshot, including its archive, and free its space. |
 | `DELETE /snapshots/:bookmarkId/archive` | Delete only the archive. |
+| `POST /snapshots/:bookmarkId/upload` | Upload a browser capture (section 10). |
 | `GET /snapshots/settings`, `PUT /snapshots/settings` | Read and change `{ "auto": boolean }`. |
 
 These endpoints return `503` when snapshots are not configured.
@@ -219,7 +226,7 @@ These endpoints return `503` when snapshots are not configured.
 
 **Extension data.**
 
-- IndexedDB moves to v4 with a new `bookmark-snapshots` store, keyed by bookmark ID, that holds only the metadata rows. Logout clears it with the rest of the database.
+- IndexedDB moves to v4 with two new stores keyed by bookmark ID: `bookmark-snapshots`, which holds only the metadata rows, and `pending-snapshot-uploads`, which holds browser captures until they are uploaded (section 10). Logout clears both with the rest of the database.
 - `store/snapshots-store.ts` keeps the rows in memory, hydrates from IndexedDB, and merges pull results. `StoreGate` waits for it, and `onPullSuccess` merges snapshots before it writes `localSeq`. Like the other data stores, it is never imported by the popup or the background.
 
 ### 6. Extension interface
@@ -294,6 +301,45 @@ Guests see no snapshot entry points; the settings section says snapshots are ava
 
 - Snapshot requests send only bookmark IDs, which the server already has, and the extension loads snapshot files from the user's own sync server under the existing account-data consent. The declared Firefox data-collection categories do not change.
 - The server visits bookmarked URLs from its own IP address. The privacy policy, the README, and the self-hosting documentation say so. The "Save snapshots automatically" switch is the opt-out.
+- Browser captures (section 10) upload page content to the user's own sync server only, under the existing account-data consent; on Firefox they fall under the declared `websiteContent` category. The privacy policy and the README describe them.
+
+### 10. Browser capture
+
+The server cannot capture pages that need the user's sign-in, sit behind a paywall, or block automated browsers. The extension can capture those pages from the user's own browser.
+
+**When.**
+
+- The popup shows "Snapshot this page as I see it", unchecked by default, when the user is signed in and the server supports snapshots. Checking it captures the page when the bookmark is saved.
+- Settings → Web snapshots gains "Always snapshot from the page when saving with the popup or the context menu", off by default.
+- Captures run only on these user actions, because only they grant `activeTab` (C1) on the tab being saved, and because a capture can contain anything the user sees, including signed-in content.
+
+**What.**
+
+- The page as one HTML file, produced by SingleFile's core library injected into the tab with `chrome.scripting.executeScript`. Resources are inlined from the browser, including ones that need the user's session, and scripts are removed. At most 20 MB.
+- A screenshot of the visible part of the tab from `tabs.captureVisibleTab`, as a JPEG.
+- SingleFile is AGPL-3.0, which matches the extension's license. The server only receives files.
+
+**Upload.**
+
+- The popup or the background stores the capture in a new IndexedDB store, `pending-snapshot-uploads`, keyed by bookmark ID (added in the v4 upgrade), and saves the bookmark as usual.
+- The new tab page uploads pending captures once their bookmark has reached the server, through `POST /snapshots/:bookmarkId/upload` (multipart: `archive`, `screenshot`, the page URL, and the capture time). It deletes each entry after the server accepts it. Without an open new tab page, uploads wait for the next one.
+- Entries older than 7 days, or for bookmarks that no longer exist, are discarded.
+
+**Server.**
+
+- The endpoint checks the bookmark's owner, the sizes (20 MB archive, 2 MB screenshot), the content types, the daily attempt limit, and the storage quota. It stores the files and enqueues a processing job.
+- The worker derives the reader version from the uploaded HTML with the same Readability and bluemonday steps, downloads the cover copy from its `og:image`, and replaces the snapshot. The uploaded HTML also becomes the full-page archive.
+- A browser capture always replaces the current snapshot, because the user saw the page; the HTTP-status rule does not apply. The snapshot records `source: browser`, and the viewer shows "Saved from your browser".
+- Automatic captures never replace a browser capture, whatever order they finish in. A manual "Update snapshot" does.
+
+### 11. Possibly broken links
+
+- A bookmark counts as possibly broken when its latest server capture failed because the domain did not resolve, the connection was refused or reset, or the page returned HTTP 404 or 410. Karakeep's `is:broken` filter works the same way. This covers failed snapshots and `ready` snapshots whose last update failed.
+- The worker records these failures as `dns_error`, `connect_error`, or `http_error` with the status code, and the snapshot rows already sync the last failure. The extension derives the state with `isPossiblyBroken(snapshot)` in `lib/snapshots.ts`; no new field is needed.
+- Timeouts, 5xx responses, and TLS errors do not count, because they are often temporary or local.
+- The header's filter menu gains "Possibly broken" when the server supports snapshots.
+- Cards of possibly broken bookmarks show a warning icon labeled "The original page may be gone". It opens the snapshot viewer when a snapshot exists; otherwise the bookmark menu's "Update snapshot" checks the link again.
+- A later successful capture clears the state. G's query syntax exposes the same state as `is:broken`.
 
 ## Components and Files
 
@@ -316,6 +362,9 @@ Frontend, new:
 - `store/snapshots-store.ts`
 - `lib/snapshots.ts` — types, API calls, and URL helpers
 - `components/dashboard/snapshot/` — the viewer page, view components, and states, plus `snapshot-settings.tsx`, the settings section that `settings-dialog.tsx` renders
+- `lib/browser-capture.ts` — injecting SingleFile's core library and taking the visible-tab screenshot
+- `lib/snapshot-uploads.ts` — the `pending-snapshot-uploads` queue and its uploader
+- the `single-file-core` dependency (AGPL-3.0)
 
 Frontend, modified: `lib/idb.ts` (v4), `lib/api.ts` (snapshot endpoints, pull types, search snippets), `entrypoints/newtab/App.tsx` (route, `StoreGate`, `onPullSuccess`), `components/dashboard/bookmark-card.tsx` and C1's `bookmark-cover.tsx`, `shared/bookmark-menu-items.tsx`, the bulk action bar, `archive-content.tsx`, `settings-dialog.tsx`, `store/plan-store.ts`, `components/ui/quota-alert.tsx`, `search-box.tsx`, the search overlay, both `messages.json`, `CLAUDE.md`, `ARCHITECTURE.md`.
 
@@ -327,6 +376,7 @@ Frontend, modified: `lib/idb.ts` (v4), `lib/api.ts` (snapshot endpoints, pull ty
 - **Endpoint errors.** `403 quota_exceeded` shows the quota alert, and `429` shows a "too many requests" notice. `503` does not reach the interface, because the capability flag hides the entry points.
 - **Stale file URLs.** A 404 in the viewer triggers one pull and one retry.
 - **Failed updates.** An existing snapshot is never replaced by a failed capture.
+- **Browser capture.** A capture that fails in the tab (an injection error, a page that forbids scripts, more than 20 MB) saves the bookmark without it and says why. Uploads that fail are retried on later new tab loads for up to 7 days; `403 quota_exceeded` shows the quota alert and drops the entry.
 
 ## Testing
 
@@ -340,7 +390,8 @@ Each behavior is implemented test-first.
 - **Integration tests** (tagged, need Docker): obscura against a local test site, covering navigation, metadata, screenshots, request interception, download links, and video pages. This is also the plan's first task.
 - **Cloud:** the Hatchet queue implementation against a fake client; `go test ./...`.
 - **Extension tests:** merging pulled snapshot rows; the IndexedDB v4 upgrade; card icons and menu items; bulk "Save snapshots"; the viewer's states and views, including the iframes' `sandbox` attributes and `srcdoc`; the settings section (switch and storage bar); the storage-full alert; the large card's cover order; the "Snapshot text" search group.
-- **Manual check:** a full docker-compose setup; snapshots of an article, a single-page app, a YouTube page, a PDF link, an image link, and an archive download link; the reader, screenshot, and full-page archive views; Firefox; MinIO as S3-compatible storage; a full quota; a URL change; and an update after the original site went offline, which must keep the earlier snapshot.
+- **Browser capture and broken links:** the pending-upload queue (waiting for the bookmark to reach the server, retries, discarding after 7 days); the upload endpoint's checks; the worker deriving the reader version and cover from an upload; automatic captures never replacing a browser capture; `isPossiblyBroken` for each failure code; the popup option, the settings switch, the "Possibly broken" filter, and the card icon.
+- **Manual check:** a browser capture of a signed-in page (for example a private repository page), and a link to a deleted page showing as possibly broken; a full docker-compose setup; snapshots of an article, a single-page app, a YouTube page, a PDF link, an image link, and an archive download link; the reader, screenshot, and full-page archive views; Firefox; MinIO as S3-compatible storage; a full quota; a URL change; and an update after the original site went offline, which must keep the earlier snapshot.
 
 ## Accessibility and Internationalization
 
