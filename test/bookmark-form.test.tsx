@@ -173,6 +173,19 @@ describe("adding a bookmark", () => {
     expect(dialogOpen()).toBe(false);
   });
 
+  // The dialog stays mounted while it animates closed, so a double-click submits twice.
+  test("a second submit before the dialog closes does not add the bookmark again", () => {
+    open();
+    fillRequired("Docs", "example.com/docs");
+    const form = getBySelector<HTMLFormElement>('[role="dialog"] form');
+    act(() => {
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+      form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    const addedBookmarks = [...app.useBookmarksStore.getState().bookmarks.values()].filter((bookmark) => bookmark.id !== "saved");
+    expect(addedBookmarks.map((bookmark) => bookmark.title)).toEqual(["Docs"]);
+  });
+
   test("notes take up to 10,000 characters and show a counter above 9,000", () => {
     open();
     const notes = field<HTMLTextAreaElement>("notes");

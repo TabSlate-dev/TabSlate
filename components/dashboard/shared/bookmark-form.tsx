@@ -254,6 +254,14 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
     }
   };
 
+  // The dialog stays mounted while it animates closed, so a double-click or a
+  // repeated Cmd/Ctrl+Enter must not save a second time.
+  const finishedRef = React.useRef(false);
+  const finish = () => {
+    finishedRef.current = true;
+    onDone();
+  };
+
   const saveNew = (savedTitle: string, savedUrl: string) => {
     const state = useWorkspaceStore.getState();
     const target = resolveActiveWorkspaceCollectionTarget(
@@ -281,7 +289,7 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
     });
     // An empty ID means the quota blocked the save; the quota alert says so, and the input stays.
     if (added.id) {
-      onDone();
+      finish();
     }
   };
 
@@ -312,7 +320,7 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
     if (!sameTags(tags, original.tags)) { patch.tags = tags; }
 
     if (Object.keys(patch).length === 0) {
-      onDone();
+      finish();
       return;
     }
     if (patch.collectionId !== undefined) {
@@ -324,10 +332,13 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
       }
     }
     updateBookmark(original.id, patch);
-    onDone();
+    finish();
   };
 
   const handleSave = () => {
+    if (finishedRef.current) {
+      return;
+    }
     const savedTitle = title.trim();
     const savedUrl = resolveSavedUrl(url);
     setErrors({
