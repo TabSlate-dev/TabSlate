@@ -298,10 +298,11 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
     const changedTitle = changedText(title, savedTitle, original.title);
     if (changedTitle !== undefined) { patch.title = changedTitle; }
     if (savedUrl !== original.url) { patch.url = savedUrl; }
-    const savedCover = coverForSave(savedUrl);
-    // Changing the address or explicitly fetching a cover also replaces a concurrent cover update.
-    if (savedUrl !== original.url || (fetched && savedUrl === coverUrlFor) || savedCover !== (original.imageUrl ?? "")) {
-      patch.imageUrl = savedCover;
+    const effectiveUrl = patch.url ?? current.url;
+    // An explicit address edit replaces its cover; fetched details must belong
+    // to the live address, which may have changed elsewhere since opening.
+    if (patch.url !== undefined || (fetched && effectiveUrl === coverUrlFor)) {
+      patch.imageUrl = coverForSave(effectiveUrl);
     }
     const changedDescription = changedText(description, description.trim(), original.description);
     if (changedDescription !== undefined) { patch.description = changedDescription; }

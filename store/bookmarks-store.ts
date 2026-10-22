@@ -129,7 +129,9 @@ function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?:
     // A record without notes (one an older extension pulled) omits them, so the
     // server keeps the stored notes instead of clearing them; "" still clears.
     notes: b.notes,
-    image_url: b.imageUrl ?? "",
+    // Unknown legacy covers are omitted so unrelated edits preserve server metadata.
+    // An explicit empty string still clears the cover.
+    image_url: b.imageUrl,
     is_favorite: b.isFavorite,
     is_archived: opts.isArchived ?? false,
     is_trashed: opts.isTrashed ?? 0,
@@ -159,7 +161,7 @@ function patchChangesBookmark(bookmark: Bookmark, patch: BookmarkBatchPatch): bo
     (patch.url !== undefined && patch.url !== bookmark.url) ||
     (patch.description !== undefined && patch.description !== bookmark.description) ||
     (patch.notes !== undefined && patch.notes !== (bookmark.notes ?? "")) ||
-    (patch.imageUrl !== undefined && patch.imageUrl !== (bookmark.imageUrl ?? "")) ||
+    (patch.imageUrl !== undefined && patch.imageUrl !== bookmark.imageUrl) ||
     (patch.collectionId !== undefined && patch.collectionId !== bookmark.collectionId) ||
     (patch.tags !== undefined && !stringArraysEqual(patch.tags, bookmark.tags)) ||
     (patch.isFavorite !== undefined && patch.isFavorite !== bookmark.isFavorite);
@@ -208,7 +210,7 @@ function bookmarkMatchesSyncEntity(
     entity.favicon_url === bookmark.favicon &&
     entity.description === bookmark.description &&
     (entity.notes ?? "") === (bookmark.notes ?? "") &&
-    (entity.image_url ?? "") === (bookmark.imageUrl ?? "") &&
+    entity.image_url === bookmark.imageUrl &&
     entity.edited_at === bookmarkEditedAt(bookmark.updatedAt, bookmark.createdAt) &&
     entity.is_favorite === bookmark.isFavorite &&
     entity.is_archived === (bucket === "archived") &&
@@ -1132,7 +1134,7 @@ export const useBookmarksStore = create<BookmarksState>()(
             // A server that predates notes sends none; never clear local notes for that.
             notes: serverBookmark.notes ?? existing?.notes ?? "",
             // A server that predates covers sends none; never clear a local cover for that.
-            imageUrl: serverBookmark.image_url ?? existing?.imageUrl ?? "",
+            imageUrl: serverBookmark.image_url ?? existing?.imageUrl,
             favicon: normalizeFavicon(serverBookmark.favicon_url, serverBookmark.url),
             collectionId: serverBookmark.collection_id ?? existing?.collectionId ?? "",
             tags: serverBookmark.tag_ids ?? existing?.tags ?? [],

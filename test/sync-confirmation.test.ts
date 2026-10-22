@@ -59,7 +59,7 @@ describe("sync confirmation", () => {
     expect(matchesPersistedSyncEntity(store, { ...persisted, updatedAt: 5 }, { ...pushed, edited_at: 5 }, [], [])).toBe(true);
   });
 
-  test("bookmark covers must match the stored bookmark, a missing cover reading as empty", () => {
+  test("bookmark covers must match without conflating unknown and explicitly empty", () => {
     const bookmark = cases.find((confirmationCase) => confirmationCase.store === "bookmarks");
     if (!bookmark) {
       throw new Error("bookmark fixture is missing");
@@ -68,7 +68,11 @@ describe("sync confirmation", () => {
     const cover = "https://cdn.example.test/a.png";
     expect(matchesPersistedSyncEntity(store, { ...persisted, imageUrl: cover }, pushed, [], [])).toBe(false);
     expect(matchesPersistedSyncEntity(store, { ...persisted, imageUrl: cover }, { ...pushed, image_url: cover }, [], [])).toBe(true);
-    expect(matchesPersistedSyncEntity(store, persisted, { ...pushed, image_url: "" }, [], [])).toBe(true);
+    expect(matchesPersistedSyncEntity(store, persisted, { ...pushed, image_url: "" }, [], [])).toBe(false);
+    for (const bucket of cases.filter((confirmationCase) => confirmationCase.store.includes("bookmarks"))) {
+      expect(matchesPersistedSyncEntity(bucket.store, { ...bucket.persisted, imageUrl: "" }, bucket.pushed, [], [])).toBe(false);
+      expect(matchesPersistedSyncEntity(bucket.store, { ...bucket.persisted, imageUrl: "" }, { ...bucket.pushed, image_url: "" }, [], [])).toBe(true);
+    }
   });
 
   for (const confirmationCase of cases) {

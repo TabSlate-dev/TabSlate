@@ -260,7 +260,7 @@ describe("push confirmation", () => {
       favicon_url: bookmark.favicon,
       description: bookmark.description,
       notes: bookmark.notes ?? "",
-      image_url: bookmark.imageUrl ?? "",
+      image_url: bookmark.imageUrl,
       is_favorite: bookmark.isFavorite,
       is_archived: false,
       is_trashed: 0,
@@ -285,6 +285,27 @@ describe("push confirmation", () => {
     expect(store().bookmarks.get("b1")?.seq).toBe(42);
   });
 
+  test("an omitted cover push cannot confirm a later explicit clear in any loaded bucket", () => {
+    const current = makeBookmark("b1", { collectionId: "reading", imageUrl: "", updatedAt: 200 });
+    for (const bucket of ["active", "archived", "trashed"]) {
+      seed(bucket === "active" ? [current] : [], {
+        archived: bucket === "archived" ? [current] : [],
+        trashed: bucket === "trashed" ? [current] : [],
+      });
+      const omitted = {
+        ...entityFor({ ...current, imageUrl: undefined }),
+        is_archived: bucket === "archived",
+        is_trashed: bucket === "trashed" ? 1 : 0,
+      };
+      const stored = () => bucket === "active" ? store().bookmarks.get("b1")
+        : bucket === "archived" ? store().archivedBookmarks[0] : store().trashedBookmarks[0];
+      store().confirmBookmarkEntitySeqs([omitted], 42);
+      expect(stored()?.seq).toBe(0);
+      store().confirmBookmarkEntitySeqs([{ ...omitted, image_url: "" }], 42);
+      expect(stored()?.seq).toBe(42);
+    }
+  });
+
   test("a push of an older cover does not confirm the newer local bookmark", () => {
     const current = makeBookmark("b1", { collectionId: "reading", imageUrl: "https://cdn.example.com/new.png", updatedAt: 200 });
     seed([current]);
@@ -306,7 +327,7 @@ test("search also matches notes", () => {
 });
 
 describe("covers", () => {
-  test("adding pushes the cover, and a bookmark without one pushes an empty string", () => {
+  test("adding pushes a known cover and omits an unknown one", () => {
     store().addBookmark({
       title: "Docs", url: "https://docs.example.com", description: "", favicon: "",
       collectionId: "reading", tags: [], seq: 0, imageUrl: "https://cdn.example.com/docs.png",
@@ -315,7 +336,75 @@ describe("covers", () => {
       title: "Plain", url: "https://plain.example.com", description: "", favicon: "",
       collectionId: "reading", tags: [], seq: 0,
     });
-    expect(pushedBookmarks().map((entity) => entity.image_url)).toEqual(["https://cdn.example.com/docs.png", ""]);
+    expect(pushedBookmarks().map((entity) => entity.image_url)).toEqual(["https://cdn.example.com/docs.png", undefined]);
+    expect(wireJson(pushedBookmarks()[1])).not.toHaveProperty("image_url");
+  });
+
+  test("an upgraded profile with a nonzero cursor omits an unknown cover after an unrelated edit", async () => {
+    // An older client discarded the cover when it persisted this already-synced record.
+    harness.records.set("bookmarks", new Map([["legacy", makeBookmark("legacy", { collectionId: "reading", seq: 7 })]]));
+    harness.records.set("kv", new Map([["localSeq", { key: "localSeq", value: 10 }]]));
+    await store().hydrate();
+    const cursor = harness.records.get("kv")?.get("localSeq");
+    const { SyncEngine } = await import("@/lib/sync-engine");
+    const pullCursors: number[] = [];
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "https://sync.example.com", accessToken: "token" }),
+      () => Number(Reflect.get(cursor ?? {}, "value")),
+      async (response) => { await store().mergeFromServer(response); return { errorMessage: null }; },
+      async () => null,
+      () => {},
+      async () => false,
+      {
+        createQueue: () => ({
+          enqueue: () => {}, flush: async () => {}, isEmpty: () => true, ready: async () => {},
+          extractEntities: () => ({ entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] } }),
+          copyEntities: () => ({ entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] } }),
+          blockEntities: () => {}, pruneEntities: async () => {}, destroy: () => {},
+        }),
+        createSseClient: () => ({ failureCount: 0, start: () => {}, destroy: () => {} }),
+        syncPull: async (_baseUrl, _accessToken, afterSeq) => {
+          pullCursors.push(afterSeq);
+          // No bookmark changed after the persisted cursor, so there is no cover to relearn.
+          return { entities: { workspaces: [], collections: [], bookmarks: [], tags: [], groups: [] }, server_seq: 10 };
+        },
+      },
+    );
+    try {
+      await engine.forceSync();
+      expect(pullCursors).toEqual([10]);
+      expect(store().bookmarks.get("legacy")?.seq).toBe(7);
+      store().toggleFavorite("legacy");
+      const pushed = wireJson(pushedBookmarks().at(-1));
+      expect(pushed).toHaveProperty("is_favorite", true);
+      expect(pushed).not.toHaveProperty("image_url");
+      expect(pushed).not.toHaveProperty("notes");
+    } finally {
+      engine.destroy();
+    }
+  });
+
+  test("an explicit empty batch patch makes an unknown cover known and pushes the clear", () => {
+    seed([makeBookmark("legacy", { collectionId: "reading", seq: 7, updatedAt: 3 })]);
+    store().updateBookmarks([{ id: "legacy", patch: { imageUrl: "" } }]);
+    expect(store().bookmarks.get("legacy")?.imageUrl).toBe("");
+    expect(store().bookmarks.get("legacy")?.updatedAt).toBe(NOW);
+    expect(wireJson(pushedBookmarks().at(-1))).toHaveProperty("image_url", "");
+  });
+
+  test("an old-server merge preserves unknown covers on existing and newly pulled records", async () => {
+    seed([makeBookmark("legacy", { collectionId: "reading", seq: 7 })]);
+    await merge([serverBookmark("legacy"), serverBookmark("new")]);
+    expect(store().bookmarks.get("legacy")?.imageUrl).toBeUndefined();
+    expect(store().bookmarks.get("new")?.imageUrl).toBeUndefined();
+    store().updateBookmarks([
+      { id: "legacy", patch: { title: "Renamed legacy" } },
+      { id: "new", patch: { title: "Renamed new" } },
+    ]);
+    expect(pushedBookmarks()).toHaveLength(2);
+    for (const entity of pushedBookmarks()) {
+      expect(wireJson(entity)).not.toHaveProperty("image_url");
+    }
   });
 
   test("an edit that clears the cover stores and pushes an empty string", () => {

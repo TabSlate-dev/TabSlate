@@ -121,10 +121,10 @@ Bookmarks added by typing a URL into the form, tabs dragged onto a collection (t
 
 **Client.**
 
-- `Bookmark` in `lib/types.ts` gains `imageUrl?: string`. A missing value or `""` means no cover, so existing IndexedDB records need no migration.
-- `toServerBookmark` always sends `image_url: imageUrl ?? ""`, so a cleared cover syncs.
-- `mergeFromServer` uses `serverBookmark.image_url ?? existing?.imageUrl ?? ""`, so a server that predates the field never clears a local cover.
-- The sync confirmation comparisons (`entityMatchesBookmark` in `store/bookmarks-store.ts` and the record comparison in `lib/sync-confirmation.ts`) compare covers, treating a missing value as `""`.
+- `Bookmark` in `lib/types.ts` gains `imageUrl?: string`. A missing value means unknown legacy metadata; `""` explicitly clears the cover. Both render without a cover, and existing IndexedDB records need no migration.
+- `toServerBookmark` omits `image_url` when `imageUrl` is undefined, preserving covers discarded by older clients even when a nonzero sync cursor prevents re-pulling the record. An explicit `""` is sent to clear.
+- `mergeFromServer` uses `serverBookmark.image_url ?? existing?.imageUrl`, so a server that predates the field never clears a local cover or turns unknown metadata into a clear.
+- The sync confirmation comparisons (`entityMatchesBookmark` in `store/bookmarks-store.ts` and the record comparison in `lib/sync-confirmation.ts`) compare covers strictly, distinguishing unknown from an explicit empty value. A patch from unknown to empty is a real change, and an older omitted push cannot confirm that clear.
 - `ServerBookmark` in `lib/api.ts` gains `image_url?: string`.
 - `updateBookmark` and B's `updateBookmarks` accept `imageUrl` in patches. Only the form sets it.
 
@@ -177,7 +177,7 @@ B's bookmark form gains a "Fetch details" button next to the URL field, in add a
 - **Applying.**
   - Empty title and description fields are filled.
   - A non-empty field shows a one-line suggestion, "Use fetched: «…»", which replaces the value when clicked. The user's text is never overwritten silently.
-  - A fetched cover replaces the bookmark's cover and shows as a small thumbnail beside the button.
+  - A fetched cover replaces the bookmark's cover and shows as a small thumbnail beside the button. On save its source must match the effective live URL (`patch.url ?? current.url`); an untouched URL changed by sync preserves its current cover.
   - Nothing is saved until the form is saved.
 - **Errors.** Timeouts, network errors, non-HTML responses, and pages without metadata show an inline message and change nothing.
 - The logic lives in `lib/page-metadata.ts` (`fetchPageMetadata(url)`), which shares its tag selectors with `readPageInfo`.

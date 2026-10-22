@@ -36,7 +36,7 @@ export interface Bookmark {
   /** Plain-text notes; a missing value means "". */
   notes?: string;
   favicon: string;
-  /** The page's cover (og:image) URL; a missing value or "" means no cover. */
+  /** The page's cover (og:image) URL; undefined is unknown legacy metadata, "" explicitly clears. */
   imageUrl?: string;
   collectionId: string;
   tags: string[]; // tag IDs

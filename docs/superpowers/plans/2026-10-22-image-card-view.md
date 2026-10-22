@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-20-image-card-view-design.md` (including the "Fetch details" supplement in section 6)
 
+**Final-review amendment:** Unknown legacy covers must remain undefined through serialization and old-server merges. Explicit empty values clear and count as changes; both confirmation paths distinguish them from omission. Form cover updates must match the effective live saved URL (`patch.url ?? current.url`). These rulings supersede the original always-empty semantics and concurrent-cover assumptions below.
+
 ## Global Constraints
 
 - Extension work stays on the current branch, `feat/bookmark-library-ux`, after B. Do not push, open pull requests, or use git worktrees.
@@ -557,12 +559,12 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: the server's `image_url` field from Task 1 (the extension also works against servers without it).
 - Produces:
-  - `Bookmark.imageUrl?: string` — the cover URL; missing or `""` means no cover.
+  - `Bookmark.imageUrl?: string` — the cover URL; undefined means unknown legacy metadata; `""` explicitly clears.
   - `BookmarkBatchPatch` accepts `imageUrl`, so `updateBookmark(id, { imageUrl })` and `updateBookmarks([{ id, patch: { imageUrl } }])` change covers.
   - `ServerBookmark.image_url?: string`.
   - `MAX_BOOKMARK_IMAGE_URL_LENGTH = 2048` and `normalizeCoverUrl(raw: string, pageUrl: string): string | undefined` from `@/lib/bookmark-utils`.
   - `BookmarkInput.imageUrl?: string` for `storageService.addBookmark`.
-  - Pushed bookmark entities always carry `image_url` (`""` when there is no cover).
+  - Pushed bookmark entities omit unknown `image_url`; explicit `""` clears.
 
 - [ ] **Step 1: Write the failing URL normalization test**
 
@@ -648,11 +650,11 @@ Expected: PASS.
 
 - [ ] **Step 5: Write the failing sync tests**
 
-In `test/bookmark-sync-fields.test.ts`, add `image_url: bookmark.imageUrl ?? "",` after the `notes` line of `entityFor` in the "push confirmation" block, and append this block at the end of the file:
+In `test/bookmark-sync-fields.test.ts`, add `image_url: bookmark.imageUrl,` after the `notes` line of `entityFor` in the "push confirmation" block, and append this block at the end of the file:
 
 ```ts
 describe("covers", () => {
-  test("adding pushes the cover, and a bookmark without one pushes an empty string", () => {
+  test("adding pushes a known cover and omits an unknown one", () => {
     store().addBookmark({
       title: "Docs", url: "https://docs.example.com", description: "", favicon: "",
       collectionId: "reading", tags: [], seq: 0, imageUrl: "https://cdn.example.com/docs.png",
@@ -661,7 +663,7 @@ describe("covers", () => {
       title: "Plain", url: "https://plain.example.com", description: "", favicon: "",
       collectionId: "reading", tags: [], seq: 0,
     });
-    expect(pushedBookmarks().map((entity) => entity.image_url)).toEqual(["https://cdn.example.com/docs.png", ""]);
+    expect(pushedBookmarks().map((entity) => entity.image_url)).toEqual(["https://cdn.example.com/docs.png", undefined]);
   });
 
   test("an edit that clears the cover stores and pushes an empty string", () => {
@@ -720,7 +722,7 @@ and, inside `describe("push confirmation", …)`, after the existing test:
 In `test/sync-confirmation.test.ts`, inside `describe("sync confirmation", …)`, after the "bookmark notes and edit time must match the stored bookmark" test, add:
 
 ```ts
-  test("bookmark covers must match the stored bookmark, a missing cover reading as empty", () => {
+  test("bookmark covers must match without conflating unknown and explicitly empty", () => {
     const bookmark = cases.find((confirmationCase) => confirmationCase.store === "bookmarks");
     if (!bookmark) {
       throw new Error("bookmark fixture is missing");
@@ -729,7 +731,7 @@ In `test/sync-confirmation.test.ts`, inside `describe("sync confirmation", …)`
     const cover = "https://cdn.example.test/a.png";
     expect(matchesPersistedSyncEntity(store, { ...persisted, imageUrl: cover }, pushed, [], [])).toBe(false);
     expect(matchesPersistedSyncEntity(store, { ...persisted, imageUrl: cover }, { ...pushed, image_url: cover }, [], [])).toBe(true);
-    expect(matchesPersistedSyncEntity(store, persisted, { ...pushed, image_url: "" }, [], [])).toBe(true);
+    expect(matchesPersistedSyncEntity(store, persisted, { ...pushed, image_url: "" }, [], [])).toBe(false);
   });
 ```
 
@@ -760,7 +762,7 @@ Expected: FAIL — pushed entities have no `image_url`, merges drop covers, the 
 In `lib/types.ts`, in `interface Bookmark`, after `favicon: string;` add:
 
 ```ts
-  /** The page's cover (og:image) URL; a missing value or "" means no cover. */
+  /** The page's cover (og:image) URL; undefined is unknown legacy metadata, "" explicitly clears. */
   imageUrl?: string;
 ```
 
@@ -781,31 +783,31 @@ In `lib/api.ts`, in `interface ServerBookmark`, after the `notes?: string;` line
 
 In `store/bookmarks-store.ts`:
 
-- In `toServerBookmark`, after `notes: b.notes ?? "",` add `image_url: b.imageUrl ?? "",`.
+- In `toServerBookmark`, after `notes: b.notes,` add `image_url: b.imageUrl,`.
 - In `patchChangesBookmark`, after the `patch.notes` line add:
 
   ```ts
-    (patch.imageUrl !== undefined && patch.imageUrl !== (bookmark.imageUrl ?? "")) ||
+    (patch.imageUrl !== undefined && patch.imageUrl !== bookmark.imageUrl) ||
   ```
 
 - In `applyBookmarkPatch`, after `notes: patch.notes ?? bookmark.notes,` add `imageUrl: patch.imageUrl ?? bookmark.imageUrl,`.
 - In `bookmarkMatchesSyncEntity`, after the `entity.notes` line add:
 
   ```ts
-    (entity.image_url ?? "") === (bookmark.imageUrl ?? "") &&
+    entity.image_url === bookmark.imageUrl &&
   ```
 
 - In `mergeFromServer`, in the `merged` bookmark, after the `notes:` line add:
 
   ```ts
             // A server that predates covers sends none; never clear a local cover for that.
-            imageUrl: serverBookmark.image_url ?? existing?.imageUrl ?? "",
+            imageUrl: serverBookmark.image_url ?? existing?.imageUrl,
   ```
 
 In `lib/sync-confirmation.ts`, in `matchesBookmark`, after the `notes` comparison add:
 
 ```ts
-    (readString(record, "imageUrl") ?? "") === (entity.image_url ?? "") &&
+    readString(record, "imageUrl") === entity.image_url &&
 ```
 
 In `lib/storage.ts`, add `imageUrl?: string;` to `BookmarkInput` after `notes?: string;`, and in `storageService.addBookmark` add `imageUrl: input.imageUrl ?? "",` after `notes: input.notes ?? "",`.
@@ -3004,7 +3006,7 @@ In `lib/browser/data-collection-permissions.ts`:
 6. After the "书签备注与编辑时间" bullet, add:
 
    ```markdown
-   - **书签封面与获取详情**：`Bookmark.imageUrl`（缺省或 `""` 为无封面）同步为 `image_url`，规则与备注相同：推送总是携带，空字符串清除，`mergeFromServer` 取 `image_url ?? 本地 imageUrl ?? ""`，两处同步确认比较都包含该字段；批量操作不改封面。表单保存改动过的网址时清除封面，除非已为新网址「获取详情」。「获取详情」（`lib/page-metadata.ts` 的 `fetchPageMetadata`）：点击处理函数在任何 `await` 之前调用 `requestSiteAccess`（请求 `<scheme>://<host>/*`，已授予全站权限时直接通过）；`fetch` 不带 cookie、10 秒超时、最多读取 2 MB、只解析 `text/html` 与 `application/xhtml+xml`，用 `DOMParser` 解析（不执行脚本）；字符集取响应头，其次页面开头 1024 字节内的 `<meta charset>`。空字段直接填入，非空字段显示“使用获取的内容”建议，不静默覆盖。
+   - **书签封面与获取详情**：`Bookmark.imageUrl` 同步为 `image_url`：未知旧记录省略以保留服务端封面，显式空字符串清除；`mergeFromServer` 取 `image_url ?? 本地 imageUrl`，两处同步确认严格区分未知和显式空字符串；批量操作不改封面。表单保存改动过的网址时清除封面，除非已为新网址「获取详情」。「获取详情」（`lib/page-metadata.ts` 的 `fetchPageMetadata`）：点击处理函数在任何 `await` 之前调用 `requestSiteAccess`（请求 `<scheme>://<host>/*`，已授予全站权限时直接通过）；`fetch` 不带 cookie、10 秒超时、最多读取 2 MB、只解析 `text/html` 与 `application/xhtml+xml`，用 `DOMParser` 解析（不执行脚本）；字符集取响应头，其次页面开头 1024 字节内的 `<meta charset>`。空字段直接填入，非空字段显示“使用获取的内容”建议，不静默覆盖。
    ```
 
 7. In the "可选权限与动态注入" bullet, add a sub-bullet:

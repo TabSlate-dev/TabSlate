@@ -597,6 +597,32 @@ describe("fetching details", () => {
     expect(stored()?.imageUrl).toBe("https://example.com/cover.png");
   });
 
+  for (const hasFetchedCover of [true, false]) {
+    test(`a remote URL change preserves its cover after fetching ${hasFetchedCover ? "an image" : "no image"} for the old URL`, async () => {
+      if (!hasFetchedCover) {
+        Reflect.set(globalThis, "fetch", async () => new Response("<title>No cover</title>", { headers: { "content-type": "text/html" } }));
+      }
+      open({ bookmarkId: "saved" });
+      await fetchDetails();
+      act(() => seed([{ ...saved, url: "https://remote.example.com/page", imageUrl: "https://remote.example.com/cover.png" }]));
+      typeInto(field("title"), "Local title");
+      await save();
+      expect(stored()?.title).toBe("Local title");
+      expect(stored()?.url).toBe("https://remote.example.com/page");
+      expect(stored()?.imageUrl).toBe("https://remote.example.com/cover.png");
+    });
+  }
+
+  test("an explicitly edited URL saves its fetched cover despite a concurrent remote URL change", async () => {
+    open({ bookmarkId: "saved" });
+    typeInto(field("url"), "https://example.com/local");
+    await fetchDetails();
+    act(() => seed([{ ...saved, url: "https://remote.example.com/page", imageUrl: "https://remote.example.com/cover.png" }]));
+    await save();
+    expect(stored()?.url).toBe("https://example.com/local");
+    expect(stored()?.imageUrl).toBe("https://example.com/cover.png");
+  });
+
   test("fetching only changes the form until save, and its thumbnail is decorative", async () => {
     open();
     typeInto(field("url"), "https://example.com/article");

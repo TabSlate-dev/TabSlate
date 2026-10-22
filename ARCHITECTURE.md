@@ -321,7 +321,7 @@ newtab App（chrome.runtime.onMessage）
 
 - **右键菜单查重**（`lib/context-menu-save.ts`）：右键保存没有可询问的界面，所以严格规则命中当前工作区的可见活跃书签时直接跳过保存，只显示琥珀色角标；查重失败不阻止保存。
 - **`AddBookmarkResponse` 契约**（`lib/messages.ts`）：只有带非空 `bookmarkId` 的 `saved` 算成功。newtab 已送达的其他回复是最终结果，发送方不回退直写，否则会绕过 newtab 的配额拦截。没有回复时，background 同样不回退、不显示角标；popup 则视为未送达。
-- **书签封面**：保存路径把页面的 `og:image`（其次 `twitter:image`）经 `normalizeCoverUrl` 存为 `Bookmark.imageUrl`，同步为 `image_url`（空字符串清除）。大卡片（`viewMode: "gallery"`）用 `BookmarkCover` 直接从站点加载封面，不带 referrer，失败显示占位图；小卡片不显示封面。书签表单的「获取详情」由浏览器直接请求网页，不经过服务端。
+- **书签封面**：保存路径把页面的 `og:image`（其次 `twitter:image`）经 `normalizeCoverUrl` 存为 `Bookmark.imageUrl`，同步为 `image_url`（未知旧记录省略以保留服务端值，显式空字符串清除；旧服务端拉取保留未知状态，同步确认区分两者）。大卡片（`viewMode: "gallery"`）用 `BookmarkCover` 直接从站点加载封面，不带 referrer，失败显示占位图；小卡片不显示封面。书签表单的「获取详情」由浏览器直接请求网页，不经过服务端。
 - **回退直写**：`chrome.tabs.sendMessage` 抛错（newtab 不存在或尚未就绪）时，background 直接写 IndexedDB `bookmarks`（`seq=0`），发送 `BOOKMARKS_CHANGED` 并显示绿色角标；popup 在抛错或没有回复时通过 `storageService.addBookmark` 写 IndexedDB。newtab 下次 hydrate 时载入，由 `sweepUnsynced` 补推。
 - **保存角标**（`lib/browser/action-badge.ts` 的 `flashSaveBadge`）：只作用于发起保存的 tab。成功为绿色 ✓；重复为琥珀色短文本（`badge_alreadySavedShort`），并把工具栏提示改为 `badge_alreadySavedTitle`。每个 tab 独立维护 3 秒清理计时器，结束时恢复原提示；被新角标取代的异步步骤会被忽略。
 
