@@ -1,4 +1,6 @@
 import { generateId } from "@/lib/id";
+import { normalizeCoverUrl } from "@/lib/bookmark-utils";
+import { requestPageInfo } from "@/lib/page-info";
 import { idbGetAll, idbPut } from "@/lib/idb";
 import { getAllTabs, focusTab } from "@/lib/chrome/tabs";
 import { supportsDynamicContentScripts } from "@/lib/browser/capabilities";
@@ -96,19 +98,17 @@ export default defineBackground(() => {
   chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId !== "save-to-tabslate" || !tab?.id) { return; }
 
-    // Try to get richer info from the content script
-    let pageInfo: { title: string; url: string; selectedText: string; favicon: string; ogTitle?: string; metaDescription?: string } | null = null;
-    try {
-      pageInfo = await chrome.tabs.sendMessage(tab.id, { type: "GET_PAGE_INFO" });
-    } catch {
-      // content script not injected (e.g. pdf, chrome:// page) — fall back to tab info
-    }
+    // The menu click grants activeTab, so the page can be read without the all-sites permission.
+    const pageInfo = await requestPageInfo(tab.id, { allowInjection: true });
+    // A link points to another page, which the current page's cover does not describe.
+    const imageUrl = info.linkUrl ? undefined : normalizeCoverUrl(pageInfo?.ogImage ?? "", pageInfo?.url || tab.url || "");
 
     const bookmarkData = {
       title: pageInfo?.ogTitle || pageInfo?.title || tab.title || "Untitled",
-      url: info.linkUrl ?? pageInfo?.url ?? tab.url ?? "",
-      favicon: pageInfo?.favicon ?? tab.favIconUrl ?? "",
+      url: info.linkUrl ?? (pageInfo?.url || tab.url || ""),
+      favicon: pageInfo?.favicon || tab.favIconUrl || "",
       description: pageInfo?.selectedText || pageInfo?.metaDescription || "",
+      imageUrl: imageUrl ?? "",
       collectionId: "",
       tags: [] as string[],
       seq: 0,

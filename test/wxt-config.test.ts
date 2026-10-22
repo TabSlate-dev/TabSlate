@@ -88,6 +88,13 @@ describe("wxt cross-browser manifest", () => {
     expect(manifest.chrome_url_overrides?.newtab).toBe("newtab.html");
   });
 
+  test("grants activeTab to the Chromium and Firefox builds", async () => {
+    for (const browser of ["chrome", "firefox"] as const) {
+      const manifest = await getManifest(browser, 3);
+      expect(manifest.permissions).toContain("activeTab");
+    }
+  });
+
   test("adds the API origin to host permissions during manifest generation", async () => {
     await withEnv("VITE_API_URL", "https://sync.tabslate.com", async () => {
       const manifest = await getManifest("firefox", 3);

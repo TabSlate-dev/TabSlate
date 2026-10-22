@@ -19,7 +19,8 @@ import {
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { generateId } from "@/lib/id";
-import { normalizeUrl, getNormalizedUrlSet } from "@/lib/bookmark-utils";
+import { normalizeUrl, getNormalizedUrlSet, normalizeCoverUrl } from "@/lib/bookmark-utils";
+import { requestPageInfo } from "@/lib/page-info";
 import type { Bookmark } from "@/lib/types";
 import { idbGet, idbGetAll, idbPut, idbDelete } from "@/lib/idb";
 import {
@@ -153,15 +154,13 @@ async function _saveTabsToCollectionHelper(
     seenUrlsInBatch.add(normalizedUrl);
     let title = tab.title;
     let description = "";
-    try {
-      const info = await chrome.tabs.sendMessage(tab.id, { type: "GET_PAGE_INFO" }) as {
-        ogTitle?: string;
-        metaDescription?: string;
-      };
+    let imageUrl = "";
+    // Content script only: no user action grants access to each tab, so nothing is injected.
+    const info = await requestPageInfo(tab.id, { allowInjection: false });
+    if (info) {
       if (info.ogTitle) { title = info.ogTitle; }
-      description = info.metaDescription ?? "";
-    } catch {
-      // Content script not injected (pdf, chrome:// page) — use tab defaults
+      description = info.metaDescription;
+      imageUrl = normalizeCoverUrl(info.ogImage, info.url || tab.url) ?? "";
     }
     newBookmarksData.push({
       id: generateId(),
@@ -169,6 +168,7 @@ async function _saveTabsToCollectionHelper(
       url: tab.url,
       favicon: tab.favIconUrl,
       description,
+      imageUrl,
       tags: [],
       createdAt: now,
       isFavorite: false,

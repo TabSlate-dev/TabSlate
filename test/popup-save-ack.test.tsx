@@ -27,6 +27,8 @@ const newtabTab = { id: 99 };
 const fallbackWrite = mock(async (input: BookmarkInput) => makeBookmark("fallback", { url: input.url }));
 const delivered: ExtensionMessage[] = [];
 let answerSave: () => Promise<AddBookmarkResponse | undefined> = async () => undefined;
+let pageInfoAnswer: () => Promise<unknown> = async () => ({});
+let injectionAnswer: () => Promise<unknown[]> = async () => [];
 let app: AppModules;
 let PopupApp: typeof import("@/entrypoints/popup/App").default;
 let view: RenderResult | null = null;
@@ -64,13 +66,14 @@ beforeAll(async () => {
       },
       sendMessage: async (_tabId: number, message: ExtensionMessage | { type: "GET_PAGE_INFO" }) => {
         if (message.type === "GET_PAGE_INFO") {
-          return {};
+          return pageInfoAnswer();
         }
         delivered.push(message);
         return answerSave();
       },
       create: () => {},
     },
+    scripting: { executeScript: async () => injectionAnswer() },
   });
   ({ default: PopupApp } = await importFresh<typeof import("@/entrypoints/popup/App")>("entrypoints/popup/App.tsx"));
 });
@@ -82,12 +85,18 @@ afterAll(async () => {
   await teardownDom();
 });
 
-beforeEach(async () => {
+async function openPopup(): Promise<void> {
   view?.unmount();
-  delivered.length = 0;
-  fallbackWrite.mockClear();
   view = render(app, createElement(PopupApp));
   await wait(0);
+}
+
+beforeEach(async () => {
+  delivered.length = 0;
+  fallbackWrite.mockClear();
+  pageInfoAnswer = async () => ({});
+  injectionAnswer = async () => [];
+  await openPopup();
 });
 
 async function save(): Promise<void> {
@@ -153,4 +162,50 @@ test("the storage fallback keeps the trimmed note", async () => {
   await save();
 
   expect(fallbackWrite.mock.calls[0]?.[0].notes).toBe("Fallback note");
+});
+
+function deliveredCover(): string | undefined {
+  const [message] = delivered;
+  return message?.type === "ADD_BOOKMARK" ? message.data.imageUrl : undefined;
+}
+
+test("the page's cover from the content script travels with the save, resolved against the page", async () => {
+  answerSave = async () => ({ status: "saved", bookmarkId: "saved-1" });
+  pageInfoAnswer = async () => ({ url: activeTab.url, ogImage: "/cover.png" });
+  await openPopup();
+  await save();
+
+  expect(deliveredCover()).toBe("https://page.example.com/cover.png");
+});
+
+test("without a content script, the popup reads the page through activeTab", async () => {
+  answerSave = async () => ({ status: "saved", bookmarkId: "saved-1" });
+  pageInfoAnswer = async () => {
+    throw new Error("Receiving end does not exist.");
+  };
+  injectionAnswer = async () => [{ result: { url: activeTab.url, ogTitle: "Injected title", ogImage: "https://cdn.example.com/injected.png" } }];
+  await openPopup();
+  await save();
+
+  const [message] = delivered;
+  expect(message?.type === "ADD_BOOKMARK" ? message.data.title : undefined).toBe("Injected title");
+  expect(deliveredCover()).toBe("https://cdn.example.com/injected.png");
+});
+
+test("a cover that is not http or https is dropped", async () => {
+  answerSave = async () => ({ status: "saved", bookmarkId: "saved-1" });
+  pageInfoAnswer = async () => ({ url: activeTab.url, ogImage: "javascript:alert(1)" });
+  await openPopup();
+  await save();
+
+  expect(deliveredCover()).toBe("");
+});
+
+test("the storage fallback keeps the cover", async () => {
+  answerSave = async () => undefined;
+  pageInfoAnswer = async () => ({ url: activeTab.url, ogImage: "https://cdn.example.com/fallback.png" });
+  await openPopup();
+  await save();
+
+  expect(fallbackWrite.mock.calls[0]?.[0].imageUrl).toBe("https://cdn.example.com/fallback.png");
 });

@@ -6,7 +6,7 @@ import {
 } from "./lib/browser/data-collection-permissions";
 
 function getPermissions(): string[] {
-  return ["tabs", "tabGroups", "storage", "contextMenus", "scripting", "search"];
+  return ["tabs", "tabGroups", "storage", "contextMenus", "scripting", "search", "activeTab"];
 }
 
 function getNewtabMatches(browser: string): string[] {

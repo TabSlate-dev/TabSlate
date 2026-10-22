@@ -19,6 +19,8 @@ const badges: string[] = [];
 let fallbackWrites = 0;
 let lastFallback: object | null = null;
 let transportFails = false;
+let pageInfoAnswer: () => Promise<object> = async () => input;
+let injectionAnswer: () => Promise<object[]> = async () => [];
 const event = { addListener: () => {}, removeListener: () => {} };
 const input = { title: "New bookmark", url: "https://new.example.com", favicon: "", description: "", collectionId: "", tags: [], seq: 0 };
 
@@ -49,7 +51,7 @@ beforeAll(async () => {
     tabs: {
       query: async () => [{ id: 99 }],
       sendMessage: async (_id: number, message: ExtensionMessage | { type: "GET_PAGE_INFO" }) => {
-        if (message.type === "GET_PAGE_INFO") { return input; }
+        if (message.type === "GET_PAGE_INFO") { return pageInfoAnswer(); }
         if (transportFails) { throw new Error("newtab unavailable"); }
         let response: object | undefined;
         for (const listener of listeners) { listener(message, {}, (result) => { response = result; responses.push(result); }); }
@@ -57,6 +59,7 @@ beforeAll(async () => {
       },
       onCreated: event, onRemoved: event, onUpdated: event, onActivated: event, onMoved: event,
     },
+    scripting: { executeScript: async () => injectionAnswer() },
     tabGroups: { onCreated: event, onRemoved: event, onUpdated: event, onMoved: event },
     storage: { local: { get: async () => ({}) }, session: { get: async () => ({}) }, onChanged: event },
   });
@@ -84,6 +87,8 @@ beforeEach(() => {
   fallbackWrites = 0;
   lastFallback = null;
   transportFails = false;
+  pageInfoAnswer = async () => input;
+  injectionAnswer = async () => [];
   app.useBookmarksStore.setState({ bookmarks: new Map(), countsByCollection: {} });
 });
 
@@ -123,4 +128,41 @@ test("transport failure retains direct persistence and success feedback", async 
   expect(fallbackWrites).toBe(writesBefore + 1);
   expect(typeof Reflect.get(lastFallback ?? {}, "updatedAt")).toBe("number");
   expect(badges).toEqual(["saved"]);
+});
+
+function storedBookmark() {
+  const [bookmark] = app.useBookmarksStore.getState().bookmarks.values();
+  return bookmark;
+}
+
+test("a page save stores the page's cover", async () => {
+  setBookmarkQuota(100);
+  pageInfoAnswer = async () => ({ ...input, ogImage: "https://cdn.example.com/new.png" });
+  await handleSave({ menuItemId: "save-to-tabslate", editable: false }, page);
+  expect(storedBookmark()?.imageUrl).toBe("https://cdn.example.com/new.png");
+});
+
+test("a link save does not take the current page's cover", async () => {
+  setBookmarkQuota(100);
+  pageInfoAnswer = async () => ({ ...input, ogImage: "https://cdn.example.com/new.png" });
+  await handleSave({ menuItemId: "save-to-tabslate", editable: false, linkUrl: "https://linked.example.com/" }, page);
+  expect(storedBookmark()?.url).toBe("https://linked.example.com/");
+  expect(storedBookmark()?.imageUrl).toBe("");
+});
+
+test("without a content script, the menu click reads the page through activeTab", async () => {
+  setBookmarkQuota(100);
+  pageInfoAnswer = async () => {
+    throw new Error("Receiving end does not exist.");
+  };
+  injectionAnswer = async () => [{ result: { ...input, ogImage: "https://cdn.example.com/injected.png" } }];
+  await handleSave({ menuItemId: "save-to-tabslate", editable: false }, page);
+  expect(storedBookmark()?.imageUrl).toBe("https://cdn.example.com/injected.png");
+});
+
+test("the direct-write fallback keeps the cover", async () => {
+  transportFails = true;
+  pageInfoAnswer = async () => ({ ...input, ogImage: "https://cdn.example.com/fallback.png" });
+  await handleSave({ menuItemId: "save-to-tabslate", editable: false }, page);
+  expect(Reflect.get(lastFallback ?? {}, "imageUrl")).toBe("https://cdn.example.com/fallback.png");
 });

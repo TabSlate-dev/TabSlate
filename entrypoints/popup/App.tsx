@@ -4,7 +4,8 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { MAX_BOOKMARK_NOTES_LENGTH } from "@/lib/bookmark-utils";
+import { MAX_BOOKMARK_NOTES_LENGTH, normalizeCoverUrl } from "@/lib/bookmark-utils";
+import { requestPageInfo } from "@/lib/page-info";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,7 +60,7 @@ function PopupContent() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
-  const [pageInfo, setPageInfo] = useState<{ ogTitle: string; metaDescription: string } | null>(null);
+  const [pageInfo, setPageInfo] = useState<{ ogTitle: string; metaDescription: string; imageUrl?: string } | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
   const [targetUnavailable, setTargetUnavailable] = useState(false);
   const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
@@ -84,11 +85,16 @@ function PopupContent() {
             void findSavedDuplicates(activeTab.url).then(setDuplicates);
           }
           if (activeTab?.id) {
-            chrome.tabs.sendMessage(activeTab.id, { type: "GET_PAGE_INFO" })
-              .then((info: { ogTitle?: string; metaDescription?: string }) => {
-                setPageInfo({ ogTitle: info.ogTitle ?? "", metaDescription: info.metaDescription ?? "" });
-              })
-              .catch(() => {});
+            // Opening the popup grants activeTab, so the page can be read without the all-sites permission.
+            void requestPageInfo(activeTab.id, { allowInjection: true }).then((info) => {
+              if (info) {
+                setPageInfo({
+                  ogTitle: info.ogTitle,
+                  metaDescription: info.metaDescription,
+                  imageUrl: normalizeCoverUrl(info.ogImage, info.url),
+                });
+              }
+            });
           }
           resolve();
         });
@@ -163,6 +169,7 @@ function PopupContent() {
         url: tab.url,
         favicon: tab.favIconUrl,
         description: pageInfo?.metaDescription || "",
+        imageUrl: pageInfo?.imageUrl ?? "",
         notes: note.trim(),
         collectionId: currentTargetId,
         tags: selectedTags.map((t) => t.id),
