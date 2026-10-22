@@ -3,7 +3,13 @@ export interface LinkifySegment {
   text: string;
 }
 
-const LINK_PATTERN = /https?:\/\/[^\s<>"']+/gi;
+/**
+ * A link stops at whitespace, quotes, and the punctuation of prose written
+ * without spaces around URLs: general punctuation (curly quotes, ellipses,
+ * dashes), CJK punctuation (，。、《》) and full-width forms (（）！？).
+ * CJK ideographs stay, since paths can contain them.
+ */
+const LINK_PATTERN = /https?:\/\/[^\s<>"'\u2000-\u206F\u3000-\u303F\uFF00-\uFFEF]+/gi;
 /** Punctuation that ends a sentence right after a link stays outside the link. */
 const SENTENCE_PUNCTUATION = /[.,;:!?]/;
 const WEB_LINK = /^https?:\/\/./i;

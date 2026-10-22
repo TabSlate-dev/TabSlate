@@ -38,6 +38,42 @@ describe("linkifySegments", () => {
     ]);
   });
 
+  // Chinese prose puts no space around a URL; its punctuation must end the link.
+  test("ends a link at full-width and CJK punctuation", () => {
+    expect(linkifySegments("参考 https://example.com/docs，很有用")).toEqual([
+      { kind: "text", text: "参考 " },
+      { kind: "link", text: "https://example.com/docs" },
+      { kind: "text", text: "，很有用" },
+    ]);
+    expect(linkifySegments("请看https://example.com/docs。然后继续")).toEqual([
+      { kind: "text", text: "请看" },
+      { kind: "link", text: "https://example.com/docs" },
+      { kind: "text", text: "。然后继续" },
+    ]);
+    expect(linkifySegments("（https://example.com/docs）、《https://a.example/x》")).toEqual([
+      { kind: "text", text: "（" },
+      { kind: "link", text: "https://example.com/docs" },
+      { kind: "text", text: "）、《" },
+      { kind: "link", text: "https://a.example/x" },
+      { kind: "text", text: "》" },
+    ]);
+  });
+
+  test("ends a link at curly quotes", () => {
+    expect(linkifySegments("见“https://example.com/a”")).toEqual([
+      { kind: "text", text: "见“" },
+      { kind: "link", text: "https://example.com/a" },
+      { kind: "text", text: "”" },
+    ]);
+  });
+
+  test("keeps Chinese characters that belong to the path", () => {
+    expect(linkifySegments("https://zh.wikipedia.org/wiki/中文 好")).toEqual([
+      { kind: "link", text: "https://zh.wikipedia.org/wiki/中文" },
+      { kind: "text", text: " 好" },
+    ]);
+  });
+
   test("keeps text without links, and other schemes, as text", () => {
     expect(linkifySegments("javascript:alert(1) and ftp://files.example")).toEqual([
       { kind: "text", text: "javascript:alert(1) and ftp://files.example" },
