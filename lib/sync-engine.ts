@@ -602,7 +602,9 @@ export class SyncEngine {
     }
     this.setQueueStatus("syncing");
     try {
-      await this.serializeResolutionWithContext(async () => {});
+      if (this.pendingForcedResolution) {
+        await this.serializeResolutionWithContext(async () => {});
+      }
       if (this.destroyed) { return; }
       const pulled = await this.doPull();
       if (!pulled || this.destroyed) {

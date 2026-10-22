@@ -242,11 +242,16 @@ if (runsInIsolatedProcess(import.meta.filename)) {
 
     test("ignores a retired raw pull that rejects with unauthorized", async () => {
       let rejectPull;
+      let signalPullStarted;
+      const pullStarted = new Promise(resolve => { signalPullStarted = resolve; });
       const pull = new Promise((_resolve, reject) => {
         rejectPull = reject;
       });
       const statusCalls = [];
-      syncPullImpl = async () => pull;
+      syncPullImpl = async () => {
+        signalPullStarted();
+        return pull;
+      };
       const engine = new SyncEngine(
         () => ({ baseUrl: "http://localhost:8080", accessToken: "expired-token" }),
         () => 0,
@@ -259,14 +264,33 @@ if (runsInIsolatedProcess(import.meta.filename)) {
         analyticsDependencies(),
       );
       engine.start();
-      await Promise.resolve();
+      await pullStarted;
       await engine.retire();
       const statusCountAtRetirement = statusCalls.length;
+      expect(syncPullCalls).toHaveLength(1);
       rejectPull(new MockApiError("access token expired", 401));
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(silentRefreshCalls).toEqual([]);
       expect(statusCalls).toHaveLength(statusCountAtRetirement);
+    });
+
+    test("retiring before the initial pull starts prevents transport and refresh", async () => {
+      const engine = new SyncEngine(
+        () => ({ baseUrl: "http://localhost:8080", accessToken: "expired-token" }),
+        () => 0,
+        async () => null,
+        async () => null,
+        () => {},
+        async () => false,
+        analyticsDependencies(),
+      );
+      engine.start();
+      await engine.retire();
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(syncPullCalls).toEqual([]);
+      expect(silentRefreshCalls).toEqual([]);
     });
 
     test("retries a force push with refreshed credentials after an expired access token", async () => {
