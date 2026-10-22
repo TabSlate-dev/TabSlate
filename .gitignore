@@ -33,3 +33,6 @@ web-ext.config.ts
 .claude
 .superpowers/
 .worktrees
+
+# Local design mockups and generation records
+/output/design/
