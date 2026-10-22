@@ -57,7 +57,7 @@ export function readPageInfo(doc: Document = document, pageUrl: string = locatio
     title: doc.title,
     url: pageUrl,
     selectedText: doc.getSelection()?.toString().trim() ?? "",
-    favicon: iconHref ? resolve(iconHref) : origin ? `${origin}/favicon.ico` : "",
+    favicon: iconHref ? resolve(iconHref) : origin && origin !== "null" ? `${origin}/favicon.ico` : "",
     ogTitle: firstContent(['meta[property="og:title"]']),
     metaDescription: firstContent(['meta[property="og:description"]', 'meta[name="description"]']),
     ogImage: ogImage ? resolve(ogImage) : "",

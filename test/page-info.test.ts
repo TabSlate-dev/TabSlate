@@ -58,6 +58,11 @@ describe("readPageInfo", () => {
     expect(info.favicon).toBe("https://example.com/favicon.ico");
   });
 
+  test("does not invent a favicon URL for an opaque page origin", () => {
+    const info = readPageInfo(parse("<title>Blank</title>"), "about:blank");
+    expect(info.favicon).toBe("");
+  });
+
   test("resolves relative URLs against the page's base element", () => {
     const info = readPageInfo(parse(`
       <base href="https://cdn.example.com/assets/">
