@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AlertCircle, ChevronDown } from "lucide-react";
+import { AlertCircle, ChevronDown, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -13,6 +13,7 @@ import { useTranslation } from "@/hooks/use-translation";
 import type { BookmarkFormFocus } from "@/lib/bookmark-dialog-events";
 import { bookmarkCreatedAtTime, MAX_BOOKMARK_NOTES_LENGTH } from "@/lib/bookmark-utils";
 import { findVisibleDuplicates } from "@/lib/duplicate-lookup";
+import { fetchPageMetadata, requestSiteAccess, type FetchPageMetadataError, type PageMetadata } from "@/lib/page-metadata";
 import { revealBookmark } from "@/lib/reveal-bookmark";
 import type { Bookmark, BookmarkBatchPatch } from "@/lib/types";
 import { getActiveWorkspaceCollections, isActiveWorkspace, resolveActiveWorkspaceCollectionTarget } from "@/lib/workspace-visibility";
@@ -22,6 +23,17 @@ import { useWorkspaceStore } from "@/store/workspace-store";
 
 /** The notes field shows a counter above this length. */
 const NOTES_COUNTER_FROM = 9_000;
+
+const FETCH_ERROR_KEYS: Record<FetchPageMetadataError, string> = {
+  timeout: "bookmarkForm_fetchTimeout",
+  network: "bookmarkForm_fetchFailed",
+  http: "bookmarkForm_fetchFailed",
+  "not-html": "bookmarkForm_fetchNotHtml",
+  "no-metadata": "bookmarkForm_fetchNoMetadata",
+};
+
+/** Failed thumbnails are not retried when the form reopens this page session. */
+const failedFormCoverUrls = new Set<string>();
 
 interface BookmarkFormProps {
   /** The bookmark to edit; omitted to add one. */
@@ -51,6 +63,16 @@ export function normalizeBookmarkUrl(input: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** The address "Fetch details" can request: the normalized URL, when it is http(s). */
+function fetchableUrl(input: string): string | null {
+  const candidate = normalizeBookmarkUrl(input);
+  if (!candidate) {
+    return null;
+  }
+  const { protocol } = new URL(candidate);
+  return protocol === "http:" || protocol === "https:" ? candidate : null;
 }
 
 /** A text field changed when the user edited it and its saved value differs from the stored one. */
@@ -104,6 +126,18 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
   const [changedElsewhere, setChangedElsewhere] = React.useState(false);
   const [duplicateUrl, setDuplicateUrl] = React.useState("");
   const notesRef = React.useRef<HTMLTextAreaElement>(null);
+  const [coverUrl, setCoverUrl] = React.useState(bookmark?.imageUrl ?? "");
+  // The address the cover belongs to; saving under another address clears the cover.
+  const [coverUrlFor, setCoverUrlFor] = React.useState(bookmark?.url ?? "");
+  const [fetched, setFetched] = React.useState<PageMetadata | null>(null);
+  const [fetching, setFetching] = React.useState(false);
+  const [fetchError, setFetchError] = React.useState("");
+  // The address as typed, for a fetch that resolves after the user changed it.
+  const urlRef = React.useRef(url);
+  const fetchRevision = React.useRef(0);
+  const [failedCoverUrl, setFailedCoverUrl] = React.useState("");
+
+  React.useEffect(() => () => { fetchRevision.current += 1; }, []);
 
   React.useEffect(() => {
     if (focus !== "notes") {
@@ -163,6 +197,63 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
     setTargetUnavailable(false);
   };
 
+  // An untouched address is kept as it is, even if it predates the URL rule.
+  const resolveSavedUrl = (input: string): string | null =>
+    bookmark && input === bookmark.url ? bookmark.url : normalizeBookmarkUrl(input);
+  /** The cover saved with an address: the form's cover when it belongs to that address, else none. */
+  const coverForSave = (savedUrl: string): string => (savedUrl === coverUrlFor ? coverUrl : "");
+  const shownCover = coverUrl && coverUrl !== failedCoverUrl && !failedFormCoverUrls.has(coverUrl)
+    && resolveSavedUrl(url) === coverUrlFor ? coverUrl : "";
+  const titleSuggestion = fetched && fetched.title && fetched.title !== title ? fetched.title : "";
+  const descriptionSuggestion = fetched && fetched.description && fetched.description !== description ? fetched.description : "";
+
+  const handleFetchDetails = async () => {
+    const target = fetchableUrl(url);
+    if (!target || fetching) {
+      return;
+    }
+    const revision = ++fetchRevision.current;
+    const isCurrent = () => revision === fetchRevision.current && fetchableUrl(urlRef.current) === target;
+    setFetching(true);
+    setFetchError("");
+    try {
+      // Request synchronously during the click, before the first await.
+      const access = requestSiteAccess(target);
+      const allowed = await access;
+      if (!isCurrent()) {
+        return;
+      }
+      if (!allowed) {
+        setFetchError(t("bookmarkForm_fetchAccessDenied"));
+        return;
+      }
+      const result = await fetchPageMetadata(target);
+      if (!isCurrent()) {
+        return;
+      }
+      if (result.status === "error") {
+        setFetchError(t(FETCH_ERROR_KEYS[result.reason]));
+        return;
+      }
+      const { metadata } = result;
+      setFetched(metadata);
+      // Empty fields take the fetched values; filled ones get a suggestion instead.
+      setTitle((current) => (current.trim() ? current : metadata.title));
+      setDescription((current) => (current.trim() ? current : metadata.description));
+      if (metadata.title) {
+        setErrors((current) => ({ ...current, title: undefined }));
+      }
+      setCoverUrl(metadata.imageUrl);
+      setCoverUrlFor(target);
+    } catch {
+      if (isCurrent()) {
+        setFetchError(t("bookmarkForm_fetchFailed"));
+      }
+    } finally {
+      setFetching(false);
+    }
+  };
+
   const saveNew = (savedTitle: string, savedUrl: string) => {
     const state = useWorkspaceStore.getState();
     const target = resolveActiveWorkspaceCollectionTarget(
@@ -182,6 +273,7 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
       url: savedUrl,
       description: description.trim(),
       notes: notes.trim(),
+      imageUrl: coverForSave(savedUrl),
       favicon: "",
       collectionId: target.id,
       tags,
@@ -206,6 +298,11 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
     const changedTitle = changedText(title, savedTitle, original.title);
     if (changedTitle !== undefined) { patch.title = changedTitle; }
     if (savedUrl !== original.url) { patch.url = savedUrl; }
+    const savedCover = coverForSave(savedUrl);
+    // Changing the address or explicitly fetching a cover also replaces a concurrent cover update.
+    if (savedUrl !== original.url || (fetched && savedUrl === coverUrlFor) || savedCover !== (original.imageUrl ?? "")) {
+      patch.imageUrl = savedCover;
+    }
     const changedDescription = changedText(description, description.trim(), original.description);
     if (changedDescription !== undefined) { patch.description = changedDescription; }
     const changedNotes = changedText(notes, notes.trim(), original.notes ?? "");
@@ -231,8 +328,7 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
 
   const handleSave = () => {
     const savedTitle = title.trim();
-    // An untouched address is kept as it is, even if it predates the URL rule.
-    const savedUrl = bookmark && url === bookmark.url ? bookmark.url : normalizeBookmarkUrl(url);
+    const savedUrl = resolveSavedUrl(url);
     setErrors({
       title: savedTitle ? undefined : t("bookmarkForm_errorTitle"),
       url: savedUrl ? undefined : t("bookmarkForm_errorUrl"),
@@ -304,24 +400,64 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
         {errors.title && (
           <p id={`${idPrefix}-title-error`} role="alert" className="text-xs text-destructive">{errors.title}</p>
         )}
+        {titleSuggestion && (
+          <Button type="button" variant="link" size="sm" className="h-auto max-w-full justify-start p-0 text-xs" onClick={() => setTitle(titleSuggestion)}>
+            <span className="truncate">{t("bookmarkForm_useFetched", [titleSuggestion])}</span>
+          </Button>
+        )}
       </Field>
       <Field>
         <FieldLabel htmlFor={`${idPrefix}-url`}>{t("bookmarkForm_urlLabel")}</FieldLabel>
-        <Input
-          id={`${idPrefix}-url`}
-          name="url"
-          value={url}
-          placeholder={t("bookmarkForm_urlPlaceholder")}
-          aria-invalid={errors.url !== undefined}
-          aria-describedby={errors.url ? `${idPrefix}-url-error` : undefined}
-          onChange={(event) => {
-            setUrl(event.target.value);
-            setErrors((current) => ({ ...current, url: undefined }));
-          }}
-        />
+        <div className="flex items-center gap-2">
+          <Input
+            id={`${idPrefix}-url`}
+            name="url"
+            value={url}
+            className="flex-1"
+            placeholder={t("bookmarkForm_urlPlaceholder")}
+            aria-invalid={errors.url !== undefined}
+            aria-describedby={errors.url ? `${idPrefix}-url-error` : undefined}
+            onChange={(event) => {
+              fetchRevision.current += 1;
+              setFetched(null);
+              setFetchError("");
+              setUrl(event.target.value);
+              urlRef.current = event.target.value;
+              setErrors((current) => ({ ...current, url: undefined }));
+            }}
+          />
+          {shownCover && (
+            <img
+              src={shownCover}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              draggable={false}
+              onError={() => {
+                failedFormCoverUrls.add(shownCover);
+                setFailedCoverUrl(shownCover);
+              }}
+              data-form-cover=""
+              referrerPolicy="no-referrer"
+              className="aspect-[1.91/1] w-[4.3rem] shrink-0 rounded-md border object-cover"
+            />
+          )}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={fetching || fetchableUrl(url) === null}
+            onClick={handleFetchDetails}
+          >
+            {fetching && <Loader2 className="size-4 animate-spin" />}
+            {t(fetching ? "bookmarkForm_fetchingDetails" : "bookmarkForm_fetchDetails")}
+          </Button>
+        </div>
         {errors.url && (
           <p id={`${idPrefix}-url-error`} role="alert" className="text-xs text-destructive">{errors.url}</p>
         )}
+        {fetchError && <p role="alert" className="text-xs text-destructive">{fetchError}</p>}
       </Field>
       <DuplicateNotice matches={duplicateMatches} onOpenExisting={handleOpenExisting} />
       <Field>
@@ -333,6 +469,11 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
           placeholder={t("bookmarkForm_descriptionPlaceholder")}
           onChange={(event) => setDescription(event.target.value)}
         />
+        {descriptionSuggestion && (
+          <Button type="button" variant="link" size="sm" className="h-auto max-w-full justify-start p-0 text-xs" onClick={() => setDescription(descriptionSuggestion)}>
+            <span className="truncate">{t("bookmarkForm_useFetched", [descriptionSuggestion])}</span>
+          </Button>
+        )}
       </Field>
       <Field>
         <FieldLabel htmlFor={`${idPrefix}-notes`}>{t("bookmarkForm_notesLabel")}</FieldLabel>

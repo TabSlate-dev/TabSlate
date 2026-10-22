@@ -1,5 +1,5 @@
 // @ts-expect-error Bun provides this test module at runtime.
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { act, createElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import type { OpenBookmarkDialogRequest } from "@/lib/bookmark-dialog-events";
@@ -17,6 +17,7 @@ import {
   submitForm,
   teardownDom,
   typeInto,
+  wait,
   type AppModules,
   type RenderResult,
 } from "./helpers/dom-environment";
@@ -445,4 +446,227 @@ test("a cross-workspace edit shows the saved parent but move options stay in the
   pressKey(getBySelector('[role="listbox"]'), "Escape");
   await save();
   expect(app.useBookmarksStore.getState().bookmarks.get("saved")?.collectionId).toBe("remote");
+});
+
+describe("fetching details", () => {
+  const page = '<html><head><title>Fetched title</title><meta property="og:description" content="Fetched description"><meta property="og:image" content="/cover.png"></head></html>';
+  const accessRequests: string[][] = [];
+  const fetchedUrls: string[] = [];
+  let originalChrome: unknown;
+  let originalFetch: unknown;
+  let grantAccess = true;
+  let responseType = "text/html; charset=utf-8";
+
+  beforeEach(() => {
+    originalChrome = Reflect.get(globalThis, "chrome");
+    originalFetch = Reflect.get(globalThis, "fetch");
+    accessRequests.length = 0;
+    fetchedUrls.length = 0;
+    grantAccess = true;
+    responseType = "text/html; charset=utf-8";
+    Reflect.set(globalThis, "chrome", {
+      permissions: {
+        request: async (permissions: { origins: string[] }) => {
+          accessRequests.push(permissions.origins);
+          return grantAccess;
+        },
+      },
+    });
+    Reflect.set(globalThis, "fetch", async (input: string) => {
+      fetchedUrls.push(input);
+      return new Response(page, { headers: { "content-type": responseType } });
+    });
+  });
+  afterEach(() => {
+    Reflect.set(globalThis, "chrome", originalChrome);
+    Reflect.set(globalThis, "fetch", originalFetch);
+  });
+
+  async function fetchDetails(): Promise<void> {
+    click(getByText("bookmarkForm_fetchDetails"));
+    await wait(20);
+  }
+  const formCover = () => document.querySelector('[role="dialog"] [data-form-cover]');
+  const stored = () => app.useBookmarksStore.getState().bookmarks.get("saved");
+
+  test("the button waits for a web address", () => {
+    open();
+    const button = () => getByText("bookmarkForm_fetchDetails").closest("button");
+    expect(button()?.disabled).toBe(true);
+    typeInto(field("url"), "ftp://files.example.com/a");
+    expect(button()?.disabled).toBe(true);
+    typeInto(field("url"), "example.com");
+    expect(button()?.disabled).toBe(false);
+  });
+
+  test("asks for the site during the click, then fills the empty fields and the cover", async () => {
+    open();
+    typeInto(field("url"), "example.com/article");
+    click(getByText("bookmarkForm_fetchDetails"));
+    expect(accessRequests).toEqual([["https://example.com/*"]]);
+    await wait(20);
+
+    expect(fetchedUrls).toEqual(["https://example.com/article"]);
+    expect(field("title").value).toBe("Fetched title");
+    expect(field("description").value).toBe("Fetched description");
+    expect(formCover()?.getAttribute("src")).toBe("https://example.com/cover.png");
+    await save();
+    expect(added()?.imageUrl).toBe("https://example.com/cover.png");
+  });
+
+  test("offers fetched values for filled fields without overwriting them", async () => {
+    open();
+    fillRequired("My title", "https://example.com/article");
+    typeInto(field("description"), "My description");
+    await fetchDetails();
+
+    expect(field("title").value).toBe("My title");
+    expect(field("description").value).toBe("My description");
+    click(getByText("bookmarkForm_useFetched[Fetched title]"));
+    expect(field("title").value).toBe("Fetched title");
+    expect(queryByText("bookmarkForm_useFetched[Fetched title]")).toBeNull();
+    expect(queryByText("bookmarkForm_useFetched[Fetched description]")).not.toBeNull();
+  });
+
+  test("a refused site access says so and fetches nothing", async () => {
+    grantAccess = false;
+    open();
+    typeInto(field("url"), "https://example.com/article");
+    await fetchDetails();
+
+    expect(getByText("bookmarkForm_fetchAccessDenied")).toBeTruthy();
+    expect(fetchedUrls).toEqual([]);
+    expect(field("title").value).toBe("");
+  });
+
+  test("a page that is not HTML shows an error and changes nothing", async () => {
+    responseType = "application/pdf";
+    open();
+    typeInto(field("url"), "https://example.com/file.pdf");
+    await fetchDetails();
+
+    expect(getByText("bookmarkForm_fetchNotHtml")).toBeTruthy();
+    expect(field("title").value).toBe("");
+    expect(formCover()).toBeNull();
+  });
+
+  test("a cover fetched for one address is not saved under another", async () => {
+    open();
+    typeInto(field("url"), "https://example.com/article");
+    await fetchDetails();
+    typeInto(field("url"), "https://example.com/other");
+
+    expect(formCover()).toBeNull();
+    await save();
+    expect(added()?.url).toBe("https://example.com/other");
+    expect(added()?.imageUrl).toBe("");
+  });
+
+  test("an edit keeps the cover, and a new address clears it on save", async () => {
+    act(() => seed([{ ...saved, imageUrl: "https://cdn.example.com/saved.png" }]));
+    open({ bookmarkId: "saved" });
+    expect(formCover()?.getAttribute("src")).toBe("https://cdn.example.com/saved.png");
+    typeInto(field("title"), "Renamed");
+    await save();
+    expect(stored()?.imageUrl).toBe("https://cdn.example.com/saved.png");
+
+    open({ bookmarkId: "saved" });
+    typeInto(field("url"), "https://example.com/moved");
+    await save();
+    expect(stored()?.url).toBe("https://example.com/moved");
+    expect(stored()?.imageUrl).toBe("");
+  });
+
+  test("changing the address clears a cover that arrived elsewhere after the form opened", async () => {
+    open({ bookmarkId: "saved" });
+    act(() => seed([{ ...saved, imageUrl: "https://cdn.example.com/arrived.png" }]));
+    typeInto(field("url"), "https://example.com/moved");
+    await save();
+    expect(stored()?.url).toBe("https://example.com/moved");
+    expect(stored()?.imageUrl).toBe("");
+  });
+
+  test("details fetched for a new address keep its cover", async () => {
+    act(() => seed([{ ...saved, imageUrl: "https://cdn.example.com/saved.png" }]));
+    open({ bookmarkId: "saved" });
+    typeInto(field("url"), "https://example.com/moved");
+    await fetchDetails();
+    await save();
+
+    expect(stored()?.url).toBe("https://example.com/moved");
+    expect(stored()?.imageUrl).toBe("https://example.com/cover.png");
+  });
+
+  test("fetching only changes the form until save, and its thumbnail is decorative", async () => {
+    open();
+    typeInto(field("url"), "https://example.com/article");
+    await fetchDetails();
+    expect(added()).toBeUndefined();
+    expect(formCover()?.getAttribute("alt")).toBe("");
+    expect(formCover()?.getAttribute("loading")).toBe("lazy");
+    expect(formCover()?.getAttribute("decoding")).toBe("async");
+    expect(formCover()?.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(formCover()?.getAttribute("draggable")).toBe("false");
+  });
+
+  test("successful details without an image replace an existing cover", async () => {
+    Reflect.set(globalThis, "fetch", async () => new Response("<title>No cover</title>", { headers: { "content-type": "text/html" } }));
+    act(() => seed([{ ...saved, imageUrl: "https://cdn.example.com/saved.png" }]));
+    open({ bookmarkId: "saved" });
+    await fetchDetails();
+    expect(formCover()).toBeNull();
+    expect(stored()?.imageUrl).toBe("https://cdn.example.com/saved.png");
+    await save();
+    expect(stored()?.imageUrl).toBe("");
+  });
+
+  test("fetching an empty cover also replaces one that arrived elsewhere", async () => {
+    Reflect.set(globalThis, "fetch", async () => new Response("<title>No cover</title>", { headers: { "content-type": "text/html" } }));
+    open({ bookmarkId: "saved" });
+    act(() => seed([{ ...saved, imageUrl: "https://cdn.example.com/arrived.png" }]));
+    await fetchDetails();
+    await save();
+    expect(stored()?.imageUrl).toBe("");
+  });
+
+  test("a late response cannot fill fields after the address changes, even if changed back", async () => {
+    let finish: (response: Response) => void = () => { throw new Error("Fetch has not started"); };
+    Reflect.set(globalThis, "fetch", () => new Promise<Response>((resolve) => { finish = resolve; }));
+    open();
+    typeInto(field("url"), "https://example.com/article");
+    click(getByText("bookmarkForm_fetchDetails"));
+    await wait(0);
+    typeInto(field("url"), "https://example.com/other");
+    typeInto(field("url"), "https://example.com/article");
+    finish(new Response(page, { headers: { "content-type": "text/html" } }));
+    await wait(20);
+    expect(field("title").value).toBe("");
+    expect(field("description").value).toBe("");
+    expect(formCover()).toBeNull();
+  });
+
+  test("changing the address while access is pending prevents a stale fetch and error", async () => {
+    let finish: (allowed: boolean) => void = () => { throw new Error("Access has not been requested"); };
+    Reflect.set(globalThis, "chrome", { permissions: { request: () => new Promise<boolean>((resolve) => { finish = resolve; }) } });
+    open();
+    typeInto(field("url"), "https://example.com/article");
+    click(getByText("bookmarkForm_fetchDetails"));
+    typeInto(field("url"), "https://example.com/other");
+    finish(false);
+    await wait(20);
+    expect(fetchedUrls).toEqual([]);
+    expect(queryByText("bookmarkForm_fetchAccessDenied")).toBeNull();
+  });
+
+  test("failed thumbnails are not retried when the form reopens", () => {
+    act(() => seed([{ ...saved, imageUrl: "https://cdn.example.com/broken-form.png" }]));
+    open({ bookmarkId: "saved" });
+    expect(formCover()?.getAttribute("src")).toBe("https://cdn.example.com/broken-form.png");
+    act(() => formCover()?.dispatchEvent(new Event("error")));
+    expect(formCover()).toBeNull();
+    click(getByText("settings_cancel"));
+    open({ bookmarkId: "saved" });
+    expect(formCover()).toBeNull();
+  });
+
 });

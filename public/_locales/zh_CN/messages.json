@@ -2047,5 +2047,34 @@
   },
   "bookmarkForm_save": {
     "message": "保存更改"
+  },
+  "bookmarkForm_fetchDetails": {
+    "message": "获取详情"
+  },
+  "bookmarkForm_fetchingDetails": {
+    "message": "正在获取…"
+  },
+  "bookmarkForm_useFetched": {
+    "message": "使用获取的内容：“$1”",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarkForm_fetchAccessDenied": {
+    "message": "允许访问该网站后才能获取详情。"
+  },
+  "bookmarkForm_fetchTimeout": {
+    "message": "网页响应超时。"
+  },
+  "bookmarkForm_fetchFailed": {
+    "message": "无法加载该网页。"
+  },
+  "bookmarkForm_fetchNotHtml": {
+    "message": "该地址不是网页。"
+  },
+  "bookmarkForm_fetchNoMetadata": {
+    "message": "该网页没有可用的标题、描述或封面。"
   }
 }

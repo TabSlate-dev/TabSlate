@@ -2047,5 +2047,34 @@
   },
   "bookmarkForm_save": {
     "message": "Save changes"
+  },
+  "bookmarkForm_fetchDetails": {
+    "message": "Fetch details"
+  },
+  "bookmarkForm_fetchingDetails": {
+    "message": "Fetching…"
+  },
+  "bookmarkForm_useFetched": {
+    "message": "Use fetched: “$1”",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "bookmarkForm_fetchAccessDenied": {
+    "message": "Allow access to this site to fetch its details."
+  },
+  "bookmarkForm_fetchTimeout": {
+    "message": "The page took too long to respond."
+  },
+  "bookmarkForm_fetchFailed": {
+    "message": "Couldn't load the page."
+  },
+  "bookmarkForm_fetchNotHtml": {
+    "message": "This address isn't a web page."
+  },
+  "bookmarkForm_fetchNoMetadata": {
+    "message": "The page has no title, description, or cover to use."
   }
 }
