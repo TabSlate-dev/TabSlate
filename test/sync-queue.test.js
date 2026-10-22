@@ -117,6 +117,93 @@ if (runsInIsolatedProcess(import.meta.filename)) {
       conflictRegistryReadyImpl = async () => {};
     });
 
+    test("rejection_keeps_prior_acks_and_later_work", async () => {
+      const successes = [];
+      const unsent = [];
+      let calls = 0;
+      syncPushImpl = async () => ({ server_seq: ++calls, rejected: calls === 2
+        ? [{ id: "b-900", type: "bookmark", reason: "stale" }] : [] });
+      const queue = new SyncQueue(
+        () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+        async (response, confirmed, attempted) => { successes.push({ response, confirmed, attempted }); },
+        async () => false,
+        { onUnsent: async payload => { unsent.push(payload); } },
+      );
+      queue.enqueue({ bookmarks: Array.from({ length: 1801 }, (_, i) => ({ id: `b-${i}` })) });
+      await queue.flush();
+      expect(calls).toBe(2);
+      expect(successes[0].confirmed.entities.bookmarks.map(entity => entity.id)).toEqual(
+        Array.from({ length: 1800 }, (_, i) => `b-${i}`).filter(id => id !== "b-900"),
+      );
+      expect(successes[0].attempted.entities.bookmarks).toHaveLength(1800);
+      expect(unsent[0].entities.bookmarks).toEqual([{ id: "b-1800" }]);
+      expect(queue.isEmpty()).toBe(true);
+      await queue.flush();
+      expect(syncPushCalls).toHaveLength(2);
+      // A coordinated sweep supplies the current record, never the discarded value.
+      queue.enqueue({ bookmarks: [{ id: "b-1800", title: "newer local edit" }] }, "respect");
+      await queue.flush();
+      expect(syncPushCalls[2].entities.bookmarks).toEqual([{ id: "b-1800", title: "newer local edit" }]);
+      queue.destroy();
+    });
+
+    test("failed_recovery_callback_retains_attempts_and_retries_once_per_flush", async () => {
+      let callbacks = 0;
+      syncPushImpl = async () => ({ server_seq: 4, rejected: [{ id: "moving", type: "tag", reason: "invalid_field", field: "parent_id" }] });
+      const queue = new SyncQueue(
+        () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+        async () => { callbacks += 1; throw new TypeError("authoritative pull offline"); },
+        async failure => { onErrorCalls.push(failure.error.message); return false; },
+      );
+      queue.enqueue({ tags: [{ id: "moving", parent_id: "bad" }] });
+      await queue.flush();
+      expect(callbacks).toBe(1);
+      expect(queue.copyEntities([{ entityType: "tag", entityId: "moving" }]).entities.tags).toEqual([]);
+      expect(onErrorCalls).toEqual(["authoritative pull offline"]);
+      await queue.flush();
+      expect(callbacks).toBe(2);
+      expect(syncPushCalls).toHaveLength(1);
+      queue.destroy();
+    });
+
+    test("failed_unsent_marking_retries_resolution_without_resending_raw_chunks", async () => {
+      let marks = 0;
+      let resolved = 0;
+      syncPushImpl = async () => ({ server_seq: 1, rejected: [{ id: "b-0", type: "bookmark", reason: "stale" }] });
+      const queue = new SyncQueue(
+        () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+        async () => { resolved += 1; }, async () => false,
+        { onUnsent: async payload => {
+          expect(payload.entities.bookmarks).toEqual([{ id: "b-900" }]);
+          marks += 1; if (marks === 1) { throw new Error("disk temporarily unavailable"); }
+        } },
+      );
+      queue.enqueue({ bookmarks: Array.from({ length: 901 }, (_, i) => ({ id: `b-${i}` })) });
+      await queue.flush();
+      expect(resolved).toBe(0);
+      await queue.flush();
+      expect(marks).toBe(2); expect(resolved).toBe(1);
+      expect(syncPushCalls).toHaveLength(1);
+      expect(queue.isEmpty()).toBe(true);
+      queue.destroy();
+    });
+
+    test("preparation_failure_retains_all_pending_changes_without_sending", async () => {
+      const dirty = [];
+      const queue = new SyncQueue(
+        () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), async () => {},
+        async failure => { onErrorCalls.push(failure.error.message); return false; },
+        { prepareChunks: async () => { throw new Error("safe tag batch unavailable"); }, onUnsent: async payload => { dirty.push(payload); } },
+      );
+      queue.enqueue({ tags: [{ id: "a", parent_id: "b" }, { id: "b", parent_id: "" }] });
+      await queue.flush();
+      expect(syncPushCalls).toHaveLength(0);
+      expect(queue.copyEntities([{ entityType: "tag", entityId: "a" }, { entityType: "tag", entityId: "b" }]).entities.tags.map(tag => tag.id)).toEqual(["a", "b"]);
+      expect(onErrorCalls).toEqual(["safe tag batch unavailable"]);
+      expect(dirty[0].entities.tags.map(tag => tag.id)).toEqual(["a", "b"]);
+      queue.destroy();
+    });
+
     test("rehydrates recovery state before normal pushes resume", async () => {
       const recoverySnapshot = {
         entities: {
@@ -171,7 +258,7 @@ if (runsInIsolatedProcess(import.meta.filename)) {
       queue.destroy();
     });
 
-    test("waits for structured rejection resolution and discards unsent chunks", async () => {
+    test("waits for structured rejection resolution and discards marked unsent chunks", async () => {
       let releaseResolution;
       let notifyResolutionStarted;
       const resolutionStarted = new Promise((resolve) => {
@@ -218,8 +305,7 @@ if (runsInIsolatedProcess(import.meta.filename)) {
       queue.destroy();
     });
 
-    // Unsent chunks come from a stale snapshot, so they are still discarded; their
-    // records are reported so the engine can mark them unsynced for the sweep.
+    // Unsent snapshots are marked dirty, then discarded; the pull sweep rebuilds live values.
     test("reports the chunks a rejection left unsent before it resolves the rejection", async () => {
       const events = [];
       syncPushImpl = async () => ({

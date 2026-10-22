@@ -47,6 +47,12 @@ const cases: Array<{
 ];
 
 describe("sync confirmation", () => {
+  test("parent_identity_blocks_late_tag_acknowledgements", () => {
+    const persisted = { id: "moving", name: "moving", color: "blue", parentId: "new-parent", seq: 0 };
+    expect(matchesPersistedSyncEntity("tags", persisted, { id: "moving", name: "moving", color: "blue", parent_id: "old-parent" }, [], [])).toBe(false);
+    expect(matchesPersistedSyncEntity("tags", persisted, { id: "moving", name: "moving", color: "blue", parent_id: "new-parent" }, [], [])).toBe(true);
+  });
+
   test("bookmark notes and edit time must match the stored bookmark", () => {
     const bookmark = cases.find((confirmationCase) => confirmationCase.store === "bookmarks");
     if (!bookmark) {

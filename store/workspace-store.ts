@@ -1082,7 +1082,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         return { puts: [{ ...local, parentId: authoritative?.parentId, seq: 0 }], deletes: [] };
       }, isCurrent);
       const tags = await idbGetAll<Tag>("tags");
-      if (isCurrent()) { set({ tags: tags.filter(tag => tag.deletedAt === undefined) }); }
+      if (isCurrent()) {
+        set({ tags: tags.filter(tag => tag.deletedAt === undefined) });
+        const restored = tags.find(tag => tag.id === id && tag.seq === 0);
+        if (restored) { syncEngine?.enqueue({ tags: [toServerTag(restored)] }); }
+      }
     });
   },
 
@@ -1094,7 +1098,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       // Caller must have confirmed authoritative absence; never infer it from invalid_state.
       await changePersistedTags((records) => {
         const local = records.find(tag => tag.id === id);
-        return { puts: [], deletes: local?.deletedAt !== undefined && tagMatchesSyncEntity(local, attempted) ? [id] : [] };
+        return { puts: [], deletes: local?.seq === 0 && local.deletedAt !== undefined && tagMatchesSyncEntity(local, attempted) ? [id] : [] };
       }, isCurrent);
     });
   },

@@ -3,6 +3,7 @@ import type { SyncEntity, SyncEntityType, SyncPushEntities, SyncPushPayload, Syn
 import { syncQueueConflictRegistry } from "./sync-queue-conflicts";
 import type { SyncEntityReference } from "./sync-conflicts";
 import {
+  acceptedSyncPushPayload,
   bufferSyncRecoverySnapshot,
   createEmptySyncPushPayload,
   isSyncPushPayloadEmpty,
@@ -27,10 +28,10 @@ export type SyncConflictPolicy = "clear" | "respect";
 
 export interface SyncQueueOptions {
   random?: () => number;
+  prepareChunks?: (payload: SyncPushPayload) => Promise<SyncPushPayload[]>;
   /**
-   * Receives the chunks a rejection leaves unsent. They come from a stale
-   * snapshot and are discarded, so their records must be marked unsynced for
-   * the sweep after the reconciling pull to push their current state.
+   * Mark still-matching unsent records dirty before discarding their snapshots.
+   * The coordinated pull and sweep reconstruct payloads from current local state.
    */
   onUnsent?: OnPushUnsent;
 }
@@ -60,7 +61,14 @@ interface PushSnapshot {
   conflictClears: Map<string, SyncEntityReference>;
 }
 
-type OnPushSuccess = (response: SyncPushResponse, confirmedPayload: SyncPushPayload) => Promise<void>;
+interface PendingPushResolution {
+  response: SyncPushResponse;
+  confirmed: SyncPushPayload;
+  attempted: SyncPushPayload;
+  unsent?: SyncPushPayload;
+}
+
+type OnPushSuccess = (response: SyncPushResponse, confirmedPayload: SyncPushPayload, attemptedPayload: SyncPushPayload) => Promise<void>;
 type OnPushFailure = (failure: SyncPushFailure) => Promise<boolean>;
 type OnPushUnsent = (payload: SyncPushPayload) => Promise<void>;
 
@@ -104,6 +112,7 @@ export class SyncQueue {
   private pushTail: Promise<void> = Promise.resolve();
   private destroyed = false;
   private needsRecoveryReplay = false;
+  private pendingResolution: PendingPushResolution | null = null;
   private identicalFailureFingerprint: string | null = null;
   private identicalServerFailureCount = 0;
 
@@ -252,6 +261,8 @@ export class SyncQueue {
     if (this.destroyed) {
       return;
     }
+    if (this.pendingResolution && !await this.resolvePendingPush()) { return; }
+    if (this.destroyed) { return; }
     if (this.needsRecoveryReplay) {
       await this.restoreRecoverySnapshot();
       if (this.destroyed) {
@@ -302,65 +313,108 @@ export class SyncQueue {
       return;
     }
 
-    const chunks = splitSyncPushPayload(full);
+    let chunks: SyncPushPayload[];
+    try {
+      chunks = this.options.prepareChunks ? await this.options.prepareChunks(full) : splitSyncPushPayload(full);
+    } catch (error) {
+      if (this.destroyed) { return; }
+      this.requeueSnapshot(full);
+      try {
+        await this.options.onUnsent?.(full);
+      } catch (markError) {
+        await this.reportResolutionFailure(asError(markError), full, createEmptySyncPushPayload());
+        return;
+      }
+      await this.reportResolutionFailure(asError(error), full, createEmptySyncPushPayload());
+      return;
+    }
+    if (this.destroyed) { return; }
     const confirmedPayload = createEmptySyncPushPayload();
+    const attemptedPayload = createEmptySyncPushPayload();
     let finalServerSeq = 0;
     let hadSuccessfulChunk = false;
     const allRejected: SyncPushResponse["rejected"] = [];
 
     for (let index = 0; index < chunks.length; index += 1) {
       const chunk = chunks[index];
+      let response: SyncPushResponse;
       try {
-        const response = await api.syncPush(creds.baseUrl, creds.accessToken, chunk);
-        if (this.destroyed) {
-          return;
-        }
-        hadSuccessfulChunk = true;
-        finalServerSeq = response.server_seq;
-        allRejected.push(...response.rejected);
-        if (response.rejected.length > 0) {
-          this.resetRetryState();
-          const unsent = this.mergeChunks(chunks.slice(index + 1));
-          if (!isSyncPushPayloadEmpty(unsent)) {
-            await this.options.onUnsent?.(unsent);
-            if (this.destroyed) {
-              return;
-            }
-          }
-          await this.onSuccess(response, chunk);
-          if (this.destroyed) {
-            return;
-          }
-          return;
-        }
-        this.mergePayloadInto(confirmedPayload, chunk);
+        response = await api.syncPush(creds.baseUrl, creds.accessToken, chunk);
       } catch (caught) {
+        if (this.destroyed) { return; }
         const error = asError(caught);
-        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
-          if (hadSuccessfulChunk) {
-            await this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected }, confirmedPayload);
-            if (this.destroyed) {
-              return;
-            }
-          }
-          await this.handleAuthenticationFailure(chunks, index);
-          return;
-        }
-
         const failedPayload = this.mergeChunks(chunks.slice(index));
         if (hadSuccessfulChunk) {
-          await this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected }, confirmedPayload);
-          if (this.destroyed) {
+          const resolved = await this.reportSuccess(
+            { server_seq: finalServerSeq, rejected: allRejected }, confirmedPayload, attemptedPayload,
+          );
+          if (this.destroyed) { return; }
+          if (!resolved) {
+            this.requeueSnapshot(failedPayload);
             return;
           }
         }
-        await this.handlePushFailure(error, failedPayload, confirmedPayload);
+        if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+          await this.handleAuthenticationFailure(chunks, index);
+        } else {
+          await this.handlePushFailure(error, failedPayload, confirmedPayload);
+        }
         return;
       }
+      if (this.destroyed) { return; }
+      hadSuccessfulChunk = true;
+      finalServerSeq = response.server_seq;
+      allRejected.push(...response.rejected);
+      this.mergePayloadInto(attemptedPayload, chunk);
+      this.mergePayloadInto(confirmedPayload, acceptedSyncPushPayload(chunk, response.rejected));
+      if (response.rejected.length === 0) { continue; }
+
+      this.resetRetryState();
+      const unsent = this.mergeChunks(chunks.slice(index + 1));
+      this.pendingResolution = { response, confirmed: confirmedPayload, attempted: attemptedPayload,
+        unsent: isSyncPushPayloadEmpty(unsent) ? undefined : unsent };
+      await this.resolvePendingPush();
+      return;
     }
 
     this.resetRetryState();
-    await this.onSuccess({ server_seq: finalServerSeq, rejected: allRejected }, full);
+    await this.reportSuccess({ server_seq: finalServerSeq, rejected: allRejected }, confirmedPayload, attemptedPayload);
+  }
+
+  private async reportSuccess(
+    response: SyncPushResponse,
+    confirmed: SyncPushPayload,
+    attempted: SyncPushPayload,
+  ): Promise<boolean> {
+    this.pendingResolution = { response, confirmed, attempted };
+    return this.resolvePendingPush();
+  }
+
+  private async resolvePendingPush(): Promise<boolean> {
+    const pending = this.pendingResolution;
+    if (!pending || this.destroyed) { return !pending; }
+    try {
+      if (pending.unsent) {
+        await this.options.onUnsent?.(pending.unsent);
+        if (this.destroyed) { return false; }
+        pending.unsent = undefined;
+      }
+      await this.onSuccess(pending.response, pending.confirmed, pending.attempted);
+      this.pendingResolution = null;
+      return true;
+    } catch (error) {
+      if (this.destroyed) { return false; }
+      // Retry only resolution: raw unattempted chunks must never re-enter the
+      // network queue. Durable dirty records are rebuilt by the pull/sweep.
+      await this.reportResolutionFailure(asError(error), pending.attempted, pending.confirmed);
+      return false;
+    }
+  }
+
+  private async reportResolutionFailure(error: Error, payload: SyncPushPayload, confirmedPayload: SyncPushPayload): Promise<void> {
+    if (this.destroyed) { return; }
+    await this.onFailure({ error, payload, confirmedPayload, retryable: true, status: 0 });
+    if (!this.destroyed) { this.scheduleRetry(this.nextRetryDelay(error, payload)); }
   }
 
   private async handleAuthenticationFailure(chunks: SyncPushPayload[], failedIndex: number): Promise<void> {

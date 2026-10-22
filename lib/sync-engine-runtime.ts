@@ -33,8 +33,8 @@ export function createSyncEngine(
     onStatusChange,
     onLegacyPushFailure,
     {
-      createQueue: (credentials, onSuccess, onFailure, lifecycleGate, onUnsent) =>
-        new SyncQueue(credentials, onSuccess, onFailure, { onUnsent }, lifecycleGate),
+      createQueue: (credentials, onSuccess, onFailure, lifecycleGate, onUnsent, prepareChunks) =>
+        new SyncQueue(credentials, onSuccess, onFailure, { onUnsent, prepareChunks }, lifecycleGate),
       createSseClient: (credentials, onSequence, onStatusChange) =>
         new SSEClient(credentials, onSequence, onStatusChange),
       syncPull: (baseUrl, accessToken, localSeq) => api.syncPull(baseUrl, accessToken, localSeq),

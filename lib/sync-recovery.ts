@@ -3,6 +3,8 @@ import type {
   SyncEntityType,
   SyncPushEntities,
   SyncPushPayload,
+  SyncRejected,
+  TagHierarchyRecord,
 } from "./api";
 import type { SyncEntityReference } from "./sync-conflicts";
 
@@ -115,12 +117,193 @@ export function matchesCapturedSyncEntity(
   );
 }
 
-export function splitSyncPushPayload(full: SyncPushPayload): SyncPushPayload[] {
-  const { workspaces, collections, bookmarks, tags, groups } = full.entities;
+/** Tombstones release sibling names/quota before live parent-before-child writes. */
+function orderTagsForPush(tags: SyncEntity[]): SyncEntity[] {
+  const compareIds = (a: SyncEntity, b: SyncEntity) => a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  const tombstones = tags.filter(tag => tag.deleted_at != null).sort(compareIds);
+  const live = tags.filter(tag => tag.deleted_at == null).sort(compareIds);
+  const byId = new Map(live.map(tag => [tag.id, tag]));
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const ordered: SyncEntity[] = [...tombstones];
+  const visit = (tag: SyncEntity) => {
+    // Invalid cycles remain deterministic and are left to server validation.
+    if (visited.has(tag.id) || visiting.has(tag.id)) { return; }
+    visiting.add(tag.id);
+    const parent = typeof tag.parent_id === "string" ? byId.get(tag.parent_id) : undefined;
+    if (parent) { visit(parent); }
+    visiting.delete(tag.id);
+    visited.add(tag.id);
+    ordered.push(tag);
+  };
+  for (const tag of live) { visit(tag); }
+  return ordered;
+}
+
+export function acceptedSyncPushPayload(payload: SyncPushPayload, rejected: readonly SyncRejected[]): SyncPushPayload {
+  const accepted = createEmptySyncPushPayload();
+  for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
+    for (const entity of syncPayloadEntities(payload, payloadKey)) {
+      const denied = rejected.some(item => item.id === entity.id && (
+        item.type === entityType || !SYNC_ENTITY_PAYLOAD_MAPPINGS.some(mapping => mapping.entityType === item.type)
+      ));
+      if (!denied) { syncPayloadEntities(accepted, payloadKey).push(entity); }
+    }
+  }
+  return accepted;
+}
+
+export class SyncTagOrderingError extends Error {
+  constructor() {
+    super("sync_tagOrderingPending");
+    this.name = "SyncTagOrderingError";
+  }
+}
+
+function tagParent(tag: SyncEntity): string {
+  return typeof tag.parent_id === "string" ? tag.parent_id : "";
+}
+
+/** IDs involved in hierarchy violations introduced by this tentative batch. */
+function tagBatchBlockers(before: Map<string, SyncEntity>, updates: readonly SyncEntity[]): Set<string> {
+  const graph = new Map(before);
+  for (const tag of updates) { graph.set(tag.id, tag); }
+  const blockers = new Set<string>();
+  const structural = new Set<string>();
+  const siblings = new Map<string, SyncEntity[]>();
+  const siblingKey = (tag: SyncEntity) => JSON.stringify([
+    tagParent(tag), typeof tag.name === "string" ? tag.name.trim().toLowerCase() : tag.id,
+  ]);
+  for (const tag of graph.values()) {
+    if (tag.deleted_at != null) { continue; }
+    const key = siblingKey(tag);
+    const group = siblings.get(key) ?? [];
+    group.push(tag);
+    siblings.set(key, group);
+  }
+  for (const tag of updates) {
+    if (tag.deleted_at != null) { continue; }
+    const old = before.get(tag.id);
+    const parentChanged = !old || old.deleted_at != null || tagParent(old) !== tagParent(tag);
+    const nameChanged = !old || old.name !== tag.name;
+    if (parentChanged) {
+      structural.add(tag.id);
+      const parent = graph.get(tagParent(tag));
+      if (tagParent(tag) && (!parent || parent.deleted_at != null)) {
+        blockers.add(tag.id); blockers.add(tagParent(tag));
+      }
+    }
+    if (!parentChanged && !nameChanged) { continue; }
+    for (const sibling of siblings.get(siblingKey(tag)) ?? []) {
+      if (sibling.id === tag.id) { continue; }
+      const oldSibling = before.get(sibling.id);
+      if (old && oldSibling && old.deleted_at == null && oldSibling.deleted_at == null &&
+        siblingKey(old) === siblingKey(oldSibling) && siblingKey(old) === siblingKey(tag)) { continue; }
+      blockers.add(tag.id); blockers.add(sibling.id);
+    }
+  }
+  for (const tag of graph.values()) {
+    if (tag.deleted_at != null) { continue; }
+    const path = new Set<string>();
+    let node: SyncEntity | undefined = tag;
+    let cycle = false;
+    while (node && node.deleted_at == null) {
+      if (path.has(node.id)) { cycle = true; break; }
+      path.add(node.id);
+      node = graph.get(tagParent(node));
+    }
+    if ((cycle || path.size > 5) && [...path].some(id => structural.has(id))) {
+      for (const id of path) { blockers.add(id); }
+    }
+  }
+  return blockers;
+}
+
+function safeTagBatches(tags: SyncEntity[], authoritative: readonly TagHierarchyRecord[]): SyncEntity[][] {
+  const graph = new Map<string, SyncEntity>(authoritative.map(tag => [tag.id, { ...tag }]));
+  const pending = new Map(tags.map(tag => [tag.id, tag]));
+  const invalid = new Set<string>();
+  // Genuine invalid final intents still need server rejection and restoration,
+  // but must not disable safe packing for unrelated valid coalesced changes.
+  while (true) {
+    const blockers = tagBatchBlockers(graph, [...pending.values()]);
+    let removed = false;
+    for (const id of blockers) {
+      if (pending.delete(id)) { invalid.add(id); removed = true; }
+    }
+    if (!removed) { break; }
+  }
+  const batches: SyncEntity[][] = [];
+  let batch: SyncEntity[] = [];
+  let bytes = 0;
+  while (pending.size > 0) {
+    let progressed = false;
+    for (const seed of pending.values()) {
+      const group = new Map<string, SyncEntity>([[seed.id, seed]]);
+      let safe = false;
+      while (true) {
+        const blockers = tagBatchBlockers(graph, [...group.values()]);
+        if (blockers.size === 0) { safe = true; break; }
+        let added = false;
+        for (const id of blockers) {
+          const dependency = pending.get(id);
+          if (dependency && !group.has(id)) { group.set(id, dependency); added = true; }
+        }
+        if (!added) { break; }
+      }
+      if (!safe) { continue; }
+      const entries = orderTagsForPush([...group.values()]);
+      const groupBytes = entries.reduce((total, tag) => total + syncEntityBytes(tag), 0);
+      const fits = batch.length + entries.length <= MAX_SYNC_ENTITIES_PER_PUSH &&
+        (bytes + groupBytes <= MAX_SYNC_PUSH_BYTES || (batch.length === 0 && entries.length === 1));
+      if (!fits) { continue; }
+      for (const tag of entries) {
+        graph.set(tag.id, tag);
+        pending.delete(tag.id);
+        batch.push(tag);
+      }
+      bytes += groupBytes;
+      progressed = true;
+      break;
+    }
+    if (progressed) { continue; }
+    if (batch.length === 0) { throw new SyncTagOrderingError(); }
+    batches.push(batch);
+    batch = [];
+    bytes = 0;
+  }
+  if (batch.length > 0) { batches.push(batch); }
+  batches.push(...chunkSyncEntries(tags.filter(tag => invalid.has(tag.id)), tag => tag));
+  return batches;
+}
+
+export function splitSyncPushPayload(full: SyncPushPayload, authoritativeTags?: readonly TagHierarchyRecord[]): SyncPushPayload[] {
+  const { workspaces, collections, bookmarks, groups } = full.entities;
+  const tags = orderTagsForPush(full.entities.tags);
   const all: SyncEntity[] = [...workspaces, ...collections, ...bookmarks, ...tags, ...groups];
   const totalBytes = all.reduce((sum, entity) => sum + syncEntityBytes(entity), 0);
   if (all.length <= MAX_SYNC_ENTITIES_PER_PUSH && totalBytes <= MAX_SYNC_PUSH_BYTES) {
-    return [full];
+    return tags.every((tag, index) => tag === full.entities.tags[index])
+      ? [full]
+      : [{ entities: { ...full.entities, tags } }];
+  }
+  if (authoritativeTags) {
+    const tagBatches = safeTagBatches(tags, authoritativeTags);
+    const before = createEmptySyncPushPayload();
+    before.entities.workspaces = workspaces;
+    before.entities.collections = collections;
+    const after = createEmptySyncPushPayload();
+    after.entities.groups = groups;
+    after.entities.bookmarks = bookmarks;
+    return [
+      ...(!isSyncPushPayloadEmpty(before) ? splitSyncPushPayload(before) : []),
+      ...tagBatches.map(batch => {
+        const payload = createEmptySyncPushPayload();
+        payload.entities.tags = batch;
+        return payload;
+      }),
+      ...(!isSyncPushPayloadEmpty(after) ? splitSyncPushPayload(after) : []),
+    ];
   }
   const chunks: SyncPushPayload[] = [];
   interface NonBookmarkEntry {

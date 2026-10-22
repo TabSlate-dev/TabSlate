@@ -419,6 +419,9 @@
   "sync_syncing": {
     "message": "Syncing..."
   },
+  "sync_tagOrderingPending": {
+    "message": "Some tag changes cannot be safely split for sync. They remain saved on this device. Adjust the changes and try again."
+  },
   "sync_error": {
     "message": "Sync error"
   },

@@ -5,7 +5,7 @@ import {
   SyncPushResponse,
   SyncPushPayload,
 } from "@/lib/api";
-import type { SyncPushEntities, SyncRejected } from "@/lib/api";
+import type { SyncPushEntities, SyncRejected, TagHierarchyRecord } from "@/lib/api";
 import { isKnownSyncRejectionReason } from "@/lib/api";
 import { analytics } from "@/lib/analytics";
 import type {
@@ -15,6 +15,7 @@ import type {
 } from "@/lib/sync-queue";
 import type { SyncEntityReference } from "@/lib/sync-conflicts";
 import {
+  acceptedSyncPushPayload,
   createEmptySyncPushPayload,
   copySyncRecoveryEntities,
   extractSyncRecoveryEntities,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/sync-recovery";
 import { mergeWorkspaceLifecycleDeferredPayload } from "@/lib/workspace-lifecycle-state";
 import { confirmSyncPayload, markSyncPayloadUnsent } from "@/lib/sync-confirmation";
+import { isTagParentRejection, isTagDeletionRejection, reconcileRejectedTagParents } from "@/lib/tag-sync-recovery";
 import type { WorkspacePurgeResult } from "@/lib/sync-lifecycle";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
@@ -62,6 +64,7 @@ export type OnPullSuccess = (
 export type OnPushSuccess = (
   resp: SyncPushResponse,
   confirmedPayload: SyncPushPayload,
+  attemptedPayload: SyncPushPayload,
 ) => Promise<string | null>;
 export type OnLegacyPushFailure = (failure: SyncPushFailure) => Promise<boolean>;
 type OnStatusChange = (status: SyncStatus, errorMessage?: string) => void;
@@ -88,12 +91,15 @@ interface SSEClientDriver {
 }
 
 export interface SyncEngineDependencies {
+  reconcileTagRejections?: typeof reconcileRejectedTagParents;
+  listTags?: (baseUrl: string, accessToken: string) => Promise<TagHierarchyRecord[]>;
   createQueue?: (
     getCredentials: GetCredentials,
-    onSuccess: (response: SyncPushResponse, confirmedPayload: SyncPushPayload) => Promise<void>,
+    onSuccess: (response: SyncPushResponse, confirmedPayload: SyncPushPayload, attemptedPayload: SyncPushPayload) => Promise<void>,
     onFailure: (failure: SyncPushFailure) => Promise<boolean>,
     lifecycleGate: SyncQueueLifecycleGate,
     onUnsent: (payload: SyncPushPayload) => Promise<void>,
+    prepareChunks: (payload: SyncPushPayload) => Promise<SyncPushPayload[]>,
   ) => SyncQueueDriver;
   createSseClient?: (
     getCredentials: GetCredentials,
@@ -176,6 +182,8 @@ class AuthenticationSessionEndedError extends Error {
 export class SyncEngine {
   private queue: SyncQueueDriver;
   private sseClient: SSEClientDriver;
+  private readonly listTags: (baseUrl: string, accessToken: string) => Promise<TagHierarchyRecord[]>;
+  private readonly reconcileTagRejections: typeof reconcileRejectedTagParents;
   private readonly syncPull: (baseUrl: string, accessToken: string, localSeq: number) => Promise<SyncPullResponse>;
   private readonly syncPush: (baseUrl: string, accessToken: string, payload: SyncPushPayload) => Promise<SyncPushResponse>;
   private readonly refreshAuthentication: () => Promise<boolean>;
@@ -225,6 +233,8 @@ export class SyncEngine {
     private readonly onLegacyPushFailure: OnLegacyPushFailure,
     dependencies: SyncEngineDependencies,
   ) {
+    this.listTags = dependencies.listTags ?? ((baseUrl, accessToken) => api.listTags(baseUrl, accessToken));
+    this.reconcileTagRejections = dependencies.reconcileTagRejections ?? reconcileRejectedTagParents;
     this.syncPull = dependencies.syncPull ?? ((baseUrl, accessToken, localSeq) =>
       api.syncPull(baseUrl, accessToken, localSeq));
     this.syncPush = dependencies.syncPush ?? ((baseUrl, accessToken, payload) =>
@@ -251,13 +261,13 @@ export class SyncEngine {
     this.clearWorkspaceAggregate = dependencies.clearWorkspaceAggregate ??
       this.defaultClearWorkspaceAggregate;
 
-    const handleQueueSuccess = async (resp: SyncPushResponse, confirmedPayload: SyncPushPayload) => {
+    const handleQueueSuccess = async (resp: SyncPushResponse, confirmedPayload: SyncPushPayload, attemptedPayload: SyncPushPayload) => {
       if (this.destroyed) {
         return;
       }
       const acceptedPayload = this.acceptedPayload(confirmedPayload, resp.rejected);
-      const conflictMessage = await this.serializeResolution(
-        () => this.destroyed ? Promise.resolve(null) : this.onPushSuccess(resp, acceptedPayload),
+      const conflictMessage = await this.serializeResolutionWithContext(
+        context => this.destroyed ? Promise.resolve(null) : this.resolvePushSuccess(resp, acceptedPayload, attemptedPayload, context),
       );
       if (this.destroyed) {
         return;
@@ -303,13 +313,9 @@ export class SyncEngine {
       if (this.destroyed) {
         return;
       }
-      try {
-        await this.serializeResolution(
-          () => this.destroyed ? Promise.resolve() : this.markPayloadUnsent(payload),
-        );
-      } catch {
-        // Best effort: an unmarked record waits for its next local edit, as before.
-      }
+      await this.serializeResolution(
+        () => this.destroyed ? Promise.resolve() : this.markPayloadUnsent(payload),
+      );
     };
     if (!dependencies.createQueue) {
       throw new Error("SyncEngine requires a queue factory");
@@ -323,6 +329,7 @@ export class SyncEngine {
           this.workspaceLifecycleSyncGate.shouldResolveWorkspaceLifecycleBeforePush(),
       },
       handleQueueUnsent,
+      payload => this.serializeResolutionWithContext(context => this.preparePushChunks(payload, context.isCurrent)),
     );
 
     const handleSequence = (serverSeq: number) => {
@@ -381,12 +388,11 @@ export class SyncEngine {
 
     const { response, conflictMessage } = await this.serializeResolutionWithContext(
       async (context) => {
-        const response = await context.pushConfirmed(payload);
+        let conflictMessage: string | null = null;
+        const response = await this.pushConfirmed(payload, context.isCurrent, async (resp, confirmed, attempted) => {
+          conflictMessage = await this.resolvePushSuccess(resp, confirmed, attempted, context);
+        });
         this.assertResolutionCurrent(context.isCurrent);
-        const conflictMessage = await this.onPushSuccess(
-          response,
-          this.acceptedPayload(payload, response.rejected),
-        );
         return { response, conflictMessage };
       },
     );
@@ -712,21 +718,101 @@ export class SyncEngine {
     }
   }
 
+  private async preparePushChunks(payload: SyncPushPayload, isCurrent: () => boolean): Promise<SyncPushPayload[]> {
+    this.assertResolutionCurrent(isCurrent);
+    const chunks = splitSyncPushPayload(payload);
+    if (chunks.filter(chunk => chunk.entities.tags.length > 0).length <= 1) { return chunks; }
+    const credentials = this.getCredentials();
+    if (!credentials) { throw new Error("not authenticated"); }
+    let tags: TagHierarchyRecord[];
+    try {
+      tags = await this.listTags(credentials.baseUrl, credentials.accessToken);
+    } catch (error) {
+      this.assertResolutionCurrent(isCurrent);
+      if (!(error instanceof ApiError) || (error.status !== 401 && error.status !== 403)) { throw error; }
+      const refreshed = await this.refreshAuthentication();
+      this.assertResolutionCurrent(isCurrent);
+      const current = this.getCredentials();
+      if (!refreshed || !current) { throw error; }
+      tags = await this.listTags(current.baseUrl, current.accessToken);
+    }
+    this.assertResolutionCurrent(isCurrent);
+    return splitSyncPushPayload(payload, tags);
+  }
+
+  private async resolvePushSuccess(
+    response: SyncPushResponse,
+    confirmed: SyncPushPayload,
+    attempted: SyncPushPayload,
+    context: SyncResolutionContext,
+  ): Promise<string | null> {
+    // Only deletion attempts qualify for absence settlement. Other invalid_state
+    // errors remain inspectable. Parent-field errors are excluded by the registry.
+    const inspectableResponse = {
+      ...response,
+      rejected: response.rejected.filter(item => !isTagDeletionRejection(item, attempted)),
+    };
+    const conflictMessage = await this.onPushSuccess(inspectableResponse, confirmed, attempted);
+    this.assertResolutionCurrent(context.isCurrent);
+    if (response.rejected.some(item => isTagParentRejection(item) || isTagDeletionRejection(item, attempted))) {
+      const authoritative = await context.pullConfirmed(0);
+      this.assertResolutionCurrent(context.isCurrent);
+      await this.reconcileTagRejections(response, attempted, authoritative, context.isCurrent);
+      this.assertResolutionCurrent(context.isCurrent);
+    }
+    return conflictMessage;
+  }
+
   private async pushConfirmed(
     payload: SyncPushPayload,
     isCurrent: () => boolean,
+    onResult?: (response: SyncPushResponse, confirmed: SyncPushPayload, attempted: SyncPushPayload) => Promise<void>,
   ): Promise<SyncPushResponse> {
     let serverSeq = 0;
     const rejected: SyncRejected[] = [];
-    for (const chunk of splitSyncPushPayload(payload)) {
-      const response = await this.pushWithRefresh(chunk, isCurrent);
+    let attempted = createEmptySyncPushPayload();
+    let confirmed = createEmptySyncPushPayload();
+    let chunks: SyncPushPayload[];
+    try {
+      chunks = await this.preparePushChunks(payload, isCurrent);
+    } catch (error) {
+      if (onResult && isCurrent()) {
+        await this.markPayloadUnsent(payload);
+      }
+      throw error;
+    }
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunk = chunks[index];
+      let response: SyncPushResponse;
+      try {
+        response = await this.pushWithRefresh(chunk, isCurrent);
+      } catch (error) {
+        if (onResult && isCurrent()) {
+          for (const unsent of chunks.slice(index)) {
+            await this.markPayloadUnsent(unsent);
+            this.assertResolutionCurrent(isCurrent);
+          }
+          if (index > 0) { await onResult({ server_seq: serverSeq, rejected }, confirmed, attempted); }
+        }
+        throw error;
+      }
       serverSeq = response.server_seq;
       rejected.push(...response.rejected);
+      attempted = mergeSyncPayloads(attempted, chunk);
+      confirmed = mergeSyncPayloads(confirmed, this.acceptedPayload(chunk, response.rejected));
       if (response.rejected.length > 0) {
+        if (onResult) {
+          for (const unsent of chunks.slice(index + 1)) {
+            await this.markPayloadUnsent(unsent);
+            this.assertResolutionCurrent(isCurrent);
+          }
+        }
         break;
       }
     }
-    return { server_seq: serverSeq, rejected };
+    const response = { server_seq: serverSeq, rejected };
+    await onResult?.(response, confirmed, attempted);
+    return response;
   }
 
   private async runInitialSync(): Promise<void> {
@@ -780,24 +866,7 @@ export class SyncEngine {
     payload: SyncPushPayload,
     rejected: readonly SyncRejected[],
   ): SyncPushPayload {
-    const accepted = createEmptySyncPushPayload();
-    for (const { entityType, payloadKey } of SYNC_ENTITY_PAYLOAD_MAPPINGS) {
-      for (const entity of syncPayloadEntities(payload, payloadKey)) {
-        const isRejected = rejected.some((item) => {
-          if (item.id !== entity.id) {
-            return false;
-          }
-          const knownType = SYNC_ENTITY_PAYLOAD_MAPPINGS.some(
-            (mapping) => mapping.entityType === item.type,
-          );
-          return !knownType || item.type === entityType;
-        });
-        if (!isRejected) {
-          syncPayloadEntities(accepted, payloadKey).push(entity);
-        }
-      }
-    }
-    return accepted;
+    return acceptedSyncPushPayload(payload, rejected);
   }
 
   private ensurePeriodicPull() {

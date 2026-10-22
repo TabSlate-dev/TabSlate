@@ -585,7 +585,9 @@ function SyncProvider({
       },
       (status, errorMessage) => {
         setSyncStatus(status);
-        setSyncErrorMessage(status === "error" ? (errorMessage ?? null) : null);
+        setSyncErrorMessage(status === "error"
+          ? (errorMessage === "sync_tagOrderingPending" ? tRef.current("sync_tagOrderingPending") : errorMessage ?? null)
+          : null);
       },
       async (failure) => {
         if (failure.status !== 500) {

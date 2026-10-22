@@ -275,3 +275,128 @@ describe("sync recovery persistence", () => {
     expect(sessionStore.size).toBe(0);
   });
 });
+
+describe("tag dependency chunking", () => {
+  function tagPayload(tags) {
+    return { entities: { workspaces: [], collections: [], bookmarks: [], groups: [], tags } };
+  }
+  test("parent_precedes_child_across_900_boundary", () => {
+    const tags = [
+      { id: "z-child", parent_id: "z-parent" },
+      ...Array.from({ length: 899 }, (_, i) => ({ id: `m-${String(i).padStart(4, "0")}`, parent_id: "" })),
+      { id: "z-parent", parent_id: "" },
+    ];
+    const chunks = recoveryModule.splitSyncPushPayload(tagPayload(tags));
+    const ids = chunks.flatMap(chunk => chunk.entities.tags.map(tag => tag.id));
+    expect(chunks).toHaveLength(2);
+    expect(ids.indexOf("z-parent")).toBeLessThan(ids.indexOf("z-child"));
+    expect(chunks[0].entities.tags).toHaveLength(900);
+    expect(chunks[0].entities.tags.at(-1).id).toBe("z-parent");
+    expect(chunks[1].entities.tags[0].id).toBe("z-child");
+  });
+  test("parent_precedes_child_across_byte_boundary", () => {
+    const chunks = recoveryModule.splitSyncPushPayload(tagPayload([
+      { id: "z-child", parent_id: "z-parent", name: "c".repeat(220_000) },
+      { id: "z-parent", parent_id: "", name: "p".repeat(220_000) },
+    ]));
+    expect(chunks.map(chunk => chunk.entities.tags.map(tag => tag.id))).toEqual([["z-parent"], ["z-child"]]);
+  });
+  test("orders_small_tag_payloads_and_uses_deterministic_sibling_ties", () => {
+    const chunks = recoveryModule.splitSyncPushPayload(tagPayload([
+      { id: "b", parent_id: "p" }, { id: "a", parent_id: "p" }, { id: "p", parent_id: "" },
+    ]));
+    expect(chunks[0].entities.tags.map(tag => tag.id)).toEqual(["p", "a", "b"]);
+  });
+});
+
+describe("authoritative tag batch packing", () => {
+  for (const destination of ["", "y", "with-invalid-neighbor"]) {
+    test(`detaches_descendant_before_ancestor_deepening_${destination || "root"}`, () => {
+      const stored = [
+        { id: "a", name: "a", parent_id: "" }, { id: "b", name: "b", parent_id: "a" },
+        { id: "c", name: "c", parent_id: "b" }, { id: "d", name: "d", parent_id: "c" },
+        { id: "z", name: "z", parent_id: "d" }, { id: "x", name: "x", parent_id: "" }, { id: "y", name: "y", parent_id: "" },
+        ...Array.from({ length: 899 }, (_, i) => ({ id: `m${i}`, name: `m${i}`, parent_id: "" })),
+      ];
+      const payload = recoveryModule.createEmptySyncPushPayload();
+      payload.entities.tags = [{ id: "a", name: "a", parent_id: "x" }, ...stored.slice(7), { id: "z", name: "z", parent_id: destination === "with-invalid-neighbor" ? "" : destination }];
+      if (destination === "with-invalid-neighbor") { payload.entities.tags.push({ id: "invalid", name: "invalid", parent_id: "missing" }); }
+      const chunks = recoveryModule.splitSyncPushPayload(payload, stored);
+      const graph = new Map(stored.map(tag => [tag.id, tag]));
+      for (const chunk of chunks) {
+        for (const tag of chunk.entities.tags) { graph.set(tag.id, tag); }
+        let depth = 0;
+        let current = graph.get("z");
+        while (current) { depth += 1; current = graph.get(current.parent_id); }
+        expect(depth).toBeLessThanOrEqual(5);
+      }
+      expect(graph.get("a").parent_id).toBe("x");
+      expect(graph.get("z").parent_id).toBe(destination === "with-invalid-neighbor" ? "" : destination);
+    });
+  }
+  test("keeps_coupled_sibling_renames_in_one_chunk", () => {
+    const stored = [{ id: "a", name: "Alpha", parent_id: "" }, { id: "z", name: "Beta", parent_id: "" }];
+    const payload = recoveryModule.createEmptySyncPushPayload();
+    payload.entities.tags = [{ id: "a", name: "Beta", parent_id: "" },
+      ...Array.from({ length: 899 }, (_, i) => ({ id: `m${i}`, name: `m${i}`, parent_id: "" })),
+      { id: "z", name: "Alpha", parent_id: "" }];
+    const chunks = recoveryModule.splitSyncPushPayload(payload, stored);
+    expect(chunks.findIndex(chunk => chunk.entities.tags.some(tag => tag.id === "a"))).toBe(
+      chunks.findIndex(chunk => chunk.entities.tags.some(tag => tag.id === "z")),
+    );
+  });
+  test("inseparable_over_budget_changes_remain_a_recoverable_ordering_failure", () => {
+    const stored = [{ id: "a", name: "Alpha", parent_id: "" }, { id: "z", name: "Beta", parent_id: "" }];
+    const payload = recoveryModule.createEmptySyncPushPayload();
+    payload.entities.tags = [{ id: "a", name: "Beta", parent_id: "", color: "x".repeat(220_000) },
+      { id: "z", name: "Alpha", parent_id: "", color: "x".repeat(220_000) }];
+    expect(() => recoveryModule.splitSyncPushPayload(payload, stored)).toThrow(recoveryModule.SyncTagOrderingError);
+  });
+});
+
+describe("tag planner replay limits", () => {
+  for (const destination of ["", "y"]) {
+    test(`byte_limit_sends_detach_before_deepening_${destination || "root"}`, () => {
+      const stored = [
+        { id: "a", name: "a", parent_id: "" }, { id: "b", name: "b", parent_id: "a" },
+        { id: "c", name: "c", parent_id: "b" }, { id: "d", name: "d", parent_id: "c" },
+        { id: "z", name: "z", parent_id: "d" }, { id: "x", name: "x", parent_id: "" }, { id: "y", name: "y", parent_id: "" },
+      ];
+      const payload = recoveryModule.createEmptySyncPushPayload();
+      payload.entities.tags = [{ id: "a", name: "a", parent_id: "x", color: "x".repeat(220_000) },
+        { id: "z", name: "z", parent_id: destination, color: "x".repeat(220_000) }];
+      expect(recoveryModule.splitSyncPushPayload(payload, stored).map(chunk => chunk.entities.tags.map(tag => tag.id))).toEqual([["z"], ["a"]]);
+    });
+  }
+  for (const boundary of ["entities", "bytes"]) {
+    test(`promotion_plan_converges_across_${boundary}_boundary`, async () => {
+      const { buildTagTree } = await import("../lib/tag-tree");
+      const { planTagDeletion } = await import("../lib/tag-mutations");
+      const stored = [
+        { id: "z-parent", name: "parent", seq: 1, color: "blue" },
+        { id: "existing", name: "leaf-0", seq: 1, color: "blue" },
+        ...Array.from({ length: 900 }, (_, i) => ({ id: `child-${i}`, name: `leaf-${i}`, parentId: "z-parent", color: boundary === "bytes" ? "x".repeat(2_000) : "blue", seq: 1 })),
+      ];
+      const result = planTagDeletion(buildTagTree(stored, "en"), ["z-parent"], 5);
+      expect(result.ok).toBe(true);
+      const payload = recoveryModule.createEmptySyncPushPayload();
+      payload.entities.tags = [...result.plan.upserts, ...result.plan.tombstones].map(tag => ({ id: tag.id, name: tag.name, color: tag.color, parent_id: tag.parentId ?? "", deleted_at: tag.deletedAt ?? null }));
+      const graph = new Map(stored.map(tag => [tag.id, { id: tag.id, name: tag.name, parent_id: tag.parentId ?? "" }]));
+      const chunks = recoveryModule.splitSyncPushPayload(payload, [...graph.values()]);
+      expect(chunks.length).toBeGreaterThan(1);
+      expect(chunks[0].entities.tags[0].id).toBe("z-parent");
+      for (const chunk of chunks) {
+        for (const tag of chunk.entities.tags) { graph.set(tag.id, tag); }
+        const names = new Set();
+        for (const tag of graph.values()) {
+          if (tag.deleted_at != null) { continue; }
+          const key = `${tag.parent_id}:${tag.name.toLowerCase()}`;
+          expect(names.has(key)).toBe(false); names.add(key);
+        }
+      }
+      expect(graph.get("z-parent").deleted_at).toBe(5);
+      expect(graph.get("child-0").name).toBe("leaf-0 (2)");
+      expect([...graph.values()].filter(tag => tag.deleted_at == null).every(tag => tag.parent_id === "")).toBe(true);
+    });
+  }
+});

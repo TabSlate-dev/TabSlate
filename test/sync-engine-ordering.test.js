@@ -119,6 +119,138 @@ describe("SyncEngine ordering", () => {
     sseSequenceHandler = null;
   });
 
+  test("forcePush confirms only attempted chunks after a later rejection", async () => {
+    const successes = [];
+    const unsent = [];
+    const queued = [];
+    queueEnqueueImpl = entities => queued.push(entities);
+    let calls = 0;
+    syncPushImpl = async () => ({ server_seq: ++calls, rejected: calls === 2
+      ? [{ id: "b-900", type: "bookmark", reason: "stale" }] : [] });
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => 7,
+      async () => ({ errorMessage: null }),
+      async (response, confirmed, attempted) => { successes.push({ response, confirmed, attempted }); return null; },
+      () => {}, async () => false,
+      orderingDependencies({ markPayloadUnsent: async payload => { unsent.push(payload); } }),
+    );
+    await expect(engine.forcePush({ bookmarks: Array.from({ length: 1801 }, (_, i) => ({ id: `b-${i}` })) })).rejects.toBeInstanceOf(SyncRejectedError);
+    expect(calls).toBe(2);
+    expect(successes[0].confirmed.entities.bookmarks).toHaveLength(1799);
+    expect(successes[0].attempted.entities.bookmarks).toHaveLength(1800);
+    expect(unsent[0].entities.bookmarks).toEqual([{ id: "b-1800" }]);
+    expect(queued).toEqual([]);
+    engine.destroy();
+  });
+
+  test("tag recovery fetches a guarded authoritative full pull without owning the checkpoint", async () => {
+    const events = [];
+    const attempted = emptyPayload();
+    attempted.entities.tags = [{ id: "moving", parent_id: "bad" }];
+    const rejection = { server_seq: 10, rejected: [{ id: "moving", type: "tag", reason: "invalid_field", field: "parent_id" }] };
+    let checkpoint = 7;
+    syncPullImpl = async (_url, _token, after) => {
+      events.push(`fetch:${after}`);
+      return after === 0 ? { ...emptyResponse(15), entities: { ...emptyResponse().entities, tags: [{ id: "moving", parent_id: "old" }] } } : emptyResponse(16);
+    };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => checkpoint,
+      async response => { events.push("normal-merge"); checkpoint = response.server_seq; return { errorMessage: null }; },
+      async (_response, _confirmed, sent) => { expect(sent).toEqual(attempted); events.push("confirm"); return null; },
+      () => {}, async () => false,
+      orderingDependencies({ reconcileTagRejections: async (response, sent, authoritative, isCurrent) => {
+        expect(response).toEqual(rejection); expect(sent).toEqual(attempted);
+        expect(authoritative.entities.tags[0].parent_id).toBe("old");
+        expect(checkpoint).toBe(7); expect(isCurrent()).toBe(true); events.push("restore");
+      } }),
+    );
+    await queueSuccessHandler(rejection, emptyPayload(), attempted);
+    expect(events).toEqual(["confirm", "fetch:0", "restore", "fetch:7", "normal-merge"]);
+    expect(checkpoint).toBe(16);
+    engine.destroy();
+  });
+
+  test("retiring_engine_during_authoritative_fetch_never_restores_old_session_tags", async () => {
+    const remote = deferred();
+    let restored = false;
+    const attempted = emptyPayload(); attempted.entities.tags = [{ id: "moving", parent_id: "bad" }];
+    syncPullImpl = () => remote.promise;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => 7,
+      async () => ({ errorMessage: null }), async () => null, () => {}, async () => false,
+      orderingDependencies({ reconcileTagRejections: async () => { restored = true; } }),
+    );
+    const resolution = queueSuccessHandler({ server_seq: 10, rejected: [{ id: "moving", type: "tag", reason: "invalid_field", field: "parent_id" }] }, emptyPayload(), attempted);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(syncPullCalls[0][2]).toBe(0);
+    const retiring = engine.retire();
+    remote.resolve(emptyResponse(11));
+    await expect(resolution).rejects.toThrow("no longer current");
+    await retiring;
+    expect(restored).toBe(false);
+  });
+
+  test("invalid_state_tombstone_gets_full_authority_but_other_validation_does_not", async () => {
+    const recovered = [];
+    const inspected = [];
+    syncPullImpl = async () => emptyResponse(10);
+    const attempted = emptyPayload(); attempted.entities.tags = [{ id: "deleted", deleted_at: 5 }];
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => 7,
+      async () => ({ errorMessage: null }), async response => { inspected.push(response.rejected); return null; },
+      () => {}, async () => false,
+      orderingDependencies({ reconcileTagRejections: async response => { recovered.push(response.rejected); } }),
+    );
+    await queueSuccessHandler({ server_seq: 10, rejected: [{ id: "deleted", type: "tag", reason: "invalid_state" }] }, emptyPayload(), attempted);
+    expect(syncPullCalls.map(call => call[2])).toEqual([0, 7]);
+    expect(inspected[0]).toEqual([]);
+    expect(recovered[0]).toEqual([{ id: "deleted", type: "tag", reason: "invalid_state" }]);
+    syncPullCalls.length = 0;
+    const nameError = { id: "deleted", type: "tag", reason: "invalid_field", field: "name" };
+    await queueSuccessHandler({ server_seq: 11, rejected: [nameError] }, emptyPayload(), attempted);
+    expect(inspected[1]).toEqual([nameError]);
+    expect(syncPullCalls.map(call => call[2])).toEqual([7]);
+    engine.destroy();
+  });
+
+  test("failed_authoritative_fetch_preserves_dirty_intent_and_never_reports_resolution_success", async () => {
+    const attempted = emptyPayload(); attempted.entities.tags = [{ id: "moving", parent_id: "bad" }];
+    let restored = false;
+    syncPullImpl = async () => { throw new TypeError("offline"); };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => 7,
+      async () => ({ errorMessage: null }), async () => null, () => {}, async () => false,
+      orderingDependencies({ reconcileTagRejections: async () => { restored = true; } }),
+    );
+    await expect(queueSuccessHandler({ server_seq: 10, rejected: [{ id: "moving", type: "tag", reason: "invalid_field", field: "parent_id" }] }, emptyPayload(), attempted)).rejects.toThrow("offline");
+    expect(restored).toBe(false); expect(attempted.entities.tags).toEqual([{ id: "moving", parent_id: "bad" }]);
+    engine.destroy();
+  });
+
+  test("large_tag_batches_use_the_tag_index_for_both_ordinary_and_forced_pushes", async () => {
+    let prepare;
+    let reads = 0;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => 7,
+      async () => ({ errorMessage: null }), async () => null, () => {}, async () => false,
+      orderingDependencies({
+        listTags: async () => { reads += 1; return []; },
+        createQueue: (creds, success, failure, _gate, _unsent, prepareChunks) => {
+          prepare = prepareChunks; return new OrderingTestQueue(creds, success, failure);
+        },
+      }),
+    );
+    const payload = emptyPayload();
+    payload.entities.tags = Array.from({ length: 901 }, (_, i) => ({ id: `t${i}`, name: `t${i}`, parent_id: "" }));
+    expect(typeof prepare).toBe("function");
+    const chunks = await prepare(payload);
+    expect(chunks.flatMap(chunk => chunk.entities.tags)).toHaveLength(901);
+    await engine.forcePush(payload.entities);
+    expect(reads).toBe(2); expect(syncPullCalls).toEqual([]);
+    expect(syncPushCalls).toHaveLength(2);
+    engine.destroy();
+  });
+
   test("waits for rejected push reconciliation before pulling", async () => {
     const events = [];
     const pushResolution = deferred();

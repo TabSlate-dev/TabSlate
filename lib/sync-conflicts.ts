@@ -1,3 +1,4 @@
+import { isTagParentRejection } from "@/lib/tag-sync-recovery";
 import {
   isSyncEntityType,
   type SyncEntityType,
@@ -98,7 +99,7 @@ export class SyncConflictRegistry {
       const candidate = new Map(current);
       let changed = false;
       for (const rejection of rejections) {
-        if (rejection.reason === "stale" || !isSyncEntityType(rejection.type) || rejection.id.length === 0) {
+        if (isTagParentRejection(rejection) || rejection.reason === "stale" || !isSyncEntityType(rejection.type) || rejection.id.length === 0) {
           continue;
         }
         const parentType = isSyncEntityType(rejection.parent_type) ? rejection.parent_type : undefined;

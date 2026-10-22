@@ -419,6 +419,9 @@
   "sync_syncing": {
     "message": "同步中…"
   },
+  "sync_tagOrderingPending": {
+    "message": "部分标签更改无法安全地拆分同步。这些更改仍保存在此设备上，请调整后重试。"
+  },
   "sync_error": {
     "message": "同步失败"
   },

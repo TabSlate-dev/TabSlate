@@ -119,6 +119,13 @@ export interface ServerBookmark {
   edited_at?: number;
 }
 
+/** The authenticated tag index is sufficient for safe hierarchy chunk planning. */
+export interface TagHierarchyRecord {
+  id: string;
+  name: string;
+  parent_id?: string | null;
+}
+
 export interface ServerTag {
   /** Omitted by older servers; null explicitly clears the parent. */
   parent_id?: string | null;
@@ -177,6 +184,7 @@ export type SyncEntityType =
 
 export type KnownSyncRejectionReason =
   | "stale"
+  | "invalid_field"
   | "quota_exceeded"
   | "parent_rejected"
   | "invalid_parent"
@@ -186,6 +194,7 @@ export type KnownSyncRejectionReason =
   | "permanently_deleted";
 
 export interface SyncRejected {
+  field?: string;
   id: string;
   reason: string;
   type?: string;
@@ -210,7 +219,8 @@ export function isSyncEntityType(value: string | undefined): value is SyncEntity
 }
 
 export function isKnownSyncRejectionReason(value: string): value is KnownSyncRejectionReason {
-  return value === "stale" ||
+  return value === "invalid_field" ||
+    value === "stale" ||
     value === "quota_exceeded" ||
     value === "parent_rejected" ||
     value === "invalid_parent" ||
@@ -522,6 +532,13 @@ export const api = {
       method: "POST",
       headers: { Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ ...payload, protocol_version: 2 }),
+    });
+  },
+
+  listTags(baseUrl: string, accessToken: string): Promise<TagHierarchyRecord[]> {
+    return request<TagHierarchyRecord[]>(baseUrl, "/tags", {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}` },
     });
   },
 
