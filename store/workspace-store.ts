@@ -2,8 +2,9 @@ import { create } from "zustand";
 import type { Workspace, Collection, Tag } from "@/lib/types";
 import type { ImportPlan } from "@/lib/import-types";
 import { buildTagTree, resolveTagPath } from "@/lib/tag-tree";
-import { planTagEdit, planTagDeletion, type TagActionResult, type TagMutationPlan } from "@/lib/tag-mutations";
+import { planTagEdit, planTagDeletion, planTagMerge, type TagActionResult, type TagMutationPlan } from "@/lib/tag-mutations";
 import { changePersistedTags, commitTagMutation, invalidateTagMutations, serializeTagMutation, tagMutationSession, TagMutationStaleError } from "@/lib/tag-persistence";
+import { unusedTagIds } from "@/lib/tag-counts";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import * as idb from "@/lib/idb";
@@ -11,6 +12,7 @@ import { syncEngine } from "@/lib/sync-engine";
 import { compareActiveCollections } from "@/lib/collection-utils";
 import type { SyncEntity, SyncPullResponse, SyncPushEntities } from "@/lib/api";
 import { useBookmarksStore } from "@/store/bookmarks-store";
+import * as bookmarkSync from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { useAuthStore } from "@/store/auth-store";
@@ -250,6 +252,8 @@ interface WorkspaceState {
   updateTag: (id: string, patch: Partial<Pick<Tag, "name" | "color" | "parentId">>) => Promise<TagActionResult>;
   moveTag: (id: string, parentId: string | undefined) => Promise<TagActionResult>;
   deleteTag: (id: string) => Promise<TagActionResult>;
+  mergeTag: (sourceId: string, targetId: string) => Promise<TagActionResult>;
+  deleteUnusedTags: () => Promise<TagActionResult>;
   restoreRejectedTagParent: (id: string, attempted: SyncEntity, authoritative: Tag | undefined, isSessionCurrent?: () => boolean) => Promise<void>;
   settleRejectedTagDeletion: (id: string, attempted: SyncEntity, isSessionCurrent?: () => boolean) => Promise<void>;
   importFromPlan: (plan: ImportPlan) => boolean;
@@ -274,11 +278,20 @@ interface PlannedTagAction {
 
 function runTagAction(
   build: (tags: readonly Tag[]) => PlannedTagAction | Extract<TagActionResult, { ok: false }>,
+  options: { unusedOnly?: boolean } = {},
 ): Promise<TagActionResult> {
   const isCurrent = tagMutationSession();
   return serializeTagMutation(async () => {
     if (!isCurrent()) { return { ok: false, error: "stale" }; }
     const planStore = usePlanStore.getState();
+    if (options.unusedOnly) {
+      try {
+        await Promise.all([
+          useBookmarksStore.getState().loadArchivedBookmarks(),
+          useBookmarksStore.getState().loadTrashedBookmarks(),
+        ]);
+      } catch { return { ok: false, error: "storage" }; }
+    }
     await planStore.ensureFresh();
     if (!isCurrent()) { return { ok: false, error: "stale" }; }
     const snapshot = useWorkspaceStore.getState().tags;
@@ -294,18 +307,35 @@ function runTagAction(
       return { ok: false, error: "quota" };
     }
     try {
-      await commitTagMutation(plan, snapshot, () => isCurrent() &&
+      const committed = await commitTagMutation(plan, snapshot, () => isCurrent() &&
         useWorkspaceStore.getState().tags === snapshot &&
-        (created === 0 || planStore.checkQuota("tag", snapshot.length + created - 1)));
+        (created === 0 || planStore.checkQuota("tag", snapshot.length + created - 1)), options);
       if (!isCurrent()) { return { ok: false, error: "stale" }; }
-      const replacements = new Map(plan.upserts.map(tag => [tag.id, tag]));
-      const removed = new Set(plan.tombstones.map(tag => tag.id));
+      const upserts = committed.tags.filter(tag => tag.deletedAt === undefined);
+      const replacements = new Map(upserts.map(tag => [tag.id, tag]));
+      const removed = new Set(committed.tags.filter(tag => tag.deletedAt !== undefined).map(tag => tag.id));
       const tags = snapshot.filter(tag => !removed.has(tag.id)).map(tag => replacements.get(tag.id) ?? tag);
-      tags.push(...plan.upserts.filter(tag => !snapshot.some(existing => existing.id === tag.id)));
+      tags.push(...upserts.filter(tag => !snapshot.some(existing => existing.id === tag.id)));
       useWorkspaceStore.setState({ tags });
       if (created > 0) { planStore.incrementUsage("tag", created); }
       if (removed.size > 0) { planStore.decrementUsage("tag", removed.size); }
-      syncEngine?.enqueue({ tags: [...plan.upserts, ...plan.tombstones].map(toServerTag) });
+      const bookmarkChanges = committed.bookmarks;
+      if (plan.replacements.size > 0) {
+        useBookmarksStore.getState().applyTagReplacementChanges(bookmarkChanges, plan.replacements);
+      }
+      if (removed.size > 0 && options.unusedOnly) {
+        useBookmarksStore.setState(state => ({ selectedTags: state.selectedTags.filter(id => !removed.has(id)) }));
+      }
+      const bookmarks = [
+        ...bookmarkChanges.active.map(bookmark => bookmarkSync.toServerBookmark(bookmark)),
+        ...bookmarkChanges.archived.map(bookmark => bookmarkSync.toServerBookmark(bookmark, { isArchived: true })),
+        ...bookmarkChanges.trashed.map(bookmark => bookmarkSync.toServerBookmark(bookmark, {
+          isTrashed: "isTrashed" in bookmark && bookmark.isTrashed === 2 ? 2 : 1,
+        })),
+      ];
+      if (committed.tags.length > 0 || bookmarks.length > 0) {
+        syncEngine?.enqueue({ tags: committed.tags.map(toServerTag), ...(bookmarks.length > 0 ? { bookmarks } : {}) });
+      }
       return { ok: true, ...(result.tagId ? { tagId: result.tagId } : {}) };
     } catch (error) {
       if (error instanceof TagMutationStaleError) {
@@ -1065,6 +1095,19 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   moveTag: (id, parentId) => get().updateTag(id, { parentId }),
 
   deleteTag: (id) => runTagAction(tags => planTagDeletion(buildTagTree(tags, "en"), [id], Date.now())),
+
+  mergeTag: (sourceId, targetId) => runTagAction(tags => planTagMerge(buildTagTree(tags, "en"), sourceId, targetId, Date.now())),
+
+  deleteUnusedTags: () => runTagAction(tags => {
+    const bookmarks = useBookmarksStore.getState();
+    const unused = unusedTagIds(buildTagTree(tags, "en"), [
+      ...bookmarks.bookmarks.values(), ...bookmarks.archivedBookmarks, ...bookmarks.trashedBookmarks,
+    ]);
+    return { ok: true, plan: {
+      upserts: [], replacements: new Map(),
+      tombstones: tags.filter(tag => unused.has(tag.id)).map(tag => ({ ...tag, seq: 0, deletedAt: Date.now() })),
+    } };
+  }, { unusedOnly: true }),
 
   restoreRejectedTagParent: (id, attempted, authoritative, isSessionCurrent = () => true) => {
     const current = tagMutationSession();

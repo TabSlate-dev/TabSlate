@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { Bookmark, BookmarkBatchPatch, BookmarkPatchEntry } from "@/lib/types";
 import { generateId } from "@/lib/id";
+import * as idb from "@/lib/idb";
 import { idbGet, idbGetAll, idbGetByIndex, idbGetMany, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import type { SyncEntity, SyncPullResponse } from "@/lib/api";
@@ -16,6 +17,7 @@ import { analytics } from "@/lib/analytics";
 import { syncConflictRegistry } from "@/lib/sync-conflicts";
 import type { WorkspaceAggregateIds } from "@/lib/workspace-aggregate";
 import type { GuestBookmarkUpdates } from "@/lib/guest-workspace";
+import type { BookmarkBucketChanges } from "@/lib/tag-persistence";
 import type { BookmarkSortBy, BookmarkViewMode } from "@/lib/view-preferences";
 
 export type { Bookmark };
@@ -29,6 +31,7 @@ interface TrashedBookmarkRecord extends Bookmark {
   isTrashed?: number;
 }
 
+let _tagReplacementRevision = 0;
 let _bookmarkHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 let _bookmarksArrayCache: Bookmark[] | null = null;
 let _bookmarksArrayCacheSource: Map<string, Bookmark> | null = null;
@@ -118,7 +121,7 @@ function serverCreatedAtToIso(createdAt: number): string {
   return new Date(Number.isFinite(createdAt) ? createdAt : 0).toISOString();
 }
 
-function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?: number } = {}): SyncEntity {
+export function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?: number } = {}): SyncEntity {
   return {
     id: b.id,
     collection_id: b.collectionId || null,
@@ -241,7 +244,17 @@ function migrateBookmarkForStore(store: BookmarkStoreName, bookmark: Bookmark): 
     return bookmark;
   }
   const fixed = { ...bookmark, favicon: normalizeFavicon(bookmark.favicon, bookmark.url) };
-  void idbPut(store, fixed);
+  // A lazy read may have captured the record before a tag merge or another edit.
+  // Read and patch only the current favicon so that migration cannot replay it.
+  void idb.idbTransaction([store], "readwrite", transaction => {
+    const request: IDBRequest<Bookmark | undefined> = transaction.objectStore(store).get(bookmark.id);
+    request.onsuccess = () => {
+      const current = request.result;
+      if (current?.favicon.startsWith("data:")) {
+        transaction.objectStore(store).put({ ...current, favicon: normalizeFavicon(current.favicon, current.url) });
+      }
+    };
+  }).catch(() => {});
   return fixed;
 }
 
@@ -326,6 +339,7 @@ interface BookmarksState {
   permanentlyDeleteBatch: (bookmarkIds: string[]) => void;
   mergeFromServer: (resp: SyncPullResponse) => Promise<void>;
   applyGuestBookmarkChanges: (changes: GuestBookmarkUpdates) => void;
+  applyTagReplacementChanges: (changes: BookmarkBucketChanges, replacements: ReadonlyMap<string, string>) => void;
   enqueueAllToSync: () => void;
   sweepUnsynced: () => Promise<void>;
   confirmBookmarkEntitySeqs: (entities: readonly SyncEntity[], serverSeq: number) => void;
@@ -389,13 +403,23 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       loadArchivedBookmarks: async () => {
         if (get()._archivedLoaded) { return; }
-        const archived = await readBookmarkStore("archived-bookmarks");
+        let revision: number;
+        let archived: Bookmark[];
+        do {
+          revision = _tagReplacementRevision;
+          archived = await readBookmarkStore("archived-bookmarks");
+        } while (revision !== _tagReplacementRevision);
         set({ archivedBookmarks: archived, _archivedLoaded: true });
       },
 
       loadTrashedBookmarks: async () => {
         if (get()._trashedLoaded) { return; }
-        const all = await readBookmarkStore("trashed-bookmarks");
+        let revision: number;
+        let all: Bookmark[];
+        do {
+          revision = _tagReplacementRevision;
+          all = await readBookmarkStore("trashed-bookmarks");
+        } while (revision !== _tagReplacementRevision);
 
         const graceDays = usePlanStore.getState().limits?.trash_grace_days ?? 30;
         const cutoff = Date.now() - graceDays * 86_400_000;
@@ -468,6 +492,26 @@ export const useBookmarksStore = create<BookmarksState>()(
         })),
 
       clearTags: () => set({ selectedTags: [] }),
+      applyTagReplacementChanges: (changes, replacements) => {
+        _tagReplacementRevision += 1;
+        set(state => {
+          const update = (current: Bookmark, changed: Bookmark | undefined): Bookmark => {
+            if (!changed) { return current; }
+            const tags = [...new Set(current.tags.map(id => replacements.get(id) ?? id))];
+            if (stringArraysEqual(tags, current.tags)) { return current; }
+            return { ...current, tags, seq: 0, updatedAt: Math.max(current.updatedAt ?? 0, changed.updatedAt ?? 0) };
+          };
+          const active = new Map(changes.active.map(bookmark => [bookmark.id, bookmark]));
+          const archived = new Map(changes.archived.map(bookmark => [bookmark.id, bookmark]));
+          const trashed = new Map(changes.trashed.map(bookmark => [bookmark.id, bookmark]));
+          return {
+            bookmarks: new Map([...state.bookmarks].map(([id, bookmark]) => [id, update(bookmark, active.get(id))])),
+            ...(state._archivedLoaded ? { archivedBookmarks: state.archivedBookmarks.map(bookmark => update(bookmark, archived.get(bookmark.id))) } : {}),
+            ...(state._trashedLoaded ? { trashedBookmarks: state.trashedBookmarks.map(bookmark => update(bookmark, trashed.get(bookmark.id))) } : {}),
+            selectedTags: [...new Set(state.selectedTags.map(id => replacements.get(id) ?? id))],
+          };
+        });
+      },
       setSearchQuery: (query) => set({ searchQuery: query }),
       setViewMode: (mode) => set({ viewMode: mode }),
       setSortBy: (sort) => set({ sortBy: sort }),
