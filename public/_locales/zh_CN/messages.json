@@ -1883,6 +1883,9 @@
   "tagAction_targetDuplicate": {
     "message": "同级已存在同名标签。"
   },
+  "tagAction_errorDepth": {
+    "message": "嵌套深度不能超过 5 层。"
+  },
   "collectionMenu_edit": {
     "message": "编辑…"
   },

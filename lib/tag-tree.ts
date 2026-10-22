@@ -142,3 +142,74 @@ export function resolveTagPath(tree: TagTree, input: string, parentId: string | 
   }
   return leaf ? { ok: true, leaf, created } : { ok: false, error: "empty" };
 }
+
+export function searchTagPaths(tree: TagTree, query: string): Tag[] {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    return [];
+  }
+  const needle = trimmed.toLowerCase();
+  const queryHasSlash = trimmed.includes("/");
+  const querySegments = queryHasSlash
+    ? trimmed.split("/").map(segment => segment.trim().toLowerCase()).filter(Boolean)
+    : [needle];
+
+  if (querySegments.length === 0) {
+    return [];
+  }
+
+  const targetLeaf = querySegments[querySegments.length - 1] ?? needle;
+  const collator = new Intl.Collator(tree.locale, { sensitivity: "base" });
+  const matches: Array<{ tag: Tag; exactLeaf: boolean; pathText: string }> = [];
+
+  for (const tag of tree.tagsById.values()) {
+    const path = tagPath(tree, tag.id);
+    const pathNames = path.map(entry => entry.name.toLowerCase());
+    const pathText = displayTagPath(tree, tag.id);
+
+    let matched = false;
+    if (tag.name.toLowerCase().includes(needle)) {
+      matched = true;
+    } else if (!queryHasSlash) {
+      matched = pathNames.some(name => name.includes(needle));
+    } else if (pathNames.length >= querySegments.length) {
+      for (let offset = 0; offset <= pathNames.length - querySegments.length; offset++) {
+        let segmentMatch = true;
+        for (let j = 0; j < querySegments.length; j++) {
+          const expected = querySegments[j];
+          const actual = pathNames[offset + j];
+          if (!expected || !actual || !actual.includes(expected)) {
+            segmentMatch = false;
+            break;
+          }
+        }
+        if (segmentMatch) {
+          matched = true;
+          break;
+        }
+      }
+    }
+
+    if (matched) {
+      const exactLeaf = normalizeTagName(tag.name) === normalizeTagName(targetLeaf);
+      matches.push({ tag, exactLeaf, pathText });
+    }
+  }
+
+  matches.sort((a, b) => {
+    if (a.exactLeaf && !b.exactLeaf) {
+      return -1;
+    }
+    if (!a.exactLeaf && b.exactLeaf) {
+      return 1;
+    }
+    const pathCmp = collator.compare(a.pathText, b.pathText);
+    if (pathCmp !== 0) {
+      return pathCmp;
+    }
+    return a.tag.id < b.tag.id ? -1 : a.tag.id > b.tag.id ? 1 : 0;
+  });
+
+  return matches.map(match => match.tag);
+}
+

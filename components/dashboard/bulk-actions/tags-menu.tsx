@@ -3,9 +3,11 @@ import { Check, Minus, Tag as TagIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { FilterableList } from "@/components/dashboard/shared/filterable-list";
+import { useTagTree } from "@/hooks/use-tag-tree";
 import { useTranslation } from "@/hooks/use-translation";
 import { bulkTagPatches, nextTagCheckState, tagCheckStates, type TagCheckState } from "@/lib/bulk-tags";
-import { tagNameError } from "@/lib/tag-name";
+import { normalizeTagName } from "@/lib/tag-name";
+import { displayTagPath, resolveTagPath, searchTagPaths, type TagTree } from "@/lib/tag-tree";
 import type { Bookmark } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
@@ -23,11 +25,15 @@ function ariaChecked(state: TagCheckState): boolean | "mixed" {
 interface TagCheckRowProps {
   state: TagCheckState;
   label: string;
+  depth?: number;
 }
 
-function TagCheckRow({ state, label }: TagCheckRowProps) {
+function TagCheckRow({ state, label, depth = 0 }: TagCheckRowProps) {
   return (
-    <>
+    <div
+      className="flex items-center gap-2 min-w-0 flex-1"
+      style={depth > 0 ? { paddingLeft: `${depth * 12}px` } : undefined}
+    >
       <span
         className={cn(
           "flex size-4 shrink-0 items-center justify-center rounded-sm border",
@@ -38,8 +44,30 @@ function TagCheckRow({ state, label }: TagCheckRowProps) {
         {state === "indeterminate" && <Minus className="size-3" />}
       </span>
       <span className="truncate">{label}</span>
-    </>
+    </div>
   );
+}
+
+function flattenTreePreOrder(tree: TagTree): Array<{ id: string; name: string; depth: number }> {
+  const result: Array<{ id: string; name: string; depth: number }> = [];
+  const traverse = (parentId: string | undefined, depth: number) => {
+    const children = tree.childrenByParent.get(parentId) ?? [];
+    for (const childId of children) {
+      const tag = tree.tagsById.get(childId);
+      if (tag) {
+        result.push({ id: tag.id, name: tag.name, depth });
+        traverse(tag.id, depth + 1);
+      }
+    }
+  };
+  traverse(undefined, 0);
+  return result;
+}
+
+interface BulkTagItem {
+  id: string;
+  label: string;
+  depth?: number;
 }
 
 /**
@@ -49,8 +77,9 @@ function TagCheckRow({ state, label }: TagCheckRowProps) {
  */
 export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
   const { t } = useTranslation();
+  const tree = useTagTree();
   const tags = useWorkspaceStore((s) => s.tags);
-  const createTag = useWorkspaceStore((s) => s.createTag);
+  const createTagPath = useWorkspaceStore((s) => s.createTagPath);
   const updateBookmarks = useBookmarksStore((s) => s.updateBookmarks);
   const [open, setOpen] = React.useState(false);
   const [pending, setPending] = React.useState(false);
@@ -61,8 +90,22 @@ export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
   const [changes, setChanges] = React.useState<ReadonlyMap<string, TagCheckState>>(new Map());
 
   const initial = React.useMemo(() => tagCheckStates(bookmarks, tags.map((tag) => tag.id)), [bookmarks, tags]);
-  const items = React.useMemo(() => tags.map((tag) => ({ id: tag.id, label: tag.name })), [tags]);
-  const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);
+  const items = React.useMemo<readonly BulkTagItem[]>(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return flattenTreePreOrder(tree).map((row) => ({
+        id: row.id,
+        label: row.name,
+        depth: row.depth,
+      }));
+    }
+    return searchTagPaths(tree, trimmed).map((tag) => ({
+      id: tag.id,
+      label: displayTagPath(tree, tag.id) || tag.name,
+      depth: 0,
+    }));
+  }, [query, tree]);
+
   const stateOf = (tagId: string): TagCheckState => changes.get(tagId) ?? initial.get(tagId) ?? "unchecked";
 
   const handleOpenChange = (next: boolean) => {
@@ -79,27 +122,78 @@ export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
     setChanges((current) => new Map(current).set(item.id, nextTagCheckState(current.get(item.id) ?? initial.get(item.id) ?? "unchecked")));
   };
 
-  const create = {
-    canCreate: (name: string) => !pending && tagNameError(name, tagNames) === null,
-    onCreate: async (name: string) => {
-      if (pendingRef.current) { return; }
+  const hasExactMatch = React.useCallback(
+    (q: string) => {
+      const trimmed = q.trim();
+      if (!trimmed) {
+        return true;
+      }
+      if (!trimmed.includes("/")) {
+        return tags.some((tag) => normalizeTagName(tag.name) === normalizeTagName(trimmed));
+      }
+      if (tags.some((tag) => normalizeTagName(tag.name) === normalizeTagName(trimmed))) {
+        return true;
+      }
+      const resolved = resolveTagPath(tree, trimmed, undefined, "color", () => "id");
+      return resolved.ok && resolved.created.length === 0;
+    },
+    [tags, tree],
+  );
+
+  const create = React.useMemo(() => ({
+    canCreate: (input: string) => {
+      if (pending) {
+        return false;
+      }
+      const trimmed = input.trim();
+      if (!trimmed) {
+        return false;
+      }
+      const resolved = resolveTagPath(tree, trimmed, undefined, "color", () => "id");
+      return resolved.ok;
+    },
+    onCreate: async (input: string) => {
+      if (pendingRef.current) {
+        return;
+      }
       const generation = requestGeneration.current;
       pendingRef.current = true;
-      setPending(true); setError(null);
+      setPending(true);
+      setError(null);
       try {
-        const result = await createTag(name, TAG_COLORS[tags.length % TAG_COLORS.length]);
-        if (generation !== requestGeneration.current) { return; }
-        if (!result.ok) {
-          setError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : result.error === "quota" ? "tagAction_errorQuota" : "tagAction_errorInvalid"));
+        const rootColor = TAG_COLORS[tags.length % TAG_COLORS.length];
+        const result = await createTagPath(input.trim(), rootColor);
+        if (generation !== requestGeneration.current) {
           return;
         }
-        if (!result.tagId) { return; }
+        if (!result.ok) {
+          setError(
+            t(
+              result.error === "storage"
+                ? "tagAction_errorStorage"
+                : result.error === "stale"
+                  ? "tagAction_errorStale"
+                  : result.error === "quota"
+                    ? "tagAction_errorQuota"
+                    : result.error === "depth"
+                      ? "tagAction_errorDepth"
+                      : "tagAction_errorInvalid",
+            ),
+          );
+          return;
+        }
+        if (!result.tagId) {
+          return;
+        }
         const tagId = result.tagId;
         setChanges((current) => new Map(current).set(tagId, "checked"));
         setQuery("");
-      } finally { pendingRef.current = false; setPending(false); }
+      } finally {
+        pendingRef.current = false;
+        setPending(false);
+      }
     },
-  };
+  }), [pending, tree, tags.length, createTagPath, t]);
 
   const handleApply = () => {
     updateBookmarks(bulkTagPatches(bookmarks, changes));
@@ -121,8 +215,10 @@ export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
           query={query}
           onQueryChange={setQuery}
           onActivate={handleToggle}
+          matchesQuery={() => true}
+          hasExactMatch={hasExactMatch}
           create={create}
-          renderItem={(item) => <TagCheckRow state={stateOf(item.id)} label={item.label} />}
+          renderItem={(item) => <TagCheckRow state={stateOf(item.id)} label={item.label} depth={item.depth} />}
           itemAria={(item) => ({ "aria-checked": ariaChecked(stateOf(item.id)) })}
           placeholder={t("bulkTags_filterPlaceholder")}
           emptyText={t("bulkTags_empty")}

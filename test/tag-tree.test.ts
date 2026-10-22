@@ -1,6 +1,6 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { describe, expect, test } from "bun:test";
-import { buildTagTree, displayTagPath, expandTagSelection, resolveTagPath, tagAncestors, tagDescendants, tagPath } from "@/lib/tag-tree";
+import { buildTagTree, displayTagPath, expandTagSelection, resolveTagPath, searchTagPaths, tagAncestors, tagDescendants, tagPath } from "@/lib/tag-tree";
 import { makeTag, makeTagChain } from "./helpers/library-fixtures";
 
 describe("tag graph", () => {
@@ -99,7 +99,45 @@ describe("resolveTagPath", () => {
     const tree = buildTagTree(makeTagChain(["1", "2", "3", "4"]), "en");
     expect(resolveTagPath(tree, "5/6", "4", "blue", () => "new")).toEqual({ ok: false, error: "depth" });
     const allowed = resolveTagPath(tree, "5", "4", "blue", () => "5");
-    expect(allowed.ok).toBe(true);
+    expect(resolveTagPath(tree, "5", "4", "blue", () => "5")).toHaveProperty("ok", true);
     expect(resolveTagPath(tree, "X", "missing", "blue", () => "new")).toEqual({ ok: false, error: "invalid_parent" });
+  });
+});
+
+describe("searchTagPaths", () => {
+  test("ranks exact leaves before path-only matches and distinguishes identical leaves by full path", () => {
+    const tags = [
+      makeTag("go_root", "Go"),
+      makeTag("tools", "Tools", { parentId: "go_root" }),
+      makeTag("db", "Database"),
+      makeTag("go_db", "Go", { parentId: "db" }),
+      makeTag("dev", "编程"),
+      makeTag("backend", "后端", { parentId: "dev" }),
+      makeTag("go_backend", "Go", { parentId: "backend" }),
+    ];
+    const tree = buildTagTree(tags, "en");
+    const results = searchTagPaths(tree, "Go");
+    expect(results.map(t => t.id)).toEqual(["go_db", "go_root", "go_backend", "tools"]);
+  });
+
+  test("matches slash-separated input against corresponding path segments and resolves existing levels", () => {
+    const tags = [
+      makeTag("dev", "编程"),
+      makeTag("backend", "后端", { parentId: "dev" }),
+      makeTag("go", "Go", { parentId: "backend" }),
+    ];
+    const tree = buildTagTree(tags, "zh-CN");
+    const results = searchTagPaths(tree, "编程/后端/Go");
+    expect(results.map(t => t.id)).toEqual(["go"]);
+  });
+
+  test("preserves searchability of legacy tags with literal slashes", () => {
+    const tags = [
+      makeTag("legacy", "编程/工具"),
+      makeTag("other", "其他"),
+    ];
+    const tree = buildTagTree(tags, "zh-CN");
+    expect(searchTagPaths(tree, "编程/工具").map(t => t.id)).toEqual(["legacy"]);
+    expect(searchTagPaths(tree, "工具").map(t => t.id)).toEqual(["legacy"]);
   });
 });

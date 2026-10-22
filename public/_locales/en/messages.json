@@ -1883,6 +1883,9 @@
   "tagAction_targetDuplicate": {
     "message": "A sibling tag with this name already exists."
   },
+  "tagAction_errorDepth": {
+    "message": "Nesting depth cannot exceed 5 levels."
+  },
   "collectionMenu_edit": {
     "message": "Edit…"
   },

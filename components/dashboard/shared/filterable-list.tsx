@@ -26,6 +26,8 @@ interface FilterableListProps<T extends FilterableListItem> {
   renderItem?: (item: T) => React.ReactNode;
   /** Extra ARIA state for a row, e.g. aria-checked in a check list. */
   itemAria?: (item: T) => React.AriaAttributes;
+  matchesQuery?: (item: T, query: string) => boolean;
+  hasExactMatch?: (query: string) => boolean;
   placeholder: string;
   emptyText: string;
   /** Hides the list, e.g. while a picker's field is not focused. */
@@ -55,6 +57,8 @@ export function FilterableList<T extends FilterableListItem>({
   create,
   renderItem,
   itemAria,
+  matchesQuery,
+  hasExactMatch,
   placeholder,
   emptyText,
   listHidden = false,
@@ -75,14 +79,18 @@ export function FilterableList<T extends FilterableListItem>({
   const rows = React.useMemo<Row<T>[]>(() => {
     const name = query.trim();
     const needle = name.toLowerCase();
-    const matches = needle ? items.filter((item) => item.label.toLowerCase().includes(needle)) : items;
+    const matches = needle
+      ? items.filter((item) => (matchesQuery ? matchesQuery(item, query) : item.label.toLowerCase().includes(needle)))
+      : items;
     const result = matches.map<Row<T>>((item) => ({ kind: "item", item }));
-    const exists = items.some((item) => item.label.trim().toLowerCase() === needle);
+    const exists = hasExactMatch
+      ? hasExactMatch(query)
+      : items.some((item) => item.label.trim().toLowerCase() === needle);
     if (create && name && !exists && create.canCreate(name)) {
       result.push({ kind: "create", name });
     }
     return result;
-  }, [items, query, create]);
+  }, [items, query, create, matchesQuery, hasExactMatch]);
 
   React.useEffect(() => {
     setActiveIndex(0);

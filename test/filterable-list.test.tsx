@@ -125,6 +125,34 @@ describe("FilterableList", () => {
     click(getByText("Beta"));
     expect(handleActivate).toHaveBeenCalledWith(ITEMS[1]);
   });
+
+  test("supports custom matchesQuery and hasExactMatch to control creation eligibility for paths", () => {
+    view?.unmount();
+    const pathItems = [
+      { id: "1", label: "Dev › Backend › Go" },
+      { id: "2", label: "Design" },
+    ];
+    const HostWithPaths = () => {
+      const [query, setQuery] = useState("");
+      return createElement(FilterableList<{ id: string; label: string }>, {
+        items: pathItems,
+        query,
+        onQueryChange: setQuery,
+        onActivate: handleActivate,
+        matchesQuery: (item, q) => item.label.toLowerCase().includes(q.toLowerCase()),
+        hasExactMatch: (q) => q.trim() === "Dev/Backend/Go" || q.trim() === "Go",
+        create: { canCreate: () => true, onCreate: handleCreate },
+        placeholder: "filter",
+        emptyText: "nothing",
+      });
+    };
+    view = render(app, createElement(HostWithPaths));
+    typeInto(input(), "Dev/Backend/Go");
+    expect(Boolean(queryByText("filterableList_create[Dev/Backend/Go]"))).toBe(false);
+
+    typeInto(input(), "Dev/Backend/Rust");
+    expect(Boolean(queryByText("filterableList_create[Dev/Backend/Rust]"))).toBe(true);
+  });
 });
 
 

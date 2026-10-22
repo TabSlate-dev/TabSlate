@@ -39,4 +39,9 @@ describe("bulk tags", () => {
   test("bookmarks whose tags would not change get no patch", () => {
     expect(bulkTagPatches([a, b], new Map<string, TagCheckState>([["frontend", "checked"]]))).toEqual([]);
   });
+
+  test("bulk_parent_does_not_assign_descendants", () => {
+    const patches = bulkTagPatches([makeBookmark("b", { tags: [] })], new Map([["parent", "checked"]]));
+    expect(patches).toEqual([{ id: "b", patch: { tags: ["parent"] } }]);
+  });
 });

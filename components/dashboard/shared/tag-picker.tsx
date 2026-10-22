@@ -1,8 +1,11 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { FilterableList } from "@/components/dashboard/shared/filterable-list";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useTagTree } from "@/hooks/use-tag-tree";
 import { useTranslation } from "@/hooks/use-translation";
-import { tagNameError } from "@/lib/tag-name";
+import { normalizeTagName } from "@/lib/tag-name";
+import { displayTagPath, resolveTagPath, searchTagPaths } from "@/lib/tag-tree";
 import type { Tag } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { TAG_COLORS, useWorkspaceStore } from "@/store/workspace-store";
@@ -27,8 +30,9 @@ function solidColor(color: string): string {
  */
 export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProps) {
   const { t } = useTranslation();
+  const tree = useTagTree();
   const tags = useWorkspaceStore((s) => s.tags);
-  const createTag = useWorkspaceStore((s) => s.createTag);
+  const createTagPath = useWorkspaceStore((s) => s.createTagPath);
   const [pending, setPending] = React.useState(false);
   const pendingRef = React.useRef(false);
   const selectionRef = React.useRef({ value, onChange });
@@ -43,30 +47,91 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
     () => value.map((id) => tagsById.get(id)).filter((tag): tag is Tag => tag !== undefined),
     [value, tagsById],
   );
-  const items = React.useMemo(
-    () => tags.filter((tag) => !value.includes(tag.id)).map((tag) => ({ id: tag.id, label: tag.name, color: tag.color })),
-    [tags, value],
+
+  const items = React.useMemo(() => {
+    const trimmed = query.trim();
+    const sourceTags = trimmed
+      ? searchTagPaths(tree, trimmed)
+      : tags;
+    return sourceTags
+      .filter((tag) => !value.includes(tag.id))
+      .map((tag) => ({
+        id: tag.id,
+        label: displayTagPath(tree, tag.id) || tag.name,
+        color: tag.color,
+      }));
+  }, [query, tree, tags, value]);
+
+  const hasExactMatch = React.useCallback(
+    (q: string) => {
+      const trimmed = q.trim();
+      if (!trimmed) {
+        return true;
+      }
+      if (!trimmed.includes("/")) {
+        return tags.some((tag) => normalizeTagName(tag.name) === normalizeTagName(trimmed));
+      }
+      if (tags.some((tag) => normalizeTagName(tag.name) === normalizeTagName(trimmed))) {
+        return true;
+      }
+      const resolved = resolveTagPath(tree, trimmed, undefined, "color", () => "id");
+      return resolved.ok && resolved.created.length === 0;
+    },
+    [tags, tree],
   );
-  const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);
+
   const create = React.useMemo(() => ({
-    canCreate: (name: string) => !pending && tagNameError(name, tagNames) === null,
-    onCreate: async (name: string) => {
-      if (pendingRef.current) { return; }
+    canCreate: (input: string) => {
+      if (pending) {
+        return false;
+      }
+      const trimmed = input.trim();
+      if (!trimmed) {
+        return false;
+      }
+      const resolved = resolveTagPath(tree, trimmed, undefined, "color", () => "id");
+      return resolved.ok;
+    },
+    onCreate: async (input: string) => {
+      if (pendingRef.current) {
+        return;
+      }
       pendingRef.current = true;
-      setPending(true); setError(null);
+      setPending(true);
+      setError(null);
       try {
-        const result = await createTag(name, TAG_COLORS[tags.length % TAG_COLORS.length]);
+        const rootColor = TAG_COLORS[tags.length % TAG_COLORS.length];
+        const result = await createTagPath(input.trim(), rootColor);
         if (!result.ok) {
-          setError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : result.error === "quota" ? "tagAction_errorQuota" : "tagAction_errorInvalid"));
+          setError(
+            t(
+              result.error === "storage"
+                ? "tagAction_errorStorage"
+                : result.error === "stale"
+                  ? "tagAction_errorStale"
+                  : result.error === "quota"
+                    ? "tagAction_errorQuota"
+                    : result.error === "depth"
+                      ? "tagAction_errorDepth"
+                      : "tagAction_errorInvalid",
+            ),
+          );
           return;
         }
-        if (!result.tagId) { return; }
+        if (!result.tagId) {
+          return;
+        }
         const current = selectionRef.current;
-        if (!current.value.includes(result.tagId)) { current.onChange([...current.value, result.tagId]); }
+        if (!current.value.includes(result.tagId)) {
+          current.onChange([...current.value, result.tagId]);
+        }
         setQuery("");
-      } finally { pendingRef.current = false; setPending(false); }
+      } finally {
+        pendingRef.current = false;
+        setPending(false);
+      }
     },
-  }), [tagNames, createTag, tags.length, onChange, value, pending, t]);
+  }), [pending, tree, tags.length, createTagPath, t]);
 
   const handleActivate = (item: { id: string }) => {
     onChange([...value, item.id]);
@@ -99,22 +164,29 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
     <div className="flex flex-col gap-2">
       {selectedTags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {selectedTags.map((tag) => (
-            <span
-              key={tag.id}
-              className={cn("inline-flex items-center gap-1 rounded-full py-0.5 pl-2.5 pr-1 text-xs font-medium", tag.color)}
-            >
-              {tag.name}
-              <button
-                type="button"
-                aria-label={t("tagPicker_remove", [tag.name])}
-                onClick={() => onChange(value.filter((id) => id !== tag.id))}
-                className="rounded-full p-0.5 hover:bg-foreground/10"
-              >
-                <X className="size-3" />
-              </button>
-            </span>
-          ))}
+          {selectedTags.map((tag) => {
+            const path = displayTagPath(tree, tag.id) || tag.name;
+            return (
+              <Tooltip key={tag.id}>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn("inline-flex items-center gap-1 rounded-full py-0.5 pl-2.5 pr-1 text-xs font-medium", tag.color)}
+                  >
+                    {tag.name}
+                    <button
+                      type="button"
+                      aria-label={t("tagPicker_remove", [tag.name])}
+                      onClick={() => onChange(value.filter((id) => id !== tag.id))}
+                      className="rounded-full p-0.5 hover:bg-foreground/10"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="top">{path}</TooltipContent>
+              </Tooltip>
+            );
+          })}
         </div>
       )}
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
@@ -123,6 +195,8 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
         query={query}
         onQueryChange={handleQueryChange}
         onActivate={handleActivate}
+        matchesQuery={() => true}
+        hasExactMatch={hasExactMatch}
         create={create}
         renderItem={(item) => (
           <>

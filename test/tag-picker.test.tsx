@@ -2,7 +2,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import { act, createElement } from "react";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
-import { click, getBySelector, installAppModules, pressKey, render, setupDom, teardownDom, typeInto, type AppModules, type RenderResult } from "./helpers/dom-environment";
+import { click, getBySelector, getByText, installAppModules, pressKey, queryByText, render, setupDom, teardownDom, typeInto, type AppModules, type RenderResult } from "./helpers/dom-environment";
 import type { TagActionResult } from "@/lib/tag-mutations";
 import { makeTag } from "./helpers/library-fixtures";
 
@@ -89,16 +89,93 @@ describe("TagPicker", () => {
   });
 
   test("a_create_finishing_after_selection_changes_uses_the_latest_selection", async () => {
-    const original = app.useWorkspaceStore.getState().createTag;
+    const original = app.useWorkspaceStore.getState().createTagPath;
     let resolve: ((result: TagActionResult) => void) | undefined;
     const result = new Promise<TagActionResult>(done => { resolve = done; });
-    act(() => { app.useWorkspaceStore.setState({ createTag: () => result }); });
+    act(() => { app.useWorkspaceStore.setState({ createTagPath: () => result }); });
     try {
       act(() => input().focus()); typeInto(input(), "Reading"); pressKey(input(), "Enter");
       view?.rerender(createElement(TagPicker, { value: [], onChange: handleChange }));
       await act(async () => { resolve?.({ ok: true, tagId: "reading" }); });
       expect(handleChange).toHaveBeenCalledWith(["reading"]);
-    } finally { act(() => { app.useWorkspaceStore.setState({ createTag: original }); }); }
+    } finally { act(() => { app.useWorkspaceStore.setState({ createTagPath: original }); }); }
   });
 
+  test("selected chips show leaf names plus path tooltips", () => {
+    const tags = [
+      makeTag("backend", "Backend"),
+      makeTag("go", "Go", { parentId: "backend" }),
+    ];
+    app.useWorkspaceStore.setState({ tags });
+    db.seed(tags);
+    view?.rerender(createElement(TagPicker, { value: ["go"], onChange: handleChange }));
+    const chip = document.querySelector('[data-state]') ?? getByText("Go").closest("span");
+    expect(chip?.textContent?.includes("Go")).toBe(true);
+    expect(chip?.textContent?.includes("Backend › Go")).toBe(false);
+  });
+
+  test("query Go ranks exact leaves before path-only matches and distinguishes by full path", () => {
+    const tags = [
+      makeTag("go_root", "Go"),
+      makeTag("tools", "Tools", { parentId: "go_root" }),
+      makeTag("db", "Database"),
+      makeTag("go_db", "Go", { parentId: "db" }),
+      makeTag("dev", "编程"),
+      makeTag("backend", "后端", { parentId: "dev" }),
+      makeTag("go_backend", "Go", { parentId: "backend" }),
+    ];
+    app.useWorkspaceStore.setState({ tags });
+    db.seed(tags);
+    view?.rerender(createElement(TagPicker, { value: [], onChange: handleChange }));
+    act(() => input().focus());
+    typeInto(input(), "Go");
+    const options = Array.from(document.querySelectorAll('[role="option"]')).map(el => el.textContent?.trim());
+    expect(options).toEqual([
+      "Database › Go",
+      "Go",
+      "编程 › 后端 › Go",
+      "Go › Tools",
+    ]);
+  });
+
+  test("an exact leaf match prevents duplicate create offer and genuinely missing path offers creation", async () => {
+    const tags = [
+      makeTag("dev", "编程"),
+      makeTag("backend", "后端", { parentId: "dev" }),
+      makeTag("go", "Go", { parentId: "backend" }),
+    ];
+    app.useWorkspaceStore.setState({ tags });
+    db.seed(tags);
+    view?.rerender(createElement(TagPicker, { value: [], onChange: handleChange }));
+    act(() => input().focus());
+
+    typeInto(input(), "Go");
+    expect(Boolean(queryByText("filterableList_create[Go]"))).toBe(false);
+
+    typeInto(input(), "编程/后端/Go");
+    expect(Boolean(queryByText("filterableList_create[编程/后端/Go]"))).toBe(false);
+
+    typeInto(input(), "编程/后端/Rust");
+    expect(Boolean(queryByText("filterableList_create[编程/后端/Rust]"))).toBe(true);
+
+    await act(async () => { pressKey(input(), "Enter"); });
+    const rustTag = app.useWorkspaceStore.getState().tags.find(t => t.name === "Rust");
+    expect(rustTag).toBeDefined();
+    expect(handleChange).toHaveBeenCalledWith([rustTag?.id]);
+  });
+
+  test("failed multi-level quota creation changes no tag selection and keeps the query", async () => {
+    usePlanStore.setState({
+      limits: { max_bookmarks: 100, max_collections: 100, max_tags: 2, max_workspaces: 10, max_saved_groups: 100, trash_grace_days: 30 },
+      usage: { bookmarks: 0, collections: 0, tags: 2, workspaces: 0, saved_groups: 0 },
+      fetchedAt: Date.now(),
+    });
+    act(() => input().focus());
+    typeInto(input(), "Missing/Child");
+    await act(async () => { pressKey(input(), "Enter"); });
+    expect(app.useWorkspaceStore.getState().tags).toHaveLength(2);
+    expect(handleChange).not.toHaveBeenCalled();
+    expect(usePlanStore.getState().quotaAlert).not.toBeNull();
+    expect(input().value).toBe("Missing/Child");
+  });
 });

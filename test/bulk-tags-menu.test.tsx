@@ -134,10 +134,10 @@ describe("bulk Tags menu", () => {
     expect(getByText("bulkTags_apply").closest("button")?.disabled).toBe(true);
   });
   test("closing_during_tag_creation_discards_its_late_selection_change", async () => {
-    const original = app.useWorkspaceStore.getState().createTag;
+    const original = app.useWorkspaceStore.getState().createTagPath;
     let resolve: ((result: TagActionResult) => void) | undefined;
     const result = new Promise<TagActionResult>(done => { resolve = done; });
-    act(() => { app.useWorkspaceStore.setState({ createTag: () => result }); });
+    act(() => { app.useWorkspaceStore.setState({ createTagPath: () => result }); });
     try {
       typeInto(getBySelector<HTMLInputElement>('[role="combobox"]'), "Reading");
       pressKey(getBySelector('[role="combobox"]'), "Enter");
@@ -150,7 +150,76 @@ describe("bulk Tags menu", () => {
       await act(async () => { click(getByText("bulkActions_tags")); });
       expect(row("Reading")?.getAttribute("aria-checked")).toBe("false");
       expect(getByText("bulkTags_apply").closest("button")?.disabled).toBe(true);
-    } finally { act(() => { app.useWorkspaceStore.setState({ createTag: original }); }); }
+    } finally { act(() => { app.useWorkspaceStore.setState({ createTagPath: original }); }); }
   });
 
+  test("bulk idle rows use an indented pre-order tree and filtered rows retain path context", async () => {
+    click(getByText("settings_cancel"));
+    const treeTags = [
+      makeTag("backend", "Backend"),
+      makeTag("go", "Go", { parentId: "backend" }),
+      makeTag("design", "Design"),
+    ];
+    app.useWorkspaceStore.setState({ tags: treeTags });
+    db.seed(treeTags);
+    await act(async () => { click(getByText("bulkActions_tags")); });
+
+    // Idle rows: pre-order indented
+    const idleOptions = Array.from(document.querySelectorAll('[role="option"]')).map(el => el.textContent?.trim());
+    expect(idleOptions).toEqual(["Backend", "Go", "Design"]);
+    const goRow = row("Go");
+    const goIndentContainer = goRow?.querySelector('[style*="padding-left"]') ?? goRow;
+    expect(goIndentContainer?.getAttribute("style")?.includes("padding-left")).toBe(true);
+
+    // Filtered rows: retain path context
+    typeInto(getBySelector<HTMLInputElement>('[role="combobox"]'), "Go");
+    const filteredOptions = Array.from(document.querySelectorAll('[role="option"]')).map(el => el.textContent?.trim());
+    expect(filteredOptions).toEqual(["Backend › Go"]);
+  });
+
+  test("checking a parent in the bulk menu adds only its ID", async () => {
+    click(getByText("settings_cancel"));
+    const treeTags = [
+      makeTag("backend", "Backend"),
+      makeTag("go", "Go", { parentId: "backend" }),
+    ];
+    app.useWorkspaceStore.setState({ tags: treeTags });
+    db.seed(treeTags);
+    const emptyBookmarks = [
+      makeBookmark("a", { collectionId: "reading", tags: [] }),
+      makeBookmark("b", { collectionId: "reading", tags: [] }),
+    ];
+    app.useBookmarksStore.setState({
+      bookmarks: bookmarkMap(emptyBookmarks),
+      countsByCollection: countsByCollection(emptyBookmarks),
+    });
+    useSelectionStore.getState().setMany(["a", "b"], true);
+    await act(async () => { click(getByText("bulkActions_tags")); });
+
+    click(getByText("Backend"));
+    click(getByText("bulkTags_apply"));
+
+    expect(tagsOf("a")).toEqual(["backend"]);
+    expect(tagsOf("b")).toEqual(["backend"]);
+  });
+
+  test("creates nested paths from top level and checks only the returned leaf", async () => {
+    click(getByText("settings_cancel"));
+    const treeTags = [
+      makeTag("backend", "Backend"),
+    ];
+    app.useWorkspaceStore.setState({ tags: treeTags });
+    db.seed(treeTags);
+    await act(async () => { click(getByText("bulkActions_tags")); });
+
+    typeInto(getBySelector<HTMLInputElement>('[role="combobox"]'), "Backend/Rust");
+    await act(async () => { pressKey(getBySelector('[role="combobox"]'), "Enter"); });
+
+    const rustTag = app.useWorkspaceStore.getState().tags.find(t => t.name === "Rust");
+    expect(rustTag).toBeDefined();
+
+    click(getByText("bulkTags_apply"));
+    expect(tagsOf("a")).toContain(rustTag?.id);
+    expect(tagsOf("b")).toContain(rustTag?.id);
+  });
 });
