@@ -1,6 +1,8 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { describe, expect, test } from "bun:test";
-import type { SyncPushPayload } from "../lib/api";
+import type { SyncEntity, SyncPushPayload } from "../lib/api";
+import { matchesPersistedSyncEntity } from "../lib/sync-confirmation";
+import type { Bookmark } from "../lib/types";
 import {
   buildWorkspaceLifecycleAggregatePayload,
   reconcileWorkspaceLifecycleIntents,
@@ -28,6 +30,59 @@ async function flush(): Promise<void> {
 }
 
 describe("Workspace lifecycle coordinator", () => {
+  test("aggregate bookmarks carry notes and the edit time, so their push confirms the stored records", () => {
+    const base: Bookmark = {
+      id: "",
+      title: "Noted",
+      url: "https://example.com",
+      description: "",
+      favicon: "",
+      collectionId: "collection-notes",
+      tags: [],
+      createdAt: "2026-08-25T00:00:00.000Z",
+      isFavorite: false,
+      seq: 0,
+    };
+    const noted: Bookmark = { ...base, id: "bookmark-noted", notes: "Read first", updatedAt: 4_000 };
+    const cleared: Bookmark = { ...base, id: "bookmark-cleared", notes: "", updatedAt: 5_000 };
+    const legacy: Bookmark = { ...base, id: "bookmark-legacy" };
+    const aggregate = buildWorkspaceLifecycleAggregatePayload("workspace-notes", {
+      workspace: { id: "workspace-notes", name: "Notes", color: "blue", position: 0, seq: 0, deletedAt: 10 },
+      collections: [{
+        id: "collection-notes",
+        workspaceId: "workspace-notes",
+        name: "Notes",
+        icon: "folder",
+        position: 0,
+        seq: 0,
+      }],
+      activeBookmarks: [noted, legacy],
+      archivedBookmarks: [cleared],
+      trashedBookmarks: [],
+      tags: [],
+      groups: [],
+      groupTabs: [],
+      deferred: emptyPayload(),
+    });
+    const pushed = new Map(aggregate.bookmarksPayload.entities.bookmarks.map((entity) => [entity.id, entity]));
+    const pushedEntity = (id: string): SyncEntity => {
+      const entity = pushed.get(id);
+      if (!entity) {
+        throw new Error(`${id} was not pushed`);
+      }
+      return entity;
+    };
+
+    expect(pushedEntity("bookmark-noted").notes).toBe("Read first");
+    expect(pushedEntity("bookmark-noted").edited_at).toBe(4_000);
+    expect(pushedEntity("bookmark-cleared").notes).toBe("");
+    expect(JSON.parse(JSON.stringify(pushedEntity("bookmark-legacy")))).not.toHaveProperty("notes");
+    expect(pushedEntity("bookmark-legacy").edited_at).toBe(Date.parse("2026-08-25T00:00:00.000Z"));
+    expect(matchesPersistedSyncEntity("bookmarks", noted, pushedEntity("bookmark-noted"), [], [])).toBe(true);
+    expect(matchesPersistedSyncEntity("archived-bookmarks", cleared, pushedEntity("bookmark-cleared"), [], [])).toBe(true);
+    expect(matchesPersistedSyncEntity("bookmarks", legacy, pushedEntity("bookmark-legacy"), [], [])).toBe(true);
+  });
+
   test("keeps every deferred tag and refreshes referenced unsynced tags in the child phase", () => {
     const deferred = emptyPayload();
     deferred.entities.tags.push(

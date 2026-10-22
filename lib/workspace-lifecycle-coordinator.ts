@@ -13,6 +13,7 @@ import {
   confirmSyncPayload,
 } from "@/lib/sync-confirmation";
 import type { SyncResolutionContext } from "@/lib/sync-engine";
+import { bookmarkEditedAt } from "@/lib/bookmark-utils";
 import {
   createEmptySyncPushPayload,
   isSyncPushPayloadEmpty,
@@ -370,6 +371,8 @@ function toBookmarkEntity(
     url: bookmark.url,
     favicon_url: bookmark.favicon,
     description: bookmark.description,
+    // Same rule as the bookmarks store's push: a record without notes omits them.
+    notes: bookmark.notes,
     is_favorite: bookmark.isFavorite,
     is_archived: bucket === "archived",
     is_trashed: isTrashed,
@@ -378,6 +381,7 @@ function toBookmarkEntity(
     seq: bookmark.seq,
     deleted_at: isTrashed === 2 ? (bookmark.deletedAt ?? Date.now()) : null,
     updated_at: Date.now(),
+    edited_at: bookmarkEditedAt(bookmark.updatedAt, bookmark.createdAt),
   };
 }
 
