@@ -1,3 +1,4 @@
+import type { BookmarkViewMode } from "@/lib/view-preferences";
 import React, { createContext, useContext, useState } from "react";
 import {
   DndContext,
@@ -62,7 +63,8 @@ export type BookmarkDragData = {
   title: string;
   url: string;
   favicon: string;
-  variant: "grid" | "list";
+  imageUrl: string;
+  variant: BookmarkViewMode;
 };
 
 export type DragData = TabDragData | TabGroupDragData | BookmarkDragData;
@@ -417,6 +419,7 @@ function DragPreview({ data }: { data: DragData }) {
       title: data.title,
       url: data.url,
       favicon: data.favicon,
+      imageUrl: data.imageUrl,
       description: "",
       collectionId: "",
       tags: [] as string[],

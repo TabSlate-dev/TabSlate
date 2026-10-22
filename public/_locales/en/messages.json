@@ -523,6 +523,15 @@
   "header_addBookmark": {
     "message": "Add Bookmark"
   },
+  "header_viewModes": {
+    "message": "View"
+  },
+  "header_viewSmallCards": {
+    "message": "Small cards"
+  },
+  "header_viewLargeCards": {
+    "message": "Large cards"
+  },
   "search_placeholderCollection": {
     "message": "Search bookmarks in this collection..."
   },

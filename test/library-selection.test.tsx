@@ -53,7 +53,7 @@ beforeEach(() => {
     filterType: "all",
     searchQuery: "",
     sortBy: "alpha-az",
-    viewMode: "list",
+    viewMode: "grid",
     highlightedBookmarkId: null,
   });
   act(() => {

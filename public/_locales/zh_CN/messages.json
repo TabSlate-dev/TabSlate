@@ -523,6 +523,15 @@
   "header_addBookmark": {
     "message": "添加书签"
   },
+  "header_viewModes": {
+    "message": "视图"
+  },
+  "header_viewSmallCards": {
+    "message": "小卡片"
+  },
+  "header_viewLargeCards": {
+    "message": "大卡片"
+  },
   "search_placeholderCollection": {
     "message": "搜索此收藏集中的书签…"
   },

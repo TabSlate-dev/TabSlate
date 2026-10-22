@@ -1,7 +1,7 @@
 import { idbGet, idbPut } from "@/lib/idb";
 import { getPreferences, updatePreferences } from "@/lib/api";
 
-export type BookmarkViewMode = "grid" | "list";
+export type BookmarkViewMode = "grid" | "gallery";
 export type BookmarkSortBy =
   | "date-newest"
   | "date-oldest"
@@ -11,7 +11,7 @@ export type BookmarkSortBy =
   | "alpha-za"
   | "site-az";
 
-const VIEW_MODES: readonly BookmarkViewMode[] = ["grid", "list"];
+const VIEW_MODES: readonly BookmarkViewMode[] = ["grid", "gallery"];
 const SORT_OPTIONS: readonly BookmarkSortBy[] = [
   "date-newest",
   "date-oldest",

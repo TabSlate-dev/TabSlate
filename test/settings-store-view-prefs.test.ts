@@ -110,50 +110,50 @@ beforeEach(async () => {
 
 describe("view preference sync", () => {
   test("hydrate applies the locally stored preferences", async () => {
-    kv.set("bookmark-view-prefs", { viewMode: "list", sortBy: "alpha-az", updatedAt: 5, dirty: false });
+    kv.set("bookmark-view-prefs", { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 5, dirty: false });
 
     await useSettingsStore.getState().hydrate();
 
-    expect(useBookmarksStore.getState().viewMode).toBe("list");
+    expect(useBookmarksStore.getState().viewMode).toBe("gallery");
     expect(useBookmarksStore.getState().sortBy).toBe("alpha-az");
   });
 
   test("a user change is stored locally as not yet pushed", async () => {
     await useSettingsStore.getState().hydrate();
 
-    useBookmarksStore.getState().setViewMode("list");
+    useBookmarksStore.getState().setViewMode("gallery");
     await flush();
 
-    expect(kv.get("bookmark-view-prefs")).toMatchObject({ viewMode: "list", sortBy: "date-newest", dirty: true });
+    expect(kv.get("bookmark-view-prefs")).toMatchObject({ viewMode: "gallery", sortBy: "date-newest", dirty: true });
   });
 
   test("newer server preferences are applied and not pushed back", async () => {
     await useSettingsStore.getState().hydrate();
     kv.set("bookmark-view-prefs", { viewMode: "grid", sortBy: "date-newest", updatedAt: 50, dirty: false });
-    serverPreferences = { bookmarkView: { viewMode: "list", sortBy: "alpha-za", updatedAt: 100 } };
+    serverPreferences = { bookmarkView: { viewMode: "gallery", sortBy: "alpha-za", updatedAt: 100 } };
 
     await useSettingsStore.getState().startPreferenceSync(() => credentials);
 
-    expect(useBookmarksStore.getState().viewMode).toBe("list");
+    expect(useBookmarksStore.getState().viewMode).toBe("gallery");
     expect(useBookmarksStore.getState().sortBy).toBe("alpha-za");
-    expect(kv.get("bookmark-view-prefs")).toEqual({ viewMode: "list", sortBy: "alpha-za", updatedAt: 100, dirty: false });
+    expect(kv.get("bookmark-view-prefs")).toEqual({ viewMode: "gallery", sortBy: "alpha-za", updatedAt: 100, dirty: false });
     expect(updateCalls).toEqual([]);
   });
 
   test("newer local preferences are pushed and keep other server keys", async () => {
-    kv.set("bookmark-view-prefs", { viewMode: "list", sortBy: "alpha-az", updatedAt: 50, dirty: true });
+    kv.set("bookmark-view-prefs", { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 50, dirty: true });
     serverPreferences = { theme: "dark", bookmarkView: { viewMode: "grid", sortBy: "date-newest", updatedAt: 10 } };
 
     await useSettingsStore.getState().startPreferenceSync(() => credentials);
 
     expect(updateCalls).toEqual([
-      { theme: "dark", bookmarkView: { viewMode: "list", sortBy: "alpha-az", updatedAt: 50 } },
+      { theme: "dark", bookmarkView: { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 50 } },
     ]);
     expect(kv.get("bookmark-view-prefs")).toMatchObject({ dirty: false });
   });
 
   test("a failed push keeps the local preferences marked as not pushed", async () => {
-    kv.set("bookmark-view-prefs", { viewMode: "list", sortBy: "alpha-az", updatedAt: 50, dirty: true });
+    kv.set("bookmark-view-prefs", { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 50, dirty: true });
     failPushes = true;
 
     await useSettingsStore.getState().startPreferenceSync(() => credentials);
@@ -173,7 +173,7 @@ describe("view preference sync", () => {
 
   test("a local edit during a delayed pull wins over the older server value", async () => {
     await useSettingsStore.getState().hydrate();
-    serverPreferences = { bookmarkView: { viewMode: "list", sortBy: "alpha-az", updatedAt: 100 } };
+    serverPreferences = { bookmarkView: { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 100 } };
     const pull = deferred();
     getWait = pull.promise;
     const sync = useSettingsStore.getState().startPreferenceSync(() => credentials);
@@ -204,7 +204,7 @@ describe("view preference sync", () => {
     await useSettingsStore.getState().hydrate();
     const getter = () => credentials;
     const pull = deferred();
-    serverPreferences = { bookmarkView: { viewMode: "list", sortBy: "alpha-az", updatedAt: 100 } };
+    serverPreferences = { bookmarkView: { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 100 } };
     getWait = pull.promise;
     const oldSync = useSettingsStore.getState().startPreferenceSync(getter);
     await flush();
@@ -219,7 +219,7 @@ describe("view preference sync", () => {
   });
 
   test("a push completing after stop leaves the local value dirty", async () => {
-    kv.set("bookmark-view-prefs", { viewMode: "list", sortBy: "alpha-az", updatedAt: 50, dirty: true });
+    kv.set("bookmark-view-prefs", { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 50, dirty: true });
     const update = deferred();
     updateWait = update.promise;
     const sync = useSettingsStore.getState().startPreferenceSync(() => credentials);
@@ -232,7 +232,7 @@ describe("view preference sync", () => {
   });
 
   test("a push completion does not clean a different local value with the same timestamp", async () => {
-    kv.set("bookmark-view-prefs", { viewMode: "list", sortBy: "alpha-az", updatedAt: 50, dirty: true });
+    kv.set("bookmark-view-prefs", { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 50, dirty: true });
     const update = deferred();
     updateWait = update.promise;
     const sync = useSettingsStore.getState().startPreferenceSync(() => credentials);
@@ -245,7 +245,7 @@ describe("view preference sync", () => {
   });
 
   test("consent denial keeps changes local and resync retries after grant", async () => {
-    kv.set("bookmark-view-prefs", { viewMode: "list", sortBy: "alpha-az", updatedAt: 50, dirty: true });
+    kv.set("bookmark-view-prefs", { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 50, dirty: true });
     consent = false;
     await useSettingsStore.getState().startPreferenceSync(() => credentials);
     expect(getCalls).toBe(0);
@@ -259,7 +259,7 @@ describe("view preference sync", () => {
 
 
   test("stopping during the push merge read prevents dispatching the update", async () => {
-    kv.set("bookmark-view-prefs", { viewMode: "list", sortBy: "alpha-az", updatedAt: 50, dirty: true });
+    kv.set("bookmark-view-prefs", { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 50, dirty: true });
     const read = deferred();
     getWait = read.promise;
     getWaitCall = 2;
@@ -280,7 +280,7 @@ describe("view preference sync", () => {
     const firstPut = deferred();
     updateWait = firstPut.promise;
     try {
-      useBookmarksStore.getState().setViewMode("list");
+      useBookmarksStore.getState().setViewMode("gallery");
       await new Promise((resolve) => setTimeout(resolve, 1100));
       expect(updateStarts).toBe(1);
       useBookmarksStore.getState().setSortBy("alpha-az");
@@ -293,7 +293,7 @@ describe("view preference sync", () => {
     await flush();
     await flush();
     expect(updateStarts).toBe(2);
-    expect(serverPreferences.bookmarkView).toMatchObject({ viewMode: "list", sortBy: "alpha-az" });
+    expect(serverPreferences.bookmarkView).toMatchObject({ viewMode: "gallery", sortBy: "alpha-az" });
     const prefs = await importFresh<typeof import("@/lib/view-preferences")>("lib/view-preferences.ts");
     expect(prefs.parseViewPrefs(kv.get("bookmark-view-prefs"))).toEqual(serverPreferences.bookmarkView);
     expect(kv.get("bookmark-view-prefs")).toMatchObject({ dirty: false });
@@ -302,7 +302,7 @@ describe("view preference sync", () => {
   test("a newer remote appearing after reconciliation wins the push merge read", async () => {
     await useSettingsStore.getState().hydrate();
     await useSettingsStore.getState().startPreferenceSync(() => credentials);
-    useBookmarksStore.getState().setViewMode("list");
+    useBookmarksStore.getState().setViewMode("gallery");
     await flush();
     const remote = { viewMode: "grid", sortBy: "alpha-za", updatedAt: Date.now() + 10000 };
     serverPreferences = { theme: "dark", bookmarkView: remote };

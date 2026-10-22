@@ -51,7 +51,7 @@ function renderCards(): void {
     viewOrder: ["noted", "plain"],
     onScreenOrder: ["noted", "plain"],
     children: [
-      createElement(BookmarkCard, { key: "noted", bookmark: noted, variant: "list" }),
+      createElement(BookmarkCard, { key: "noted", bookmark: noted, variant: "grid" }),
       createElement(BookmarkCard, { key: "plain", bookmark: plain, variant: "grid" }),
     ],
   }));
@@ -82,7 +82,7 @@ describe("bookmark notes on cards", () => {
     view?.unmount();
     view = render(app, createElement(Fragment, null,
       createElement(BookmarkCard, { bookmark: noted, variant: "grid" }),
-      createElement(BookmarkCard, { bookmark: { ...plain, notes: " \n\t " }, variant: "list" }),
+      createElement(BookmarkCard, { bookmark: { ...plain, notes: " \n\t " }, variant: "grid" }),
     ));
     expect(notesButton()).toBeTruthy();
     expect(document.querySelector('[data-bookmark-id="plain"] [aria-label="bookmarkNotes_show"]')).toBeNull();
@@ -91,7 +91,7 @@ describe("bookmark notes on cards", () => {
   test("a long multiline note is complete and scrolls without collapsing newlines", async () => {
     const notes = `First line\n${"More notes ".repeat(998)}\nLast line`;
     view?.unmount();
-    view = render(app, createElement(BookmarkCard, { bookmark: { ...noted, notes }, variant: "list" }));
+    view = render(app, createElement(BookmarkCard, { bookmark: { ...noted, notes }, variant: "grid" }));
     await act(async () => { click(notesButton()); });
     const content = getByText(notes);
     expect(content.textContent).toBe(notes);
@@ -114,7 +114,7 @@ describe("bookmark notes on cards", () => {
   test("a parenthesized URL keeps its whole destination and leaves sentence punctuation as text", async () => {
     const notes = "Read https://en.wikipedia.org/wiki/Function_(mathematics).";
     view?.unmount();
-    view = render(app, createElement(BookmarkCard, { bookmark: { ...noted, notes }, variant: "list" }));
+    view = render(app, createElement(BookmarkCard, { bookmark: { ...noted, notes }, variant: "grid" }));
     await act(async () => { click(notesButton()); });
     const link = getBySelector<HTMLAnchorElement>('[data-slot="popover-content"] a');
     expect(link.getAttribute("href")).toBe("https://en.wikipedia.org/wiki/Function_(mathematics)");
@@ -152,7 +152,7 @@ describe("bookmark notes on cards", () => {
     view?.unmount();
     view = render(app, createElement(MemoryRouter, null,
       createElement(Fragment, null,
-        createElement(BookmarkCard, { bookmark: noted, variant: "list" }),
+        createElement(BookmarkCard, { bookmark: noted, variant: "grid" }),
         createElement(BookmarkDialog),
       ),
     ));
@@ -170,7 +170,7 @@ describe("bookmark notes on cards", () => {
     const handleDragPress = mock(() => {});
     view?.unmount();
     view = render(app, createElement("div", { onPointerDown: handleDragPress },
-      createElement(BookmarkCard, { bookmark: noted, variant: "list" }),
+      createElement(BookmarkCard, { bookmark: noted, variant: "grid" }),
     ));
     act(() => {
       notesButton().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0, isPrimary: true, pointerType: "mouse" }));
@@ -185,7 +185,7 @@ describe("bookmark notes on cards", () => {
     view = render(app, createElement(
       "div",
       { onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => { presses.push(event); } },
-      createElement(BookmarkCard, { bookmark: noted, variant: "list" }),
+      createElement(BookmarkCard, { bookmark: noted, variant: "grid" }),
     ));
     await act(async () => { click(notesButton()); });
     act(() => {

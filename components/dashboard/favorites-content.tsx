@@ -70,19 +70,11 @@ export function FavoritesContent() {
 
           <ActiveFilterChips />
 
-          {viewMode === "grid" ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {favoriteBookmarks.map((bookmark) => (
-                <BookmarkCard key={bookmark.id} bookmark={bookmark} />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {favoriteBookmarks.map((bookmark) => (
-                <BookmarkCard key={bookmark.id} bookmark={bookmark} variant="list" />
-              ))}
-            </div>
-          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {favoriteBookmarks.map((bookmark) => (
+              <BookmarkCard key={bookmark.id} bookmark={bookmark} variant={viewMode} />
+            ))}
+          </div>
 
           {favoriteBookmarks.length === 0 && allFavorites.length > 0 && (
             <EmptyState

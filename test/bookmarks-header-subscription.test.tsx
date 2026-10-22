@@ -110,19 +110,39 @@ describe("BookmarksHeader store subscription", () => {
     header.unmount();
   });
 
-  test("highlights the list toggle after switching to list view", () => {
+  test("presses the large-card toggle after switching to large cards", () => {
     act(() => {
       useBookmarksStore.getState().setViewMode("grid");
     });
     const header = renderHeader();
 
     act(() => {
-      useBookmarksStore.getState().setViewMode("list");
+      useBookmarksStore.getState().setViewMode("gallery");
     });
 
-    const [gridButton, listButton] = Array.from(header.container.querySelectorAll(".border.rounded-md button"));
-    expect(listButton.className).toContain("bg-muted");
-    expect(gridButton.className).not.toContain("bg-muted");
+    const group = header.container.querySelector('[role="group"][aria-label="header_viewModes"]');
+    const small = group?.querySelector('[aria-label="header_viewSmallCards"]');
+    const large = group?.querySelector('[aria-label="header_viewLargeCards"]');
+    expect(large?.getAttribute("aria-pressed")).toBe("true");
+    expect(large?.className).toContain("bg-muted");
+    expect(small?.getAttribute("aria-pressed")).toBe("false");
+    expect(small?.className).not.toContain("bg-muted");
+    header.unmount();
+  });
+
+  test("the small-card toggle switches back to small cards", () => {
+    act(() => {
+      useBookmarksStore.getState().setViewMode("gallery");
+    });
+    const header = renderHeader();
+    const small = header.container.querySelector('[aria-label="header_viewSmallCards"]');
+    if (!small) {
+      throw new Error("the small-card toggle is missing");
+    }
+
+    click(small);
+
+    expect(useBookmarksStore.getState().viewMode).toBe("grid");
     header.unmount();
   });
 });

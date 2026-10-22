@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "b
 import { act, createElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
-import { click, getBySelector, getByText, installAppModules, pressKey, render, setupDom, teardownDom, type AppModules, type RenderResult } from "./helpers/dom-environment";
+import { click, getBySelector, getByText, installAppModules, openDropdown, pressKey, render, setupDom, teardownDom, type AppModules, type RenderResult } from "./helpers/dom-environment";
 import { bookmarkMap, countsByCollection, makeBookmark, makeCollection, makeTag, makeWorkspace } from "./helpers/library-fixtures";
 
 const replacer = createModuleReplacer();
@@ -54,7 +54,7 @@ beforeEach(() => {
     filterType: "all",
     searchQuery: "",
     sortBy: "alpha-az",
-    viewMode: "list",
+    viewMode: "grid",
   });
   act(() => {
     useSelectionStore.getState().clear();
@@ -181,8 +181,9 @@ describe("selecting bookmark cards", () => {
     expect(selected()).toEqual(["b", "d"]);
   });
 
-  test("grid cards expose the same selectable checkbox and selected state", () => {
-    act(() => { app.useBookmarksStore.setState({ viewMode: "grid" }); });
+  test("large cards expose the same selectable checkbox, on the cover", () => {
+    act(() => { app.useBookmarksStore.setState({ viewMode: "gallery" }); });
+    expect(checkbox("c").closest("[data-bookmark-cover]")).not.toBeNull();
     click(checkbox("c"));
     expect(checkbox("c").getAttribute("aria-checked")).toBe("true");
     expect(card("c").hasAttribute("data-selected")).toBe(true);
@@ -198,9 +199,12 @@ describe("selecting bookmark cards", () => {
   });
 
 
-  test("the explicit list open action still opens while a selection is active", () => {
+  test("the explicit menu open action still opens while a selection is active", async () => {
     click(checkbox("a"));
-    click(getBySelector('[data-bookmark-id="b"] button:has(svg.lucide-external-link)'));
+    await act(async () => {
+      openDropdown(getBySelector('[data-bookmark-id="b"] [aria-label="bookmarkCard_moreActions"]'));
+    });
+    click(getByText("bookmarkCard_openSmart"));
     expect(selected()).toEqual(["a"]);
     expect(smartOpenUrl).toHaveBeenCalledWith(favorites[1].url);
   });

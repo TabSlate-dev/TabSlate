@@ -18,7 +18,7 @@ import {
 import {
   Search,
   LayoutGrid,
-  List,
+  GalleryVerticalEnd,
   Plus,
   SlidersHorizontal,
   ArrowUpDown,
@@ -86,10 +86,12 @@ export function BookmarksHeader({ title }: BookmarksHeaderProps) {
           </div>
           */}
 
-          <div className="flex items-center border rounded-md p-0.5">
+          <div role="group" aria-label={t("header_viewModes")} className="flex items-center border rounded-md p-0.5">
             <Button
               variant="ghost"
               size="icon-xs"
+              aria-label={t("header_viewSmallCards")}
+              aria-pressed={viewMode === "grid"}
               className={cn("rounded-sm", viewMode === "grid" && "bg-muted")}
               onClick={() => setViewMode("grid")}
             >
@@ -98,10 +100,12 @@ export function BookmarksHeader({ title }: BookmarksHeaderProps) {
             <Button
               variant="ghost"
               size="icon-xs"
-              className={cn("rounded-sm", viewMode === "list" && "bg-muted")}
-              onClick={() => setViewMode("list")}
+              aria-label={t("header_viewLargeCards")}
+              aria-pressed={viewMode === "gallery"}
+              className={cn("rounded-sm", viewMode === "gallery" && "bg-muted")}
+              onClick={() => setViewMode("gallery")}
             >
-              <List className="size-4" />
+              <GalleryVerticalEnd className="size-4" />
             </Button>
           </div>
 

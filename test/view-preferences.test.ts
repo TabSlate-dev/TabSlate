@@ -49,8 +49,8 @@ describe("parseViewPrefs", () => {
   });
 
   test("keeps valid values", () => {
-    expect(viewPrefs.parseViewPrefs({ viewMode: "list", sortBy: "alpha-za", updatedAt: 42 })).toEqual({
-      viewMode: "list",
+    expect(viewPrefs.parseViewPrefs({ viewMode: "gallery", sortBy: "alpha-za", updatedAt: 42 })).toEqual({
+      viewMode: "gallery",
       sortBy: "alpha-za",
       updatedAt: 42,
     });
@@ -62,15 +62,23 @@ describe("parseViewPrefs", () => {
       updatedAt: 0,
     });
   });
+  test("a list view stored before large cards falls back to small cards", () => {
+    expect(viewPrefs.parseViewPrefs({ viewMode: "list", sortBy: "alpha-za", updatedAt: 42 })).toEqual({
+      viewMode: "grid",
+      sortBy: "alpha-za",
+      updatedAt: 42,
+    });
+  });
+
   test("returns null when there is no preferences object", () => {
-    expect(viewPrefs.parseViewPrefs("list")).toBeNull();
+    expect(viewPrefs.parseViewPrefs("gallery")).toBeNull();
     expect(viewPrefs.parseViewPrefs(undefined)).toBeNull();
   });
 });
 
 describe("resolvePullAction", () => {
   const local = (updatedAt: number, dirty: boolean): StoredViewPrefs => ({
-    viewMode: "list",
+    viewMode: "gallery",
     sortBy: "alpha-az",
     updatedAt,
     dirty,
@@ -95,41 +103,41 @@ describe("resolvePullAction", () => {
 
 describe("local preferences", () => {
   test("round-trip through the kv store", async () => {
-    const prefs: StoredViewPrefs = { viewMode: "list", sortBy: "alpha-az", updatedAt: 7, dirty: true };
+    const prefs: StoredViewPrefs = { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 7, dirty: true };
     await viewPrefs.writeLocalViewPrefs(prefs);
     expect(await viewPrefs.readLocalViewPrefs()).toEqual(prefs);
   });
   test("ignore a stored value that is not a preferences object", async () => {
-    kv.set("bookmark-view-prefs", "list");
+    kv.set("bookmark-view-prefs", "gallery");
     expect(await viewPrefs.readLocalViewPrefs()).toBeNull();
   });
 });
 
 describe("server preferences", () => {
   test("read the bookmarkView key", async () => {
-    serverPreferences = { bookmarkView: { viewMode: "list", sortBy: "alpha-za", updatedAt: 3 } };
+    serverPreferences = { bookmarkView: { viewMode: "gallery", sortBy: "alpha-za", updatedAt: 3 } };
     expect(await viewPrefs.fetchRemoteViewPrefs(credentials)).toEqual({
-      viewMode: "list",
+      viewMode: "gallery",
       sortBy: "alpha-za",
       updatedAt: 3,
     });
   });
   test("push keeps the other keys on the server", async () => {
     serverPreferences = { theme: "dark", bookmarkView: { viewMode: "grid", sortBy: "date-newest", updatedAt: 1 } };
-    await viewPrefs.pushViewPrefs(credentials, { viewMode: "list", sortBy: "alpha-az", updatedAt: 9 });
+    await viewPrefs.pushViewPrefs(credentials, { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 9 });
     expect(updateCalls).toEqual([
-      { theme: "dark", bookmarkView: { viewMode: "list", sortBy: "alpha-az", updatedAt: 9 } },
+      { theme: "dark", bookmarkView: { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 9 } },
     ]);
   });
   test("does not dispatch an update when the push is no longer eligible", async () => {
-    await viewPrefs.pushViewPrefs(credentials, { viewMode: "list", sortBy: "alpha-az", updatedAt: 9 }, () => false);
+    await viewPrefs.pushViewPrefs(credentials, { viewMode: "gallery", sortBy: "alpha-az", updatedAt: 9 }, () => false);
     expect(updateCalls).toEqual([]);
   });
 
   test("push returns the newer remote winner without replacing server preferences", async () => {
     const remote = { viewMode: "grid", sortBy: "alpha-za", updatedAt: 200 };
     serverPreferences = { theme: "dark", bookmarkView: remote };
-    expect(await viewPrefs.pushViewPrefs(credentials, { viewMode: "list", sortBy: "date-newest", updatedAt: 100 }))
+    expect(await viewPrefs.pushViewPrefs(credentials, { viewMode: "gallery", sortBy: "date-newest", updatedAt: 100 }))
       .toEqual({ status: "remote-newer", prefs: remote });
     expect(updateCalls).toEqual([]);
     expect(serverPreferences).toEqual({ theme: "dark", bookmarkView: remote });

@@ -1,3 +1,4 @@
+import type { BookmarkViewMode } from "@/lib/view-preferences";
 import { BulkActionBar } from "@/components/dashboard/bulk-actions";
 import { selectionStateOf, useSelectionStore } from "@/store/selection-store";
 import { SelectionOrdersProvider } from "@/components/dashboard/shared/selection-orders";
@@ -266,7 +267,7 @@ function useContainerColumns(ref: React.RefObject<HTMLElement | null>) {
 
 interface DraggableBookmarkCardProps {
   bookmark: BookmarkType;
-  variant?: "grid" | "list";
+  variant?: BookmarkViewMode;
   isHighlighted?: boolean;
 }
 
@@ -277,6 +278,7 @@ const DraggableBookmarkCard = React.memo(function DraggableBookmarkCard({ bookma
     title: bookmark.title,
     url: bookmark.url,
     favicon: bookmark.favicon,
+    imageUrl: bookmark.imageUrl ?? "",
     variant,
   };
   const { setNodeRef, listeners, attributes, isDragging } = useDraggable({
@@ -373,8 +375,6 @@ export function BookmarksContent() {
 
   const hasActiveFilters = selectedTags.length > 0 || filterType !== "all";
 
-  const actualCols = viewMode === "grid" ? gridCols : 1;
-
   /** "All bookmarks" groups: active collections in sidebar order, then uncategorized when it has bookmarks. */
   const groups = React.useMemo<BookmarkGroup[] | null>(() => {
     if (selectedCollection !== "all") {
@@ -438,7 +438,7 @@ export function BookmarksContent() {
       });
       return rows;
     }
-    const columns = viewMode === "grid" ? gridCols : 1;
+    const columns = gridCols;
     const pushBookmarkRows = (collectionId: string, bookmarks: BookmarkType[]) => {
       for (let rowIndex = 0; rowIndex * columns < bookmarks.length; rowIndex += 1) {
         rows.push({
@@ -473,7 +473,7 @@ export function BookmarksContent() {
       }
     }
     return rows;
-  }, [filteredBookmarks, groups, isGroupExpanded, selectedCollection, viewMode, gridCols, t]);
+  }, [filteredBookmarks, groups, isGroupExpanded, selectedCollection, gridCols, t]);
 
   const virtualizer = useVirtualizer({
     count: virtualRows.length,
@@ -493,7 +493,7 @@ export function BookmarksContent() {
       if (row.type === "collection_dropzone") {
         return 76;
       }
-      return viewMode === "grid" ? 156 : 80;
+      return viewMode === "gallery" ? 300 : 156;
     },
     getItemKey: React.useCallback(
       (index: number) => {
@@ -677,12 +677,8 @@ export function BookmarksContent() {
                   measureElement={virtualizer.measureElement}
                   index={virtualRow.index}
                   start={virtualRow.start}
-                  style={viewMode === "grid" ? { gridTemplateColumns: `repeat(${actualCols}, minmax(0, 1fr))` } : undefined}
-                  className={
-                    viewMode === "grid"
-                      ? "grid gap-4 px-4 md:px-6 py-2"
-                      : "flex flex-col gap-2 px-4 md:px-6 py-2"
-                  }
+                  style={{ gridTemplateColumns: `repeat(${gridCols}, minmax(0, 1fr))` }}
+                  className="grid gap-4 px-4 md:px-6 py-2"
                 >
                   {rowData.bookmarks.map((bookmark) => (
                     <DraggableBookmarkCard

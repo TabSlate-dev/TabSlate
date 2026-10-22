@@ -35,7 +35,7 @@ beforeEach(() => {
   view = null;
   scrollOffsets.length = 0;
   app.useWorkspaceStore.setState({ activeWorkspaceId: "home", workspaces: [makeWorkspace("home")], collections: [makeCollection("reading", "home")], tags: [makeTag("frontend", "Frontend"), makeTag("other", "Other")] });
-  app.useBookmarksStore.setState({ selectedCollection: "all", selectedTags: [], filterType: "all", searchQuery: "", viewMode: "list", sortBy: "date-newest", highlightedBookmarkId: null });
+  app.useBookmarksStore.setState({ selectedCollection: "all", selectedTags: [], filterType: "all", searchQuery: "", viewMode: "grid", sortBy: "date-newest", highlightedBookmarkId: null });
 });
 
 test("Favorites card tags visibly filter favorites and toggling off restores them", () => {
@@ -140,4 +140,20 @@ test("Favorites lists favorites in the current sort order", () => {
   expect(order()).toEqual(["alpha", "zeta"]);
   act(() => { app.useBookmarksStore.getState().setSortBy("alpha-za"); });
   expect(order()).toEqual(["zeta", "alpha"]);
+});
+
+test("the large card view shows covers in the library and in Favorites", () => {
+  const bookmarks = [
+    makeBookmark("covered", { collectionId: "reading", isFavorite: true, imageUrl: "https://cdn.example.com/covered.png" }),
+    makeBookmark("bare", { collectionId: "reading", isFavorite: true }),
+  ];
+  app.useBookmarksStore.setState({ bookmarks: bookmarkMap(bookmarks), countsByCollection: countsByCollection(bookmarks), selectedCollection: "reading", viewMode: "gallery" });
+
+  view = render(app, createElement(MemoryRouter, null, createElement(BookmarksContent)));
+  expect(getBySelector('[data-bookmark-id="covered"] [data-bookmark-cover] img').getAttribute("src")).toBe("https://cdn.example.com/covered.png");
+  expect(getBySelector('[data-bookmark-id="bare"] [data-bookmark-cover] [data-cover-placeholder]')).toBeTruthy();
+
+  view.unmount();
+  view = render(app, createElement(FavoritesContent));
+  expect(getBySelector('[data-bookmark-id="covered"] [data-bookmark-cover] img').getAttribute("src")).toBe("https://cdn.example.com/covered.png");
 });

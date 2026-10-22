@@ -92,7 +92,7 @@ function pointerDown(target: EventTarget): void {
   });
 }
 
-const variants: Array<"grid" | "list"> = ["grid", "list"];
+const variants: Array<"grid" | "gallery"> = ["grid", "gallery"];
 for (const variant of variants) {
   describe(`BookmarkCard ${variant} menus`, () => {
     beforeEach(() => {
