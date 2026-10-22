@@ -7,6 +7,7 @@ import {
   getBySelector,
   getByText,
   installAppModules,
+  openDropdown,
   render,
   rightClick,
   setupDom,
@@ -84,11 +85,28 @@ async function openTagMenu(tagId: string): Promise<void> {
 }
 
 describe("tag context menu", () => {
-  test("right-clicking a tag offers rename, color and delete", async () => {
+  test("right-clicking a tag offers new child, move, merge, rename, color and delete", async () => {
     await openTagMenu("frontend");
+    expect(getByText("tagMenu_newChild")).toBeTruthy();
+    expect(getByText("tagMenu_move")).toBeTruthy();
+    expect(getByText("tagMenu_merge")).toBeTruthy();
     expect(getByText("tagMenu_rename")).toBeTruthy();
     expect(getByText("tagMenu_color")).toBeTruthy();
     expect(getByText("tagMenu_delete")).toBeTruthy();
+  });
+
+  test("new child opens tag dialog with initial parent and creates tag under parent", async () => {
+    await openTagMenu("frontend");
+    click(getByText("tagMenu_newChild"));
+    const input = getBySelector<HTMLInputElement>("#tag-name");
+    typeInto(input, "React");
+    const form = input.closest("form");
+    if (!form) { throw new Error("no form"); }
+    await submitForm(form);
+
+    const created = app.useWorkspaceStore.getState().tags.find((t) => t.name === "React");
+    expect(created).toBeTruthy();
+    expect(created?.parentId).toBe("frontend");
   });
 
   test("rename saves the new name", async () => {
@@ -126,6 +144,29 @@ describe("tag context menu", () => {
     expect(tag("frontend")).toBeUndefined();
   });
 
+  test("delete preview shows immediate promoted-child count and proposed collision renames with (2)", async () => {
+    act(() => {
+      app.useWorkspaceStore.setState({
+        tags: [
+          makeTag("frontend", "Frontend"),
+          makeTag("web-child", "Web", { parentId: "frontend" }),
+          makeTag("web-root", "Web"),
+        ],
+      });
+    });
+    db.seed(app.useWorkspaceStore.getState().tags);
+
+    await openTagMenu("frontend");
+    click(getByText("tagMenu_delete"));
+
+    // Should show 1 child tag promoted
+    expect(getByText("tagDeleteDialog_promoted_one[1]")).toBeTruthy();
+    // Should show proposed rename: Web -> Web (2)
+    expect(getByText("tagDeleteDialog_renames_preview[Web,Web (2)]")).toBeTruthy();
+
+    click(getByText("settings_cancel"));
+  });
+
   test("delete names a single bookmark in the singular", async () => {
     act(() => {
       app.useBookmarksStore.setState({ bookmarks: bookmarkMap([makeBookmark("b5", { collectionId: "reading", tags: ["go"] })]) });
@@ -158,6 +199,63 @@ describe("tag context menu", () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  test("merge dialog shows affected bookmarks across buckets and disables while loading counts", async () => {
+    await openTagMenu("frontend");
+    click(getByText("tagMenu_merge"));
+
+    expect(getByText("tagMergeDialog_title[Frontend]")).toBeTruthy();
+    // Select target tag "go" inside the merge dialog
+    await act(async () => {
+      click(getBySelector('[role="dialog"] [data-tag-id="go"]'));
+      await Promise.resolve();
+    });
+
+    expect(getByText("tagMergeDialog_affectedBookmarks_other[4]")).toBeTruthy();
+    await act(async () => {
+      click(getByText("tagMergeDialog_confirm"));
+    });
+
+    expect(tag("frontend")).toBeUndefined();
+    expect(tag("go")).toBeTruthy();
+  });
+
+  test("header cleanup menu opens unused tags dialog, showing full paths and disabled at zero", async () => {
+    // Open cleanup menu in header
+    await act(async () => {
+      openDropdown(getBySelector('[aria-label="sidebar_tagActions"]'));
+    });
+    await act(async () => {
+      click(getByText("sidebar_cleanupUnusedTags"));
+      await Promise.resolve();
+    });
+
+    // "go" is unused (0 bookmarks in active workspace, 0 in archived/trashed)
+    expect(getByText("unusedTagsDialog_title")).toBeTruthy();
+    expect(getBySelector('button[data-dialog-confirm="true"]').getAttribute("disabled") !== null).toBe(false);
+
+    // If all tags are used, confirm is disabled
+    act(() => {
+      app.useBookmarksStore.setState({
+        bookmarks: bookmarkMap([
+          makeBookmark("b1", { tags: ["frontend", "go"] }),
+        ]),
+      });
+    });
+    view?.unmount();
+    view = render(app, createElement(SidebarProvider, null, createElement(SidebarTagsSection)));
+    click(getByText("sidebar_tags"));
+    await act(async () => {
+      openDropdown(getBySelector('[aria-label="sidebar_tagActions"]'));
+    });
+    await act(async () => {
+      click(getByText("sidebar_cleanupUnusedTags"));
+      await Promise.resolve();
+    });
+
+    expect(getByText("unusedTagsDialog_empty")).toBeTruthy();
+    expect(getBySelector('button[data-dialog-confirm="true"]').getAttribute("disabled") !== null).toBe(true);
+  });
+
   test("confirmation after a remote delete does not decrement tag usage again", async () => {
     const { usePlanStore } = await import("@/store/plan-store");
     usePlanStore.setState({ usage: { workspaces: 2, bookmarks: 4, collections: 2, saved_groups: 0, tags: 2 } });
@@ -172,6 +270,7 @@ describe("tag context menu", () => {
     expect(tag("go")?.name).toBe("Go");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
+
   test("failed_color_save_keeps_translated_feedback_after_menu_closes", async () => {
     db.state.fail = true;
     await openTagMenu("frontend"); click(getByText("tagMenu_color"));
@@ -180,5 +279,4 @@ describe("tag context menu", () => {
     expect(getByText("tagAction_errorStorage").closest('[role="alert"]')).toBeTruthy();
     expect(document.querySelector('[role="menu"]')).toBeNull();
   });
-
 });

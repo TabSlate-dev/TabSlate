@@ -57,8 +57,8 @@ export function createTagIdb() {
       if (state.failReads) { throw new Error("read failed"); }
       return read<T>(name);
     },
-    idbGet: async (name: string, id: string) => structuredClone(table(name).get(id)),
-    idbPut: async (name: string, value: { id?: string; key?: string }) => { table(name).set(value.id ?? value.key ?? "", structuredClone(value)); },
+    idbGet: async <T>(name: string, id: string): Promise<T | undefined> => structuredClone(table(name).get(id)) as T | undefined,
+    idbPut: async <T extends { id?: string; key?: string }>(name: string, value: T) => { table(name).set(value.id ?? value.key ?? "", structuredClone(value)); },
     idbDelete: async (name: string, id: string) => { table(name).delete(id); },
     idbBulkWrite: async (ops: { type: string; store: string; key: string; value: { id: string } }[]) => {
       for (const op of ops) {

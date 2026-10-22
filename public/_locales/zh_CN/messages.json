@@ -1695,6 +1695,21 @@
   "sidebar_tagRightClickHint": {
     "message": "右键可编辑"
   },
+  "sidebar_tagActions": {
+    "message": "标签操作"
+  },
+  "sidebar_cleanupUnusedTags": {
+    "message": "清理未使用的标签…"
+  },
+  "tagMenu_newChild": {
+    "message": "新建子标签…"
+  },
+  "tagMenu_move": {
+    "message": "移动…"
+  },
+  "tagMenu_merge": {
+    "message": "合并…"
+  },
   "tagMenu_rename": {
     "message": "重命名…"
   },
@@ -1703,6 +1718,43 @@
   },
   "tagMenu_delete": {
     "message": "删除…"
+  },
+  "tagTree_expandTag": {
+    "message": "展开 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagTree_collapseTag": {
+    "message": "折叠 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagTreePicker_root": {
+    "message": "顶级（无父级）"
+  },
+  "tagTreePicker_search": {
+    "message": "搜索标签"
+  },
+  "tagTreePicker_searchPlaceholder": {
+    "message": "搜索标签…"
+  },
+  "tagTreePicker_empty": {
+    "message": "无匹配标签"
+  },
+  "tagDialog_parentLabel": {
+    "message": "父级标签"
+  },
+  "tagDialog_parentNone": {
+    "message": "无（顶级）"
+  },
+  "tagDialog_changeParent": {
+    "message": "更改父级标签…"
   },
   "tagDeleteDialog_title": {
     "message": "删除标签「$1」？",
@@ -1728,8 +1780,108 @@
       }
     }
   },
+  "tagDeleteDialog_promoted_one": {
+    "message": "1 个子标签将被移至上一级。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_promoted_other": {
+    "message": "$1 个子标签将被移至上一级。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_renames_preview": {
+    "message": "$1 将重命名为 $2 以避免命名冲突。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
   "tagDeleteDialog_confirm": {
     "message": "删除"
+  },
+  "tagMergeDialog_title": {
+    "message": "合并标签「$1」",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagMergeDialog_targetLabel": {
+    "message": "合并到"
+  },
+  "tagMergeDialog_confirm": {
+    "message": "合并"
+  },
+  "tagMergeDialog_loadingCounts": {
+    "message": "正在计算受影响的书签…"
+  },
+  "tagMergeDialog_affectedBookmarks_one": {
+    "message": "这个标签会在所有分类的 $1 个书签上被替换。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagMergeDialog_affectedBookmarks_other": {
+    "message": "这个标签会在所有分类的 $1 个书签上被替换。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagMergeDialog_descendantNotice": {
+    "message": "将应用 $1 个后代标签替换。",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "unusedTagsDialog_title": {
+    "message": "清理未使用的标签"
+  },
+  "unusedTagsDialog_desc": {
+    "message": "以下标签未在任何活跃、已归档或已回收的书签中使用，将被删除："
+  },
+  "unusedTagsDialog_empty": {
+    "message": "未找到未使用的标签。"
+  },
+  "unusedTagsDialog_remainder": {
+    "message": "…以及其他 $1 个",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "unusedTagsDialog_confirm": {
+    "message": "删除未使用的标签"
+  },
+  "tagAction_targetSelf": {
+    "message": "不能选择标签自身。"
+  },
+  "tagAction_targetDescendant": {
+    "message": "不能选择后代标签。"
+  },
+  "tagAction_targetDepth": {
+    "message": "移动将超过最大嵌套深度 5。"
+  },
+  "tagAction_targetDuplicate": {
+    "message": "同级已存在同名标签。"
   },
   "collectionMenu_edit": {
     "message": "编辑…"

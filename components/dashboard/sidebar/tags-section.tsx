@@ -1,28 +1,31 @@
 import * as React from "react";
-import { Check, Palette, Pencil, Plus, Search, Tag as TagIcon, Trash2, X } from "lucide-react";
+import { MoreHorizontal, Plus, Search, Sparkles, X } from "lucide-react";
 import { SidebarGroup, SidebarGroupContent } from "@/components/ui/sidebar";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useBookmarksStore } from "@/store/bookmarks-store";
-import { TAG_COLORS, useWorkspaceStore } from "@/store/workspace-store";
+import { useWorkspaceStore } from "@/store/workspace-store";
 import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
 import { useTranslation } from "@/hooks/use-translation";
+import { useTagTree } from "@/hooks/use-tag-tree";
+import { useTagTreeExpansion } from "@/hooks/use-tag-tree-expansion";
+import { tagAncestors } from "@/lib/tag-tree";
+import { tagTargetError } from "@/lib/tag-mutations";
 import type { Bookmark, Tag } from "@/lib/types";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TagTreeRow } from "./tag-tree-row";
 import { TagDeleteDialog } from "./tag-delete-dialog";
+import { TagMergeDialog } from "./tag-merge-dialog";
+import { UnusedTagsDialog } from "./unused-tags-dialog";
 import { SectionHeader } from "./section-header";
 import { TagDialog } from "./tag-dialog";
+import { TagTreePicker } from "@/components/dashboard/shared/tag-tree-picker";
 
 /** Active bookmarks in every workspace that carry the tag; tags are global. */
 function countBookmarksWithTag(bookmarks: Map<string, Bookmark>, tagId: string): number {
@@ -33,10 +36,6 @@ function countBookmarksWithTag(bookmarks: Map<string, Bookmark>, tagId: string):
     }
   }
   return count;
-}
-
-function swatchClass(color: string): string {
-  return color.split(" ")[0].replace("/10", "");
 }
 
 /** Bookmarks in the active workspace (its collections plus uncategorized) per tag. */
@@ -56,28 +55,14 @@ function countTagsInWorkspace(
   return counts;
 }
 
-function HighlightedName({ name, query }: { name: string; query: string }) {
-  const index = query ? name.toLowerCase().indexOf(query.toLowerCase()) : -1;
-  if (index === -1) {
-    return <>{name}</>;
-  }
-  return (
-    <>
-      {name.slice(0, index)}
-      <mark className="rounded-sm bg-yellow-300/60 text-inherit dark:bg-yellow-500/40">
-        {name.slice(index, index + query.length)}
-      </mark>
-      {name.slice(index + query.length)}
-    </>
-  );
-}
-
 export function SidebarTagsSection() {
   const { t } = useTranslation();
+  const tree = useTagTree();
   const [open, setOpen] = React.useState(false);
   const [searchOpen, setSearchOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [newTagOpen, setNewTagOpen] = React.useState(false);
+  const [childParentTag, setChildParentTag] = React.useState<Tag | null>(null);
 
   const bookmarks = useBookmarksStore((s) => s.bookmarks);
   const selectedTags = useBookmarksStore((s) => s.selectedTags);
@@ -87,20 +72,25 @@ export function SidebarTagsSection() {
   const collections = useWorkspaceStore((s) => s.collections);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
-  const createTag = useWorkspaceStore((s) => s.createTag);
+  const createTagPath = useWorkspaceStore((s) => s.createTagPath);
+  const updateTag = useWorkspaceStore((s) => s.updateTag);
+  const moveTag = useWorkspaceStore((s) => s.moveTag);
   const deleteTag = useWorkspaceStore((s) => s.deleteTag);
+  const mergeTag = useWorkspaceStore((s) => s.mergeTag);
+  const deleteUnusedTags = useWorkspaceStore((s) => s.deleteUnusedTags);
 
   const [editingTag, setEditingTag] = React.useState<Tag | null>(null);
-  const [tagActionError, setTagActionError] = React.useState<string | null>(null);
+  const [movingTag, setMovingTag] = React.useState<Tag | null>(null);
+  const [mergingTag, setMergingTag] = React.useState<Tag | null>(null);
   const [deletingTag, setDeletingTag] = React.useState<Tag | null>(null);
-  const updateTag = useWorkspaceStore((s) => s.updateTag);
+  const [unusedDialogOpen, setUnusedDialogOpen] = React.useState(false);
+  const [tagActionError, setTagActionError] = React.useState<string | null>(null);
+
+  const { expandedIds, toggle: toggleExpand } = useTagTreeExpansion(tree, selectedTags, query);
+
   const deletingCount = React.useMemo(
     () => (deletingTag ? countBookmarksWithTag(bookmarks, deletingTag.id) : 0),
     [bookmarks, deletingTag],
-  );
-  const editingTakenNames = React.useMemo(
-    () => (editingTag ? tags.filter((tag) => tag.id !== editingTag.id).map((tag) => tag.name) : []),
-    [tags, editingTag],
   );
 
   const workspaceCollectionIds = React.useMemo(
@@ -111,17 +101,12 @@ export function SidebarTagsSection() {
     () => countTagsInWorkspace(bookmarks, workspaceCollectionIds),
     [bookmarks, workspaceCollectionIds],
   );
-  const trimmedQuery = query.trim();
-  const visibleTags = React.useMemo(() => {
-    const needle = trimmedQuery.toLowerCase();
-    return needle ? tags.filter((tag) => tag.name.toLowerCase().includes(needle)) : tags;
-  }, [tags, trimmedQuery]);
-  const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);
 
-  // Another device can delete a selected tag; with no chip left to clear it, it would keep filtering bookmarks.
+  const trimmedQuery = query.trim();
+
+  // Drop deleted tags from selection
   React.useEffect(() => {
     const tagIds = new Set(tags.map((tag) => tag.id));
-    // Reads the live selection, so running again cannot toggle a dropped tag back on.
     for (const tagId of useBookmarksStore.getState().selectedTags) {
       if (!tagIds.has(tagId)) {
         toggleTag(tagId);
@@ -129,11 +114,27 @@ export function SidebarTagsSection() {
     }
   }, [tags, toggleTag]);
 
-  const handleColorChange = React.useCallback(async (id: string, color: string) => {
-    const result = await updateTag(id, { color });
-    if (result.ok) { setTagActionError(null); return; }
-    setTagActionError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : result.error === "quota" ? "tagAction_errorQuota" : "tagAction_errorInvalid"));
-  }, [updateTag, t]);
+  const handleColorChange = React.useCallback(
+    async (id: string, color: string) => {
+      const result = await updateTag(id, { color });
+      if (result.ok) {
+        setTagActionError(null);
+        return;
+      }
+      setTagActionError(
+        t(
+          result.error === "storage"
+            ? "tagAction_errorStorage"
+            : result.error === "stale"
+              ? "tagAction_errorStale"
+              : result.error === "quota"
+                ? "tagAction_errorQuota"
+                : "tagAction_errorInvalid",
+        ),
+      );
+    },
+    [updateTag, t],
+  );
 
   const handleToggleOpen = React.useCallback(() => setOpen((value) => !value), []);
   const handleOpenSearch = React.useCallback(() => {
@@ -144,6 +145,64 @@ export function SidebarTagsSection() {
     setSearchOpen(false);
     setQuery("");
   }, []);
+
+  const matchingOrAncestorIds = React.useMemo(() => {
+    const needle = trimmedQuery.toLowerCase();
+    if (!needle) {
+      return null;
+    }
+    const matching = new Set<string>();
+    for (const [id, tag] of tree.tagsById) {
+      if (tag.name.toLowerCase().includes(needle)) {
+        matching.add(id);
+        for (const ancestor of tagAncestors(tree, id)) {
+          matching.add(ancestor);
+        }
+      }
+    }
+    return matching;
+  }, [trimmedQuery, tree]);
+
+  const renderTreeNodes = (parentId: string | undefined, depth: number) => {
+    const childIds = tree.childrenByParent.get(parentId) ?? [];
+    return childIds.map((id) => {
+      if (matchingOrAncestorIds && !matchingOrAncestorIds.has(id)) {
+        return null;
+      }
+      const tag = tree.tagsById.get(id);
+      if (!tag) {
+        return null;
+      }
+      const children = tree.childrenByParent.get(id) ?? [];
+      const hasChildren = children.length > 0;
+      const isExpanded = expandedIds.has(id);
+      const count = tagCounts.get(id) ?? 0;
+      const selected = selectedTags.includes(id);
+
+      return (
+        <React.Fragment key={id}>
+          <TagTreeRow
+            tag={tag}
+            depth={depth}
+            count={count}
+            selected={selected}
+            expanded={isExpanded}
+            hasChildren={hasChildren}
+            query={trimmedQuery}
+            onSelect={toggleTag}
+            onToggleExpand={toggleExpand}
+            onNewChild={(parentTag) => setChildParentTag(parentTag)}
+            onMove={(targetTag) => setMovingTag(targetTag)}
+            onMerge={(targetTag) => setMergingTag(targetTag)}
+            onEdit={(targetTag) => setEditingTag(targetTag)}
+            onColorChange={handleColorChange}
+            onDelete={(targetTag) => setDeletingTag(targetTag)}
+          />
+          {hasChildren && isExpanded && renderTreeNodes(id, depth + 1)}
+        </React.Fragment>
+      );
+    });
+  };
 
   return (
     <SidebarGroup className="p-0">
@@ -199,6 +258,23 @@ export function SidebarTagsSection() {
               >
                 <Search className="size-3.5" />
               </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label={t("sidebar_tagActions")}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <MoreHorizontal className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setUnusedDialogOpen(true)}>
+                    <Sparkles className="size-4" />
+                    {t("sidebar_cleanupUnusedTags")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <button
                 type="button"
                 aria-label={t("sidebar_newTag")}
@@ -217,79 +293,33 @@ export function SidebarTagsSection() {
           <AlertDescription>{tagActionError}</AlertDescription>
         </Alert>
       )}
+
       {open && (
         <SidebarGroupContent>
-          <div className="flex flex-wrap gap-1.5 mt-2 px-1">
-            {tags.length === 0 && (
+          <div className="flex flex-col gap-0.5 mt-2 px-1">
+            {tags.length === 0 ? (
               <p className="text-xs text-muted-foreground w-full py-1">{t("sidebar_noTagsYet")}</p>
+            ) : (
+              renderTreeNodes(undefined, 0)
             )}
-            {visibleTags.map((tag) => {
-              const count = tagCounts.get(tag.id) ?? 0;
-              const selected = selectedTags.includes(tag.id);
-              return (
-                <Tooltip key={tag.id} delayDuration={1000}>
-                  <ContextMenu>
-                    <TooltipTrigger asChild>
-                      <ContextMenuTrigger asChild>
-                        <button
-                          type="button"
-                          data-tag-id={tag.id}
-                          aria-pressed={selected}
-                          onClick={() => toggleTag(tag.id)}
-                          className={cn(
-                            "inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium transition-colors",
-                            selected ? "bg-primary text-primary-foreground" : tag.color,
-                          )}
-                        >
-                          <TagIcon className="size-3" />
-                          <HighlightedName name={tag.name} query={trimmedQuery} />
-                          <span data-tag-count className={cn("tabular-nums", count === 0 ? "opacity-50" : "opacity-80")}>
-                            {count}
-                          </span>
-                        </button>
-                      </ContextMenuTrigger>
-                    </TooltipTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuItem onSelect={() => setEditingTag(tag)}>
-                        <Pencil className="size-4" />
-                        {t("tagMenu_rename")}
-                      </ContextMenuItem>
-                      <ContextMenuSub>
-                        <ContextMenuSubTrigger>
-                          <Palette className="size-4" />
-                          {t("tagMenu_color")}
-                        </ContextMenuSubTrigger>
-                        <ContextMenuSubContent>
-                          {TAG_COLORS.map((color, index) => (
-                            <ContextMenuItem key={color} onSelect={() => { void handleColorChange(tag.id, color); }}>
-                              <span className={cn("size-3 rounded-full", swatchClass(color))} />
-                              {t("tagDialog_colorOption", [String(index + 1)])}
-                              {tag.color === color && <Check className="ml-auto size-4" />}
-                            </ContextMenuItem>
-                          ))}
-                        </ContextMenuSubContent>
-                      </ContextMenuSub>
-                      <ContextMenuSeparator />
-                      <ContextMenuItem variant="destructive" onSelect={() => setDeletingTag(tag)}>
-                        <Trash2 className="size-4" />
-                        {t("tagMenu_delete")}
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                  <TooltipContent side="top">{t("sidebar_tagRightClickHint")}</TooltipContent>
-                </Tooltip>
-              );
-            })}
           </div>
         </SidebarGroupContent>
       )}
 
       <TagDialog
-        open={newTagOpen}
-        onOpenChange={setNewTagOpen}
-        takenNames={tagNames}
-        onSubmit={createTag}
+        open={newTagOpen || childParentTag !== null}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            setNewTagOpen(false);
+            setChildParentTag(null);
+          }
+        }}
+        initialParentId={childParentTag?.id}
+        onSubmit={async ({ name, color, parentId }) => {
+          return createTagPath(name, color, parentId);
+        }}
       />
+
       {editingTag && (
         <TagDialog
           open
@@ -299,21 +329,106 @@ export function SidebarTagsSection() {
             }
           }}
           initial={editingTag}
-          takenNames={editingTakenNames}
-          onSubmit={(name, color) => updateTag(editingTag.id, { name, color })}
+          onSubmit={async ({ name, color, parentId }) => {
+            return updateTag(editingTag.id, { name, color, parentId });
+          }}
         />
       )}
+
+      {movingTag && (
+        <Dialog
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setMovingTag(null);
+            }
+          }}
+        >
+          <DialogContent className="sm:max-w-xs">
+            <DialogHeader>
+              <DialogTitle>{t("tagMenu_move")}</DialogTitle>
+              <DialogDescription className="sr-only">{t("tagMenu_move")}</DialogDescription>
+            </DialogHeader>
+            <div className="pt-1">
+              <TagTreePicker
+                tree={tree}
+                value={movingTag.parentId}
+                onChange={async (newParentId) => {
+                  const result = await moveTag(movingTag.id, newParentId);
+                  if (result.ok) {
+                    setMovingTag(null);
+                  } else {
+                    setTagActionError(
+                      t(
+                        result.error === "storage"
+                          ? "tagAction_errorStorage"
+                          : result.error === "stale"
+                            ? "tagAction_errorStale"
+                            : "tagAction_errorInvalid",
+                      ),
+                    );
+                  }
+                }}
+                disabledReason={(candidateId) => {
+                  if (candidateId === movingTag.id) {
+                    return "tagAction_targetSelf";
+                  }
+                  const err = tagTargetError(tree, movingTag.id, candidateId, "move");
+                  if (err === "cycle") {
+                    return "tagAction_targetDescendant";
+                  }
+                  if (err === "depth") {
+                    return "tagAction_targetDepth";
+                  }
+                  if (err === "duplicate") {
+                    return "tagAction_targetDuplicate";
+                  }
+                  return undefined;
+                }}
+                includeTopLevel
+                label={t("tagMenu_move")}
+              />
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {mergingTag && (
+        <TagMergeDialog
+          sourceTag={mergingTag}
+          onClose={() => setMergingTag(null)}
+          onConfirm={async (targetId) => {
+            return mergeTag(mergingTag.id, targetId);
+          }}
+        />
+      )}
+
       {deletingTag && (
         <TagDeleteDialog
           tag={deletingTag}
           bookmarkCount={deletingCount}
           onClose={() => setDeletingTag(null)}
           onConfirm={async () => {
-            if (!useWorkspaceStore.getState().tags.some(tag => tag.id === deletingTag.id)) { return { ok: true }; }
+            if (!useWorkspaceStore.getState().tags.some((tag) => tag.id === deletingTag.id)) {
+              return { ok: true };
+            }
             const result = await deleteTag(deletingTag.id);
-            if (!result.ok) { return result; }
-            if (useBookmarksStore.getState().selectedTags.includes(deletingTag.id)) { toggleTag(deletingTag.id); }
+            if (!result.ok) {
+              return result;
+            }
+            if (useBookmarksStore.getState().selectedTags.includes(deletingTag.id)) {
+              toggleTag(deletingTag.id);
+            }
             return result;
+          }}
+        />
+      )}
+
+      {unusedDialogOpen && (
+        <UnusedTagsDialog
+          onClose={() => setUnusedDialogOpen(false)}
+          onConfirm={async () => {
+            return deleteUnusedTags();
           }}
         />
       )}

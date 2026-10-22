@@ -1695,6 +1695,21 @@
   "sidebar_tagRightClickHint": {
     "message": "Right-click to edit"
   },
+  "sidebar_tagActions": {
+    "message": "Tag actions"
+  },
+  "sidebar_cleanupUnusedTags": {
+    "message": "Clean up unused tags…"
+  },
+  "tagMenu_newChild": {
+    "message": "New child tag…"
+  },
+  "tagMenu_move": {
+    "message": "Move…"
+  },
+  "tagMenu_merge": {
+    "message": "Merge…"
+  },
   "tagMenu_rename": {
     "message": "Rename…"
   },
@@ -1703,6 +1718,43 @@
   },
   "tagMenu_delete": {
     "message": "Delete…"
+  },
+  "tagTree_expandTag": {
+    "message": "Expand $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagTree_collapseTag": {
+    "message": "Collapse $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagTreePicker_root": {
+    "message": "Top level (no parent)"
+  },
+  "tagTreePicker_search": {
+    "message": "Search tags"
+  },
+  "tagTreePicker_searchPlaceholder": {
+    "message": "Search tags…"
+  },
+  "tagTreePicker_empty": {
+    "message": "No matching tags"
+  },
+  "tagDialog_parentLabel": {
+    "message": "Parent tag"
+  },
+  "tagDialog_parentNone": {
+    "message": "None (top-level)"
+  },
+  "tagDialog_changeParent": {
+    "message": "Change parent tag…"
   },
   "tagDeleteDialog_title": {
     "message": "Delete \"$1\"?",
@@ -1728,8 +1780,108 @@
       }
     }
   },
+  "tagDeleteDialog_promoted_one": {
+    "message": "1 child tag will be moved to the parent level.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_promoted_other": {
+    "message": "$1 child tags will be moved to the parent level.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagDeleteDialog_renames_preview": {
+    "message": "$1 will be renamed to $2 to avoid naming collisions.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      },
+      "2": {
+        "content": "$2"
+      }
+    }
+  },
   "tagDeleteDialog_confirm": {
     "message": "Delete"
+  },
+  "tagMergeDialog_title": {
+    "message": "Merge \"$1\"",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagMergeDialog_targetLabel": {
+    "message": "Merge into"
+  },
+  "tagMergeDialog_confirm": {
+    "message": "Merge"
+  },
+  "tagMergeDialog_loadingCounts": {
+    "message": "Calculating affected bookmarks…"
+  },
+  "tagMergeDialog_affectedBookmarks_one": {
+    "message": "This tag will be replaced on $1 bookmark across all buckets.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagMergeDialog_affectedBookmarks_other": {
+    "message": "This tag will be replaced on $1 bookmarks across all buckets.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "tagMergeDialog_descendantNotice": {
+    "message": "$1 descendant tag replacements will be applied.",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "unusedTagsDialog_title": {
+    "message": "Clean up unused tags"
+  },
+  "unusedTagsDialog_desc": {
+    "message": "The following tags are not used by any active, archived, or trashed bookmarks and will be deleted:"
+  },
+  "unusedTagsDialog_empty": {
+    "message": "No unused tags found."
+  },
+  "unusedTagsDialog_remainder": {
+    "message": "…and $1 more",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "unusedTagsDialog_confirm": {
+    "message": "Delete unused tags"
+  },
+  "tagAction_targetSelf": {
+    "message": "Cannot target the tag itself."
+  },
+  "tagAction_targetDescendant": {
+    "message": "Cannot target a descendant tag."
+  },
+  "tagAction_targetDepth": {
+    "message": "Move would exceed maximum nesting depth of 5."
+  },
+  "tagAction_targetDuplicate": {
+    "message": "A sibling tag with this name already exists."
   },
   "collectionMenu_edit": {
     "message": "Edit…"
