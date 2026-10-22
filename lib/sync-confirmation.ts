@@ -346,7 +346,20 @@ function removeConfirmedFromDeferred(
     : undefined;
 }
 
-async function defaultCommit(payload: SyncPushPayload, serverSeq: number): Promise<SyncPushPayload> {
+function defaultCommit(payload: SyncPushPayload, serverSeq: number): Promise<SyncPushPayload> {
+  return commitMatchedSeqs(payload, serverSeq, true);
+}
+
+/**
+ * Sets `seq` on every stored record that still equals its pushed entity and
+ * returns those entities. With `settleLifecycle`, a confirmed workspace delete
+ * completes its intent and confirmed entities leave the deferred pushes.
+ */
+async function commitMatchedSeqs(
+  payload: SyncPushPayload,
+  seq: number,
+  settleLifecycle: boolean,
+): Promise<SyncPushPayload> {
   const { idbTransaction } = await import("@/lib/idb");
   return idbTransaction(CONFIRMATION_STORES, "readwrite", (transaction) => {
     const requests = new Map<StoreName, IDBRequest>();
@@ -387,7 +400,7 @@ async function defaultCommit(payload: SyncPushPayload, serverSeq: number): Promi
         if (!record || !matchesPersistedSyncEntity(store, record, entity, tabs, intents)) {
           return false;
         }
-        transaction.objectStore(store).put({ ...record, seq: serverSeq });
+        transaction.objectStore(store).put({ ...record, seq });
         target.push(entity);
         return true;
       };
@@ -414,6 +427,9 @@ async function defaultCommit(payload: SyncPushPayload, serverSeq: number): Promi
         }
       }
 
+      if (!settleLifecycle) {
+        return;
+      }
       const confirmedDeleteIds = new Set(
         confirmed.entities.workspaces
           .filter((entity) => entity.lifecycle_action === "delete")
@@ -478,6 +494,28 @@ export async function confirmSyncPayload(
 ): Promise<void> {
   const confirmed = await dependencies.commit(payload, serverSeq);
   await dependencies.apply(confirmed, serverSeq);
+}
+
+export interface SyncUnsentDependencies {
+  commit?: (payload: SyncPushPayload) => Promise<SyncPushPayload>;
+  apply?: (payload: SyncPushPayload) => void | Promise<void>;
+}
+
+/**
+ * Marks the stored records of entities a push never sent (the chunks after a
+ * rejected one) as unsynced, so the sweep after the next pull pushes their
+ * current state. Only records that still equal the unsent entity change; one
+ * edited since has its edit queued already. Lifecycle intents and deferred
+ * pushes stay as they are, since nothing was confirmed.
+ */
+export async function markSyncPayloadUnsent(
+  payload: SyncPushPayload,
+  dependencies: SyncUnsentDependencies = {},
+): Promise<void> {
+  const commit = dependencies.commit ?? ((unsent: SyncPushPayload) => commitMatchedSeqs(unsent, 0, false));
+  const apply = dependencies.apply ?? ((marked: SyncPushPayload) => defaultApply(marked, 0));
+  const marked = await commit(payload);
+  await apply(marked);
 }
 
 export async function completeWorkspaceLifecycleIntent(workspaceId: string): Promise<void> {

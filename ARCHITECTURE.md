@@ -349,7 +349,7 @@ SyncEngine
 1. 任意 store action 调用 `syncEngine?.enqueue({ bookmarks: [...] })` 等
 2. `SyncQueue` 以实体 ID 为 key 去重合并，等待 2s 防抖窗口
 3. `POST /sync/push` 发送 snapshot；大负载由 `splitSyncPushPayload` 按实体数（≤900）和实体字节预算（≤384 KiB，实体 JSON 的 UTF-8 长度加分隔符预算，不含请求 envelope）切成多个顺序请求（非书签在前保证 FK，书签在后）。正常完整请求体低于 512 KiB；超预算的单个实体独占一块，仍可能被服务端以不重试的 413 拒绝。每个请求服务端在单事务内 LWW upsert，`incrementSeq` 并广播新 seq 到 Hub
-4. 失败时将 snapshot 重新入队，指数退避重试（2s → 4s → … → 60s）
+4. 失败时将 snapshot 重新入队，指数退避重试（2s → 4s → … → 60s）；某块返回拒绝时不再发送同一快照的后续块，其中仍与本地记录一致的实体先被标为未同步（`seq = 0`，`markSyncPayloadUnsent`），协调拉取后的 sweep 按当前状态补推
 
 **拉取（服务器变更 → 本地）：**
 1. SSE leader 收到 `{seq: N}` 事件 → `serverSeq > localSeq` 时触发 `GET /sync/pull?after_seq=localSeq`

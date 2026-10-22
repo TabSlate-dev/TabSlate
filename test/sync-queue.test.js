@@ -218,6 +218,62 @@ if (runsInIsolatedProcess(import.meta.filename)) {
       queue.destroy();
     });
 
+    // Unsent chunks come from a stale snapshot, so they are still discarded; their
+    // records are reported so the engine can mark them unsynced for the sweep.
+    test("reports the chunks a rejection left unsent before it resolves the rejection", async () => {
+      const events = [];
+      syncPushImpl = async () => ({
+        server_seq: 9,
+        rejected: [{ id: "bookmark-12", type: "bookmark", reason: "stale" }],
+      });
+      const queue = new SyncQueue(
+        () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+        async () => {
+          events.push("resolve-rejection");
+        },
+        async () => false,
+        {
+          onUnsent: async (payload) => {
+            events.push(`unsent:${payload.entities.bookmarks.map((entity) => entity.id).join(",")}`);
+          },
+        },
+      );
+
+      queue.enqueue({
+        bookmarks: Array.from({ length: 901 }, (_, index) => ({ id: `bookmark-${index}` })),
+      });
+      await queue.flush();
+
+      expect(syncPushCalls).toHaveLength(1);
+      expect(events).toEqual(["unsent:bookmark-900", "resolve-rejection"]);
+      expect(queue.isEmpty()).toBe(true);
+      queue.destroy();
+    });
+
+    test("reports nothing unsent when the rejected chunk was the last", async () => {
+      const unsent = [];
+      syncPushImpl = async () => ({
+        server_seq: 9,
+        rejected: [{ id: "bookmark-1", type: "bookmark", reason: "stale" }],
+      });
+      const queue = new SyncQueue(
+        () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+        async () => {},
+        async () => false,
+        {
+          onUnsent: async (payload) => {
+            unsent.push(payload);
+          },
+        },
+      );
+
+      queue.enqueue({ bookmarks: [{ id: "bookmark-1" }, { id: "bookmark-2" }] });
+      await queue.flush();
+
+      expect(unsent).toEqual([]);
+      queue.destroy();
+    });
+
     test("classifies retryable push failures and applies deterministic jitter", () => {
       expect(isRetryablePushError(new MockApiError("timeout", 408))).toBe(true);
       expect(isRetryablePushError(new MockApiError("rate", 429))).toBe(true);

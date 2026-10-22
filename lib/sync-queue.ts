@@ -27,6 +27,12 @@ export type SyncConflictPolicy = "clear" | "respect";
 
 export interface SyncQueueOptions {
   random?: () => number;
+  /**
+   * Receives the chunks a rejection leaves unsent. They come from a stale
+   * snapshot and are discarded, so their records must be marked unsynced for
+   * the sweep after the reconciling pull to push their current state.
+   */
+  onUnsent?: OnPushUnsent;
 }
 
 export interface SyncQueueLifecycleGate {
@@ -56,6 +62,7 @@ interface PushSnapshot {
 
 type OnPushSuccess = (response: SyncPushResponse, confirmedPayload: SyncPushPayload) => Promise<void>;
 type OnPushFailure = (failure: SyncPushFailure) => Promise<boolean>;
+type OnPushUnsent = (payload: SyncPushPayload) => Promise<void>;
 
 function createQueuedEntities(): QueuedEntities {
   return { workspaces: new Map(), collections: new Map(), bookmarks: new Map(), tags: new Map(), groups: new Map() };
@@ -313,6 +320,13 @@ export class SyncQueue {
         allRejected.push(...response.rejected);
         if (response.rejected.length > 0) {
           this.resetRetryState();
+          const unsent = this.mergeChunks(chunks.slice(index + 1));
+          if (!isSyncPushPayloadEmpty(unsent)) {
+            await this.options.onUnsent?.(unsent);
+            if (this.destroyed) {
+              return;
+            }
+          }
           await this.onSuccess(response, chunk);
           if (this.destroyed) {
             return;

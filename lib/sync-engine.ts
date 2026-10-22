@@ -24,7 +24,7 @@ import {
   syncPayloadEntities,
 } from "@/lib/sync-recovery";
 import { mergeWorkspaceLifecycleDeferredPayload } from "@/lib/workspace-lifecycle-state";
-import { confirmSyncPayload } from "@/lib/sync-confirmation";
+import { confirmSyncPayload, markSyncPayloadUnsent } from "@/lib/sync-confirmation";
 import type { WorkspacePurgeResult } from "@/lib/sync-lifecycle";
 
 export type SyncStatus = "idle" | "syncing" | "error" | "offline";
@@ -93,6 +93,7 @@ export interface SyncEngineDependencies {
     onSuccess: (response: SyncPushResponse, confirmedPayload: SyncPushPayload) => Promise<void>,
     onFailure: (failure: SyncPushFailure) => Promise<boolean>,
     lifecycleGate: SyncQueueLifecycleGate,
+    onUnsent: (payload: SyncPushPayload) => Promise<void>,
   ) => SyncQueueDriver;
   createSseClient?: (
     getCredentials: GetCredentials,
@@ -119,6 +120,7 @@ export interface SyncEngineDependencies {
     payload: SyncPushPayload,
   ) => Promise<void>;
   confirmPayload?: (payload: SyncPushPayload, serverSeq: number) => Promise<void>;
+  markPayloadUnsent?: (payload: SyncPushPayload) => Promise<void>;
   isWorkspaceDeleteConfirmed?: (workspaceId: string) => Promise<boolean>;
   loadWorkspaceAggregateReferences?: (
     workspaceId: string,
@@ -197,6 +199,7 @@ export class SyncEngine {
     payload: SyncPushPayload,
     serverSeq: number,
   ) => Promise<void>;
+  private readonly markPayloadUnsent: (payload: SyncPushPayload) => Promise<void>;
   private readonly isWorkspaceDeleteConfirmed: (workspaceId: string) => Promise<boolean>;
   private readonly loadWorkspaceAggregateReferences: (
     workspaceId: string,
@@ -240,6 +243,7 @@ export class SyncEngine {
     this.mergeDeferredPayload = dependencies.mergeDeferredPayload ??
       mergeWorkspaceLifecycleDeferredPayload;
     this.confirmPayload = dependencies.confirmPayload ?? confirmSyncPayload;
+    this.markPayloadUnsent = dependencies.markPayloadUnsent ?? markSyncPayloadUnsent;
     this.isWorkspaceDeleteConfirmed = dependencies.isWorkspaceDeleteConfirmed ??
       this.defaultIsWorkspaceDeleteConfirmed;
     this.loadWorkspaceAggregateReferences = dependencies.loadWorkspaceAggregateReferences ??
@@ -293,6 +297,20 @@ export class SyncEngine {
       this.setStatus("error", sanitizeSyncErrorMessage(failure.error.message));
       return false;
     };
+    // Runs before the queue resolves the rejection, so the sweep after its
+    // pull pushes the current state of what the stale snapshot never sent.
+    const handleQueueUnsent = async (payload: SyncPushPayload) => {
+      if (this.destroyed) {
+        return;
+      }
+      try {
+        await this.serializeResolution(
+          () => this.destroyed ? Promise.resolve() : this.markPayloadUnsent(payload),
+        );
+      } catch {
+        // Best effort: an unmarked record waits for its next local edit, as before.
+      }
+    };
     if (!dependencies.createQueue) {
       throw new Error("SyncEngine requires a queue factory");
     }
@@ -304,6 +322,7 @@ export class SyncEngine {
         shouldDeferOrdinaryPush: () =>
           this.workspaceLifecycleSyncGate.shouldResolveWorkspaceLifecycleBeforePush(),
       },
+      handleQueueUnsent,
     );
 
     const handleSequence = (serverSeq: number) => {

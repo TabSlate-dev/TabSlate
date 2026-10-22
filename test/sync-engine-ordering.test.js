@@ -170,6 +170,38 @@ describe("SyncEngine ordering", () => {
     engine.destroy();
   });
 
+  test("marks the entities a rejected push left unsent as unsynced", async () => {
+    const marked = [];
+    let unsentHandler = null;
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }),
+      () => 0,
+      async () => null,
+      async () => null,
+      () => {},
+      async () => false,
+      orderingDependencies({
+        createQueue: (getCredentials, onSuccess, onFailure, _lifecycleGate, onUnsent) => {
+          unsentHandler = onUnsent;
+          return new OrderingTestQueue(getCredentials, onSuccess, onFailure);
+        },
+        markPayloadUnsent: async (payload) => {
+          marked.push(payload.entities.bookmarks.map((entity) => entity.id));
+        },
+      }),
+    );
+    if (!unsentHandler) {
+      throw new Error("queue unsent handler was not registered");
+    }
+
+    const unsent = emptyPayload();
+    unsent.entities.bookmarks.push({ id: "bookmark-900" });
+    await unsentHandler(unsent);
+
+    expect(marked).toEqual([["bookmark-900"]]);
+    engine.destroy();
+  });
+
   test("ordinary queue confirms only accepted entities and retries a rejected collection later", async () => {
     const confirmed = [];
     const engine = new SyncEngine(

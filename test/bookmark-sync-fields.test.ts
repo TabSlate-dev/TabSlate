@@ -355,6 +355,31 @@ test("store actions in tests send no analytics events", async () => {
   expect(requested).toEqual([]);
 });
 
+describe("unsent pushes", () => {
+  // The sweep after the next pull pushes seq-0 records, so the edit is not lost.
+  test("a bookmark a rejected push left unsent becomes unsynced unless edited since", async () => {
+    seed([
+      makeBookmark("unchanged", { collectionId: "reading", seq: 42 }),
+      makeBookmark("edited", { collectionId: "reading", seq: 42 }),
+    ]);
+    store().updateBookmarks([
+      { id: "unchanged", patch: { collectionId: "inbox" } },
+      { id: "edited", patch: { collectionId: "inbox" } },
+    ]);
+    const unsent = pushedBookmarks();
+    store().updateBookmark("edited", { title: "Edited again" });
+
+    const { markSyncPayloadUnsent } = await import("@/lib/sync-confirmation");
+    await markSyncPayloadUnsent(
+      { entities: { workspaces: [], collections: [], bookmarks: unsent, tags: [], groups: [] } },
+      { commit: async (payload) => payload },
+    );
+
+    expect(store().bookmarks.get("unchanged")?.seq).toBe(0);
+    expect(store().bookmarks.get("edited")?.seq).toBe(42);
+  });
+});
+
 test("search also matches notes", () => {
   seed([
     makeBookmark("noted", { collectionId: "reading", notes: "Kubernetes deep dive" }),
