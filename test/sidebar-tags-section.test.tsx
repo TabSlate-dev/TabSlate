@@ -204,15 +204,14 @@ describe("SidebarTagsSection", () => {
     expect(getBySelector('[data-tag-id="go"]')).toBeTruthy();
   });
 
-  test("a late IDB read cannot overwrite a click made during hydration", async () => {
+  test("a late IDB read cannot overwrite a click made during hydration and persists merged tags", async () => {
     let resolveRead: ((value: { key: string; value: string[] }) => void) | undefined;
     const pendingRead = new Promise<{ key: string; value: string[] }>((resolve) => { resolveRead = resolve; });
-    const originalGet = db.module.idbGet;
-    db.module.idbGet = async <T,>(store: string, key: string): Promise<T | undefined> => {
+    db.state.onGet = (store: string, key: string) => {
       if (store === "kv" && key === "tag-tree-expanded") {
-        return (await pendingRead) as T;
+        return pendingRead;
       }
-      return originalGet<T>(store, key);
+      return undefined;
     };
 
     act(() => {
@@ -231,14 +230,18 @@ describe("SidebarTagsSection", () => {
     click(getBySelector('[aria-label="tagTree_expandTag[Frontend]"]'));
     expect(getBySelector('[data-tag-id="go"]')).toBeTruthy();
 
-    // Now IDB resolves with empty or collapsed state
+    // Now IDB resolves with pre-existing persisted tags ["a", "b"]
     await act(async () => {
-      resolveRead?.({ key: "tag-tree-expanded", value: [] });
+      resolveRead?.({ key: "tag-tree-expanded", value: ["a", "b"] });
       await Promise.resolve();
     });
 
     // User's click should not have been overwritten
     expect(getBySelector('[data-tag-id="go"]')).toBeTruthy();
-    db.module.idbGet = originalGet;
+
+    // The final persisted value in kv must contain "a", "b" and "frontend"
+    db.state.onGet = undefined;
+    const record = await db.module.idbGet<{ key: string; value: string[] }>("kv", "tag-tree-expanded");
+    expect(record?.value).toEqual(expect.arrayContaining(["a", "b", "frontend"]));
   });
 });

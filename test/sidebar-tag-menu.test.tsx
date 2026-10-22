@@ -109,6 +109,36 @@ describe("tag context menu", () => {
     expect(created?.parentId).toBe("frontend");
   });
 
+  test("move dialog renders inline error on failure and guards against double submit", async () => {
+    await openTagMenu("frontend");
+    click(getByText("tagMenu_move"));
+
+    const dialog = getBySelector('[role="dialog"]');
+    expect(dialog).toBeTruthy();
+
+    // Trigger move with storage error
+    db.state.fail = true;
+    await act(async () => {
+      click(getBySelector('[role="dialog"] [data-tag-id="go"]'));
+    });
+
+    // Error must be rendered INSIDE the Move dialog, and the dialog remains open
+    const alert = dialog.querySelector('[role="alert"]');
+    expect(alert).toBeTruthy();
+    expect(alert?.textContent).toContain("tagAction_errorStorage");
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy();
+
+    // Fix error and move again
+    db.state.fail = false;
+    await act(async () => {
+      click(getBySelector('[role="dialog"] [data-tag-id="go"]'));
+    });
+
+    // Successful move closes the dialog and updates parentId
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(tag("frontend")?.parentId).toBe("go");
+  });
+
   test("rename saves the new name", async () => {
     await openTagMenu("frontend");
     click(getByText("tagMenu_rename"));

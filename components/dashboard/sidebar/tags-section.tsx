@@ -81,6 +81,8 @@ export function SidebarTagsSection() {
 
   const [editingTag, setEditingTag] = React.useState<Tag | null>(null);
   const [movingTag, setMovingTag] = React.useState<Tag | null>(null);
+  const [movePending, setMovePending] = React.useState(false);
+  const [moveError, setMoveError] = React.useState<string | null>(null);
   const [mergingTag, setMergingTag] = React.useState<Tag | null>(null);
   const [deletingTag, setDeletingTag] = React.useState<Tag | null>(null);
   const [unusedDialogOpen, setUnusedDialogOpen] = React.useState(false);
@@ -192,7 +194,11 @@ export function SidebarTagsSection() {
             onSelect={toggleTag}
             onToggleExpand={toggleExpand}
             onNewChild={(parentTag) => setChildParentTag(parentTag)}
-            onMove={(targetTag) => setMovingTag(targetTag)}
+            onMove={(targetTag) => {
+              setMovingTag(targetTag);
+              setMovePending(false);
+              setMoveError(null);
+            }}
             onMerge={(targetTag) => setMergingTag(targetTag)}
             onEdit={(targetTag) => setEditingTag(targetTag)}
             onColorChange={handleColorChange}
@@ -341,10 +347,12 @@ export function SidebarTagsSection() {
           onOpenChange={(open) => {
             if (!open) {
               setMovingTag(null);
+              setMovePending(false);
+              setMoveError(null);
             }
           }}
         >
-          <DialogContent className="sm:max-w-xs">
+          <DialogContent className="sm:max-w-xs" aria-busy={movePending}>
             <DialogHeader>
               <DialogTitle>{t("tagMenu_move")}</DialogTitle>
               <DialogDescription className="sr-only">{t("tagMenu_move")}</DialogDescription>
@@ -354,22 +362,38 @@ export function SidebarTagsSection() {
                 tree={tree}
                 value={movingTag.parentId}
                 onChange={async (newParentId) => {
-                  const result = await moveTag(movingTag.id, newParentId);
-                  if (result.ok) {
-                    setMovingTag(null);
-                  } else {
-                    setTagActionError(
-                      t(
-                        result.error === "storage"
-                          ? "tagAction_errorStorage"
-                          : result.error === "stale"
-                            ? "tagAction_errorStale"
-                            : "tagAction_errorInvalid",
-                      ),
-                    );
+                  if (movePending) {
+                    return;
+                  }
+                  setMovePending(true);
+                  setMoveError(null);
+                  try {
+                    const result = await moveTag(movingTag.id, newParentId);
+                    if (result.ok) {
+                      setMovingTag(null);
+                    } else {
+                      setMoveError(
+                        t(
+                          result.error === "storage"
+                            ? "tagAction_errorStorage"
+                            : result.error === "stale"
+                              ? "tagAction_errorStale"
+                              : result.error === "depth"
+                                ? "tagAction_targetDepth"
+                                : result.error === "duplicate"
+                                  ? "tagAction_targetDuplicate"
+                                  : "tagAction_errorInvalid",
+                        ),
+                      );
+                    }
+                  } finally {
+                    setMovePending(false);
                   }
                 }}
                 disabledReason={(candidateId) => {
+                  if (movePending) {
+                    return "settings_saving";
+                  }
                   if (candidateId === movingTag.id) {
                     return "tagAction_targetSelf";
                   }
@@ -388,6 +412,11 @@ export function SidebarTagsSection() {
                 includeTopLevel
                 label={t("tagMenu_move")}
               />
+              {moveError && (
+                <p role="alert" className="text-xs text-destructive mt-2">
+                  {moveError}
+                </p>
+              )}
             </div>
           </DialogContent>
         </Dialog>

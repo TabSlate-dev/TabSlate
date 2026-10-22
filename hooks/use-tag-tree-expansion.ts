@@ -14,6 +14,7 @@ export function useTagTreeExpansion(
 ): { expandedIds: ReadonlySet<string>; toggle: (id: string) => void } {
   const [manualExpanded, setManualExpanded] = React.useState<ReadonlySet<string>>(() => new Set());
   const userModificationsRef = React.useRef<Map<string, boolean>>(new Map());
+  const isHydratedRef = React.useRef(false);
 
   React.useEffect(() => {
     let active = true;
@@ -25,6 +26,7 @@ export function useTagTreeExpansion(
         const loaded = Array.isArray(entry?.value)
           ? entry.value.filter((id): id is string => typeof id === "string")
           : [];
+        isHydratedRef.current = true;
         setManualExpanded((_prev) => {
           const next = new Set<string>(loaded);
           for (const [id, expanded] of userModificationsRef.current) {
@@ -34,10 +36,17 @@ export function useTagTreeExpansion(
               next.delete(id);
             }
           }
+          if (userModificationsRef.current.size > 0) {
+            void idbPut("kv", { key: "tag-tree-expanded", value: Array.from(next) }).catch(() => {});
+          }
           return next;
         });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (active) {
+          isHydratedRef.current = true;
+        }
+      });
     return () => {
       active = false;
     };
@@ -53,7 +62,9 @@ export function useTagTreeExpansion(
         next.delete(id);
       }
       userModificationsRef.current.set(id, willBeExpanded);
-      void idbPut("kv", { key: "tag-tree-expanded", value: Array.from(next) }).catch(() => {});
+      if (isHydratedRef.current) {
+        void idbPut("kv", { key: "tag-tree-expanded", value: Array.from(next) }).catch(() => {});
+      }
       return next;
     });
   }, []);

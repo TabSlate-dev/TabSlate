@@ -5,7 +5,13 @@ import type { Tag } from "@/lib/types";
 /** A transactional IDB boundary: writes become visible only at commit; abort discards them. */
 export function createTagIdb() {
   const tables = new Map<string, Map<string, object>>();
-  const state = { transactions: 0, fail: false, failReads: false, beforeRead: undefined as (() => void) | undefined };
+  const state = {
+    transactions: 0,
+    fail: false,
+    failReads: false,
+    beforeRead: undefined as (() => void) | undefined,
+    onGet: undefined as ((name: string, id: string) => Promise<unknown> | undefined) | undefined,
+  };
   const table = (name: string) => {
     let records = tables.get(name);
     if (!records) {
@@ -57,7 +63,15 @@ export function createTagIdb() {
       if (state.failReads) { throw new Error("read failed"); }
       return read<T>(name);
     },
-    idbGet: async <T>(name: string, id: string): Promise<T | undefined> => structuredClone(table(name).get(id)) as T | undefined,
+    idbGet: async <T>(name: string, id: string): Promise<T | undefined> => {
+      if (state.onGet) {
+        const intercepted = await state.onGet(name, id);
+        if (intercepted !== undefined) {
+          return intercepted as T;
+        }
+      }
+      return structuredClone(table(name).get(id)) as T | undefined;
+    },
     idbPut: async <T extends { id?: string; key?: string }>(name: string, value: T) => { table(name).set(value.id ?? value.key ?? "", structuredClone(value)); },
     idbDelete: async (name: string, id: string) => { table(name).delete(id); },
     idbBulkWrite: async (ops: { type: string; store: string; key: string; value: { id: string } }[]) => {
