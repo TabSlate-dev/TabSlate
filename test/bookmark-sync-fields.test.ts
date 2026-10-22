@@ -317,6 +317,44 @@ describe("push confirmation", () => {
   });
 });
 
+/**
+ * Runs `action` with analytics configured, as Bun does when it loads a
+ * developer's .env, and returns every URL the code tried to fetch.
+ */
+async function fetchesDuring(action: () => Promise<void> | void): Promise<string[]> {
+  const saved = {
+    url: process.env.VITE_OPENPANEL_URL,
+    clientId: process.env.VITE_OPENPANEL_CLIENT_ID,
+    fetch: Reflect.get(globalThis, "fetch"),
+  };
+  const requested: string[] = [];
+  process.env.VITE_OPENPANEL_URL = "https://openpanel.invalid";
+  process.env.VITE_OPENPANEL_CLIENT_ID = "client";
+  Reflect.set(globalThis, "fetch", async (input: RequestInfo | URL) => {
+    requested.push(String(input));
+    return new Response(null);
+  });
+  try {
+    await action();
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  } finally {
+    process.env.VITE_OPENPANEL_URL = saved.url;
+    process.env.VITE_OPENPANEL_CLIENT_ID = saved.clientId;
+    Reflect.set(globalThis, "fetch", saved.fetch);
+  }
+  return requested;
+}
+
+test("store actions in tests send no analytics events", async () => {
+  const requested = await fetchesDuring(() => {
+    store().addBookmark({
+      title: "Docs", url: "https://docs.example.com", description: "",
+      favicon: "", collectionId: "reading", tags: [], seq: 0,
+    });
+  });
+  expect(requested).toEqual([]);
+});
+
 test("search also matches notes", () => {
   seed([
     makeBookmark("noted", { collectionId: "reading", notes: "Kubernetes deep dive" }),

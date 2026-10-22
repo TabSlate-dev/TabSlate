@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 const STORAGE_KEY = "tabslate-analytics-id";
 
@@ -7,6 +7,33 @@ const getCalls = [];
 const lockCalls = [];
 const setCalls = [];
 const fetchCalls = [];
+
+// The tests below replace the analytics env and these globals; later files
+// in the same process must see the originals again.
+const originalEnv = {
+  VITE_OPENPANEL_URL: process.env.VITE_OPENPANEL_URL,
+  VITE_OPENPANEL_CLIENT_ID: process.env.VITE_OPENPANEL_CLIENT_ID,
+};
+const originalChrome = globalThis.chrome;
+const originalFetch = globalThis.fetch;
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+
+afterAll(() => {
+  for (const [key, value] of Object.entries(originalEnv)) {
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  }
+  globalThis.chrome = originalChrome;
+  globalThis.fetch = originalFetch;
+  if (originalNavigator) {
+    Object.defineProperty(globalThis, "navigator", originalNavigator);
+  } else {
+    delete globalThis.navigator;
+  }
+});
 
 async function importAnalyticsModule() {
   return import(`../lib/analytics.ts?test=${Date.now()}-${Math.random()}`);

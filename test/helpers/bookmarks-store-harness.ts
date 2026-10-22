@@ -79,6 +79,10 @@ export async function installBookmarksStoreHarness(replacer: ModuleReplacer): Pr
   );
   const realStorage = await importFresh<typeof import("@/lib/chrome-storage-adapter")>("lib/chrome-storage-adapter.ts");
   await replacer.replace("@/lib/chrome-storage-adapter", { ...realStorage, chromeStorageAdapter: createMemoryStorage() });
+  // Store actions report analytics, and Bun loads a developer's .env, so tests
+  // would otherwise send events to the configured OpenPanel host.
+  const realAnalytics = await importFresh<typeof import("@/lib/analytics")>("lib/analytics.ts");
+  await replacer.replace("@/lib/analytics", { ...realAnalytics, analytics: { init: async () => {}, track: () => {} } });
   const planStore = await importFresh<typeof import("@/store/plan-store")>("store/plan-store.ts");
   await replacer.replace("@/store/plan-store", planStore);
   const realSyncEngine = await importFresh<typeof import("@/lib/sync-engine")>("lib/sync-engine.ts");
