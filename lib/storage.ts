@@ -36,7 +36,7 @@ export async function getWorkspaceState(): Promise<WorkspaceStorageState> {
   return {
     workspaces,
     collections,
-    tags,
+    tags: tags.filter(tag => tag.deletedAt === undefined),
     activeWorkspaceId: activeWsKv?.value ?? "",
   };
 }

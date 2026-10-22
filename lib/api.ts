@@ -120,6 +120,8 @@ export interface ServerBookmark {
 }
 
 export interface ServerTag {
+  /** Omitted by older servers; null explicitly clears the parent. */
+  parent_id?: string | null;
   id: string;
   user_id: string;
   name: string;

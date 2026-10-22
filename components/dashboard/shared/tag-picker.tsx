@@ -29,6 +29,11 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
   const { t } = useTranslation();
   const tags = useWorkspaceStore((s) => s.tags);
   const createTag = useWorkspaceStore((s) => s.createTag);
+  const [pending, setPending] = React.useState(false);
+  const pendingRef = React.useRef(false);
+  const selectionRef = React.useRef({ value, onChange });
+  selectionRef.current = { value, onChange };
+  const [error, setError] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   const [focused, setFocused] = React.useState(false);
   const [dismissed, setDismissed] = React.useState(false);
@@ -44,17 +49,24 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
   );
   const tagNames = React.useMemo(() => tags.map((tag) => tag.name), [tags]);
   const create = React.useMemo(() => ({
-    canCreate: (name: string) => tagNameError(name, tagNames) === null,
-    onCreate: (name: string) => {
-      const tag = createTag(name, TAG_COLORS[tags.length % TAG_COLORS.length]);
-      // An empty ID means the quota blocked it; the quota alert says so.
-      if (!tag.id) {
-        return;
-      }
-      onChange([...value, tag.id]);
-      setQuery("");
+    canCreate: (name: string) => !pending && tagNameError(name, tagNames) === null,
+    onCreate: async (name: string) => {
+      if (pendingRef.current) { return; }
+      pendingRef.current = true;
+      setPending(true); setError(null);
+      try {
+        const result = await createTag(name, TAG_COLORS[tags.length % TAG_COLORS.length]);
+        if (!result.ok) {
+          setError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : result.error === "quota" ? "tagAction_errorQuota" : "tagAction_errorInvalid"));
+          return;
+        }
+        if (!result.tagId) { return; }
+        const current = selectionRef.current;
+        if (!current.value.includes(result.tagId)) { current.onChange([...current.value, result.tagId]); }
+        setQuery("");
+      } finally { pendingRef.current = false; setPending(false); }
     },
-  }), [tagNames, createTag, tags.length, onChange, value]);
+  }), [tagNames, createTag, tags.length, onChange, value, pending, t]);
 
   const handleActivate = (item: { id: string }) => {
     onChange([...value, item.id]);
@@ -105,6 +117,7 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
           ))}
         </div>
       )}
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
       <FilterableList
         items={items}
         query={query}

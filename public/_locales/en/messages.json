@@ -1,4 +1,16 @@
 {
+  "tagAction_errorStorage": {
+    "message": "The tag could not be saved. Please try again."
+  },
+  "tagAction_errorStale": {
+    "message": "Tags changed elsewhere. Your input is preserved; please try again."
+  },
+  "tagAction_errorQuota": {
+    "message": "The tag limit has been reached."
+  },
+  "tagAction_errorInvalid": {
+    "message": "The tag change is no longer valid. Check its name and parent."
+  },
   "bookmarkNotes_show": {
     "message": "Show notes"
   },

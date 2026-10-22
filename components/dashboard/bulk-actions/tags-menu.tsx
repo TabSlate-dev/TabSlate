@@ -53,6 +53,10 @@ export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
   const createTag = useWorkspaceStore((s) => s.createTag);
   const updateBookmarks = useBookmarksStore((s) => s.updateBookmarks);
   const [open, setOpen] = React.useState(false);
+  const [pending, setPending] = React.useState(false);
+  const pendingRef = React.useRef(false);
+  const requestGeneration = React.useRef(0);
+  const [error, setError] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
   const [changes, setChanges] = React.useState<ReadonlyMap<string, TagCheckState>>(new Map());
 
@@ -64,6 +68,8 @@ export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!next) {
+      requestGeneration.current += 1;
+      setError(null);
       setQuery("");
       setChanges(new Map());
     }
@@ -74,15 +80,24 @@ export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
   };
 
   const create = {
-    canCreate: (name: string) => tagNameError(name, tagNames) === null,
-    onCreate: (name: string) => {
-      const tag = createTag(name, TAG_COLORS[tags.length % TAG_COLORS.length]);
-      // An empty ID means the quota blocked it; the quota alert says so.
-      if (!tag.id) {
-        return;
-      }
-      setChanges((current) => new Map(current).set(tag.id, "checked"));
-      setQuery("");
+    canCreate: (name: string) => !pending && tagNameError(name, tagNames) === null,
+    onCreate: async (name: string) => {
+      if (pendingRef.current) { return; }
+      const generation = requestGeneration.current;
+      pendingRef.current = true;
+      setPending(true); setError(null);
+      try {
+        const result = await createTag(name, TAG_COLORS[tags.length % TAG_COLORS.length]);
+        if (generation !== requestGeneration.current) { return; }
+        if (!result.ok) {
+          setError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : result.error === "quota" ? "tagAction_errorQuota" : "tagAction_errorInvalid"));
+          return;
+        }
+        if (!result.tagId) { return; }
+        const tagId = result.tagId;
+        setChanges((current) => new Map(current).set(tagId, "checked"));
+        setQuery("");
+      } finally { pendingRef.current = false; setPending(false); }
     },
   };
 
@@ -100,6 +115,7 @@ export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
         </Button>
       </PopoverTrigger>
       <PopoverContent align="center" className="w-64 p-2">
+        {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
         <FilterableList
           items={items}
           query={query}
@@ -116,7 +132,7 @@ export function BulkTagsMenu({ bookmarks }: BulkTagsMenuProps) {
           <Button type="button" variant="outline" size="sm" onClick={() => handleOpenChange(false)}>
             {t("settings_cancel")}
           </Button>
-          <Button type="button" size="sm" disabled={changes.size === 0} onClick={handleApply}>
+          <Button type="button" size="sm" disabled={pending || changes.size === 0} onClick={handleApply}>
             {t("bulkTags_apply")}
           </Button>
         </div>

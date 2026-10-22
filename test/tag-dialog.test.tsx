@@ -1,6 +1,7 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { createElement } from "react";
+import type { TagActionResult } from "@/lib/tag-mutations";
 import type { Tag } from "@/lib/types";
 import { createModuleReplacer } from "./helpers/module-replacer";
 import {
@@ -41,8 +42,9 @@ function renderDialog(initial: Tag | undefined, takenNames: string[]) {
       onOpenChange: () => {},
       initial,
       takenNames,
-      onSubmit: (name: string, color: string) => {
+      onSubmit: (name: string, color: string): Promise<TagActionResult> => {
         submitted.push([name, color]);
+        return Promise.resolve({ ok: true });
       },
     }),
   );
@@ -86,4 +88,19 @@ describe("TagDialog", () => {
     expect(dialog.submitted).toEqual([]);
     dialog.view.unmount();
   });
+  test("failed_async_save_keeps_input_and_dialog_open", async () => {
+    const closed: boolean[] = [];
+    const view = render(app, createElement(TagDialog, {
+      open: true, takenNames: [], onOpenChange: (open: boolean) => { closed.push(open); },
+      onSubmit: async (): Promise<TagActionResult> => ({ ok: false, error: "storage" }),
+    }));
+    const input = getBySelector<HTMLInputElement>("#tag-name");
+    typeInto(input, "Keep this name");
+    const form = input.closest("form");
+    if (!form) { throw new Error("missing form"); }
+    await submitForm(form);
+    expect(input.value).toBe("Keep this name"); expect(closed).toEqual([]);
+    expect(getByText("tagAction_errorStorage")).toBeTruthy(); view.unmount();
+  });
+
 });

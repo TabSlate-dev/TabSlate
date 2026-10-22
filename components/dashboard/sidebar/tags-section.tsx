@@ -248,7 +248,7 @@ export function SidebarTagsSection() {
                         </ContextMenuSubTrigger>
                         <ContextMenuSubContent>
                           {TAG_COLORS.map((color, index) => (
-                            <ContextMenuItem key={color} onSelect={() => updateTag(tag.id, { color })}>
+                            <ContextMenuItem key={color} onSelect={async () => { await updateTag(tag.id, { color }); }}>
                               <span className={cn("size-3 rounded-full", swatchClass(color))} />
                               {t("tagDialog_colorOption", [String(index + 1)])}
                               {tag.color === color && <Check className="ml-auto size-4" />}
@@ -275,9 +275,7 @@ export function SidebarTagsSection() {
         open={newTagOpen}
         onOpenChange={setNewTagOpen}
         takenNames={tagNames}
-        onSubmit={(name, color) => {
-          createTag(name, color);
-        }}
+        onSubmit={createTag}
       />
       {editingTag && (
         <TagDialog
@@ -289,9 +287,7 @@ export function SidebarTagsSection() {
           }}
           initial={editingTag}
           takenNames={editingTakenNames}
-          onSubmit={(name, color) => {
-            updateTag(editingTag.id, { name, color });
-          }}
+          onSubmit={(name, color) => updateTag(editingTag.id, { name, color })}
         />
       )}
       {deletingTag && (
@@ -299,15 +295,12 @@ export function SidebarTagsSection() {
           tag={deletingTag}
           bookmarkCount={deletingCount}
           onClose={() => setDeletingTag(null)}
-          onConfirm={() => {
-            // A no-op when another device deleted the tag while the dialog was open.
-            if (tags.some((tag) => tag.id === deletingTag.id)) {
-              deleteTag(deletingTag.id);
-            }
-            // A deleted tag has no chip left to clear, so it must not keep filtering bookmarks.
-            if (selectedTags.includes(deletingTag.id)) {
-              toggleTag(deletingTag.id);
-            }
+          onConfirm={async () => {
+            if (!useWorkspaceStore.getState().tags.some(tag => tag.id === deletingTag.id)) { return { ok: true }; }
+            const result = await deleteTag(deletingTag.id);
+            if (!result.ok) { return result; }
+            if (useBookmarksStore.getState().selectedTags.includes(deletingTag.id)) { toggleTag(deletingTag.id); }
+            return result;
           }}
         />
       )}

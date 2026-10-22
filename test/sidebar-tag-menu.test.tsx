@@ -25,6 +25,9 @@ import {
   makeWorkspace,
 } from "./helpers/library-fixtures";
 
+import { createTagIdb } from "./helpers/tag-idb";
+
+const db = createTagIdb();
 const replacer = createModuleReplacer();
 let app: AppModules;
 let SidebarProvider: typeof import("@/components/ui/sidebar").SidebarProvider;
@@ -34,6 +37,7 @@ let view: RenderResult | null = null;
 beforeAll(async () => {
   setupDom();
   app = await installAppModules(replacer);
+  await replacer.replace("@/lib/idb", { ...await import("@/lib/idb"), ...db.module });
   ({ SidebarProvider } = await import("@/components/ui/sidebar"));
   ({ SidebarTagsSection } = await import("@/components/dashboard/sidebar/tags-section"));
 });
@@ -46,6 +50,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   view?.unmount();
+  app.useWorkspaceStore.getState().reset();
   const bookmarks = [
     makeBookmark("b1", { collectionId: "reading", tags: ["frontend"] }),
     makeBookmark("b2", { collectionId: "reading", tags: ["frontend"] }),
@@ -63,6 +68,7 @@ beforeEach(() => {
     countsByCollection: countsByCollection(bookmarks),
     selectedTags: [],
   });
+  db.seed(app.useWorkspaceStore.getState().tags);
   view = render(app, createElement(SidebarProvider, null, createElement(SidebarTagsSection)));
   click(getByText("sidebar_tags"));
 });
@@ -100,10 +106,10 @@ describe("tag context menu", () => {
     expect(tag("frontend")?.name).toBe("Web");
   });
 
-  test("choosing a color recolors the tag immediately", async () => {
+  test("choosing a color recolors the tag after commit", async () => {
     await openTagMenu("frontend");
     click(getByText("tagMenu_color"));
-    click(getByText("tagDialog_colorOption[2]"));
+    await act(async () => { click(getByText("tagDialog_colorOption[2]")); });
 
     expect(tag("frontend")?.color).toBe("bg-emerald-500/10 text-emerald-500");
   });
@@ -114,7 +120,7 @@ describe("tag context menu", () => {
     expect(getByText("tagDeleteDialog_desc_other[4]")).toBeTruthy();
     expect(tag("frontend")?.name).toBe("Frontend");
 
-    click(getByText("tagDeleteDialog_confirm"));
+    await act(async () => { click(getByText("tagDeleteDialog_confirm")); });
 
     expect(tag("frontend")).toBeUndefined();
   });
@@ -136,7 +142,7 @@ describe("tag context menu", () => {
     });
     await openTagMenu("frontend");
     click(getByText("tagMenu_delete"));
-    click(getByText("tagDeleteDialog_confirm"));
+    await act(async () => { click(getByText("tagDeleteDialog_confirm")); });
 
     expect(tag("frontend")).toBeUndefined();
     expect(app.useBookmarksStore.getState().selectedTags).toEqual(["go"]);
@@ -159,7 +165,7 @@ describe("tag context menu", () => {
     act(() => {
       app.useWorkspaceStore.setState({ tags: [makeTag("go", "Go")] });
     });
-    click(getByText("tagDeleteDialog_confirm"));
+    await act(async () => { click(getByText("tagDeleteDialog_confirm")); });
 
     expect(usePlanStore.getState().usage?.tags).toBe(2);
     expect(tag("go")?.name).toBe("Go");

@@ -146,6 +146,7 @@ function matchesTag(record: ObjectRecord, entity: SyncEntity): boolean {
   return readString(record, "id") === entity.id &&
     readString(record, "name") === entity.name &&
     readString(record, "color") === entity.color &&
+    (readString(record, "parentId") ?? "") === (entity.parent_id ?? "") &&
     nullable(readNumber(record, "deletedAt")) === nullable(entity.deleted_at);
 }
 
@@ -400,7 +401,11 @@ async function commitMatchedSeqs(
         if (!record || !matchesPersistedSyncEntity(store, record, entity, tabs, intents)) {
           return false;
         }
-        transaction.objectStore(store).put({ ...record, seq });
+        if (settleLifecycle && store === "tags" && readNumber(record, "deletedAt") !== undefined) {
+          transaction.objectStore(store).delete(entity.id);
+        } else {
+          transaction.objectStore(store).put({ ...record, seq });
+        }
         target.push(entity);
         return true;
       };

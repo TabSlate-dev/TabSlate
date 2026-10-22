@@ -4,8 +4,12 @@ import { act, createElement } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
 import { click, getBySelector, getByText, installAppModules, pressKey, render, setupDom, teardownDom, typeInto, type AppModules, type RenderResult } from "./helpers/dom-environment";
+import type { TagActionResult } from "@/lib/tag-mutations";
 import { bookmarkMap, countsByCollection, makeBookmark, makeCollection, makeTag, makeWorkspace } from "./helpers/library-fixtures";
 
+import { createTagIdb } from "./helpers/tag-idb";
+
+const db = createTagIdb();
 const replacer = createModuleReplacer();
 let app: AppModules;
 let BulkActionBar: typeof import("@/components/dashboard/bulk-actions").BulkActionBar;
@@ -22,6 +26,7 @@ const library = [
 beforeAll(async () => {
   setupDom();
   app = await installAppModules(replacer);
+  await replacer.replace("@/lib/idb", { ...await import("@/lib/idb"), ...db.module });
   ({ useSelectionStore } = await import("@/store/selection-store"));
   ({ usePlanStore } = await import("@/store/plan-store"));
   ({ SelectionOrdersProvider } = await import("@/components/dashboard/shared/selection-orders"));
@@ -34,6 +39,7 @@ afterAll(async () => {
 });
 beforeEach(async () => {
   view?.unmount();
+  app.useWorkspaceStore.getState().reset();
   usePlanStore.setState({ limits: null, usage: null, fetchedAt: Date.now(), quotaAlert: null });
   app.useWorkspaceStore.setState({
     activeWorkspaceId: "home",
@@ -46,6 +52,7 @@ beforeEach(async () => {
     useSelectionStore.getState().clear();
     useSelectionStore.getState().setMany(["a", "b"], true);
   });
+  db.seed(app.useWorkspaceStore.getState().tags);
   view = render(app, createElement(MemoryRouter, null, createElement(SelectionOrdersProvider, {
     viewOrder: ["a", "b"],
     onScreenOrder: ["a", "b"],
@@ -101,9 +108,9 @@ describe("bulk Tags menu", () => {
     expect(tagsOf("b")).toEqual(["frontend", "docs"]);
   });
 
-  test("a new tag is created and checked for the whole selection", () => {
+  test("a new tag is created and checked for the whole selection", async () => {
     typeInto(getBySelector<HTMLInputElement>('[role="combobox"]'), "Reading");
-    pressKey(getBySelector('[role="combobox"]'), "Enter");
+    await act(async () => { pressKey(getBySelector('[role="combobox"]'), "Enter"); });
     const created = app.useWorkspaceStore.getState().tags.find((tag) => tag.name === "Reading");
     expect(created).toBeDefined();
 
@@ -113,17 +120,37 @@ describe("bulk Tags menu", () => {
     expect(tagsOf("b")).toContain(created?.id);
   });
 
-  test("a tag the quota blocks is not added", () => {
+  test("a tag the quota blocks is not added", async () => {
     usePlanStore.setState({
       limits: { max_bookmarks: 100, max_collections: 100, max_tags: 3, max_workspaces: 10, max_saved_groups: 100, trash_grace_days: 30 },
       usage: { bookmarks: 2, collections: 1, tags: 3, workspaces: 1, saved_groups: 0 },
       fetchedAt: Date.now(),
     });
     typeInto(getBySelector<HTMLInputElement>('[role="combobox"]'), "Reading");
-    pressKey(getBySelector('[role="combobox"]'), "Enter");
+    await act(async () => { pressKey(getBySelector('[role="combobox"]'), "Enter"); });
 
     expect(app.useWorkspaceStore.getState().tags).toHaveLength(3);
     expect(usePlanStore.getState().quotaAlert).not.toBeNull();
     expect(getByText("bulkTags_apply").closest("button")?.disabled).toBe(true);
   });
+  test("closing_during_tag_creation_discards_its_late_selection_change", async () => {
+    const original = app.useWorkspaceStore.getState().createTag;
+    let resolve: ((result: TagActionResult) => void) | undefined;
+    const result = new Promise<TagActionResult>(done => { resolve = done; });
+    act(() => { app.useWorkspaceStore.setState({ createTag: () => result }); });
+    try {
+      typeInto(getBySelector<HTMLInputElement>('[role="combobox"]'), "Reading");
+      pressKey(getBySelector('[role="combobox"]'), "Enter");
+      click(getByText("settings_cancel"));
+      await act(async () => {
+        const tags = [...app.useWorkspaceStore.getState().tags, makeTag("reading", "Reading")];
+        db.seed(tags); app.useWorkspaceStore.setState({ tags });
+        resolve?.({ ok: true, tagId: "reading" });
+      });
+      await act(async () => { click(getByText("bulkActions_tags")); });
+      expect(row("Reading")?.getAttribute("aria-checked")).toBe("false");
+      expect(getByText("bulkTags_apply").closest("button")?.disabled).toBe(true);
+    } finally { act(() => { app.useWorkspaceStore.setState({ createTag: original }); }); }
+  });
+
 });

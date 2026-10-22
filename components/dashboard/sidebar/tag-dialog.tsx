@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { TAG_COLORS } from "@/store/workspace-store";
 import { useTranslation } from "@/hooks/use-translation";
+import type { TagActionResult } from "@/lib/tag-mutations";
 import type { Tag } from "@/lib/types";
 import { tagNameError } from "@/lib/tag-name";
 
@@ -23,13 +24,14 @@ interface TagDialogProps {
   initial?: Tag;
   /** Names of the other tags, used to reject duplicates. */
   takenNames: readonly string[];
-  onSubmit: (name: string, color: string) => void;
+  onSubmit: (name: string, color: string) => Promise<TagActionResult>;
 }
 
 export function TagDialog({ open, onOpenChange, initial, takenNames, onSubmit }: TagDialogProps) {
   const { t } = useTranslation();
   const [name, setName] = React.useState(initial?.name ?? "");
   const [color, setColor] = React.useState<string>(initial?.color ?? TAG_COLORS[0]);
+  const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
@@ -40,15 +42,23 @@ export function TagDialog({ open, onOpenChange, initial, takenNames, onSubmit }:
     }
   }, [open, initial]);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const problem = tagNameError(name, takenNames);
+    if (pending) { return; }
+    const problem = initial && name.trim() === initial.name ? null : tagNameError(name, takenNames);
     if (problem) {
       setError(t(problem === "empty" ? "tagDialog_errorEmpty" : "tagDialog_errorDuplicate"));
       return;
     }
-    onSubmit(name.trim(), color);
-    onOpenChange(false);
+    setPending(true);
+    try {
+      const result = await onSubmit(name.trim(), color);
+      if (!result.ok) {
+        setError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : result.error === "quota" ? "tagAction_errorQuota" : "tagAction_errorInvalid"));
+        return;
+      }
+      onOpenChange(false);
+    } finally { setPending(false); }
   };
 
   return (
@@ -105,7 +115,7 @@ export function TagDialog({ open, onOpenChange, initial, takenNames, onSubmit }:
             <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
               {t("settings_cancel")}
             </Button>
-            <Button type="submit" size="sm">
+            <Button type="submit" size="sm" disabled={pending} aria-busy={pending}>
               {t(initial ? "tagDialog_save" : "tagDialog_create")}
             </Button>
           </DialogFooter>

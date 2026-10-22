@@ -1,4 +1,16 @@
 {
+  "tagAction_errorStorage": {
+    "message": "无法保存标签，请重试。"
+  },
+  "tagAction_errorStale": {
+    "message": "标签已在其他页面更改。已保留您的输入，请重试。"
+  },
+  "tagAction_errorQuota": {
+    "message": "已达到标签数量上限。"
+  },
+  "tagAction_errorInvalid": {
+    "message": "标签更改不再有效，请检查名称和父标签。"
+  },
   "bookmarkNotes_show": {
     "message": "显示备注"
   },

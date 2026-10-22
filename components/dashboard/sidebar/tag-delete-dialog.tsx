@@ -1,3 +1,5 @@
+import * as React from "react";
+import type { TagActionResult } from "@/lib/tag-mutations";
 import {
   Dialog,
   DialogContent,
@@ -15,11 +17,13 @@ interface TagDeleteDialogProps {
   /** Active bookmarks in every workspace that carry the tag. */
   bookmarkCount: number;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => Promise<TagActionResult>;
 }
 
 export function TagDeleteDialog({ tag, bookmarkCount, onClose, onConfirm }: TagDeleteDialogProps) {
   const { t } = useTranslation();
+  const [pending, setPending] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
   return (
     <Dialog
       open
@@ -36,6 +40,7 @@ export function TagDeleteDialog({ tag, bookmarkCount, onClose, onConfirm }: TagD
             {t(bookmarkCount === 1 ? "tagDeleteDialog_desc_one" : "tagDeleteDialog_desc_other", [String(bookmarkCount)])}
           </DialogDescription>
         </DialogHeader>
+        {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" size="sm" onClick={onClose}>
             {t("settings_cancel")}
@@ -44,9 +49,19 @@ export function TagDeleteDialog({ tag, bookmarkCount, onClose, onConfirm }: TagD
             type="button"
             variant="destructive"
             size="sm"
-            onClick={() => {
-              onConfirm();
-              onClose();
+            disabled={pending}
+            aria-busy={pending}
+            onClick={async () => {
+              if (pending) { return; }
+              setPending(true);
+              try {
+                const result = await onConfirm();
+                if (!result.ok) {
+                  setError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : "tagAction_errorInvalid"));
+                  return;
+                }
+                onClose();
+              } finally { setPending(false); }
             }}
           >
             {t("tagDeleteDialog_confirm")}

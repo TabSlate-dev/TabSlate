@@ -89,6 +89,9 @@ export async function installAppModules(replacer: ModuleReplacer): Promise<AppMo
   );
   const bookmarksStore = await importFresh<typeof import("@/store/bookmarks-store")>("store/bookmarks-store.ts");
   await replacer.replace("@/store/bookmarks-store", bookmarksStore);
+  // Tag mutation queues are scoped to an application session; another test may
+  // leave hydration waiting on its inert IndexedDB request.
+  await replacer.replace("@/lib/tag-persistence", await importFresh<typeof import("@/lib/tag-persistence")>("lib/tag-persistence.ts"));
   const workspaceStore = await importFresh<typeof import("@/store/workspace-store")>("store/workspace-store.ts");
   await replacer.replace("@/store/workspace-store", workspaceStore);
   await replacer.replace(

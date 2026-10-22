@@ -9,6 +9,8 @@ export interface TagMutationPlan {
   replacements: ReadonlyMap<string, string>;
 }
 
+export type TagActionResult = { ok: true; tagId?: string } | { ok: false; error: TagValidationError | "quota" | "stale" | "storage" };
+
 export type TagMutationPlanResult = { ok: true; plan: TagMutationPlan } | { ok: false; error: TagValidationError };
 
 function emptyPlan(): TagMutationPlan {

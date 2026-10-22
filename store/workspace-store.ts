@@ -1,6 +1,9 @@
 import { create } from "zustand";
 import type { Workspace, Collection, Tag } from "@/lib/types";
 import type { ImportPlan } from "@/lib/import-types";
+import { buildTagTree, resolveTagPath } from "@/lib/tag-tree";
+import { planTagEdit, planTagDeletion, type TagActionResult, type TagMutationPlan } from "@/lib/tag-mutations";
+import { changePersistedTags, commitTagMutation, invalidateTagMutations, serializeTagMutation, tagMutationSession, TagMutationStaleError } from "@/lib/tag-persistence";
 import { generateId } from "@/lib/id";
 import { idbGetAll, idbGet, idbPut, idbDelete, idbBulkWrite, type BulkWriteOp } from "@/lib/idb";
 import * as idb from "@/lib/idb";
@@ -120,6 +123,7 @@ function toServerTag(t: Tag): SyncEntity {
     id: t.id,
     name: t.name,
     color: t.color,
+    parent_id: t.parentId ?? "",
     seq: t.seq,
     deleted_at: t.deletedAt ?? null,
     updated_at: Date.now(),
@@ -166,6 +170,7 @@ function tagMatchesSyncEntity(tag: Tag, entity: SyncEntity): boolean {
   return entity.id === tag.id &&
     entity.name === tag.name &&
     entity.color === tag.color &&
+    (entity.parent_id ?? "") === (tag.parentId ?? "") &&
     (entity.deleted_at ?? null) === (tag.deletedAt ?? null);
 }
 
@@ -240,9 +245,13 @@ interface WorkspaceState {
   permanentlyDeleteCollection: (id: string) => void;
 
   // Tag CRUD
-  createTag: (name: string, color: string) => Tag;
-  updateTag: (id: string, patch: Partial<Pick<Tag, "name" | "color">>) => void;
-  deleteTag: (id: string) => void;
+  createTag: (name: string, color: string) => Promise<TagActionResult>;
+  createTagPath: (input: string, color: string, parentId?: string) => Promise<TagActionResult>;
+  updateTag: (id: string, patch: Partial<Pick<Tag, "name" | "color" | "parentId">>) => Promise<TagActionResult>;
+  moveTag: (id: string, parentId: string | undefined) => Promise<TagActionResult>;
+  deleteTag: (id: string) => Promise<TagActionResult>;
+  restoreRejectedTagParent: (id: string, attempted: SyncEntity, authoritative: Tag | undefined, isSessionCurrent?: () => boolean) => Promise<void>;
+  settleRejectedTagDeletion: (id: string, attempted: SyncEntity, isSessionCurrent?: () => boolean) => Promise<void>;
   importFromPlan: (plan: ImportPlan) => boolean;
 
   // Computed
@@ -257,6 +266,64 @@ interface WorkspaceState {
 let _collectionHighlightTimer: ReturnType<typeof setTimeout> | null = null;
 let _guestWorkspaceInitialization: Promise<void> | null = null;
 
+interface PlannedTagAction {
+  ok: true;
+  plan: TagMutationPlan;
+  tagId?: string;
+}
+
+function runTagAction(
+  build: (tags: readonly Tag[]) => PlannedTagAction | Extract<TagActionResult, { ok: false }>,
+): Promise<TagActionResult> {
+  const isCurrent = tagMutationSession();
+  return serializeTagMutation(async () => {
+    if (!isCurrent()) { return { ok: false, error: "stale" }; }
+    const planStore = usePlanStore.getState();
+    await planStore.ensureFresh();
+    if (!isCurrent()) { return { ok: false, error: "stale" }; }
+    const snapshot = useWorkspaceStore.getState().tags;
+    const result = build(snapshot);
+    if (!result.ok) { return result; }
+    const { plan } = result;
+    if (plan.upserts.length === 0 && plan.tombstones.length === 0) {
+      return { ok: true, ...(result.tagId ? { tagId: result.tagId } : {}) };
+    }
+    const created = plan.upserts.filter(tag => !snapshot.some(existing => existing.id === tag.id)).length;
+    if (created > 0 && !planStore.checkQuota("tag", snapshot.length + created - 1)) {
+      planStore.showQuotaAlert("tag");
+      return { ok: false, error: "quota" };
+    }
+    try {
+      await commitTagMutation(plan, snapshot, () => isCurrent() &&
+        useWorkspaceStore.getState().tags === snapshot &&
+        (created === 0 || planStore.checkQuota("tag", snapshot.length + created - 1)));
+      if (!isCurrent()) { return { ok: false, error: "stale" }; }
+      const replacements = new Map(plan.upserts.map(tag => [tag.id, tag]));
+      const removed = new Set(plan.tombstones.map(tag => tag.id));
+      const tags = snapshot.filter(tag => !removed.has(tag.id)).map(tag => replacements.get(tag.id) ?? tag);
+      tags.push(...plan.upserts.filter(tag => !snapshot.some(existing => existing.id === tag.id)));
+      useWorkspaceStore.setState({ tags });
+      if (created > 0) { planStore.incrementUsage("tag", created); }
+      if (removed.size > 0) { planStore.decrementUsage("tag", removed.size); }
+      syncEngine?.enqueue({ tags: [...plan.upserts, ...plan.tombstones].map(toServerTag) });
+      return { ok: true, ...(result.tagId ? { tagId: result.tagId } : {}) };
+    } catch (error) {
+      if (error instanceof TagMutationStaleError) {
+        if (isCurrent() && created > 0 && !planStore.checkQuota("tag", snapshot.length + created - 1)) {
+          planStore.showQuotaAlert("tag");
+          return { ok: false, error: "quota" };
+        }
+        if (isCurrent()) {
+          const tags = await idbGetAll<Tag>("tags");
+          if (isCurrent()) { useWorkspaceStore.setState({ tags: tags.filter(tag => tag.deletedAt === undefined) }); }
+        }
+        return { ok: false, error: "stale" };
+      }
+      return { ok: false, error: "storage" };
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -269,53 +336,59 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   localSeq: 0,
 
   _hydrated: false,
-  hydrate: async () => {
-    const [workspaces, collections, tags] = await Promise.all([
-      idbGetAll<Workspace>("workspaces"),
-      idbGetAll<Collection>("collections"),
-      idbGetAll<Tag>("tags"),
-    ]);
-    const [activeWsKv, compactKv, localSeqKv] = await Promise.all([
-      idbGet<{ key: string; value: string }>("kv", "activeWorkspaceId"),
-      idbGet<{ key: string; value: boolean }>("kv", "compactGroupTitles"),
-      idbGet<{ key: string; value: number }>("kv", "localSeq"),
-    ]);
+  hydrate: () => {
+    const isCurrent = tagMutationSession();
+    return serializeTagMutation(async () => {
+      if (!isCurrent()) { return; }
+      const [workspaces, collections, tags] = await Promise.all([
+        idbGetAll<Workspace>("workspaces"),
+        idbGetAll<Collection>("collections"),
+        idbGetAll<Tag>("tags"),
+      ]);
+      const [activeWsKv, compactKv, localSeqKv] = await Promise.all([
+        idbGet<{ key: string; value: string }>("kv", "activeWorkspaceId"),
+        idbGet<{ key: string; value: boolean }>("kv", "compactGroupTitles"),
+        idbGet<{ key: string; value: number }>("kv", "localSeq"),
+      ]);
 
-    // Offline fallback: if a workspace has no isDefault collection in local IDB data,
-    // flag the lowest-position active one temporarily. This is overwritten on the next
-    // pull once the server confirms the real is_default value.
-    for (const ws of workspaces.filter(isActiveWorkspace)) {
-      const wsCols = collections.filter(
-        c => c.workspaceId === ws.id && !c.deletedAt && !c.archivedAt,
-      );
-      if (!wsCols.some(c => c.isDefault) && wsCols.length > 0) {
-        const first = [...wsCols].sort((a, b) => a.position - b.position)[0];
-        const idx = collections.findIndex(c => c.id === first.id);
-        if (idx !== -1) { collections[idx] = { ...collections[idx], isDefault: true }; }
+      // Offline fallback: if a workspace has no isDefault collection in local IDB data,
+      // flag the lowest-position active one temporarily. This is overwritten on the next
+      // pull once the server confirms the real is_default value.
+      for (const ws of workspaces.filter(isActiveWorkspace)) {
+        const wsCols = collections.filter(
+          c => c.workspaceId === ws.id && !c.deletedAt && !c.archivedAt,
+        );
+        if (!wsCols.some(c => c.isDefault) && wsCols.length > 0) {
+          const first = [...wsCols].sort((a, b) => a.position - b.position)[0];
+          const idx = collections.findIndex(c => c.id === first.id);
+          if (idx !== -1) { collections[idx] = { ...collections[idx], isDefault: true }; }
+        }
       }
-    }
 
-    const persistedActiveId = activeWsKv?.value ?? "";
-    const persistedActive = workspaces.find(
-      (workspace) => workspace.id === persistedActiveId && isActiveWorkspace(workspace),
-    );
-    const activeWorkspaceId = persistedActive?.id ?? chooseActiveWorkspace(workspaces)?.id ?? "";
-    if (activeWorkspaceId !== persistedActiveId) {
-      await idbPut("kv", { key: "activeWorkspaceId", value: activeWorkspaceId });
-    }
+      const persistedActiveId = activeWsKv?.value ?? "";
+      const persistedActive = workspaces.find(
+        (workspace) => workspace.id === persistedActiveId && isActiveWorkspace(workspace),
+      );
+      const activeWorkspaceId = persistedActive?.id ?? chooseActiveWorkspace(workspaces)?.id ?? "";
+      if (activeWorkspaceId !== persistedActiveId) {
+        await idbPut("kv", { key: "activeWorkspaceId", value: activeWorkspaceId });
+      }
 
-    set({
-      workspaces,
-      collections,
-      tags,
-      activeWorkspaceId,
-      compactGroupTitles: compactKv?.value ?? true,
-      localSeq: localSeqKv?.value ?? 0,
-      _hydrated: true,
+      if (!isCurrent()) { return; }
+      set({
+        workspaces,
+        collections,
+        tags: tags.filter(tag => tag.deletedAt === undefined),
+        activeWorkspaceId,
+        compactGroupTitles: compactKv?.value ?? true,
+        localSeq: localSeqKv?.value ?? 0,
+        _hydrated: true,
+      });
     });
   },
 
   reset: () => {
+    invalidateTagMutations();
     set({
       workspaces: [],
       collections: [],
@@ -452,164 +525,169 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     });
   },
 
-  mergeFromServer: async (resp) => {
-    const terminalWorkspaceIds = resp.entities.workspaces
-      .filter((workspace) => workspace.is_deleted === 2)
-      .map((workspace) => workspace.id);
-    const terminalIds = new Set(terminalWorkspaceIds);
-    const pendingIntents = new Map(
-      (await readWorkspaceLifecycleIntents()).map((intent) => [intent.workspaceId, intent]),
-    );
-    const current = get();
-    let workspaces = [...current.workspaces];
-    let collections = [...current.collections];
-    let tags = [...current.tags];
-    const restoredWorkspaceIds = new Set<string>();
+  mergeFromServer: (resp) => {
+    const isCurrent = tagMutationSession();
+    return serializeTagMutation(async () => {
+      if (!isCurrent()) { return { terminalWorkspaceIds: [], restoredWorkspaceIds: [] }; }
+      const terminalWorkspaceIds = resp.entities.workspaces
+        .filter((workspace) => workspace.is_deleted === 2)
+        .map((workspace) => workspace.id);
+      const terminalIds = new Set(terminalWorkspaceIds);
+      const pendingIntents = new Map(
+        (await readWorkspaceLifecycleIntents()).map((intent) => [intent.workspaceId, intent]),
+      );
+      const current = get();
+      let workspaces = [...current.workspaces];
+      let collections = [...current.collections];
+      let tags = [...current.tags];
+      const restoredWorkspaceIds = new Set<string>();
 
-    for (const serverWorkspace of resp.entities.workspaces) {
-      const index = workspaces.findIndex((workspace) => workspace.id === serverWorkspace.id);
-      const local = index === -1 ? undefined : workspaces[index];
-      if (serverWorkspace.is_deleted === 2) {
-        if (index !== -1) {
-          workspaces.splice(index, 1);
+      for (const serverWorkspace of resp.entities.workspaces) {
+        const index = workspaces.findIndex((workspace) => workspace.id === serverWorkspace.id);
+        const local = index === -1 ? undefined : workspaces[index];
+        if (serverWorkspace.is_deleted === 2) {
+          if (index !== -1) {
+            workspaces.splice(index, 1);
+          }
+          continue;
         }
-        continue;
-      }
 
-      const intent = pendingIntents.get(serverWorkspace.id);
-      const serverDeleted = serverWorkspace.is_deleted === 1;
-      const pendingDeleteWins = intent?.action === "delete" && !serverDeleted;
-      const pendingRestoreWins = intent?.action === "restore" && serverDeleted;
-      if (local && (pendingDeleteWins || pendingRestoreWins)) {
-        continue;
-      }
-
-      if (!serverDeleted && (local?.deletedAt !== undefined || intent?.action === "restore")) {
-        restoredWorkspaceIds.add(serverWorkspace.id);
-      }
-      const merged: Workspace = {
-        id: serverWorkspace.id,
-        name: serverWorkspace.name,
-        color: serverWorkspace.color ?? local?.color ?? "",
-        position: serverWorkspace.position,
-        seq: serverWorkspace.seq,
-        deletionModel: serverWorkspace.deletion_model,
-        ...(serverDeleted
-          ? { deletedAt: serverWorkspace.deleted_at ?? local?.deletedAt ?? Date.now() }
-          : {}),
-      };
-      if (index === -1) {
-        workspaces.push(merged);
-      } else {
-        workspaces[index] = merged;
-      }
-    }
-
-    const permanentlyDeletedCollectionIds = new Set(
-      resp.entities.collections.filter((collection) => collection.is_deleted === 2).map((collection) => collection.id),
-    );
-    for (const serverCollection of resp.entities.collections) {
-      const index = collections.findIndex((collection) => collection.id === serverCollection.id);
-      if (permanentlyDeletedCollectionIds.has(serverCollection.id)) {
-        if (index !== -1) {
-          collections.splice(index, 1);
+        const intent = pendingIntents.get(serverWorkspace.id);
+        const serverDeleted = serverWorkspace.is_deleted === 1;
+        const pendingDeleteWins = intent?.action === "delete" && !serverDeleted;
+        const pendingRestoreWins = intent?.action === "restore" && serverDeleted;
+        if (local && (pendingDeleteWins || pendingRestoreWins)) {
+          continue;
         }
-        continue;
-      }
-      const local = index === -1 ? undefined : collections[index];
-      if (
-        local &&
-        local.seq === 0 &&
-        (local.deletedAt !== undefined || local.archivedAt !== undefined) &&
-        !serverCollection.deleted_at &&
-        !serverCollection.archived_at
-      ) {
-        continue;
-      }
-      const merged: Collection = {
-        id: serverCollection.id,
-        workspaceId: serverCollection.workspace_id ?? local?.workspaceId ?? "",
-        name: serverCollection.name,
-        icon: serverCollection.icon ?? local?.icon ?? "folder",
-        position: serverCollection.position,
-        seq: serverCollection.seq,
-        isDefault: serverCollection.deleted_at ? false : serverCollection.is_default ?? local?.isDefault,
-        ...(serverCollection.deleted_at ? { deletedAt: serverCollection.deleted_at } : {}),
-        ...(serverCollection.archived_at ? { archivedAt: serverCollection.archived_at } : {}),
-      };
-      if (index === -1) {
-        collections.push(merged);
-      } else {
-        collections[index] = merged;
-      }
-    }
 
-    for (const serverTag of resp.entities.tags) {
-      const index = tags.findIndex((tag) => tag.id === serverTag.id);
-      if (serverTag.deleted_at) {
-        if (index !== -1) {
-          tags.splice(index, 1);
+        if (!serverDeleted && (local?.deletedAt !== undefined || intent?.action === "restore")) {
+          restoredWorkspaceIds.add(serverWorkspace.id);
         }
-        continue;
+        const merged: Workspace = {
+          id: serverWorkspace.id,
+          name: serverWorkspace.name,
+          color: serverWorkspace.color ?? local?.color ?? "",
+          position: serverWorkspace.position,
+          seq: serverWorkspace.seq,
+          deletionModel: serverWorkspace.deletion_model,
+          ...(serverDeleted
+            ? { deletedAt: serverWorkspace.deleted_at ?? local?.deletedAt ?? Date.now() }
+            : {}),
+        };
+        if (index === -1) {
+          workspaces.push(merged);
+        } else {
+          workspaces[index] = merged;
+        }
       }
-      const merged: Tag = {
-        id: serverTag.id,
-        name: serverTag.name,
-        color: serverTag.color ?? (index === -1 ? "" : tags[index].color),
-        seq: serverTag.seq,
-      };
-      if (index === -1) {
-        tags.push(merged);
-      } else {
-        tags[index] = merged;
-      }
-    }
 
-    const currentActive = workspaces.find(
-      (workspace) => workspace.id === current.activeWorkspaceId && isActiveWorkspace(workspace),
-    );
-    const activeWorkspaceId = currentActive?.id ?? chooseActiveWorkspace(workspaces)?.id ?? "";
-    const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
-    const collectionById = new Map(collections.map((collection) => [collection.id, collection]));
-    const tagById = new Map(tags.map((tag) => [tag.id, tag]));
-    const operations: BulkWriteOp[] = [
-      { type: "put", store: "kv", value: { key: "activeWorkspaceId", value: activeWorkspaceId } },
-    ];
-    for (const serverWorkspace of resp.entities.workspaces) {
-      if (terminalIds.has(serverWorkspace.id)) {
-        continue;
+      const permanentlyDeletedCollectionIds = new Set(
+        resp.entities.collections.filter((collection) => collection.is_deleted === 2).map((collection) => collection.id),
+      );
+      for (const serverCollection of resp.entities.collections) {
+        const index = collections.findIndex((collection) => collection.id === serverCollection.id);
+        if (permanentlyDeletedCollectionIds.has(serverCollection.id)) {
+          if (index !== -1) {
+            collections.splice(index, 1);
+          }
+          continue;
+        }
+        const local = index === -1 ? undefined : collections[index];
+        if (
+          local &&
+          local.seq === 0 &&
+          (local.deletedAt !== undefined || local.archivedAt !== undefined) &&
+          !serverCollection.deleted_at &&
+          !serverCollection.archived_at
+        ) {
+          continue;
+        }
+        const merged: Collection = {
+          id: serverCollection.id,
+          workspaceId: serverCollection.workspace_id ?? local?.workspaceId ?? "",
+          name: serverCollection.name,
+          icon: serverCollection.icon ?? local?.icon ?? "folder",
+          position: serverCollection.position,
+          seq: serverCollection.seq,
+          isDefault: serverCollection.deleted_at ? false : serverCollection.is_default ?? local?.isDefault,
+          ...(serverCollection.deleted_at ? { deletedAt: serverCollection.deleted_at } : {}),
+          ...(serverCollection.archived_at ? { archivedAt: serverCollection.archived_at } : {}),
+        };
+        if (index === -1) {
+          collections.push(merged);
+        } else {
+          collections[index] = merged;
+        }
       }
-      const workspace = workspaceById.get(serverWorkspace.id);
-      if (workspace) {
-        operations.push({ type: "put", store: "workspaces", value: workspace });
+
+      // Tag pulls decide against durable records, including hidden pending tombstones.
+      // Keep this separate from the workspace batch so a cross-context tag edit
+      // cannot be overwritten between an IDB read and a later unconditional put.
+      if (resp.entities.tags.length > 0) {
+        await changePersistedTags((records) => {
+          const byId = new Map(records.map(tag => [tag.id, tag]));
+          const puts: Tag[] = [];
+          const deletes: string[] = [];
+          for (const serverTag of resp.entities.tags) {
+            const local = byId.get(serverTag.id);
+            if (local?.seq === 0) {
+              if (local.deletedAt !== undefined && serverTag.deleted_at) {
+                byId.delete(serverTag.id); deletes.push(serverTag.id);
+              }
+              continue;
+            }
+            if (serverTag.deleted_at) {
+              byId.delete(serverTag.id); deletes.push(serverTag.id); continue;
+            }
+            const merged: Tag = {
+              id: serverTag.id, name: serverTag.name, color: serverTag.color ?? local?.color ?? "",
+              parentId: serverTag.parent_id === undefined ? local?.parentId : serverTag.parent_id || undefined,
+              seq: serverTag.seq,
+            };
+            byId.set(merged.id, merged); puts.push(merged);
+          }
+          tags = [...byId.values()].filter(tag => tag.deletedAt === undefined);
+          return { puts, deletes };
+        }, isCurrent);
       }
-    }
-    for (const serverCollection of resp.entities.collections) {
-      if (permanentlyDeletedCollectionIds.has(serverCollection.id)) {
-        operations.push({ type: "delete", store: "collections", key: serverCollection.id });
-        continue;
+
+      const currentActive = workspaces.find(
+        (workspace) => workspace.id === current.activeWorkspaceId && isActiveWorkspace(workspace),
+      );
+      const activeWorkspaceId = currentActive?.id ?? chooseActiveWorkspace(workspaces)?.id ?? "";
+      const workspaceById = new Map(workspaces.map((workspace) => [workspace.id, workspace]));
+      const collectionById = new Map(collections.map((collection) => [collection.id, collection]));
+      const operations: BulkWriteOp[] = [
+        { type: "put", store: "kv", value: { key: "activeWorkspaceId", value: activeWorkspaceId } },
+      ];
+      for (const serverWorkspace of resp.entities.workspaces) {
+        if (terminalIds.has(serverWorkspace.id)) {
+          continue;
+        }
+        const workspace = workspaceById.get(serverWorkspace.id);
+        if (workspace) {
+          operations.push({ type: "put", store: "workspaces", value: workspace });
+        }
       }
-      const collection = collectionById.get(serverCollection.id);
-      if (collection) {
-        operations.push({ type: "put", store: "collections", value: collection });
+      for (const serverCollection of resp.entities.collections) {
+        if (permanentlyDeletedCollectionIds.has(serverCollection.id)) {
+          operations.push({ type: "delete", store: "collections", key: serverCollection.id });
+          continue;
+        }
+        const collection = collectionById.get(serverCollection.id);
+        if (collection) {
+          operations.push({ type: "put", store: "collections", value: collection });
+        }
       }
-    }
-    for (const serverTag of resp.entities.tags) {
-      if (serverTag.deleted_at) {
-        operations.push({ type: "delete", store: "tags", key: serverTag.id });
-        continue;
-      }
-      const tag = tagById.get(serverTag.id);
-      if (tag) {
-        operations.push({ type: "put", store: "tags", value: tag });
-      }
-    }
-    await idbBulkWrite(operations);
-    set({ workspaces, collections, tags, activeWorkspaceId });
-    return {
-      terminalWorkspaceIds,
-      restoredWorkspaceIds: [...restoredWorkspaceIds],
-    };
+      if (!isCurrent()) { return { terminalWorkspaceIds: [], restoredWorkspaceIds: [] }; }
+      await idbBulkWrite(operations);
+      if (!isCurrent()) { return { terminalWorkspaceIds: [], restoredWorkspaceIds: [] }; }
+      set({ workspaces, collections, tags, activeWorkspaceId });
+      return {
+        terminalWorkspaceIds,
+        restoredWorkspaceIds: [...restoredWorkspaceIds],
+      };
+    });
   },
 
   applyGuestWorkspaceChanges: (changes) => {
@@ -965,33 +1043,56 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Tags ──────────────────────────────────────────────────────────────
-  createTag: (name, color) =>
-    guardQuota("tag", get().tags.length, { id: "", name, color, seq: 0 } as Tag, () => {
-      const tag: Tag = { id: generateId(), name, color, seq: 0 };
-      set((s) => ({ tags: [...s.tags, tag] }));
-      idbPut("tags", tag);
-      syncEngine?.enqueue({ tags: [toServerTag(tag)] });
-      usePlanStore.getState().incrementUsage("tag");
-      return tag;
-    }),
+  createTag: (name, color) => get().createTagPath(name, color),
 
-  updateTag: (id, patch) => {
-    set((s) => ({
-      tags: s.tags.map((t) => (t.id === id ? { ...t, ...patch } : t)),
-    }));
-    const updated = get().tags.find(t => t.id === id);
-    if (updated) {
-      idbPut("tags", updated);
-      syncEngine?.enqueue({ tags: [toServerTag(updated)] });
-    }
+  createTagPath: (input, color, parentId) => runTagAction((tags) => {
+    const resolved = resolveTagPath(buildTagTree(tags, "en"), input, parentId, color, generateId);
+    if (!resolved.ok) { return resolved; }
+    return { ok: true, tagId: resolved.leaf.id, plan: { upserts: resolved.created, tombstones: [], replacements: new Map() } };
+  }),
+
+  updateTag: (id, patch) => runTagAction((tags) => {
+    const tree = buildTagTree(tags, "en");
+    const normalized = Object.prototype.hasOwnProperty.call(patch, "parentId")
+      ? patch : { ...patch, parentId: tree.parentById.get(id) };
+    return planTagEdit(tree, id, normalized);
+  }),
+
+  moveTag: (id, parentId) => get().updateTag(id, { parentId }),
+
+  deleteTag: (id) => runTagAction(tags => planTagDeletion(buildTagTree(tags, "en"), [id], Date.now())),
+
+  restoreRejectedTagParent: (id, attempted, authoritative, isSessionCurrent = () => true) => {
+    const current = tagMutationSession();
+    const isCurrent = () => current() && isSessionCurrent();
+    return serializeTagMutation(async () => {
+      if (!isCurrent()) { return; }
+      await changePersistedTags((records) => {
+        const local = records.find(tag => tag.id === id);
+        if (!local || (local.parentId ?? "") !== (attempted.parent_id ?? "")) { return { puts: [], deletes: [] }; }
+        if (authoritative?.deletedAt !== undefined) {
+          return tagMatchesSyncEntity(local, attempted) ? { puts: [], deletes: [id] } : { puts: [], deletes: [] };
+        }
+        // An absent rejected parent must not discard a new child or its bookmark references.
+        // Restore only the rejected edge. Later names/colors are still pending edits.
+        return { puts: [{ ...local, parentId: authoritative?.parentId, seq: 0 }], deletes: [] };
+      }, isCurrent);
+      const tags = await idbGetAll<Tag>("tags");
+      if (isCurrent()) { set({ tags: tags.filter(tag => tag.deletedAt === undefined) }); }
+    });
   },
 
-  deleteTag: (id) => {
-    const tag = get().tags.find(t => t.id === id);
-    if (tag) { syncEngine?.enqueue({ tags: [toServerTag({ ...tag, deletedAt: Date.now() })] }); }
-    idbDelete("tags", id);
-    set((s) => ({ tags: s.tags.filter((t) => t.id !== id) }));
-    usePlanStore.getState().decrementUsage("tag");
+  settleRejectedTagDeletion: (id, attempted, isSessionCurrent = () => true) => {
+    const current = tagMutationSession();
+    const isCurrent = () => current() && isSessionCurrent();
+    return serializeTagMutation(async () => {
+      if (!isCurrent()) { return; }
+      // Caller must have confirmed authoritative absence; never infer it from invalid_state.
+      await changePersistedTags((records) => {
+        const local = records.find(tag => tag.id === id);
+        return { puts: [], deletes: local?.deletedAt !== undefined && tagMatchesSyncEntity(local, attempted) ? [id] : [] };
+      }, isCurrent);
+    });
   },
 
   importFromPlan: (plan) => {
@@ -1057,7 +1158,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
         (workspace) => workspace.seq === 0 && !pendingWorkspaceIds.has(workspace.id),
       );
       const cols = collections.filter(c => c.seq === 0);
-      const ts = tags.filter(t => t.seq === 0);
+      const persistedTags = await idbGetAll<Tag>("tags");
+      const ts = [...new Map([...tags, ...persistedTags].filter(t => t.seq === 0).map(tag => [tag.id, tag])).values()];
       const payload = syncConflictRegistry.filterPayload({
         entities: {
           workspaces: ws.map(toServerWorkspace),
