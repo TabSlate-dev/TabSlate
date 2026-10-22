@@ -69,8 +69,11 @@ interface TabsState {
   saveWindowAsCollection: (name: string, deduplicate: boolean) => Promise<SaveTabsToCollectionResult>;
   saveGroupAsCollection: (groupId: number, name: string, deduplicate: boolean) => Promise<SaveTabsToCollectionResult>;
   openCollectionAsGroup: (collectionId: string, title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
-  /** Opens URLs as background tabs in a new group, honoring the compact-title setting. */
-  openUrlsAsGroup: (urls: string[], title: string, color: TabGroupColor, compact?: boolean) => Promise<void>;
+  /**
+   * Opens URLs as background tabs in a new group, honoring the compact-title
+   * setting. Resolves to the number of URLs the browser refused.
+   */
+  openUrlsAsGroup: (urls: string[], title: string, color: TabGroupColor, compact?: boolean) => Promise<number>;
   openCollection: (collectionId: string) => Promise<void>;
   
   // Group actions
@@ -442,14 +445,14 @@ export const useTabsStore = create<TabsState>((set, get) => ({
   },
 
   openUrlsAsGroup: async (urls, title, color, compact) => {
-    if (!urls.length) { return; }
+    if (!urls.length) { return 0; }
 
     const { compactGroupTitles } = useWorkspaceStore.getState();
     const isCompact = compact !== undefined ? compact : compactGroupTitles;
     const fullTitle = title.trim() || getAutoGroupName();
     const chromeTitle = isCompact ? (fullTitle[0] || "") : fullTitle;
 
-    const groupId = await openAsTabGroup(urls, chromeTitle, color);
+    const { groupId, failedCount } = await openAsTabGroup(urls, chromeTitle, color);
 
     const currentTitles = { ...get().fullTitles, [groupId]: fullTitle };
     idbPut("tab-group-titles", { groupId, title: fullTitle });
@@ -460,6 +463,7 @@ export const useTabsStore = create<TabsState>((set, get) => ({
       getCurrentWindowGroups(),
     ]);
     set({ openTabs: tabs, tabGroups: groups, fullTitles: currentTitles });
+    return failedCount;
   },
 
   openCollectionAsGroup: async (collectionId, title, color, compact) => {

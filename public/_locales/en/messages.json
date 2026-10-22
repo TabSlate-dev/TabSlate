@@ -1927,6 +1927,14 @@
   "bulkActions_openFailed": {
     "message": "Couldn't open the tabs"
   },
+  "bulkActions_openSomeFailed": {
+    "message": "Couldn't open $1 of the tabs",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "bulkActions_confirmOpenTitle": {
     "message": "Open $1 tabs?",
     "placeholders": {

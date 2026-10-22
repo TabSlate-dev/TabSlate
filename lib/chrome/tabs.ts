@@ -79,11 +79,31 @@ export async function openUrls(urls: string[]): Promise<void> {
   }
 }
 
-/** Open URLs, in order, as background tabs in the current window. */
-export async function openUrlsInBackground(urls: readonly string[]): Promise<void> {
+/** The tabs a batch open created, and how many URLs the browser refused. */
+export interface OpenedTabs {
+  tabIds: number[];
+  failedCount: number;
+}
+
+/**
+ * Open URLs, in order, as background tabs in the current window. A URL the
+ * browser refuses (e.g. file: without file access) is skipped and counted, so
+ * one bookmark cannot stop the rest from opening.
+ */
+export async function openUrlsInBackground(urls: readonly string[]): Promise<OpenedTabs> {
+  const tabIds: number[] = [];
+  let failedCount = 0;
   for (const url of urls) {
-    await chrome.tabs.create({ url, active: false });
+    try {
+      const tab = await chrome.tabs.create({ url, active: false });
+      if (tab.id !== undefined) {
+        tabIds.push(tab.id);
+      }
+    } catch {
+      failedCount += 1;
+    }
   }
+  return { tabIds, failedCount };
 }
 
 /**

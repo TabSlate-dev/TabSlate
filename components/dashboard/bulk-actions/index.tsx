@@ -135,10 +135,11 @@ export function BulkActionBar() {
     const ordered = selectedInViewOrder();
     const urls = ordered.map((bookmark) => bookmark.url);
     try {
-      if (mode === "group") {
-        await openUrlsAsGroup(urls, groupTitleFor(ordered), "grey");
-      } else {
-        await openUrlsInBackground(urls);
+      const failedCount = mode === "group"
+        ? await openUrlsAsGroup(urls, groupTitleFor(ordered), "grey")
+        : (await openUrlsInBackground(urls)).failedCount;
+      if (failedCount > 0) {
+        showNotice({ tone: "error", message: t("bulkActions_openSomeFailed", [String(failedCount)]) });
       }
     } catch {
       showNotice({ tone: "error", message: t("bulkActions_openFailed") });

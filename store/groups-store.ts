@@ -378,7 +378,7 @@ export const useGroupsStore = create<GroupsState>()((set, get) => ({
       .sort((a, b) => a.position - b.position)
       .map((t) => t.url);
     if (!urls.length) { return; }
-    const chromeGroupId = await openAsTabGroup(urls, group.name, group.color, group.isCompact);
+    const { groupId: chromeGroupId } = await openAsTabGroup(urls, group.name, group.color, group.isCompact);
     
     // Register the full title in tabs-store so it can sync properly later
     const { useTabsStore } = await import("./tabs-store");

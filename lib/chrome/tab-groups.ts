@@ -3,6 +3,8 @@
  * https://developer.chrome.com/docs/extensions/reference/api/tabGroups
  */
 
+import { openUrlsInBackground } from "@/lib/chrome/tabs";
+
 export type TabGroupColor =
   | "grey"
   | "blue"
@@ -94,24 +96,27 @@ export async function ungroupTabs(tabIds: number[]): Promise<void> {
   await chrome.tabs.ungroup(toTabIdTuple(tabIds));
 }
 
+/** A group opened from URLs, and how many of them the browser refused. */
+export interface OpenedTabGroup {
+  groupId: number;
+  failedCount: number;
+}
+
 /**
- * Open a list of URLs as new tabs and immediately put them in a named,
- * colored tab group. Returns the new group ID.
+ * Open a list of URLs as new tabs and put the ones that opened in a named,
+ * colored tab group. Throws when none of them opened.
  */
 export async function openAsTabGroup(
   urls: string[],
   title: string,
   color: TabGroupColor,
   isCompact?: boolean
-): Promise<number> {
+): Promise<OpenedTabGroup> {
   if (urls.length === 0) { throw new Error("No URLs to open"); }
 
-  const tabIds: number[] = [];
-  for (const url of urls) {
-    const tab = await chrome.tabs.create({ url, active: false });
-    if (tab.id) { tabIds.push(tab.id); }
-  }
+  const { tabIds, failedCount } = await openUrlsInBackground(urls);
+  if (tabIds.length === 0) { throw new Error("No tabs opened"); }
 
   const chromeTitle = isCompact ? (title[0] || "") : title;
-  return groupTabs(tabIds, chromeTitle, color);
+  return { groupId: await groupTabs(tabIds, chromeTitle, color), failedCount };
 }

@@ -1927,6 +1927,14 @@
   "bulkActions_openFailed": {
     "message": "无法打开标签页"
   },
+  "bulkActions_openSomeFailed": {
+    "message": "有 $1 个标签页无法打开",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
   "bulkActions_confirmOpenTitle": {
     "message": "打开 $1 个标签页？",
     "placeholders": {

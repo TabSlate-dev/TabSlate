@@ -8,8 +8,8 @@ import { bookmarkMap, countsByCollection, makeBookmark, makeCollection, makeWork
 import type { Bookmark } from "@/lib/types";
 
 const replacer = createModuleReplacer();
-const openUrlsInBackground = mock(async (_urls: readonly string[]) => {});
-const openAsTabGroup = mock(async (_urls: string[], _title: string, _color: string) => 7);
+const openUrlsInBackground = mock(async (_urls: readonly string[]) => ({ tabIds: [1], failedCount: 0 }));
+const openAsTabGroup = mock(async (_urls: string[], _title: string, _color: string) => ({ groupId: 7, failedCount: 0 }));
 const copied: string[] = [];
 let clipboardFails = false;
 let tabGroupsSupported = true;
@@ -213,6 +213,21 @@ describe("opening a selection", () => {
     renderBar(reading, ["a", "c"], ["a"]);
     await chooseFromMenu(openMenu(), "bulkActions_openAll");
     expect(getBySelector('[role="status"]').textContent).toContain("bulkActions_openFailed");
+  });
+
+  test("tabs the browser refuses are counted in a notice once the rest open", async () => {
+    openUrlsInBackground.mockImplementationOnce(async () => ({ tabIds: [1], failedCount: 1 }));
+    renderBar(reading, ["a", "c"], ["a", "c"]);
+    await chooseFromMenu(openMenu(), "bulkActions_openAll");
+    expect(getBySelector('[role="status"]').textContent).toContain("bulkActions_openSomeFailed[1]");
+  });
+
+  test("a group of the tabs that opened is kept, and the notice counts the refused ones", async () => {
+    openAsTabGroup.mockImplementationOnce(async () => ({ groupId: 7, failedCount: 1 }));
+    renderBar(reading, ["a", "c"], ["a", "c"]);
+    await chooseFromMenu(openMenu(), "bulkActions_openAsGroup");
+    expect(storedTitles).toEqual([{ groupId: 7, title: "Reading" }]);
+    expect(getBySelector('[role="status"]').textContent).toContain("bulkActions_openSomeFailed[1]");
   });
 });
 
