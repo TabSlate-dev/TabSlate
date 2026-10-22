@@ -64,6 +64,31 @@ export function bookmarkCreatedAtTime(createdAt: string): number {
 /** The longest note a bookmark may carry, in UTF-16 code units (what `maxLength` counts). */
 export const MAX_BOOKMARK_NOTES_LENGTH = 10_000;
 
+/** The longest cover URL a bookmark stores; the server accepts up to 2,048 characters. */
+export const MAX_BOOKMARK_IMAGE_URL_LENGTH = 2048;
+
+/**
+ * The cover URL to store for a page: `raw` resolved against the page URL,
+ * when it is http(s) and at most MAX_BOOKMARK_IMAGE_URL_LENGTH long.
+ * Undefined otherwise, which also drops data: URIs.
+ */
+export function normalizeCoverUrl(raw: string, pageUrl: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  let resolved: URL;
+  try {
+    resolved = pageUrl ? new URL(trimmed, pageUrl) : new URL(trimmed);
+  } catch {
+    return undefined;
+  }
+  if (resolved.protocol !== "http:" && resolved.protocol !== "https:") {
+    return undefined;
+  }
+  return resolved.href.length <= MAX_BOOKMARK_IMAGE_URL_LENGTH ? resolved.href : undefined;
+}
+
 /**
  * When the user last changed a bookmark. Bookmarks saved before edit times
  * existed report their creation time.

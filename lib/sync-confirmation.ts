@@ -168,6 +168,7 @@ function matchesBookmark(
     readString(record, "favicon") === entity.favicon_url &&
     readString(record, "description") === entity.description &&
     (readString(record, "notes") ?? "") === (entity.notes ?? "") &&
+    (readString(record, "imageUrl") ?? "") === (entity.image_url ?? "") &&
     entity.edited_at === bookmarkEditedAt(readNumber(record, "updatedAt"), readString(record, "createdAt") ?? "") &&
     readBoolean(record, "isFavorite") === entity.is_favorite &&
     entity.is_archived === (store === "archived-bookmarks") &&

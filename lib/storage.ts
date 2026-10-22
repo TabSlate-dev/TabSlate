@@ -10,6 +10,7 @@ export interface BookmarkInput {
   favicon: string;
   description?: string;
   notes?: string;
+  imageUrl?: string;
   collectionId: string;
   tags?: string[];
 }
@@ -81,6 +82,7 @@ export const storageService = {
       favicon: input.favicon || "",
       description: input.description ?? "",
       notes: input.notes ?? "",
+      imageUrl: input.imageUrl ?? "",
       collectionId: target.id,
       tags: input.tags ?? [],
       createdAt: new Date().toISOString(),

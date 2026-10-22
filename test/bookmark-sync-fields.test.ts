@@ -260,6 +260,7 @@ describe("push confirmation", () => {
       favicon_url: bookmark.favicon,
       description: bookmark.description,
       notes: bookmark.notes ?? "",
+      image_url: bookmark.imageUrl ?? "",
       is_favorite: bookmark.isFavorite,
       is_archived: false,
       is_trashed: 0,
@@ -283,6 +284,16 @@ describe("push confirmation", () => {
     store().confirmBookmarkEntitySeqs([entityFor(current)], 42);
     expect(store().bookmarks.get("b1")?.seq).toBe(42);
   });
+
+  test("a push of an older cover does not confirm the newer local bookmark", () => {
+    const current = makeBookmark("b1", { collectionId: "reading", imageUrl: "https://cdn.example.com/new.png", updatedAt: 200 });
+    seed([current]);
+
+    store().confirmBookmarkEntitySeqs([entityFor({ ...current, imageUrl: "https://cdn.example.com/old.png" })], 42);
+    expect(store().bookmarks.get("b1")?.seq).toBe(0);
+    store().confirmBookmarkEntitySeqs([entityFor(current)], 42);
+    expect(store().bookmarks.get("b1")?.seq).toBe(42);
+  });
 });
 
 test("search also matches notes", () => {
@@ -292,4 +303,55 @@ test("search also matches notes", () => {
   ]);
   harness.useBookmarksStore.setState({ searchQuery: "kubernetes" });
   expect(store().getFilteredBookmarks(new Set(["reading"])).map((bookmark) => bookmark.id)).toEqual(["noted"]);
+});
+
+describe("covers", () => {
+  test("adding pushes the cover, and a bookmark without one pushes an empty string", () => {
+    store().addBookmark({
+      title: "Docs", url: "https://docs.example.com", description: "", favicon: "",
+      collectionId: "reading", tags: [], seq: 0, imageUrl: "https://cdn.example.com/docs.png",
+    });
+    store().addBookmark({
+      title: "Plain", url: "https://plain.example.com", description: "", favicon: "",
+      collectionId: "reading", tags: [], seq: 0,
+    });
+    expect(pushedBookmarks().map((entity) => entity.image_url)).toEqual(["https://cdn.example.com/docs.png", ""]);
+  });
+
+  test("an edit that clears the cover stores and pushes an empty string", () => {
+    seed([makeBookmark("b1", { collectionId: "reading", imageUrl: "https://cdn.example.com/old.png" })]);
+    store().updateBookmark("b1", { imageUrl: "" });
+    expect(store().bookmarks.get("b1")?.imageUrl).toBe("");
+    expect(pushedBookmarks().at(-1)?.image_url).toBe("");
+  });
+
+  test("a batch patch changes the cover only when it differs", () => {
+    seed([makeBookmark("b1", { collectionId: "reading", imageUrl: "https://cdn.example.com/a.png", updatedAt: 3 })]);
+    store().updateBookmarks([{ id: "b1", patch: { imageUrl: "https://cdn.example.com/a.png" } }]);
+    expect(pushedBookmarks()).toEqual([]);
+    expect(store().bookmarks.get("b1")?.updatedAt).toBe(3);
+
+    store().updateBookmarks([{ id: "b1", patch: { imageUrl: "https://cdn.example.com/b.png" } }]);
+    expect(store().bookmarks.get("b1")?.imageUrl).toBe("https://cdn.example.com/b.png");
+    expect(pushedBookmarks().at(-1)?.image_url).toBe("https://cdn.example.com/b.png");
+  });
+
+  test("merging takes the server's cover, and an empty one clears the local cover", async () => {
+    seed([
+      makeBookmark("b1", { collectionId: "reading", imageUrl: "https://cdn.example.com/local.png" }),
+      makeBookmark("b2", { collectionId: "reading", imageUrl: "https://cdn.example.com/local.png" }),
+    ]);
+    await merge([
+      serverBookmark("b1", { image_url: "https://cdn.example.com/remote.png" }),
+      serverBookmark("b2", { image_url: "" }),
+    ]);
+    expect(store().bookmarks.get("b1")?.imageUrl).toBe("https://cdn.example.com/remote.png");
+    expect(store().bookmarks.get("b2")?.imageUrl).toBe("");
+  });
+
+  test("merging keeps the local cover when the server predates covers", async () => {
+    seed([makeBookmark("b1", { collectionId: "reading", imageUrl: "https://cdn.example.com/local.png" })]);
+    await merge([serverBookmark("b1")]);
+    expect(store().bookmarks.get("b1")?.imageUrl).toBe("https://cdn.example.com/local.png");
+  });
 });

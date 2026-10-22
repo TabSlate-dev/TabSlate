@@ -104,6 +104,8 @@ export interface ServerBookmark {
   description?: string;
   /** Absent when the server predates notes. */
   notes?: string;
+  /** The cover URL; absent when the server predates covers. */
+  image_url?: string;
   is_favorite: boolean;
   is_archived: boolean;
   is_trashed: number;

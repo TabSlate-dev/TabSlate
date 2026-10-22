@@ -36,6 +36,8 @@ export interface Bookmark {
   /** Plain-text notes; a missing value means "". */
   notes?: string;
   favicon: string;
+  /** The page's cover (og:image) URL; a missing value or "" means no cover. */
+  imageUrl?: string;
   collectionId: string;
   tags: string[]; // tag IDs
   createdAt: string;
@@ -49,7 +51,7 @@ export interface Bookmark {
 
 /** The fields a batch update may change. */
 export type BookmarkBatchPatch = Partial<
-  Pick<Bookmark, "title" | "url" | "description" | "notes" | "collectionId" | "tags" | "isFavorite">
+  Pick<Bookmark, "title" | "url" | "description" | "notes" | "imageUrl" | "collectionId" | "tags" | "isFavorite">
 >;
 
 export interface BookmarkPatchEntry {

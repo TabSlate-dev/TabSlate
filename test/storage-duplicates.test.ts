@@ -63,6 +63,19 @@ describe("findSavedDuplicates", () => {
 
 
 describe("storageService.addBookmark", () => {
+  test("writes the cover, and an empty cover when the page has none", async () => {
+    const withCover = await storageService.addBookmark({
+      title: "Page", url: "https://example.com/cover", favicon: "", collectionId: "reading",
+      imageUrl: "https://cdn.example.com/cover.png",
+    });
+    const withoutCover = await storageService.addBookmark({
+      title: "Page", url: "https://example.com/plain", favicon: "", collectionId: "reading",
+    });
+    expect(withCover.imageUrl).toBe("https://cdn.example.com/cover.png");
+    expect(withoutCover.imageUrl).toBe("");
+    expect(puts.at(-1)).toEqual(withoutCover);
+  });
+
   test("writes the note and stamps the edit time", async () => {
     setSystemTime(new Date(70_000));
     try {
