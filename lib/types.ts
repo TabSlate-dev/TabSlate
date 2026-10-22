@@ -23,6 +23,7 @@ export interface Collection {
 export interface Tag {
   id: string;
   name: string;
+  parentId?: string;
   color: string; // tailwind classes e.g. "bg-blue-500/10 text-blue-500"
   seq: number;
   deletedAt?: number;

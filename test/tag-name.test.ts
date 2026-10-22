@@ -12,4 +12,11 @@ describe("tagNameError", () => {
   test("accepts a new name", () => {
     expect(tagNameError("Reading", ["Read"])).toBeNull();
   });
+  test("rejects literal slashes in new names", () => {
+    expect(tagNameError("Programming/Go", [])).toBe("slash");
+  });
+  test("limits names to fifty Unicode code points after trimming", () => {
+    expect(tagNameError(` ${"😀".repeat(50)} `, [])).toBeNull();
+    expect(tagNameError("😀".repeat(51), [])).toBe("too_long");
+  });
 });

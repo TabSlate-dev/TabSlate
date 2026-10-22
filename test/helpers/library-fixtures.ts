@@ -12,6 +12,10 @@ export function makeTag(id: string, name: string, overrides: Partial<Tag> = {}):
   return { id, name, color: "bg-blue-500/10 text-blue-500", seq: 0, ...overrides };
 }
 
+export function makeTagChain(ids: readonly string[]): Tag[] {
+  return ids.map((id, index) => makeTag(id, id, { parentId: ids[index - 1] }));
+}
+
 export function makeBookmark(id: string, overrides: Partial<Bookmark> = {}): Bookmark {
   return {
     id,
