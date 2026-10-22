@@ -3,8 +3,6 @@
  * https://developer.chrome.com/docs/extensions/reference/api/tabGroups
  */
 
-import { openUrlsInBackground } from "@/lib/chrome/tabs";
-
 export type TabGroupColor =
   | "grey"
   | "blue"
@@ -114,7 +112,19 @@ export async function openAsTabGroup(
 ): Promise<OpenedTabGroup> {
   if (urls.length === 0) { throw new Error("No URLs to open"); }
 
-  const { tabIds, failedCount } = await openUrlsInBackground(urls);
+  // A URL the browser refuses (e.g. file: without file access) is skipped and counted.
+  const tabIds: number[] = [];
+  let failedCount = 0;
+  for (const url of urls) {
+    try {
+      const tab = await chrome.tabs.create({ url, active: false });
+      if (tab.id !== undefined) {
+        tabIds.push(tab.id);
+      }
+    } catch {
+      failedCount += 1;
+    }
+  }
   if (tabIds.length === 0) { throw new Error("No tabs opened"); }
 
   const chromeTitle = isCompact ? (title[0] || "") : title;
