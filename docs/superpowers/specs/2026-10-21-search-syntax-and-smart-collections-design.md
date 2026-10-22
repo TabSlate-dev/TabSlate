@@ -56,6 +56,7 @@ The faved.to comparison (see `docs/superpowers/specs/2026-10-15-library-manageme
 ### 1. Where the syntax applies
 
 - **Header search** (`components/dashboard/header.tsx`): the main list, Favorites, Archive, and Trash all filter with the parsed query, replacing `applySearch`'s substring match. The placeholder becomes a translated hint such as "Search, or try #tag, site:…".
+  - The header's search input is currently commented out in `header.tsx`, so nothing sets the store's `searchQuery` and these lists cannot be searched today. This sub-project restores the input, with a translated placeholder and an accessible label, and shows it at every width rather than only from `md` up.
 - **New tab search box** (`components/dashboard/search-box.tsx`). The dropdown lists:
   1. Open tabs, matched on the query's plain text only.
   2. Local bookmark results, matched with the full syntax against the active workspace's visible bookmarks (and the `collectionId` prop when set). This is new and works for guests and offline.
