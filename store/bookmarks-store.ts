@@ -351,7 +351,7 @@ interface BookmarksState {
   reassignCollection: (fromId: string, toId: string) => void;
 
   // Computed
-  getFilteredBookmarks: (workspaceCollectionIds: Set<string>) => Bookmark[];
+  getFilteredBookmarks: (workspaceCollectionIds: Set<string>, expandedTagIds?: ReadonlySet<string>) => Bookmark[];
   getFavoriteBookmarks: () => Bookmark[];
   getArchivedBookmarks: () => Bookmark[];
   getTrashedBookmarks: () => Bookmark[];
@@ -1564,7 +1564,7 @@ export const useBookmarksStore = create<BookmarksState>()(
 
       // workspaceCollectionIds: Set of collection IDs in the active workspace
       // (pass from caller to avoid circular import with workspace-store)
-      getFilteredBookmarks: (workspaceCollectionIds) => {
+      getFilteredBookmarks: (workspaceCollectionIds, expandedTagIds) => {
         const state = get();
         let filtered = Array.from(state.bookmarks.values()).filter(
           (b) =>
@@ -1578,7 +1578,13 @@ export const useBookmarksStore = create<BookmarksState>()(
           );
         }
 
-        if (state.selectedTags.length > 0) {
+        if (expandedTagIds !== undefined) {
+          if (state.selectedTags.length > 0 || expandedTagIds.size > 0) {
+            filtered = filtered.filter((b) =>
+              b.tags.some((tag) => expandedTagIds.has(tag))
+            );
+          }
+        } else if (state.selectedTags.length > 0) {
           filtered = filtered.filter((b) =>
             state.selectedTags.some((tag) => b.tags.includes(tag))
           );

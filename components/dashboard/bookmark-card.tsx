@@ -23,6 +23,8 @@ import {
 import { FaviconImage } from "@/components/ui/favicon-image";
 import { TagList } from "@/components/ui/tag-list";
 import { useTranslation } from "@/hooks/use-translation";
+import { useTagTree } from "@/hooks/use-tag-tree";
+import { displayTagPath } from "@/lib/tag-tree";
 
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { BookmarkNotesPopover } from "@/components/dashboard/shared/bookmark-notes-popover";
@@ -106,14 +108,24 @@ export const BookmarkCard = React.memo(function BookmarkCard({
   const toggleSelection = useSelectionStore((s) => s.toggle);
   const selectRange = useSelectionStore((s) => s.selectRange);
 
-  const tags = useWorkspaceStore((s) => s.tags);
+  const tree = useTagTree();
   const bookmarkTags = React.useMemo(
     () =>
       bookmark.tags.length === 0
         ? EMPTY_TAGS
-        : tags.filter((tag) => bookmark.tags.includes(tag.id)),
-    [tags, bookmark.tags]
+        : bookmark.tags.flatMap((id) => {
+            const tag = tree.tagsById.get(id);
+            return tag ? [tag] : [];
+          }),
+    [tree.tagsById, bookmark.tags]
   );
+  const pathByTagId = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const id of tree.tagsById.keys()) {
+      map.set(id, displayTagPath(tree, id));
+    }
+    return map;
+  }, [tree]);
   const notes = bookmark.notes ?? "";
   const hasNotes = notes.trim() !== "";
   const [copied, setCopied] = React.useState(false);
@@ -310,8 +322,8 @@ export const BookmarkCard = React.memo(function BookmarkCard({
 
           {/* Tags */}
           {bookmarkTags.length > 0 && (
-            <div className="px-3 pb-3">
-              <TagList tags={bookmarkTags} max={3} onTagClick={toggleTag} selectedTagIds={selectedTags} />
+            <div className="px-3 pb-3" onClick={(e) => e.stopPropagation()}>
+              <TagList tags={bookmarkTags} pathByTagId={pathByTagId} max={3} onTagClick={toggleTag} selectedTagIds={selectedTags} />
             </div>
           )}
         </div>

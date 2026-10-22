@@ -45,6 +45,8 @@ import {
 } from "@/lib/workspace-visibility";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { compareBookmarksNewestFirst } from "@/lib/bookmark-utils";
+import { useTagTree } from "@/hooks/use-tag-tree";
+import { displayTagPath } from "@/lib/tag-tree";
 
 // ---------------------------------------------------------------------------
 // Icon map (mirrors sidebar)
@@ -201,11 +203,24 @@ function ArchivedBookmarkCard({
   const { t } = useTranslation();
   const restoreFromArchive = useBookmarksStore(s => s.restoreFromArchive);
   const trashBookmark = useBookmarksStore(s => s.trashBookmark);
-  const tags = useWorkspaceStore(s => s.tags);
+  const tree = useTagTree();
   const bookmarkTags = React.useMemo(
-    () => tags.filter((tag) => bookmark.tags.includes(tag.id)),
-    [tags, bookmark.tags]
+    () =>
+      bookmark.tags.length === 0
+        ? []
+        : bookmark.tags.flatMap((id) => {
+            const tag = tree.tagsById.get(id);
+            return tag ? [tag] : [];
+          }),
+    [tree.tagsById, bookmark.tags]
   );
+  const pathByTagId = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const id of tree.tagsById.keys()) {
+      map.set(id, displayTagPath(tree, id));
+    }
+    return map;
+  }, [tree]);
 
   const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 
@@ -310,7 +325,7 @@ function ArchivedBookmarkCard({
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <h3 className="font-medium truncate">{bookmark.title}</h3>
-          <TagList tags={bookmarkTags} max={2} className="hidden sm:flex" />
+          <TagList tags={bookmarkTags} pathByTagId={pathByTagId} max={2} className="hidden sm:flex" />
         </div>
         <p className="text-sm text-muted-foreground truncate">{bookmark.url}</p>
       </div>

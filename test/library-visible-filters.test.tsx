@@ -5,6 +5,8 @@ import { MemoryRouter } from "react-router-dom";
 import { createModuleReplacer, importFresh } from "./helpers/module-replacer";
 import { click, getBySelector, getByText, installAppModules, render, setupDom, teardownDom, type AppModules, type RenderResult } from "./helpers/dom-environment";
 import { bookmarkMap, countsByCollection, makeBookmark, makeCollection, makeTag, makeWorkspace } from "./helpers/library-fixtures";
+import { buildTagTree } from "@/lib/tag-tree";
+import { countTagUsage } from "@/lib/tag-counts";
 
 import { installMeasuredVirtualizer, installQuietTabsStore } from "./helpers/virtualizer";
 
@@ -156,4 +158,146 @@ test("the large card view shows covers in the library and in Favorites", () => {
   view.unmount();
   view = render(app, createElement(FavoritesContent));
   expect(getBySelector('[data-bookmark-id="covered"] [data-bookmark-cover] img').getAttribute("src")).toBe("https://cdn.example.com/covered.png");
+});
+
+test("parent_filter_matches_child", () => {
+  const pTag = { id: "p", name: "Parent", color: "blue", seq: 1 };
+  const cTag = { id: "c", parentId: "p", name: "Child", color: "blue", seq: 1 };
+  const tree = buildTagTree([pTag, cTag], "en");
+  const childBookmark = makeBookmark("child-bookmark", { collectionId: "collection", tags: ["c"] });
+  const parentAndChildBookmark = makeBookmark("parent-and-child", { collectionId: "collection", tags: ["p", "c"] });
+
+  app.useBookmarksStore.setState({
+    bookmarks: bookmarkMap([childBookmark]),
+    selectedTags: ["p"],
+  });
+
+  const ids = app.useBookmarksStore.getState().getFilteredBookmarks(new Set(["collection"]), new Set(["p", "c"]));
+  expect(ids.map(bookmark => bookmark.id)).toEqual(["child-bookmark"]);
+  expect(countTagUsage(tree, [childBookmark, parentAndChildBookmark]).get("p")).toBe(2);
+});
+
+test("Selecting a parent matches a child-only bookmark in library and Favorites", () => {
+  const pTag = { id: "p", name: "Parent", color: "blue", seq: 1 };
+  const cTag = { id: "c", parentId: "p", name: "Child", color: "blue", seq: 1 };
+  app.useWorkspaceStore.setState({
+    activeWorkspaceId: "home",
+    workspaces: [makeWorkspace("home")],
+    collections: [makeCollection("reading", "home", { isDefault: true })],
+    tags: [pTag, cTag],
+  });
+  const bookmarks = [
+    makeBookmark("child-bm", { collectionId: "reading", isFavorite: true, tags: ["c"] }),
+    makeBookmark("other-bm", { collectionId: "reading", isFavorite: true, tags: ["other"] }),
+  ];
+  app.useBookmarksStore.setState({
+    bookmarks: bookmarkMap(bookmarks),
+    countsByCollection: countsByCollection(bookmarks),
+    selectedTags: ["p"],
+  });
+
+  // Library view
+  view = render(app, createElement(MemoryRouter, null, createElement(BookmarksContent)));
+  expect(document.querySelector('[data-bookmark-id="child-bm"]')).not.toBeNull();
+  expect(document.querySelector('[data-bookmark-id="other-bm"]')).toBeNull();
+
+  view.unmount();
+
+  // Favorites view
+  view = render(app, createElement(FavoritesContent));
+  expect(document.querySelector('[data-bookmark-id="child-bm"]')).not.toBeNull();
+  expect(document.querySelector('[data-bookmark-id="other-bm"]')).toBeNull();
+});
+
+test("several selections use OR", () => {
+  const tagA = { id: "a", name: "A", color: "blue", seq: 1 };
+  const tagB = { id: "b", name: "B", color: "blue", seq: 1 };
+  const tagC = { id: "c", name: "C", color: "blue", seq: 1 };
+  app.useWorkspaceStore.setState({
+    activeWorkspaceId: "home",
+    workspaces: [makeWorkspace("home")],
+    collections: [makeCollection("reading", "home", { isDefault: true })],
+    tags: [tagA, tagB, tagC],
+  });
+  const bookmarks = [
+    makeBookmark("bm-a", { collectionId: "reading", tags: ["a"] }),
+    makeBookmark("bm-b", { collectionId: "reading", tags: ["b"] }),
+    makeBookmark("bm-c", { collectionId: "reading", tags: ["c"] }),
+  ];
+  app.useBookmarksStore.setState({
+    bookmarks: bookmarkMap(bookmarks),
+    countsByCollection: countsByCollection(bookmarks),
+    selectedTags: ["a", "b"],
+  });
+
+  view = render(app, createElement(MemoryRouter, null, createElement(BookmarksContent)));
+  expect(document.querySelector('[data-bookmark-id="bm-a"]')).not.toBeNull();
+  expect(document.querySelector('[data-bookmark-id="bm-b"]')).not.toBeNull();
+  expect(document.querySelector('[data-bookmark-id="bm-c"]')).toBeNull();
+});
+
+test("Moving a tag updates results without changing selected IDs", () => {
+  const pTag = { id: "p", name: "Parent", color: "blue", seq: 1 };
+  const orphanTag = { id: "orphan", name: "Orphan", color: "blue", seq: 1 };
+  app.useWorkspaceStore.setState({
+    activeWorkspaceId: "home",
+    workspaces: [makeWorkspace("home")],
+    collections: [makeCollection("reading", "home", { isDefault: true })],
+    tags: [pTag, orphanTag],
+  });
+  const bookmarks = [
+    makeBookmark("orphan-bm", { collectionId: "reading", tags: ["orphan"] }),
+  ];
+  app.useBookmarksStore.setState({
+    bookmarks: bookmarkMap(bookmarks),
+    countsByCollection: countsByCollection(bookmarks),
+    selectedTags: ["p"],
+  });
+
+  view = render(app, createElement(MemoryRouter, null, createElement(BookmarksContent)));
+  expect(document.querySelector('[data-bookmark-id="orphan-bm"]')).toBeNull();
+
+  act(() => {
+    app.useWorkspaceStore.setState({
+      tags: [pTag, { ...orphanTag, parentId: "p" }],
+    });
+  });
+
+  expect(app.useBookmarksStore.getState().selectedTags).toEqual(["p"]);
+  expect(document.querySelector('[data-bookmark-id="orphan-bm"]')).not.toBeNull();
+});
+
+test("workspace switching preserves parent tag descendant filtering in the new workspace", () => {
+  const pTag = { id: "p", name: "Parent", color: "blue", seq: 1 };
+  const cTag = { id: "c", parentId: "p", name: "Child", color: "blue", seq: 1 };
+  app.useWorkspaceStore.setState({
+    activeWorkspaceId: "home",
+    workspaces: [makeWorkspace("home"), makeWorkspace("work")],
+    collections: [
+      makeCollection("col-home", "home", { isDefault: true }),
+      makeCollection("col-work", "work", { isDefault: true }),
+    ],
+    tags: [pTag, cTag],
+  });
+  const bookmarks = [
+    makeBookmark("bm-home", { collectionId: "col-home", tags: ["c"] }),
+    makeBookmark("bm-work", { collectionId: "col-work", tags: ["c"] }),
+  ];
+  app.useBookmarksStore.setState({
+    bookmarks: bookmarkMap(bookmarks),
+    countsByCollection: countsByCollection(bookmarks),
+    selectedTags: ["p"],
+  });
+
+  view = render(app, createElement(MemoryRouter, null, createElement(BookmarksContent)));
+  expect(document.querySelector('[data-bookmark-id="bm-home"]')).not.toBeNull();
+  expect(document.querySelector('[data-bookmark-id="bm-work"]')).toBeNull();
+
+  // Switch to work workspace
+  act(() => {
+    app.useWorkspaceStore.setState({ activeWorkspaceId: "work" });
+  });
+
+  expect(document.querySelector('[data-bookmark-id="bm-home"]')).toBeNull();
+  expect(document.querySelector('[data-bookmark-id="bm-work"]')).not.toBeNull();
 });

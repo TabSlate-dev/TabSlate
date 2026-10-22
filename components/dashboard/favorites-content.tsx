@@ -13,6 +13,8 @@ import { ActiveFilterChips } from "@/components/dashboard/shared/active-filter-c
 import { Heart } from "lucide-react";
 import { useTranslation } from "@/hooks/use-translation";
 import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
+import { useTagTree } from "@/hooks/use-tag-tree";
+import { expandTagSelection } from "@/lib/tag-tree";
 
 export function FavoritesContent() {
   const { t } = useTranslation();
@@ -38,14 +40,20 @@ export function FavoritesContent() {
     [bookmarks, workspaceCollectionIds]
   );
 
+  const tree = useTagTree();
+  const expandedTagIds = React.useMemo(
+    () => expandTagSelection(tree, selectedTags),
+    [tree, selectedTags]
+  );
+
   const favoriteBookmarks = React.useMemo(
     () => sortBookmarks(
       selectedTags.length === 0
         ? allFavorites
-        : allFavorites.filter(b => selectedTags.some(tag => b.tags.includes(tag))),
+        : allFavorites.filter(b => b.tags.some(tag => expandedTagIds.has(tag))),
       sortBy,
     ),
-    [allFavorites, selectedTags, sortBy]
+    [allFavorites, selectedTags, expandedTagIds, sortBy]
   );
 
   const viewOrder = React.useMemo(() => favoriteBookmarks.map((bookmark) => bookmark.id), [favoriteBookmarks]);

@@ -3,6 +3,9 @@ import { X } from "lucide-react";
 import { useBookmarksStore } from "@/store/bookmarks-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import { useTranslation } from "@/hooks/use-translation";
+import { useTagTree } from "@/hooks/use-tag-tree";
+import { displayTagPath } from "@/lib/tag-tree";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ActiveFilterChipsProps {
   /** Also shows the bookmark type filter, which only the library applies. */
@@ -18,6 +21,7 @@ export function ActiveFilterChips({ includeTypeFilter = false }: ActiveFilterChi
   const storeFilterType = useBookmarksStore((s) => s.filterType);
   const setFilterType = useBookmarksStore((s) => s.setFilterType);
   const tags = useWorkspaceStore((s) => s.tags);
+  const tree = useTagTree();
 
   const activeTags = React.useMemo(
     () => tags.filter((tag) => selectedTags.includes(tag.id)),
@@ -53,22 +57,29 @@ export function ActiveFilterChips({ includeTypeFilter = false }: ActiveFilterChi
           </button>
         </span>
       )}
-      {activeTags.map((tag) => (
-        <span
-          key={tag.id}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-primary text-primary-foreground"
-        >
-          {tag.name}
-          <button
-            type="button"
-            aria-label={t("activeFilterChips_removeTag", [tag.name])}
-            onClick={() => toggleTag(tag.id)}
-            className="hover:bg-primary-foreground/20 rounded-full p-0.5"
-          >
-            <X className="size-3" />
-          </button>
-        </span>
-      ))}
+      {activeTags.map((tag) => {
+        const path = displayTagPath(tree, tag.id) || tag.name;
+        return (
+          <Tooltip key={tag.id}>
+            <TooltipTrigger asChild>
+              <span
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-primary text-primary-foreground max-w-xs"
+              >
+                <span className="truncate">{path}</span>
+                <button
+                  type="button"
+                  aria-label={t("activeFilterChips_removeTag", [tag.name])}
+                  onClick={() => toggleTag(tag.id)}
+                  className="hover:bg-primary-foreground/20 rounded-full p-0.5 shrink-0"
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">{path}</TooltipContent>
+          </Tooltip>
+        );
+      })}
       <button
         type="button"
         onClick={handleClearAll}

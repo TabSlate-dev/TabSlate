@@ -47,6 +47,8 @@ import {
   getActiveWorkspaceCollectionIds,
   getActiveWorkspaceCollections,
 } from "@/lib/workspace-visibility";
+import { useTagTree } from "@/hooks/use-tag-tree";
+import { expandTagSelection } from "@/lib/tag-tree";
 
 const ICON_MAP: Record<string, React.ElementType> = {
   folder: Folder,
@@ -360,9 +362,15 @@ export function BookmarksContent() {
     [activeWorkspaceId, workspaces, collections],
   );
 
+  const tree = useTagTree();
+  const expandedTagIds = React.useMemo(
+    () => expandTagSelection(tree, selectedTags),
+    [tree, selectedTags]
+  );
+
   const filteredBookmarks = React.useMemo(
-    () => getFilteredBookmarks(workspaceCollectionIds),
-    [bookmarks, selectedCollection, selectedTags, filterType, searchQuery, sortBy, workspaceCollectionIds]
+    () => getFilteredBookmarks(workspaceCollectionIds, expandedTagIds),
+    [bookmarks, selectedCollection, selectedTags, filterType, searchQuery, sortBy, workspaceCollectionIds, expandedTagIds]
   );
 
   const currentCollection =

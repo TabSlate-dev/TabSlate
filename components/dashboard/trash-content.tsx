@@ -27,6 +27,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FaviconImage } from "@/components/ui/favicon-image";
+import { TagList } from "@/components/ui/tag-list";
+import { useTagTree } from "@/hooks/use-tag-tree";
+import { displayTagPath } from "@/lib/tag-tree";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
@@ -265,6 +268,24 @@ function TrashedBookmarkCard({
   const restoreFromTrash = useBookmarksStore(s => s.restoreFromTrash);
   const permanentlyDelete = useBookmarksStore(s => s.permanentlyDelete);
   const [targetUnavailable, setTargetUnavailable] = React.useState(false);
+  const tree = useTagTree();
+  const bookmarkTags = React.useMemo(
+    () =>
+      bookmark.tags.length === 0
+        ? []
+        : bookmark.tags.flatMap((id) => {
+            const tag = tree.tagsById.get(id);
+            return tag ? [tag] : [];
+          }),
+    [tree.tagsById, bookmark.tags]
+  );
+  const pathByTagId = React.useMemo(() => {
+    const map = new Map<string, string>();
+    for (const id of tree.tagsById.keys()) {
+      map.set(id, displayTagPath(tree, id));
+    }
+    return map;
+  }, [tree]);
 
   function handleRestore() {
     const state = useWorkspaceStore.getState();
@@ -342,7 +363,10 @@ function TrashedBookmarkCard({
       </div>
 
       <div className="flex-1 min-w-0">
-        <h3 className="font-medium truncate">{bookmark.title}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="font-medium truncate">{bookmark.title}</h3>
+          <TagList tags={bookmarkTags} pathByTagId={pathByTagId} max={2} className="hidden sm:flex" />
+        </div>
         <p className="text-sm text-muted-foreground truncate">{bookmark.url}</p>
       </div>
 
