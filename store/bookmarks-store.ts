@@ -126,7 +126,9 @@ function toServerBookmark(b: Bookmark, opts: { isArchived?: boolean; isTrashed?:
     url: b.url,
     favicon_url: b.favicon,
     description: b.description,
-    notes: b.notes ?? "",
+    // A record without notes (one an older extension pulled) omits them, so the
+    // server keeps the stored notes instead of clearing them; "" still clears.
+    notes: b.notes,
     is_favorite: b.isFavorite,
     is_archived: opts.isArchived ?? false,
     is_trashed: opts.isTrashed ?? 0,

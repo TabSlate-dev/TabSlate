@@ -161,7 +161,7 @@ describe("edit time", () => {
     expect(pushedBookmarks().every((entity) => entity.edited_at === 123)).toBe(true);
   });
 
-  test("a sweep pushes legacy bookmarks with their creation time and empty notes, without stamping them", async () => {
+  test("a sweep pushes legacy bookmarks with their creation time and no notes, without stamping them", async () => {
     seed([
       makeBookmark("legacy", { collectionId: "reading", createdAt: "2026-01-01T00:00:00.000Z" }),
       makeBookmark("epoch", { collectionId: "reading", createdAt: "1748390400000" }),
@@ -169,11 +169,44 @@ describe("edit time", () => {
 
     await store().sweepUnsynced();
 
-    expect(pushedBookmarks().map((entity) => [entity.id, entity.notes, entity.edited_at])).toEqual([
-      ["legacy", "", Date.parse("2026-01-01T00:00:00.000Z")],
-      ["epoch", "", 1748390400000],
+    expect(pushedBookmarks().map((entity) => [entity.id, wireJson(entity).notes, entity.edited_at])).toEqual([
+      ["legacy", undefined, Date.parse("2026-01-01T00:00:00.000Z")],
+      ["epoch", undefined, 1748390400000],
     ]);
     expect(store().bookmarks.get("legacy")?.updatedAt).toBeUndefined();
+  });
+});
+
+/** The entity as the push request carries it. */
+function wireJson(entity: SyncEntity | undefined): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(entity ?? {}));
+}
+
+describe("notes in pushes", () => {
+  // An older extension stores pulled bookmarks without their notes. Pushing ""
+  // for them after an upgrade would clear notes another device wrote.
+  test("bookmarks stored without notes push no notes, so the server keeps the stored ones", () => {
+    seed([
+      makeBookmark("pulled-by-older", { collectionId: "reading" }),
+      makeBookmark("noted", { collectionId: "reading", notes: "Keep" }),
+    ]);
+
+    store().updateBookmarks([
+      { id: "pulled-by-older", patch: { collectionId: "inbox" } },
+      { id: "noted", patch: { collectionId: "inbox" } },
+    ]);
+
+    const pushed = new Map(pushedBookmarks().map((entity) => [entity.id, wireJson(entity)]));
+    expect(pushed.get("pulled-by-older")).not.toHaveProperty("notes");
+    expect(pushed.get("noted")).toHaveProperty("notes", "Keep");
+  });
+
+  test("a cleared note pushes an empty note", () => {
+    seed([makeBookmark("cleared", { collectionId: "reading", notes: "Old note" })]);
+
+    store().updateBookmark("cleared", { notes: "" });
+
+    expect(wireJson(pushedBookmarks()[0])).toHaveProperty("notes", "");
   });
 });
 
