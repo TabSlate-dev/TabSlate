@@ -314,8 +314,12 @@ function runTagAction(
           return { ok: false, error: "quota" };
         }
         if (isCurrent()) {
-          const tags = await idbGetAll<Tag>("tags");
-          if (isCurrent()) { useWorkspaceStore.setState({ tags: tags.filter(tag => tag.deletedAt === undefined) }); }
+          try {
+            const tags = await idbGetAll<Tag>("tags");
+            if (isCurrent()) { useWorkspaceStore.setState({ tags: tags.filter(tag => tag.deletedAt === undefined) }); }
+          } catch {
+            return { ok: false, error: "storage" };
+          }
         }
         return { ok: false, error: "stale" };
       }

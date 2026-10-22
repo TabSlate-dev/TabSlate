@@ -1,6 +1,6 @@
 // @ts-expect-error Bun provides this test module at runtime.
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { createElement } from "react";
+import { act, createElement } from "react";
 import type { TagActionResult } from "@/lib/tag-mutations";
 import type { Tag } from "@/lib/types";
 import { createModuleReplacer } from "./helpers/module-replacer";
@@ -102,5 +102,37 @@ describe("TagDialog", () => {
     expect(input.value).toBe("Keep this name"); expect(closed).toEqual([]);
     expect(getByText("tagAction_errorStorage")).toBeTruthy(); view.unmount();
   });
+
+  for (const oldResult of [{ ok: true }, { ok: false, error: "storage" }] satisfies TagActionResult[]) {
+    test(`reopened_dialog_ignores_old_${oldResult.ok ? "success" : "failure"}_and_keeps_new_save_pending`, async () => {
+      let resolveFirst: ((value: TagActionResult) => void) | undefined;
+      let resolveSecond: ((value: TagActionResult) => void) | undefined;
+      const first = new Promise<TagActionResult>(resolve => { resolveFirst = resolve; });
+      const second = new Promise<TagActionResult>(resolve => { resolveSecond = resolve; });
+      const closed: boolean[] = [];
+      let submissions = 0;
+      const props = {
+        takenNames: [], onOpenChange: (open: boolean) => { closed.push(open); },
+        onSubmit: () => ++submissions === 1 ? first : second,
+      };
+      const view = render(app, createElement(TagDialog, { ...props, open: true }));
+      try {
+        typeInto(getBySelector<HTMLInputElement>("#tag-name"), "First draft");
+        await submitForm(getBySelector("form"));
+        view.rerender(createElement(TagDialog, { ...props, open: false }));
+        view.rerender(createElement(TagDialog, { ...props, open: true }));
+        typeInto(getBySelector<HTMLInputElement>("#tag-name"), "Second draft");
+        await submitForm(getBySelector("form"));
+        await act(async () => { resolveFirst?.(oldResult); });
+        expect(closed).toEqual([]);
+        expect(getBySelector<HTMLInputElement>("#tag-name").value).toBe("Second draft");
+        expect(document.querySelector('[role="alert"]') !== null).toBe(false);
+        expect(getBySelector<HTMLButtonElement>('button[type="submit"]').disabled).toBe(true);
+        expect(submissions).toBe(2);
+        await act(async () => { resolveSecond?.({ ok: true }); });
+        expect(closed).toEqual([false]);
+      } finally { view.unmount(); }
+    });
+  }
 
 });

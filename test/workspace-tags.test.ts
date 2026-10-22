@@ -31,7 +31,7 @@ if (runsInIsolatedProcess(import.meta.filename)) {
   const pull = (tags: ServerTag[]): SyncPullResponse => ({ entities: { workspaces: [], collections: [], bookmarks: [], groups: [], tags }, server_seq: 10 });
 
   beforeEach(() => {
-    store.getState().reset(); db.tables.clear(); db.state.transactions = 0; db.state.fail = false; db.state.beforeRead = undefined;
+    store.getState().reset(); db.tables.clear(); db.state.transactions = 0; db.state.fail = false; db.state.failReads = false; db.state.beforeRead = undefined;
     enqueued.length = 0; bookmarks.clear(); limit = 100; alerts = 0; usage = 0;
   });
 
@@ -182,6 +182,13 @@ if (runsInIsolatedProcess(import.meta.filename)) {
     await store.getState().mergeFromServer(pull([{ ...server, parent_id: "" }]));
     expect(store.getState().tags.find(t => t.id === "b")?.parentId).toBeUndefined();
     expect(db.read<Tag>("tags").find(t => t.id === "b")?.parentId).toBeUndefined();
+  });
+
+  test("stale_snapshot_refresh_failure_returns_storage_and_preserves_state", async () => {
+    seed([tag("a")]); db.seed([tag("a"), tag("external")]); db.state.failReads = true;
+    expect(await store.getState().updateTag("a", { color: "red" })).toEqual({ ok: false, error: "storage" });
+    expect(store.getState().tags).toEqual([tag("a")]);
+    expect(db.read("tags")).toEqual([tag("a"), tag("external")]); expect(enqueued).toEqual([]);
   });
 
 }

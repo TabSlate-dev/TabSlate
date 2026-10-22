@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Check, Palette, Pencil, Plus, Search, Tag as TagIcon, Trash2, X } from "lucide-react";
 import { SidebarGroup, SidebarGroupContent } from "@/components/ui/sidebar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useBookmarksStore } from "@/store/bookmarks-store";
@@ -90,6 +91,7 @@ export function SidebarTagsSection() {
   const deleteTag = useWorkspaceStore((s) => s.deleteTag);
 
   const [editingTag, setEditingTag] = React.useState<Tag | null>(null);
+  const [tagActionError, setTagActionError] = React.useState<string | null>(null);
   const [deletingTag, setDeletingTag] = React.useState<Tag | null>(null);
   const updateTag = useWorkspaceStore((s) => s.updateTag);
   const deletingCount = React.useMemo(
@@ -126,6 +128,12 @@ export function SidebarTagsSection() {
       }
     }
   }, [tags, toggleTag]);
+
+  const handleColorChange = React.useCallback(async (id: string, color: string) => {
+    const result = await updateTag(id, { color });
+    if (result.ok) { setTagActionError(null); return; }
+    setTagActionError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : result.error === "quota" ? "tagAction_errorQuota" : "tagAction_errorInvalid"));
+  }, [updateTag, t]);
 
   const handleToggleOpen = React.useCallback(() => setOpen((value) => !value), []);
   const handleOpenSearch = React.useCallback(() => {
@@ -204,6 +212,11 @@ export function SidebarTagsSection() {
         />
       )}
 
+      {tagActionError && (
+        <Alert variant="destructive" className="mt-2 px-2 py-2">
+          <AlertDescription>{tagActionError}</AlertDescription>
+        </Alert>
+      )}
       {open && (
         <SidebarGroupContent>
           <div className="flex flex-wrap gap-1.5 mt-2 px-1">
@@ -248,7 +261,7 @@ export function SidebarTagsSection() {
                         </ContextMenuSubTrigger>
                         <ContextMenuSubContent>
                           {TAG_COLORS.map((color, index) => (
-                            <ContextMenuItem key={color} onSelect={async () => { await updateTag(tag.id, { color }); }}>
+                            <ContextMenuItem key={color} onSelect={() => { void handleColorChange(tag.id, color); }}>
                               <span className={cn("size-3 rounded-full", swatchClass(color))} />
                               {t("tagDialog_colorOption", [String(index + 1)])}
                               {tag.color === color && <Check className="ml-auto size-4" />}

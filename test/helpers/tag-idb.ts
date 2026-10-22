@@ -5,7 +5,7 @@ import type { Tag } from "@/lib/types";
 /** A transactional IDB boundary: writes become visible only at commit; abort discards them. */
 export function createTagIdb() {
   const tables = new Map<string, Map<string, object>>();
-  const state = { transactions: 0, fail: false, beforeRead: undefined as (() => void) | undefined };
+  const state = { transactions: 0, fail: false, failReads: false, beforeRead: undefined as (() => void) | undefined };
   const table = (name: string) => {
     let records = tables.get(name);
     if (!records) {
@@ -53,7 +53,10 @@ export function createTagIdb() {
     idbTryAcquireLock: async () => true,
     idbRenewLock: async () => true,
     idbReleaseLock: async () => {},
-    idbGetAll: async <T>(name: string) => read<T>(name),
+    idbGetAll: async <T>(name: string) => {
+      if (state.failReads) { throw new Error("read failed"); }
+      return read<T>(name);
+    },
     idbGet: async (name: string, id: string) => structuredClone(table(name).get(id)),
     idbPut: async (name: string, value: { id?: string; key?: string }) => { table(name).set(value.id ?? value.key ?? "", structuredClone(value)); },
     idbDelete: async (name: string, id: string) => { table(name).delete(id); },

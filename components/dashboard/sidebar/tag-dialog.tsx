@@ -32,37 +32,60 @@ export function TagDialog({ open, onOpenChange, initial, takenNames, onSubmit }:
   const [name, setName] = React.useState(initial?.name ?? "");
   const [color, setColor] = React.useState<string>(initial?.color ?? TAG_COLORS[0]);
   const [pending, setPending] = React.useState(false);
+  const requestGeneration = React.useRef(0);
+  const pendingRequest = React.useRef<number | null>(null);
   const [error, setError] = React.useState<string | null>(null);
 
-  React.useEffect(() => {
+  React.useLayoutEffect(() => {
+    requestGeneration.current += 1;
+    pendingRequest.current = null;
+    setPending(false);
     if (open) {
       setName(initial?.name ?? "");
       setColor(initial?.color ?? TAG_COLORS[0]);
       setError(null);
     }
+    return () => { requestGeneration.current += 1; };
   }, [open, initial]);
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      requestGeneration.current += 1;
+      pendingRequest.current = null;
+      setPending(false);
+    }
+    onOpenChange(nextOpen);
+  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (pending) { return; }
+    if (pendingRequest.current !== null) { return; }
     const problem = initial && name.trim() === initial.name ? null : tagNameError(name, takenNames);
     if (problem) {
       setError(t(problem === "empty" ? "tagDialog_errorEmpty" : "tagDialog_errorDuplicate"));
       return;
     }
+    const generation = ++requestGeneration.current;
+    pendingRequest.current = generation;
     setPending(true);
     try {
       const result = await onSubmit(name.trim(), color);
+      if (generation !== requestGeneration.current) { return; }
       if (!result.ok) {
         setError(t(result.error === "storage" ? "tagAction_errorStorage" : result.error === "stale" ? "tagAction_errorStale" : result.error === "quota" ? "tagAction_errorQuota" : "tagAction_errorInvalid"));
         return;
       }
       onOpenChange(false);
-    } finally { setPending(false); }
+    } finally {
+      if (generation === requestGeneration.current) {
+        pendingRequest.current = null;
+        setPending(false);
+      }
+    }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-xs">
         <DialogHeader>
           <DialogTitle>{t(initial ? "tagDialog_editTitle" : "tagDialog_newTitle")}</DialogTitle>
@@ -112,7 +135,7 @@ export function TagDialog({ open, onOpenChange, initial, takenNames, onSubmit }:
             </div>
           </Field>
           <DialogFooter>
-            <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => handleOpenChange(false)}>
               {t("settings_cancel")}
             </Button>
             <Button type="submit" size="sm" disabled={pending} aria-busy={pending}>

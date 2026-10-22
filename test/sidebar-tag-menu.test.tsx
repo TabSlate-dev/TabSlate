@@ -51,6 +51,7 @@ afterAll(async () => {
 beforeEach(() => {
   view?.unmount();
   app.useWorkspaceStore.getState().reset();
+  db.state.fail = false;
   const bookmarks = [
     makeBookmark("b1", { collectionId: "reading", tags: ["frontend"] }),
     makeBookmark("b2", { collectionId: "reading", tags: ["frontend"] }),
@@ -171,4 +172,13 @@ describe("tag context menu", () => {
     expect(tag("go")?.name).toBe("Go");
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
+  test("failed_color_save_keeps_translated_feedback_after_menu_closes", async () => {
+    db.state.fail = true;
+    await openTagMenu("frontend"); click(getByText("tagMenu_color"));
+    await act(async () => { click(getByText("tagDialog_colorOption[2]")); });
+    expect(tag("frontend")?.color).toBe("bg-blue-500/10 text-blue-500");
+    expect(getByText("tagAction_errorStorage").closest('[role="alert"]')).toBeTruthy();
+    expect(document.querySelector('[role="menu"]')).toBeNull();
+  });
+
 });
