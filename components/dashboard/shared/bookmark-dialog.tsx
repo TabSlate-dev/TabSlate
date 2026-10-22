@@ -76,12 +76,22 @@ export function BookmarkDialog() {
       field.setSelectionRange(field.value.length, field.value.length);
     }
   }, [request?.focus]);
+  // Esc first closes the tag field's open suggestions, as it closes the collection picker's popover.
+  const handleEscapeKeyDown = React.useCallback((event: KeyboardEvent) => {
+    if (event.target instanceof Element && event.target.matches('[role="combobox"][aria-expanded="true"]')) {
+      event.preventDefault();
+    }
+  }, []);
   const handleClose = React.useCallback(() => setOpen(false), []);
   const editing = request?.bookmark !== undefined;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg" onOpenAutoFocus={handleOpenAutoFocus}>
+      <DialogContent
+        className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg"
+        onOpenAutoFocus={handleOpenAutoFocus}
+        onEscapeKeyDown={handleEscapeKeyDown}
+      >
         <DialogHeader>
           <DialogTitle>{t(editing ? "bookmarkForm_editTitle" : "bookmarkForm_addTitle")}</DialogTitle>
           <DialogDescription>{t(editing ? "bookmarkForm_editDesc" : "bookmarkForm_addDesc")}</DialogDescription>

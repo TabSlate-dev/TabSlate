@@ -219,6 +219,24 @@ describe("adding a bookmark", () => {
     expect(dialogOpen()).toBe(false);
   });
 
+  test("Esc in the tag field closes its suggestions before it closes the dialog", () => {
+    open({ focus: "tags" });
+    typeInto(field<HTMLTextAreaElement>("notes"), "A long note");
+    typeInto(tagField(), "fro");
+    expect(tagField().getAttribute("aria-expanded")).toBe("true");
+
+    pressKey(tagField(), "Escape");
+    expect(dialogOpen()).toBe(true);
+    expect(tagField().getAttribute("aria-expanded")).toBe("false");
+    expect(field<HTMLTextAreaElement>("notes").value).toBe("A long note");
+
+    typeInto(tagField(), "fron");
+    expect(tagField().getAttribute("aria-expanded")).toBe("true");
+    pressKey(tagField(), "Escape");
+    pressKey(tagField(), "Escape");
+    expect(dialogOpen()).toBe(false);
+  });
+
   // The picker renders in a portal, outside the form element.
   test("Cmd or Ctrl+Enter saves while the collection picker is open", async () => {
     open();

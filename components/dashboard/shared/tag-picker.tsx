@@ -22,7 +22,8 @@ function solidColor(color: string): string {
 /**
  * Selected tags as removable chips plus a filter field. Enter picks the
  * highlighted tag or creates a new one; Backspace in an empty field removes
- * the last chip. A tag the quota blocks is not added.
+ * the last chip; Esc hides the suggestions until the user types again. A tag
+ * the quota blocks is not added.
  */
 export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProps) {
   const { t } = useTranslation();
@@ -30,6 +31,7 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
   const createTag = useWorkspaceStore((s) => s.createTag);
   const [query, setQuery] = React.useState("");
   const [focused, setFocused] = React.useState(false);
+  const [dismissed, setDismissed] = React.useState(false);
 
   const tagsById = React.useMemo(() => new Map(tags.map((tag) => [tag.id, tag])), [tags]);
   const selectedTags = React.useMemo(
@@ -59,7 +61,22 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
     setQuery("");
   };
 
+  const handleQueryChange = (next: string) => {
+    setQuery(next);
+    setDismissed(false);
+  };
+
+  const handleInputFocus = () => {
+    setFocused(true);
+    setDismissed(false);
+  };
+
   const handleInputKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    // The dialog lets an Esc aimed at open suggestions through to here.
+    if (event.key === "Escape") {
+      setDismissed(true);
+      return;
+    }
     if (event.key === "Backspace" && query === "" && value.length > 0) {
       event.preventDefault();
       onChange(value.slice(0, -1));
@@ -91,7 +108,7 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
       <FilterableList
         items={items}
         query={query}
-        onQueryChange={setQuery}
+        onQueryChange={handleQueryChange}
         onActivate={handleActivate}
         create={create}
         renderItem={(item) => (
@@ -102,11 +119,11 @@ export function TagPicker({ value, onChange, inputId, autoFocus }: TagPickerProp
         )}
         placeholder={t("tagPicker_placeholder")}
         emptyText={t("tagPicker_empty")}
-        listHidden={!focused}
+        listHidden={!focused || dismissed}
         inputId={inputId}
         autoFocus={autoFocus}
         onInputKeyDown={handleInputKeyDown}
-        onInputFocus={() => setFocused(true)}
+        onInputFocus={handleInputFocus}
         onInputBlur={() => setFocused(false)}
         listClassName="rounded-md border p-1"
       />
