@@ -47,6 +47,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { compareBookmarksNewestFirst } from "@/lib/bookmark-utils";
 import { useTagTree } from "@/hooks/use-tag-tree";
 import { displayTagPath } from "@/lib/tag-tree";
+import type { Tag } from "@/lib/types";
+
+const EMPTY_TAGS: Tag[] = [];
+const EMPTY_PATH_MAP: ReadonlyMap<string, string> = new Map();
 
 // ---------------------------------------------------------------------------
 // Icon map (mirrors sidebar)
@@ -207,7 +211,7 @@ function ArchivedBookmarkCard({
   const bookmarkTags = React.useMemo(
     () =>
       bookmark.tags.length === 0
-        ? []
+        ? EMPTY_TAGS
         : bookmark.tags.flatMap((id) => {
             const tag = tree.tagsById.get(id);
             return tag ? [tag] : [];
@@ -215,12 +219,15 @@ function ArchivedBookmarkCard({
     [tree.tagsById, bookmark.tags]
   );
   const pathByTagId = React.useMemo(() => {
+    if (bookmark.tags.length === 0) {
+      return EMPTY_PATH_MAP;
+    }
     const map = new Map<string, string>();
-    for (const id of tree.tagsById.keys()) {
-      map.set(id, displayTagPath(tree, id));
+    for (const tag of bookmarkTags) {
+      map.set(tag.id, displayTagPath(tree, tag.id));
     }
     return map;
-  }, [tree]);
+  }, [tree, bookmark.tags.length, bookmarkTags]);
 
   const [targetUnavailable, setTargetUnavailable] = React.useState(false);
 

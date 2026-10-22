@@ -120,10 +120,17 @@ test("TrashContent renders tag chips with leaf name and full path accessible tex
   expect(chip.textContent?.trim()).toBe("Child");
 });
 
-test("ActiveFilterChips shows truncated path with full path tooltip", () => {
+test("ActiveFilterChips shows truncated path with full path tooltip and accessible keyboard trigger", () => {
   app.useBookmarksStore.setState({ selectedTags: ["child"] });
 
   view = render(app, createElement(ActiveFilterChips));
   const chip = getBySelector(".truncate");
   expect(chip.textContent?.trim()).toBe("Parent › Child");
+  expect(chip.getAttribute("tabindex")).toBe("0");
+
+  const removeBtn = getBySelector('button[aria-label="activeFilterChips_removeTag[Parent › Child]"]');
+  expect(removeBtn).toBeTruthy();
+
+  click(removeBtn);
+  expect(app.useBookmarksStore.getState().selectedTags).toEqual([]);
 });

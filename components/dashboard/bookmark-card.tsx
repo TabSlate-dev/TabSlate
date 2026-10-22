@@ -41,6 +41,7 @@ import { openBookmarkDialog } from "@/lib/bookmark-dialog-events";
 import { useSelectionOrders } from "@/components/dashboard/shared/selection-orders";
 
 const EMPTY_TAGS: Tag[] = [];
+const EMPTY_PATH_MAP: ReadonlyMap<string, string> = new Map();
 
 interface BookmarkCardProps {
   bookmark: Bookmark;
@@ -120,12 +121,15 @@ export const BookmarkCard = React.memo(function BookmarkCard({
     [tree.tagsById, bookmark.tags]
   );
   const pathByTagId = React.useMemo(() => {
+    if (bookmark.tags.length === 0) {
+      return EMPTY_PATH_MAP;
+    }
     const map = new Map<string, string>();
-    for (const id of tree.tagsById.keys()) {
-      map.set(id, displayTagPath(tree, id));
+    for (const tag of bookmarkTags) {
+      map.set(tag.id, displayTagPath(tree, tag.id));
     }
     return map;
-  }, [tree]);
+  }, [tree, bookmark.tags.length, bookmarkTags]);
   const notes = bookmark.notes ?? "";
   const hasNotes = notes.trim() !== "";
   const [copied, setCopied] = React.useState(false);

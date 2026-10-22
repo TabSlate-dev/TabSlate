@@ -60,24 +60,30 @@ export function ActiveFilterChips({ includeTypeFilter = false }: ActiveFilterChi
       {activeTags.map((tag) => {
         const path = displayTagPath(tree, tag.id) || tag.name;
         return (
-          <Tooltip key={tag.id}>
-            <TooltipTrigger asChild>
-              <span
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-primary text-primary-foreground max-w-xs"
-              >
-                <span className="truncate">{path}</span>
-                <button
-                  type="button"
-                  aria-label={t("activeFilterChips_removeTag", [tag.name])}
-                  onClick={() => toggleTag(tag.id)}
-                  className="hover:bg-primary-foreground/20 rounded-full p-0.5 shrink-0"
+          <span
+            key={tag.id}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-primary text-primary-foreground max-w-xs"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  tabIndex={0}
+                  className="truncate cursor-default focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-xs"
                 >
-                  <X className="size-3" />
-                </button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="top">{path}</TooltipContent>
-          </Tooltip>
+                  {path}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top">{path}</TooltipContent>
+            </Tooltip>
+            <button
+              type="button"
+              aria-label={t("activeFilterChips_removeTag", [path])}
+              onClick={() => toggleTag(tag.id)}
+              className="hover:bg-primary-foreground/20 rounded-full p-0.5 shrink-0"
+            >
+              <X className="size-3" />
+            </button>
+          </span>
         );
       })}
       <button
