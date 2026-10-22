@@ -69,6 +69,13 @@ export type OnPushSuccess = (
 export type OnLegacyPushFailure = (failure: SyncPushFailure) => Promise<boolean>;
 type OnStatusChange = (status: SyncStatus, errorMessage?: string) => void;
 
+interface PendingForcedPushResolution {
+  response: SyncPushResponse | null;
+  confirmed: SyncPushPayload;
+  attempted: SyncPushPayload;
+  unsent: SyncPushPayload[];
+}
+
 interface SyncQueueDriver {
   enqueue(entities: Partial<SyncPushEntities>, conflictPolicy?: SyncConflictPolicy): void;
   flush(): Promise<void>;
@@ -223,6 +230,7 @@ export class SyncEngine {
   private lastPulledCount = 0;
   private destroyed = false;
   private retirement: Promise<void> | null = null;
+  private pendingForcedResolution: PendingForcedPushResolution | null = null;
 
   constructor(
     private readonly getCredentials: GetCredentials,
@@ -386,17 +394,13 @@ export class SyncEngine {
       },
     };
 
-    const { response, conflictMessage } = await this.serializeResolutionWithContext(
-      async (context) => {
-        let conflictMessage: string | null = null;
-        const response = await this.pushConfirmed(payload, context.isCurrent, async (resp, confirmed, attempted) => {
-          conflictMessage = await this.resolvePushSuccess(resp, confirmed, attempted, context);
-        });
+    const response = await this.serializeResolutionWithContext(
+      async context => {
+        const response = await this.pushConfirmed(payload, context.isCurrent, context);
         this.assertResolutionCurrent(context.isCurrent);
-        return { response, conflictMessage };
+        return response;
       },
     );
-    this.applyPersistentConflict(conflictMessage);
     if (response.rejected.length > 0) {
       await this.requestPull();
     }
@@ -408,6 +412,8 @@ export class SyncEngine {
   }
 
   async forceSync(): Promise<{ pushed: number; pulled: number }> {
+    if (this.destroyed) { return { pushed: 0, pulled: 0 }; }
+    await this.serializeResolutionWithContext(async () => {});
     this.lastPulledCount = 0;
     this.setQueueStatus("syncing");
     const lifecyclePending = await this.shouldResolveWorkspaceLifecycleBeforePush();
@@ -504,6 +510,11 @@ export class SyncEngine {
       const isCurrent = () => active && !this.destroyed;
       const context = this.createResolutionContext(isCurrent);
       try {
+        // Retry only response reconciliation, under this fresh resolution guard.
+        // No old forced-push chunks are ever submitted again here.
+        if (!this.destroyed && this.pendingForcedResolution) {
+          await this.resolvePendingForcedPush(context);
+        }
         return await operation(context);
       } finally {
         active = false;
@@ -591,6 +602,8 @@ export class SyncEngine {
     }
     this.setQueueStatus("syncing");
     try {
+      await this.serializeResolutionWithContext(async () => {});
+      if (this.destroyed) { return; }
       const pulled = await this.doPull();
       if (!pulled || this.destroyed) {
         return;
@@ -763,22 +776,49 @@ export class SyncEngine {
     return conflictMessage;
   }
 
+  private async resolvePendingForcedPush(context: SyncResolutionContext): Promise<void> {
+    const pending = this.pendingForcedResolution;
+    if (!pending) { return; }
+    this.assertResolutionCurrent(context.isCurrent);
+    while (pending.unsent.length > 0) {
+      await this.markPayloadUnsent(pending.unsent[0]);
+      this.assertResolutionCurrent(context.isCurrent);
+      pending.unsent.shift();
+    }
+    if (pending.response) {
+      const conflictMessage = await this.resolvePushSuccess(
+        pending.response, pending.confirmed, pending.attempted, context,
+      );
+      this.assertResolutionCurrent(context.isCurrent);
+      this.applyPersistentConflict(conflictMessage);
+    }
+    this.pendingForcedResolution = null;
+  }
+
   private async pushConfirmed(
     payload: SyncPushPayload,
     isCurrent: () => boolean,
-    onResult?: (response: SyncPushResponse, confirmed: SyncPushPayload, attempted: SyncPushPayload) => Promise<void>,
+    forcedContext?: SyncResolutionContext,
   ): Promise<SyncPushResponse> {
     let serverSeq = 0;
     const rejected: SyncRejected[] = [];
     let attempted = createEmptySyncPushPayload();
     let confirmed = createEmptySyncPushPayload();
+    const resolveForced = async (unsent: SyncPushPayload[], hasResponse: boolean) => {
+      if (!forcedContext || !isCurrent()) { return; }
+      // Save before any fallible marking/confirmation/auxiliary fetch. Remaining
+      // snapshots are only identity checks for dirty marking, never a send queue.
+      this.pendingForcedResolution = {
+        response: hasResponse ? { server_seq: serverSeq, rejected } : null,
+        confirmed, attempted, unsent,
+      };
+      await this.resolvePendingForcedPush(forcedContext);
+    };
     let chunks: SyncPushPayload[];
     try {
       chunks = await this.preparePushChunks(payload, isCurrent);
     } catch (error) {
-      if (onResult && isCurrent()) {
-        await this.markPayloadUnsent(payload);
-      }
+      await resolveForced([payload], false);
       throw error;
     }
     for (let index = 0; index < chunks.length; index += 1) {
@@ -787,13 +827,7 @@ export class SyncEngine {
       try {
         response = await this.pushWithRefresh(chunk, isCurrent);
       } catch (error) {
-        if (onResult && isCurrent()) {
-          for (const unsent of chunks.slice(index)) {
-            await this.markPayloadUnsent(unsent);
-            this.assertResolutionCurrent(isCurrent);
-          }
-          if (index > 0) { await onResult({ server_seq: serverSeq, rejected }, confirmed, attempted); }
-        }
+        await resolveForced(chunks.slice(index), index > 0);
         throw error;
       }
       serverSeq = response.server_seq;
@@ -801,18 +835,12 @@ export class SyncEngine {
       attempted = mergeSyncPayloads(attempted, chunk);
       confirmed = mergeSyncPayloads(confirmed, this.acceptedPayload(chunk, response.rejected));
       if (response.rejected.length > 0) {
-        if (onResult) {
-          for (const unsent of chunks.slice(index + 1)) {
-            await this.markPayloadUnsent(unsent);
-            this.assertResolutionCurrent(isCurrent);
-          }
-        }
-        break;
+        await resolveForced(chunks.slice(index + 1), true);
+        return { server_seq: serverSeq, rejected };
       }
     }
-    const response = { server_seq: serverSeq, rejected };
-    await onResult?.(response, confirmed, attempted);
-    return response;
+    await resolveForced([], true);
+    return { server_seq: serverSeq, rejected };
   }
 
   private async runInitialSync(): Promise<void> {
@@ -914,6 +942,7 @@ export class SyncEngine {
       return this.retirement;
     }
     this.destroyed = true;
+    this.pendingForcedResolution = null;
     this.queue.destroy();
     this.sseClient.destroy();
     if (this.periodicTimer) {

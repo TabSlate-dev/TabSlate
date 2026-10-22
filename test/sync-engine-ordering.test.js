@@ -143,6 +143,105 @@ describe("SyncEngine ordering", () => {
     engine.destroy();
   });
 
+  for (const failure of ["rejection", "network"]) {
+    test(`forcePush retries failed unsent marking after ${failure} without resending chunks`, async () => {
+      const confirmations = [];
+      const marks = [];
+      const events = [];
+      syncPushImpl = async () => {
+        if (syncPushCalls.length === 2) {
+          if (failure === "network") { throw new TypeError("offline"); }
+          return { server_seq: 2, rejected: [{ id: "b-900", type: "bookmark", reason: "stale" }] };
+        }
+        return { server_seq: 1, rejected: [] };
+      };
+      const engine = new SyncEngine(
+        () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => 7,
+        async () => { events.push("merge"); return { errorMessage: null }; },
+        async (response, confirmed, attempted) => { confirmations.push({ response, confirmed, attempted }); events.push("confirm"); return null; },
+        () => {}, async () => false,
+        orderingDependencies({ markPayloadUnsent: async payload => {
+          marks.push(payload); events.push("mark");
+          if (marks.length === 1) { throw new Error("temporary IDB failure"); }
+        } }),
+      );
+      try {
+        await expect(engine.forcePush({ bookmarks: Array.from({ length: 1801 }, (_, i) => ({ id: `b-${i}` })) })).rejects.toThrow("temporary IDB failure");
+        expect(confirmations).toHaveLength(0);
+        await engine.forceSync();
+        expect(syncPushCalls).toHaveLength(2);
+        expect(marks).toHaveLength(failure === "network" ? 3 : 2);
+        expect(confirmations).toHaveLength(1);
+        expect(confirmations[0].confirmed.entities.bookmarks).toHaveLength(failure === "network" ? 900 : 1799);
+        expect(confirmations[0].attempted.entities.bookmarks).toHaveLength(failure === "network" ? 900 : 1800);
+        expect(events.at(-2)).toBe("confirm");
+        expect(events.at(-1)).toBe("merge");
+        await engine.forceSync();
+        expect(confirmations).toHaveLength(1);
+        expect(syncPushCalls).toHaveLength(2);
+      } finally { await engine.retire(); }
+    });
+  }
+
+  test("forcePush retries auxiliary recovery before normal pull without resending", async () => {
+    const restored = [];
+    const guards = [];
+    const attempted = { id: "moving", parent_id: "bad" };
+    const rejection = { server_seq: 10, rejected: [{ id: "moving", type: "tag", reason: "invalid_field", field: "parent_id" }] };
+    syncPushImpl = async () => rejection;
+    let fullPulls = 0;
+    syncPullImpl = async (_url, _token, after) => {
+      if (after === 0 && ++fullPulls === 1) { throw new TypeError("authority offline"); }
+      return emptyResponse(11);
+    };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => 7,
+      async () => ({ errorMessage: null }), async () => null, () => {}, async () => false,
+      orderingDependencies({ reconcileTagRejections: async (response, sent, _remote, isCurrent) => {
+        expect(isCurrent()).toBe(true); guards.push(isCurrent);
+        restored.push({ response, sent });
+      } }),
+    );
+    try {
+      await expect(engine.forcePush({ tags: [attempted] })).rejects.toThrow("authority offline");
+      await engine.forceSync();
+      expect(syncPushCalls).toHaveLength(1);
+      expect(syncPullCalls.map(call => call[2])).toEqual([0, 0, 7]);
+      expect(restored).toHaveLength(1);
+      expect(restored[0].response).toEqual(rejection);
+      expect(restored[0].sent.entities.tags).toEqual([attempted]);
+      expect(guards[0]()).toBe(false);
+    } finally { await engine.retire(); }
+  });
+
+  test("retiring during forced recovery retry prevents old-session restore and further retries", async () => {
+    const authority = deferred();
+    let recovered = 0;
+    let pulls = 0;
+    syncPushImpl = async () => ({ server_seq: 10, rejected: [{ id: "moving", type: "tag", reason: "invalid_field", field: "parent_id" }] });
+    syncPullImpl = async () => {
+      if (++pulls === 1) { throw new TypeError("authority offline"); }
+      return authority.promise;
+    };
+    const engine = new SyncEngine(
+      () => ({ baseUrl: "http://localhost:8080", accessToken: "token" }), () => 7,
+      async () => ({ errorMessage: null }), async () => null, () => {}, async () => false,
+      orderingDependencies({ reconcileTagRejections: async () => { recovered += 1; } }),
+    );
+    await expect(engine.forcePush({ tags: [{ id: "moving", parent_id: "bad" }] })).rejects.toThrow("authority offline");
+    const retry = engine.forceSync().catch(error => error);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const retiring = engine.retire();
+    authority.resolve(emptyResponse(11));
+    await retry;
+    await retiring;
+    await engine.forceSync();
+    expect(pulls).toBe(2);
+    expect(syncPullCalls.map(call => call[2])).toEqual([0, 0]);
+    expect(recovered).toBe(0);
+    expect(syncPushCalls).toHaveLength(1);
+  });
+
   test("tag recovery fetches a guarded authoritative full pull without owning the checkpoint", async () => {
     const events = [];
     const attempted = emptyPayload();
