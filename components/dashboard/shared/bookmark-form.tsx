@@ -258,7 +258,12 @@ export function BookmarkForm({ bookmark, focus, onDone, onCancel }: BookmarkForm
 
   // Cmd/Ctrl+Enter saves from any field; plain Enter in the notes adds a line.
   const handleKeyDown = (event: React.KeyboardEvent<HTMLFormElement>) => {
-    if (event.nativeEvent.isComposing || !(event.target instanceof Element) || event.target.closest("form") !== event.currentTarget) {
+    if (event.nativeEvent.isComposing || !(event.target instanceof Element)) {
+      return;
+    }
+    // A nested dialog's form handles its own keys; a portaled picker has no form and still saves.
+    const ownerForm = event.target.closest("form");
+    if (ownerForm !== null && ownerForm !== event.currentTarget) {
       return;
     }
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {

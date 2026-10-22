@@ -219,6 +219,16 @@ describe("adding a bookmark", () => {
     expect(dialogOpen()).toBe(false);
   });
 
+  // The picker renders in a portal, outside the form element.
+  test("Cmd or Ctrl+Enter saves while the collection picker is open", async () => {
+    open();
+    fillRequired("Docs", "example.com/docs");
+    await act(async () => click(getByText("Reading")));
+    pressKey(getBySelector('[placeholder="collectionPicker_filterPlaceholder"]'), "Enter", { ctrlKey: true });
+    expect(added()?.title).toBe("Docs");
+    expect(dialogOpen()).toBe(false);
+  });
+
 });
 
 describe("editing a bookmark", () => {
