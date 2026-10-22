@@ -68,13 +68,13 @@ The comparison weighed nested collections against nested tags. Collections are t
 
 - `Tag` in `lib/types.ts` gains `parentId?: string`. A missing value means a top-level tag, so existing IndexedDB records need no migration.
 - TabSlate-server's `tags` table gains `parent_id TEXT` (`db/schema.pg.sql`, idempotent). It has no foreign key, because a push may carry a child before its parent.
-- `model.Tag` gains `ParentID *string json:"parent_id,omitempty"`. In a push, an absent field keeps the stored parent, which is what older extensions send; `""` moves the tag to the top level; an ID sets that parent. The extension always sends `parent_id`, using `""` for top-level tags. Pull and the REST tag endpoints return the stored value.
+- `model.Tag` gains `ParentID *string json:"parent_id,omitempty"`. In a push, an absent field keeps the stored parent, which is what older extensions send; `""` moves the tag to the top level; an ID sets that parent. The extension always sends `parent_id`, using `""` for top-level tags. Pull and the REST tag endpoints always return `parent_id`, using `""` for a stored root. Omission in a response is reserved for compatibility with older servers and preserves a local parent.
 
 **Rules.**
 
 - **Depth.** A tag can be at most five levels deep, counting the top level as level one.
-- **Sibling names.** Names are unique among tags with the same parent, compared trimmed and case-insensitively. Tag names cannot contain `/`, because `/` separates levels when creating tags. Existing tags whose names already contain `/` keep them until renamed.
-- **No cycles.** The sync push validates each tag's parent: the parent must be one of the user's tags, the tag must not become its own ancestor (the server walks the parent chain, including other tags in the same push), and the result must not exceed five levels. A violation rejects that tag with `invalid_field`. When two devices concurrently make two tags each other's parent, the later push is rejected. On that rejection the extension drops its local parent change, takes the server's value, and does not report a sync conflict.
+- **Sibling names.** Names are unique among tags with the same parent, compared trimmed and case-insensitively. Tag names cannot contain `/`, because `/` separates levels when creating tags. Existing tags whose names already contain `/` keep them until renamed. New or renamed segments are limited to 50 Unicode code points, matching the existing REST limit; unchanged legacy names remain usable.
+- **No cycles.** The sync push validates each tag's parent: the parent must be one of the user's tags, the tag must not become its own ancestor (the server walks the parent chain, including other tags in the same push), and the result must not exceed five levels. Validation covers the final admitted graph, including the deepest descendants of a moved subtree and excluding stale, foreign, or quota-rejected proposals. A hierarchy violation rejects that tag with `invalid_field` and `field: "parent_id"`. When two devices concurrently make two tags each other's parent, the later push is rejected. On that rejection the extension drops its local parent change, takes the server's value, and does not report a sync conflict.
 - **Missing parents.** A tag whose parent is deleted or unknown is shown at the top level. Nothing is written back automatically; the next edit of that tag saves the parent it is shown under. This avoids sync churn between devices.
 - **Order.** Siblings are sorted by name with the current language's collation, case-insensitively. Today tags are listed in creation order.
 
@@ -83,9 +83,9 @@ The comparison weighed nested collections against nested tags. Collections are t
 - **Create.** Creating `后端/Go` under `编程` creates the missing levels and reuses existing ones, matched by sibling name. New tags take their parent's color. The creation and quota check cover all new levels together.
 - **Move.** `moveTag(id, parentId)` changes the parent. The targets exclude the tag itself, its descendants, and any position that would exceed five levels.
 - **Rename.** Changes only the tag; its children are unaffected.
-- **Delete.** Moves the tag's children to its parent (or the top level), then tombstones the tag, in one state update and one sync enqueue. Bookmarks keep their other tags. As today, dangling tag IDs on bookmarks are ignored when rendering.
+- **Delete.** Moves the tag's children to its parent (or the top level), then tombstones the tag, in one state update and one sync enqueue. If a promoted child would collide with a sibling name, keep both IDs and suffix the promoted child with " (2)", " (3)", etc.; reserve suffixes in stable ID order and within the name-length limit. Bookmarks keep their other tags and tag IDs. As today, dangling tag IDs on bookmarks are ignored when rendering. Pending tombstones persist in IndexedDB with `seq: 0`, remain hidden from active tag state, survive restart, and are removed only after matching acknowledgement or authoritative absence.
 
-**Quota.** Every tag counts against `max_tags`, including levels created implicitly and import trees. When an operation's new tags do not all fit, none are created and the existing quota alert appears.
+**Quota.** Every active tag counts against `max_tags`, including levels created implicitly and import trees. When an operation's new tags do not all fit, none are created and the existing quota alert appears.
 
 **Compatibility.**
 
@@ -209,12 +209,14 @@ The comparison weighed nested collections against nested tags. Collections are t
 **Toby** (`lib/import-toby.ts`).
 
 - Lists still become collections and labels still become tags. Labels match existing top-level tags by name.
-- With the option on, a root tag "Toby import «YYYY-MM-DD»" is added to every imported bookmark. Toby exports have no folders, so the root has no children.
+- With the option on, a root tag "Toby import «YYYY-MM-DD»" is added to every imported bookmark. Toby exports have no folders, so the root has no children. Reserve mandatory new label tags before budgeting the optional root; if the labels themselves cannot fit, block the import rather than silently dropping labels.
 
 **After importing.**
 
-- The success message has a "Show imported bookmarks" button. It switches to "All bookmarks" in the target workspace, clears the other filters, and selects only the import's root tag, ready for B's bulk actions.
-- The message also explains that deleting the root tag after reorganizing moves its child tags up one level.
+- When a root tag was actually committed, the success message has a "Show imported bookmarks" button. It switches to "All bookmarks" in the target workspace, clears the other filters, and selects only the import's root tag, ready for B's bulk actions.
+- When a root exists, the message also explains that deleting the root tag after reorganizing moves its child tags up one level. Without a root (option off or quota exhausted), omit that button and explanation.
+
+Imported folder/label names are literal segments, never typed paths: trim them, replace `/` with `／`, use localized "Untitled" for empty segments, and truncate new segments to 50 Unicode code points. Distinct original names that collide after normalization receive suffixes; equivalent original sibling names coalesce. Existing collections and tags are not renamed.
 
 `ImportPlan` (`lib/import-types.ts`) carries the new tags with their parents, and `importFromPlan` in `store/workspace-store.ts` adds them with the collections and bookmarks.
 
@@ -230,7 +232,7 @@ The comparison weighed nested collections against nested tags. Collections are t
   - A, and any child merged away, is tombstoned.
   - The changes go out in one sync enqueue, split by B's byte-limited push chunks.
 - If A was selected in the tag filter, B takes its place.
-- Merged-away tags stop counting against the tag quota once they are permanently deleted, like any deleted tag.
+- Deleted and merged-away tags stop counting against `max_tags` when tombstoned, matching the existing active-tag quota (`deleted_at IS NULL`). Physical tombstone retention cleanup is separate; there is no new tag permanent-delete UI.
 
 **Delete unused tags** (a new item in a ⋯ menu on the Tags section header):
 
