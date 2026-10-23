@@ -12,8 +12,7 @@ import * as idb from "@/lib/idb";
 import { syncEngine } from "@/lib/sync-engine";
 import { compareActiveCollections } from "@/lib/collection-utils";
 import type { SyncEntity, SyncPullResponse, SyncPushEntities } from "@/lib/api";
-import { useBookmarksStore } from "@/store/bookmarks-store";
-import * as bookmarkSync from "@/store/bookmarks-store";
+import { useBookmarksStore, toServerBookmark } from "@/store/bookmarks-store";
 import { useGroupsStore } from "@/store/groups-store";
 import { usePlanStore, guardQuota } from "@/store/plan-store";
 import { useAuthStore } from "@/store/auth-store";
@@ -327,9 +326,9 @@ function runTagAction(
         useBookmarksStore.setState(state => ({ selectedTags: state.selectedTags.filter(id => !removed.has(id)) }));
       }
       const bookmarks = [
-        ...bookmarkChanges.active.map(bookmark => bookmarkSync.toServerBookmark(bookmark)),
-        ...bookmarkChanges.archived.map(bookmark => bookmarkSync.toServerBookmark(bookmark, { isArchived: true })),
-        ...bookmarkChanges.trashed.map(bookmark => bookmarkSync.toServerBookmark(bookmark, {
+        ...bookmarkChanges.active.map(bookmark => toServerBookmark(bookmark)),
+        ...bookmarkChanges.archived.map(bookmark => toServerBookmark(bookmark, { isArchived: true })),
+        ...bookmarkChanges.trashed.map(bookmark => toServerBookmark(bookmark, {
           isTrashed: "isTrashed" in bookmark && bookmark.isTrashed === 2 ? 2 : 1,
         })),
       ];
@@ -1279,7 +1278,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     syncEngine?.enqueue({
       ...(newTags.length > 0 ? { tags: newTags.map(toServerTag) } : {}),
       ...(newCollections.length > 0 ? { collections: newCollections.map((c) => toServerCollection(c)) } : {}),
-      ...(newBookmarks.length > 0 ? { bookmarks: newBookmarks.map((b) => bookmarkSync.toServerBookmark(b)) } : {}),
+      ...(newBookmarks.length > 0 ? { bookmarks: newBookmarks.map((b) => toServerBookmark(b)) } : {}),
     });
 
     return {

@@ -752,6 +752,9 @@
   "settings_cancel": {
     "message": "取消"
   },
+  "settings_saving": {
+    "message": "保存中..."
+  },
   "settings_add": {
     "message": "添加"
   },

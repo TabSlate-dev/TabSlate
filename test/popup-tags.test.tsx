@@ -238,3 +238,42 @@ test("guest, verified-online, cached/offline, and Firefox consent-denied cases s
   }
 });
 
+test("pressing Enter while IME composition is active does not create or select a tag", async () => {
+  db.seed([
+    { id: "t1", name: "Alpha", color: "blue", seq: 0 },
+  ]);
+
+  await openPopup();
+
+  const input = getBySelector<HTMLInputElement>("input[placeholder*='tag' i], input[placeholder*='标签' i]");
+
+  // Case 1: Suggestions exist, but Enter with isComposing should not select suggestion
+  typeInto(input, "Alpha");
+  await wait(0);
+  expect(queryByText("Alpha")).not.toBeNull();
+
+  pressKey(input, "Enter", { isComposing: true });
+  await wait(0);
+
+  // No chips selected
+  let chips = document.querySelectorAll(".rounded.text-\\[10px\\]");
+  expect(chips.length).toBe(0);
+  expect(input.value).toBe("Alpha");
+
+  // Case 2: New tag path, Enter with isComposing should not create tag
+  typeInto(input, "NewTag/SubTag");
+  await wait(0);
+
+  pressKey(input, "Enter", { isComposing: true });
+  await wait(0);
+
+  chips = document.querySelectorAll(".rounded.text-\\[10px\\]");
+  expect(chips.length).toBe(0);
+  expect(delivered.filter((m) => m.type === "WORKSPACE_CHANGED")).toHaveLength(0);
+
+  const tags = await db.module.idbGetAll<Tag>("tags");
+  expect(tags).toHaveLength(1);
+  expect(tags[0]?.name).toBe("Alpha");
+});
+
+

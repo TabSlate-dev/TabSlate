@@ -133,7 +133,10 @@ function PopupContent() {
     (c) => c.id === selectedCollectionId
   );
 
-  const tree = useMemo(() => buildTagTree(availableTags, "en"), [availableTags]);
+  const tree = useMemo(
+    () => buildTagTree(availableTags, chrome.i18n?.getUILanguage?.() ?? "en"),
+    [availableTags]
+  );
 
   const suggestions = useMemo(() => {
     const trimmed = tagInput.trim();
@@ -424,6 +427,9 @@ function PopupContent() {
                   setTagError(null);
                 }}
                 onKeyDown={async (e) => {
+                  if (e.nativeEvent.isComposing) {
+                    return;
+                  }
                   if (e.key === "Enter") {
                     e.preventDefault();
                     const val = tagInput.trim();

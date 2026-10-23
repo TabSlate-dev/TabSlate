@@ -752,6 +752,9 @@
   "settings_cancel": {
     "message": "Cancel"
   },
+  "settings_saving": {
+    "message": "Saving..."
+  },
   "settings_add": {
     "message": "Add"
   },

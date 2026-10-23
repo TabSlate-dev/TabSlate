@@ -22,7 +22,10 @@ if (runsInIsolatedProcess(import.meta.filename)) {
     }) }, guardQuota: () => { throw new Error("unexpected old quota gate"); },
   }));
   mock.module("@/store/auth-store", () => ({ useAuthStore: { getState: () => ({ user: null, serverUrl: "" }) } }));
-  mock.module("@/store/bookmarks-store", () => ({ useBookmarksStore: { getState: () => ({ bookmarks, confirmBookmarkEntitySeqs: () => {} }) } }));
+  mock.module("@/store/bookmarks-store", () => ({
+    useBookmarksStore: { getState: () => ({ bookmarks, confirmBookmarkEntitySeqs: () => {} }) },
+    toServerBookmark: (b: unknown) => b,
+  }));
   mock.module("@/store/groups-store", () => ({ useGroupsStore: { getState: () => ({ confirmGroupEntitySeqs: () => {} }) } }));
   mock.module("@/lib/analytics", () => ({ analytics: { track: () => {} } }));
   const { useWorkspaceStore: store } = await import("@/store/workspace-store");
