@@ -471,7 +471,7 @@ Offline 的 delete/restore 先在本地一个 IndexedDB 事务内提交：写工
 Workspace { id, name, color, position, seq, deletedAt?, deletionModel? }  // deletionModel: 1=父级墓碑协议, 0=遗留级联删除迁移标记
   └── Collection[] { id, workspaceId, name, icon, position, isDefault?, seq, deletedAt?, archivedAt? }
          └── Bookmark[] { id, title, url, favicon, description, notes?, collectionId, tags[], createdAt, updatedAt?, isFavorite, seq, deletedAt? }
-Tag { id, name, color, seq, deletedAt? }
+Tag { id, name, color, parentId?, seq, deletedAt? }
 
 // store/groups-store.ts
 SavedGroup { id, name, color: TabGroupColor, isCompact, createdAt, seq, deletedAt? }
