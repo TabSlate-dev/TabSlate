@@ -22,7 +22,7 @@ C2-2 wires them into the `cmd/fetcher` worker, storage, and the API.
 
 ## Global Constraints
 
-- **Repository and branch.** All code is in `/Users/lieutenant/Documents/github/TabSlate-server`. Create the branch `feat/web-snapshots` from `feat/bookmark-cover` (C1's server branch, at `d6b4c8f`). All C2 server plans continue on this branch. Do not push, open pull requests, or use git worktrees.
+- **Repository and branch.** All code is in `/Users/lieutenant/Documents/github/TabSlate-server`. Create the branch `feat/web-snapshots` from `feat/bookmark-cover` (C1's server branch). All C2 server plans continue on this branch. Do not push, open pull requests, or use git worktrees.
 - **Commits.** Stage files by path. Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - **Go version.** `go.mod` keeps `go 1.25.0` and gets no `toolchain` line, because the Dockerfile builds with `golang:1.25-alpine`. Run every Go command with `GOTOOLCHAIN=local`. The local toolchain may be newer; the module's `go` line is what counts.
 - **Dependencies.** Add exactly these versions:
