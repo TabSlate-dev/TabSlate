@@ -124,6 +124,23 @@
   "popup_addTag": {
     "message": "添加标签..."
   },
+  "popup_tagQuota": {
+    "message": "已达到标签数量上限。"
+  },
+  "popup_tagError": {
+    "message": "创建标签失败。"
+  },
+  "popup_tagCreating": {
+    "message": "正在创建标签..."
+  },
+  "popup_createTagPrompt": {
+    "message": "按 Enter 创建“$1”",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
   "sidebar_navOpenTabs": {
     "message": "打开的标签页与分组"
   },

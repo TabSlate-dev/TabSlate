@@ -209,3 +209,16 @@ test("the storage fallback keeps the cover", async () => {
 
   expect(fallbackWrite.mock.calls[0]?.[0].imageUrl).toBe("https://cdn.example.com/fallback.png");
 });
+
+test("bookmark save acknowledgement behavior stays intact with tags", async () => {
+  answerSave = async () => ({ status: "saved", bookmarkId: "saved-tag-bm" });
+  await openPopup();
+  await save();
+
+  const [message] = delivered;
+  expect(message?.type === "ADD_BOOKMARK" ? message.data.tags : undefined).toEqual([]);
+  expect(queryByText("popup_saved")).not.toBeNull();
+  expect(queryByText("popup_saveRejected")).toBeNull();
+  expect(fallbackWrite).not.toHaveBeenCalled();
+});
+

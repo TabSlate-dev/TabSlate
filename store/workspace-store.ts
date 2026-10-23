@@ -247,7 +247,6 @@ interface WorkspaceState {
   permanentlyDeleteCollection: (id: string) => void;
 
   // Tag CRUD
-  createTag: (name: string, color: string) => Promise<TagActionResult>;
   createTagPath: (input: string, color: string, parentId?: string) => Promise<TagActionResult>;
   updateTag: (id: string, patch: Partial<Pick<Tag, "name" | "color" | "parentId">>) => Promise<TagActionResult>;
   moveTag: (id: string, parentId: string | undefined) => Promise<TagActionResult>;
@@ -1077,8 +1076,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
   },
 
   // ── Tags ──────────────────────────────────────────────────────────────
-  createTag: (name, color) => get().createTagPath(name, color),
-
   createTagPath: (input, color, parentId) => runTagAction((tags) => {
     const resolved = resolveTagPath(buildTagTree(tags, "en"), input, parentId, color, generateId);
     if (!resolved.ok) { return resolved; }

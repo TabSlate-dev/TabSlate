@@ -11,6 +11,13 @@ export class TagMutationStaleError extends Error {
   }
 }
 
+export class TagMutationQuotaError extends Error {
+  constructor() {
+    super("Tag quota exceeded");
+    this.name = "TagMutationQuotaError";
+  }
+}
+
 let generation = 0;
 let tail: Promise<void> = Promise.resolve();
 const transactions = new Set<IDBTransaction>();
@@ -92,6 +99,8 @@ export interface CommittedTagMutation {
 export interface TagCommitOptions {
   /** Recheck only the proposed unused candidates against all durable buckets. */
   unusedOnly?: boolean;
+  /** Maximum active tags allowed in IDB. Throws TagMutationQuotaError if breached. */
+  maxActiveTags?: number;
 }
 
 export async function commitTagMutation(
@@ -126,6 +135,12 @@ export async function commitTagMutation(
           })) { throw new TagMutationStaleError(); }
           if (plan.upserts.some(tag => durableTags.some(record => record.id === tag.id && record.deletedAt !== undefined))) {
             throw new TagMutationStaleError();
+          }
+          if (options.maxActiveTags !== undefined && options.maxActiveTags !== -1) {
+            const created = plan.upserts.filter(tag => !active.some(existing => existing.id === tag.id)).length;
+            if (active.length + created > options.maxActiveTags) {
+              throw new TagMutationQuotaError();
+            }
           }
           const unused = options.unusedOnly ? unusedTagIds(buildTagTree(active, "en"), bookmarks.flat()) : undefined;
           committed.tags = [...plan.upserts, ...plan.tombstones.filter(tag => !unused || unused.has(tag.id))];

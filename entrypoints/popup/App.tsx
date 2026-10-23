@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { storageService, getWorkspaceState, findSavedDuplicates } from "@/lib/storage";
+import { buildTagTree, displayTagPath, searchTagPaths } from "@/lib/tag-tree";
 import { DuplicateNotice } from "@/components/dashboard/shared/duplicate-notice";
 import type { DuplicateMatch } from "@/lib/duplicate-lookup";
 import { findSaveShortcut } from "@/lib/browser/commands";
@@ -57,6 +58,8 @@ function PopupContent() {
   const [availableTags, setAvailableTags] = useState<Tag[]>([]);
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   const [tagInput, setTagInput] = useState("");
+  const [tagPending, setTagPending] = useState(false);
+  const [tagError, setTagError] = useState<string | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
   const [note, setNote] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -129,6 +132,18 @@ function PopupContent() {
   const selectedCollection = saveableCollections.find(
     (c) => c.id === selectedCollectionId
   );
+
+  const tree = useMemo(() => buildTagTree(availableTags, "en"), [availableTags]);
+
+  const suggestions = useMemo(() => {
+    const trimmed = tagInput.trim();
+    if (!trimmed) {
+      return [];
+    }
+    return searchTagPaths(tree, trimmed).filter(
+      (tag) => !selectedTags.some((st) => st.id === tag.id)
+    );
+  }, [tagInput, tree, selectedTags]);
 
   const handleSave = async () => {
     if (!tab?.url || saveState === "saving" || saveState === "saved") { return; }
@@ -404,7 +419,10 @@ function PopupContent() {
               <Input
                 placeholder={t("popup_addTag") || "Add a tag..."}
                 value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
+                onChange={(e) => {
+                  setTagInput(e.target.value);
+                  setTagError(null);
+                }}
                 onKeyDown={async (e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -413,10 +431,23 @@ function PopupContent() {
                       handleSave();
                       return;
                     }
-                    let existing = availableTags.find(
-                      (t) => t.name.toLowerCase() === val.toLowerCase()
-                    );
-                    if (!existing) {
+                    if (tagPending) {
+                      return;
+                    }
+
+                    if (suggestions.length > 0) {
+                      const first = suggestions[0];
+                      if (first && !selectedTags.some((t) => t.id === first.id)) {
+                        setSelectedTags((prev) => [...prev, first]);
+                      }
+                      setTagInput("");
+                      setTagError(null);
+                      return;
+                    }
+
+                    setTagPending(true);
+                    setTagError(null);
+                    try {
                       const TAG_COLORS = [
                         "bg-blue-500/10 text-blue-500",
                         "bg-emerald-500/10 text-emerald-500",
@@ -427,9 +458,23 @@ function PopupContent() {
                         "bg-orange-500/10 text-orange-500",
                         "bg-pink-500/10 text-pink-500",
                       ];
-                      const color = TAG_COLORS[Math.floor(Math.random() * TAG_COLORS.length)];
-                      existing = await storageService.addTag(val, color);
-                      setAvailableTags((prev) => [...prev, existing!]);
+                      const color = TAG_COLORS[availableTags.length % TAG_COLORS.length];
+                      const result = await storageService.addTagPath(val, color);
+                      if (!result.ok) {
+                        if (result.error === "quota") {
+                          setTagError(t("popup_tagQuota"));
+                        } else if (result.error === "depth") {
+                          setTagError(t("tagAction_errorDepth"));
+                        } else if (result.error === "stale") {
+                          setTagError(t("tagAction_errorStale"));
+                        } else if (result.error === "storage") {
+                          setTagError(t("tagAction_errorStorage"));
+                        } else {
+                          setTagError(t("popup_tagError"));
+                        }
+                        return;
+                      }
+
                       chrome.tabs.query({ url: chrome.runtime.getURL("newtab.html") }, (tabs) => {
                         tabs.forEach((t) => {
                           if (t.id) {
@@ -437,52 +482,59 @@ function PopupContent() {
                           }
                         });
                       });
+
+                      const refreshed = await getWorkspaceState();
+                      const newTags = refreshed.tags.map((t) => ({ ...t, seq: 0 }));
+                      setAvailableTags(newTags);
+                      if (result.tagId) {
+                        const leafTag = newTags.find((t) => t.id === result.tagId);
+                        if (leafTag && !selectedTags.some((t) => t.id === leafTag.id)) {
+                          setSelectedTags((prev) => [...prev, leafTag]);
+                        }
+                      }
+                      setTagInput("");
+                    } finally {
+                      setTagPending(false);
                     }
-                    if (!selectedTags.find((t) => t.id === existing!.id)) {
-                      setSelectedTags((prev) => [...prev, existing!]);
-                    }
-                    setTagInput("");
                   }
                 }}
                 className="h-9 text-sm"
               />
               {tagInput.trim() && (
                 <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-popover border rounded-md shadow-md z-10 p-1">
-                  {availableTags.filter(
-                    (t) =>
-                      t.name.toLowerCase().includes(tagInput.toLowerCase()) &&
-                      !selectedTags.find((st) => st.id === t.id)
-                  ).length > 0 ? (
-                    availableTags
-                      .filter(
-                        (t) =>
-                          t.name.toLowerCase().includes(tagInput.toLowerCase()) &&
-                          !selectedTags.find((st) => st.id === t.id)
-                      )
-                      .map((tag) => (
-                        <div
-                          key={tag.id}
-                          className="px-2 py-1.5 text-sm cursor-pointer hover:bg-accent rounded-sm flex items-center gap-2"
-                          onClick={() => {
-                            setSelectedTags((prev) => [...prev, tag]);
-                            setTagInput("");
-                          }}
-                        >
-                          <span
-                            className={cn(
-                              "inline-block size-3 rounded-full",
-                              tag.color.split(" ")[0].replace("/10", "")
-                            )}
-                          />
-                          {tag.name}
-                        </div>
-                      ))
+                  {suggestions.length > 0 ? (
+                    suggestions.map((tag) => (
+                      <div
+                        key={tag.id}
+                        className="px-2 py-1.5 text-sm cursor-pointer hover:bg-accent rounded-sm flex items-center gap-2"
+                        onClick={() => {
+                          setSelectedTags((prev) => [...prev, tag]);
+                          setTagInput("");
+                          setTagError(null);
+                        }}
+                      >
+                        <span
+                          className={cn(
+                            "inline-block size-3 rounded-full",
+                            tag.color.split(" ")[0].replace("/10", "")
+                          )}
+                        />
+                        <span className="truncate">{displayTagPath(tree, tag.id) || tag.name}</span>
+                      </div>
+                    ))
                   ) : (
                     <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      Press Enter to create "{tagInput}"
+                      {tagPending
+                        ? t("popup_tagCreating")
+                        : (t("popup_createTagPrompt", [tagInput.trim()]) || `Press Enter to create "${tagInput.trim()}"`)}
                     </div>
                   )}
                 </div>
+              )}
+              {tagError && (
+                <p role="alert" className="text-xs text-destructive mt-1">
+                  {tagError}
+                </p>
               )}
             </div>
           </div>

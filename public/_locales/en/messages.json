@@ -124,6 +124,23 @@
   "popup_addTag": {
     "message": "Add a tag..."
   },
+  "popup_tagQuota": {
+    "message": "The tag limit has been reached."
+  },
+  "popup_tagError": {
+    "message": "Failed to create tag."
+  },
+  "popup_tagCreating": {
+    "message": "Creating tag..."
+  },
+  "popup_createTagPrompt": {
+    "message": "Press Enter to create \"$1\"",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
   "sidebar_navOpenTabs": {
     "message": "Open Tabs & Groups"
   },
