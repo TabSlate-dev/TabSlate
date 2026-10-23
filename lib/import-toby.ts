@@ -1,5 +1,7 @@
 import { generateId } from "@/lib/id";
-import type { ImportPlan, ValidationResult } from "@/lib/import-types";
+import { addImportTags, normalizeImportSegment } from "@/lib/import-tags";
+import type { ImportPlan, ImportTagOptions, ValidationResult } from "@/lib/import-types";
+import { MAX_TAG_NAME_LENGTH, normalizeTagName } from "@/lib/tag-name";
 import type { Bookmark, Collection, Tag } from "@/lib/types";
 
 const SAFE_SCHEMES = new Set(["http:", "https:", "ftp:", "ftps:"]);
@@ -8,6 +10,14 @@ const MAX_URL_LENGTH = 2048;
 const MAX_TITLE_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
 const DEFAULT_TAG_COLOR = "bg-blue-500/10 text-blue-500";
+
+function truncateWithSuffix(baseName: string, suffix?: number): string {
+  if (suffix === undefined) {
+    return Array.from(baseName).slice(0, MAX_TAG_NAME_LENGTH).join("");
+  }
+  const ending = ` (${suffix})`;
+  return Array.from(baseName).slice(0, MAX_TAG_NAME_LENGTH - Array.from(ending).length).join("") + ending;
+}
 
 interface TobyCard {
   title?: string;
@@ -161,9 +171,10 @@ export function buildTobyImportPlan(
   toby: TobyImport | null,
   workspaceId: string,
   existingBookmarkUrls: Set<string>,
-  existingTags: Pick<Tag, "id" | "name">[],
+  existingTags: readonly Pick<Tag, "id" | "name" | "parentId">[],
   skipDuplicates: boolean,
   startPosition = 0,
+  tagOptions?: ImportTagOptions,
 ): ImportPlan {
   if (!toby) {
     return {
@@ -175,16 +186,22 @@ export function buildTobyImportPlan(
     };
   }
 
-  const tagIdByName = new Map<string, string>();
-  for (const existingTag of existingTags) {
-    const normalizedName = existingTag.name.trim().toLowerCase();
-    if (normalizedName.length === 0) {
-      continue;
-    }
+  const reusableTopLevelTags = new Map<string, string>();
+  const allUsedTopLevelNames = new Set<string>();
 
-    tagIdByName.set(normalizedName, existingTag.id);
+  for (const existingTag of existingTags) {
+    if (existingTag.parentId === undefined) {
+      const normalizedName = normalizeTagName(existingTag.name);
+      if (normalizedName.length > 0) {
+        if (!reusableTopLevelTags.has(normalizedName)) {
+          reusableTopLevelTags.set(normalizedName, existingTag.id);
+        }
+        allUsedTopLevelNames.add(normalizedName);
+      }
+    }
   }
 
+  const createdMandatoryTagIds = new Map<string, string>();
   const collections: Omit<Collection, "seq">[] = [];
   const bookmarks: Omit<Bookmark, "seq">[] = [];
   const tags: Omit<Tag, "seq">[] = [];
@@ -203,25 +220,44 @@ export function buildTobyImportPlan(
     const tagIds: string[] = [];
     const seenLabels = new Set<string>();
     for (const label of list.labels ?? []) {
-      const normalizedLabel = label.toLowerCase();
-      if (normalizedLabel.length === 0 || seenLabels.has(normalizedLabel)) {
+      const trimmed = label.trim();
+      if (trimmed.length === 0) {
+        continue;
+      }
+      const normalizedLabel = normalizeTagName(trimmed);
+      if (seenLabels.has(normalizedLabel)) {
         continue;
       }
 
       seenLabels.add(normalizedLabel);
 
-      const existingTagId = tagIdByName.get(normalizedLabel);
+      const existingTagId = reusableTopLevelTags.get(normalizedLabel);
       if (existingTagId) {
         tagIds.push(existingTagId);
         continue;
       }
 
+      const alreadyCreatedTagId = createdMandatoryTagIds.get(normalizedLabel);
+      if (alreadyCreatedTagId) {
+        tagIds.push(alreadyCreatedTagId);
+        continue;
+      }
+
+      const base = normalizeImportSegment(trimmed, "Untitled");
+      let candidate = truncateWithSuffix(base);
+      let suffix = 2;
+      while (allUsedTopLevelNames.has(normalizeTagName(candidate))) {
+        candidate = truncateWithSuffix(base, suffix++);
+      }
+      allUsedTopLevelNames.add(normalizeTagName(candidate));
+
       const tagId = generateId();
-      tagIdByName.set(normalizedLabel, tagId);
+      createdMandatoryTagIds.set(normalizedLabel, tagId);
       tags.push({
         id: tagId,
-        name: truncate(label, MAX_TITLE_LENGTH),
+        name: candidate,
         color: DEFAULT_TAG_COLOR,
+        parentId: undefined,
       });
       tagIds.push(tagId);
     }
@@ -269,11 +305,33 @@ export function buildTobyImportPlan(
     }
   }
 
-  return {
+  const basePlan: ImportPlan = {
     collections,
     bookmarks,
     tags,
     duplicatesSkipped,
     rejectedUrls,
   };
+
+  if (!tagOptions || !tagOptions.enabled) {
+    return basePlan;
+  }
+
+  const mandatoryCount = tags.length;
+  if (tagOptions.availableTags !== -1 && mandatoryCount > tagOptions.availableTags) {
+    return {
+      ...basePlan,
+      provenance: {
+        mode: "none",
+        requestedTagCount: 1,
+      },
+    };
+  }
+
+  const remainingAvailable = tagOptions.availableTags === -1 ? -1 : tagOptions.availableTags - mandatoryCount;
+  const pathsByBookmarkId = new Map<string, readonly string[]>();
+  return addImportTags(basePlan, "toby", pathsByBookmarkId, {
+    ...tagOptions,
+    availableTags: remainingAvailable,
+  });
 }

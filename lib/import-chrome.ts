@@ -1,5 +1,6 @@
 import { generateId } from "@/lib/id";
-import type { ImportPlan, ValidationResult } from "@/lib/import-types";
+import { addImportTags } from "@/lib/import-tags";
+import type { ImportPlan, ImportTagOptions, ValidationResult } from "@/lib/import-types";
 import type { Bookmark, Collection } from "@/lib/types";
 
 const SAFE_SCHEMES = new Set(["http:", "https:", "ftp:", "ftps:"]);
@@ -23,7 +24,39 @@ function isSafeUrl(url: string): boolean {
 
 export interface ParsedCollection {
   name: string;
-  items: { title: string; url: string }[];
+  items: { title: string; url: string; folderPath: string[] }[];
+}
+
+function getDTElements(parent: Element): Element[] {
+  const dts: Element[] = [];
+  function collect(node: Element) {
+    for (const child of Array.from(node.children)) {
+      if (child.tagName === "DT") {
+        dts.push(child);
+        for (const dtChild of Array.from(child.children)) {
+          if (dtChild.tagName === "P") {
+            collect(dtChild);
+          }
+        }
+      } else if (child.tagName === "P") {
+        collect(child);
+      }
+    }
+  }
+  collect(parent);
+  return dts;
+}
+
+function getDirectAnchor(dt: Element): HTMLAnchorElement | null {
+  return dt.querySelector(":scope > a, :scope > p > a");
+}
+
+function getDirectHeading(dt: Element): HTMLHeadingElement | null {
+  return dt.querySelector(":scope > h3, :scope > p > h3");
+}
+
+function getDirectDL(dt: Element): Element | null {
+  return dt.querySelector(":scope > dl, :scope > p > dl");
 }
 
 export function parseChromeHTML(html: string): ParsedCollection[] {
@@ -47,24 +80,24 @@ export function parseChromeHTML(html: string): ParsedCollection[] {
     return name;
   }
 
-  function collectBookmarks(dlEl: Element, target: ParsedCollection): void {
-    for (const child of Array.from(dlEl.children)) {
-      if (child.tagName !== "DT") {
-        continue;
-      }
-
-      const anchor = child.querySelector(":scope > a");
+  function collectBookmarks(dlEl: Element, target: ParsedCollection, currentFolderPath: string[] = []): void {
+    for (const child of getDTElements(dlEl)) {
+      const anchor = getDirectAnchor(child);
       if (anchor) {
         target.items.push({
           title: anchor.textContent?.trim() ?? "",
           url: anchor.getAttribute("href") ?? "",
+          folderPath: [...currentFolderPath],
         });
         continue;
       }
 
-      const nestedDL = child.querySelector(":scope > dl");
+      const heading = getDirectHeading(child);
+      const nestedDL = getDirectDL(child);
       if (nestedDL) {
-        collectBookmarks(nestedDL, target);
+        const folderName = heading?.textContent?.trim() ?? "";
+        const nextFolderPath = folderName ? [...currentFolderPath, folderName] : currentFolderPath;
+        collectBookmarks(nestedDL, target, nextFolderPath);
       }
     }
   }
@@ -74,12 +107,8 @@ export function parseChromeHTML(html: string): ParsedCollection[] {
     return result;
   }
 
-  for (const rootChild of Array.from(rootDL.children)) {
-    if (rootChild.tagName !== "DT") {
-      continue;
-    }
-
-    const rootHeading = rootChild.querySelector(":scope > h3");
+  for (const rootChild of getDTElements(rootDL)) {
+    const rootHeading = getDirectHeading(rootChild);
     if (!rootHeading) {
       continue;
     }
@@ -89,20 +118,16 @@ export function parseChromeHTML(html: string): ParsedCollection[] {
       continue;
     }
 
-    const rootFolderList = rootChild.querySelector(":scope > dl");
+    const rootFolderList = getDirectDL(rootChild);
     if (!rootFolderList) {
       continue;
     }
 
     let rootCollection: ParsedCollection | null = null;
 
-    for (const folderChild of Array.from(rootFolderList.children)) {
-      if (folderChild.tagName !== "DT") {
-        continue;
-      }
-
-      const anchor = folderChild.querySelector(":scope > a");
-      const heading = folderChild.querySelector(":scope > h3");
+    for (const folderChild of getDTElements(rootFolderList)) {
+      const anchor = getDirectAnchor(folderChild);
+      const heading = getDirectHeading(folderChild);
 
       if (anchor) {
         if (rootCollection === null) {
@@ -116,6 +141,7 @@ export function parseChromeHTML(html: string): ParsedCollection[] {
         rootCollection.items.push({
           title: anchor.textContent?.trim() ?? "",
           url: anchor.getAttribute("href") ?? "",
+          folderPath: [],
         });
         continue;
       }
@@ -130,9 +156,9 @@ export function parseChromeHTML(html: string): ParsedCollection[] {
       };
       result.push(subCollection);
 
-      const subFolderList = folderChild.querySelector(":scope > dl");
+      const subFolderList = getDirectDL(folderChild);
       if (subFolderList) {
-        collectBookmarks(subFolderList, subCollection);
+        collectBookmarks(subFolderList, subCollection, []);
       }
     }
   }
@@ -189,12 +215,14 @@ export function buildChromeImportPlan(
   existingBookmarkUrls: Set<string>,
   skipDuplicates: boolean,
   startPosition = 0,
+  tagOptions?: ImportTagOptions,
 ): ImportPlan {
   const collections: Omit<Collection, "seq">[] = [];
   const bookmarks: Omit<Bookmark, "seq">[] = [];
   const rejectedUrls: string[] = [];
   const createdAt = new Date().toISOString();
   const seenUrls = new Set(existingBookmarkUrls);
+  const pathsByBookmarkId = new Map<string, readonly string[]>();
   let duplicatesSkipped = 0;
   let position = startPosition;
 
@@ -228,8 +256,10 @@ export function buildChromeImportPlan(
       }
 
       seenUrls.add(url);
+      const bookmarkId = generateId();
+      pathsByBookmarkId.set(bookmarkId, item.folderPath);
       bookmarks.push({
-        id: generateId(),
+        id: bookmarkId,
         title: (item.title || url).slice(0, MAX_TITLE_LENGTH),
         url,
         description: "",
@@ -242,11 +272,17 @@ export function buildChromeImportPlan(
     }
   }
 
-  return {
+  const basePlan: ImportPlan = {
     collections,
     bookmarks,
     tags: [],
     duplicatesSkipped,
     rejectedUrls,
   };
+
+  if (!tagOptions) {
+    return basePlan;
+  }
+
+  return addImportTags(basePlan, "chrome", pathsByBookmarkId, tagOptions);
 }

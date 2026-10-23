@@ -316,6 +316,7 @@ interface BookmarksState {
   setSelectedCollection: (collectionId: string) => void;
   setHighlightedBookmarkId: (id: string | null, durationMs?: number) => void;
   toggleTag: (tagId: string) => void;
+  setSelectedTags: (tags: string[]) => void;
   clearTags: () => void;
   setSearchQuery: (query: string) => void;
   setViewMode: (mode: ViewMode) => void;
@@ -490,6 +491,8 @@ export const useBookmarksStore = create<BookmarksState>()(
             ? state.selectedTags.filter((t) => t !== tagId)
             : [...state.selectedTags, tagId],
         })),
+
+      setSelectedTags: (tags) => set({ selectedTags: tags }),
 
       clearTags: () => set({ selectedTags: [] }),
       applyTagReplacementChanges: (changes, replacements) => {

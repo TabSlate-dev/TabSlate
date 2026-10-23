@@ -1048,6 +1048,46 @@
   "import_blockedBookmarkQuota": {
     "message": "This import would exceed your bookmark limit."
   },
+  "import_blockedTagQuota": {
+    "message": "Tag limit reached. Upgrade your plan or delete unused tags to import."
+  },
+  "import_preserveFolders": {
+    "message": "Preserve folder hierarchy as tags"
+  },
+  "import_preserveFoldersDesc": {
+    "message": "Create nested tags matching your bookmark folders and import source."
+  },
+  "import_modeRootOnlyDesc": {
+    "message": "Tag quota is limited. Bookmarks will be tagged with the root import tag only."
+  },
+  "import_modeNoneDesc": {
+    "message": "Tag quota is exhausted. Bookmarks will be imported without tags."
+  },
+  "import_rootTagChrome": {
+    "message": "Chrome import $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_rootTagToby": {
+    "message": "Toby import $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_untitled": {
+    "message": "Untitled"
+  },
+  "import_rootDeletionHint": {
+    "message": "To remove the imported hierarchy, delete or rename the root tag in the sidebar."
+  },
+  "import_showImported": {
+    "message": "Show imported bookmarks"
+  },
   "import_btnImport": {
     "message": "Import"
   },

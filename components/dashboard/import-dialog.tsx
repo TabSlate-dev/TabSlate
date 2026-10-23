@@ -1,5 +1,6 @@
 import * as React from "react";
 import { AlertCircle, ArrowLeft, CheckCircle2, FileJson, FileText, Loader2, Upload } from "lucide-react";
+import { useInRouterContext, useNavigate } from "react-router-dom";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,9 +15,10 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { buildChromeImportPlan, parseChromeHTML, validateChromeFile } from "@/lib/import-chrome";
 import { buildTobyImportPlan, parseTobyJSON, validateTobyFile } from "@/lib/import-toby";
-import type { ImportPlan, ValidationResult } from "@/lib/import-types";
+import type { ImportPlan, ImportTagOptions, ValidationResult } from "@/lib/import-types";
 import { cn } from "@/lib/utils";
 import { bookmarksAsArray, useBookmarksStore } from "@/store/bookmarks-store";
+import { useSelectionStore } from "@/store/selection-store";
 import { usePlanStore } from "@/store/plan-store";
 import { useWorkspaceStore } from "@/store/workspace-store";
 import {
@@ -47,6 +49,8 @@ interface ImportSuccessResult {
   tagsCreated: number;
   duplicatesSkipped: number;
   rejectedUrls: string[];
+  rootTagId?: string;
+  workspaceId?: string;
 }
 
 interface ImportErrorResult {
@@ -164,15 +168,26 @@ function SummaryStat({
   );
 }
 
+function getLocalDateString(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function ImportDialog({ open, onOpenChange }: Props) {
   const { t } = useTranslation();
+  const inRouter = useInRouterContext();
+  const navigate = inRouter ? useNavigate() : null;
   const workspaces = useWorkspaceStore((state) => state.workspaces);
   const activeWorkspaceId = useWorkspaceStore((state) => state.activeWorkspaceId);
   const collections = useWorkspaceStore((state) => state.collections);
   const tags = useWorkspaceStore((state) => state.tags);
   const importFromPlan = useWorkspaceStore((state) => state.importFromPlan);
-  const bookmarks = useBookmarksStore((state) => bookmarksAsArray(state.bookmarks));
+  const rawBookmarks = useBookmarksStore((state) => state.bookmarks);
+  const bookmarks = React.useMemo(() => bookmarksAsArray(rawBookmarks), [rawBookmarks]);
   const checkQuota = usePlanStore((state) => state.checkQuota);
+  const limits = usePlanStore((state) => state.limits);
 
   const activeWorkspaces = React.useMemo(
     () =>
@@ -210,15 +225,12 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     return urls;
   }, [bookmarks]);
 
-  const existingTagsForPlan = React.useMemo(
-    () => tags.map((tag) => ({ id: tag.id, name: tag.name })),
-    [tags],
-  );
-
   const [step, setStep] = React.useState<ImportStep>(0);
   const [source, setSource] = React.useState<ImportSource | null>(null);
   const [workspaceId, setWorkspaceId] = React.useState("");
   const [skipDuplicates, setSkipDuplicates] = React.useState(true);
+  const [preserveFolders, setPreserveFolders] = React.useState(true);
+  const [rootDate, setRootDate] = React.useState(() => getLocalDateString());
   const [rawContent, setRawContent] = React.useState("");
   const [validation, setValidation] = React.useState<ValidationResult | null>(null);
   const [validationPhase, setValidationPhase] = React.useState<ValidationPhase>("idle");
@@ -239,6 +251,8 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     setSource(null);
     setWorkspaceId("");
     setSkipDuplicates(true);
+    setPreserveFolders(true);
+    setRootDate(getLocalDateString());
     setRawContent("");
     setValidation(null);
     setValidationPhase("idle");
@@ -271,6 +285,32 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     return wsCollections.reduce((max, c) => Math.max(max, c.position), -1) + 1;
   }, [activeCollections, workspaceId]);
 
+  const availableTags = React.useMemo(() => {
+    if (!limits || limits.max_tags === -1) {
+      return -1;
+    }
+    return Math.max(0, limits.max_tags - tags.length);
+  }, [limits, tags.length]);
+
+  const rootName = React.useMemo(() => {
+    if (!source) {
+      return "";
+    }
+    return source === "toby"
+      ? t("import_rootTagToby", [rootDate])
+      : t("import_rootTagChrome", [rootDate]);
+  }, [rootDate, source, t]);
+
+  const tagOptions = React.useMemo<ImportTagOptions>(
+    () => ({
+      enabled: preserveFolders,
+      rootName,
+      existingTags: tags,
+      availableTags,
+    }),
+    [availableTags, preserveFolders, rootName, tags],
+  );
+
   const importPlan = React.useMemo(() => {
     if (!source || !workspaceId || !validation?.valid || rawContent.length === 0) {
       return EMPTY_IMPORT_PLAN;
@@ -282,9 +322,10 @@ export function ImportDialog({ open, onOpenChange }: Props) {
           parseTobyJSON(JSON.parse(rawContent)),
           workspaceId,
           existingBookmarkUrls,
-          existingTagsForPlan,
+          tags,
           skipDuplicates,
           startPosition,
+          tagOptions,
         );
       } catch {
         return EMPTY_IMPORT_PLAN;
@@ -297,14 +338,16 @@ export function ImportDialog({ open, onOpenChange }: Props) {
       existingBookmarkUrls,
       skipDuplicates,
       startPosition,
+      tagOptions,
     );
   }, [
     existingBookmarkUrls,
-    existingTagsForPlan,
     rawContent,
     skipDuplicates,
     source,
     startPosition,
+    tagOptions,
+    tags,
     validation?.valid,
     workspaceId,
   ]);
@@ -330,6 +373,14 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     return checkQuota("collection", activeCollections.length + importPlan.collections.length - 1);
   }, [activeCollections.length, checkQuota, importPlan.collections.length]);
 
+  const tagQuotaOk = React.useMemo(() => {
+    if (importPlan.tags.length === 0) {
+      return true;
+    }
+
+    return checkQuota("tag", tags.length + importPlan.tags.length - 1);
+  }, [checkQuota, importPlan.tags.length, tags.length]);
+
   const importBlockedMessage = React.useMemo(() => {
     if (!workspaceId) {
       return t("import_blockedWorkspace");
@@ -351,12 +402,18 @@ export function ImportDialog({ open, onOpenChange }: Props) {
       return t("import_blockedBookmarkQuota");
     }
 
+    if (!tagQuotaOk) {
+      return t("import_blockedTagQuota");
+    }
+
     return null;
   }, [
     bookmarkQuotaOk,
     collectionQuotaOk,
     hasValidPlan,
     rawContent.length,
+    tagQuotaOk,
+    t,
     validation?.valid,
     workspaceId,
   ]);
@@ -487,7 +544,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     setRawContent("");
   }, [mismatchSource, selectedFile, validateFile]);
 
-  const handleImport = React.useCallback(() => {
+  const handleImport = React.useCallback(async () => {
     if (!canImport) {
       return;
     }
@@ -509,52 +566,87 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     setIsImporting(true);
     setTargetUnavailable(false);
 
-    // Yield to browser so the spinner renders before the synchronous import runs.
-    setTimeout(() => {
-      try {
-        const current = useWorkspaceStore.getState();
-        const currentTarget = current.workspaces.find(
-          (workspace) => workspace.id === workspaceId,
-        );
-        if (!isActiveWorkspace(currentTarget)) {
-          const refreshedTarget = current.workspaces.find(
-            (workspace) => workspace.id === current.activeWorkspaceId && isActiveWorkspace(workspace),
-          ) ?? current.workspaces.filter(isActiveWorkspace)
-            .sort((left, right) => left.position - right.position)[0];
-          setWorkspaceId(refreshedTarget?.id ?? "");
+    try {
+      const current = useWorkspaceStore.getState();
+      const currentTarget = current.workspaces.find(
+        (workspace) => workspace.id === workspaceId,
+      );
+      if (!isActiveWorkspace(currentTarget)) {
+        const refreshedTarget = current.workspaces.find(
+          (workspace) => workspace.id === current.activeWorkspaceId && isActiveWorkspace(workspace),
+        ) ?? current.workspaces.filter(isActiveWorkspace)
+          .sort((left, right) => left.position - right.position)[0];
+        setWorkspaceId(refreshedTarget?.id ?? "");
+        setTargetUnavailable(true);
+        return;
+      }
+
+      const commitResult = await importFromPlan(importPlan);
+      if (!commitResult.ok) {
+        if (commitResult.error === "target_unavailable") {
           setTargetUnavailable(true);
           return;
         }
-        const imported = importFromPlan(importPlan);
-        if (!imported) {
+        if (commitResult.error === "quota" || commitResult.error === "stale_plan") {
           setResult({
             status: "error",
             message: t("import_failedQuotaChanged"),
           });
-          setStep(3);
-          return;
+        } else {
+          setResult({
+            status: "error",
+            message: t("import_failedUnexpected"),
+          });
         }
-
-        setResult({
-          status: "success",
-          collectionsCreated: importPlan.collections.length,
-          bookmarksImported: importPlan.bookmarks.length,
-          tagsCreated: importPlan.tags.length,
-          duplicatesSkipped: importPlan.duplicatesSkipped,
-          rejectedUrls: importPlan.rejectedUrls,
-        });
         setStep(3);
-      } catch {
-        setResult({
-          status: "error",
-          message: t("import_failedUnexpected"),
-        });
-        setStep(3);
-      } finally {
-        setIsImporting(false);
+        return;
       }
-    }, 0);
+
+      setResult({
+        status: "success",
+        collectionsCreated: commitResult.collectionsCreated,
+        bookmarksImported: commitResult.bookmarksImported,
+        tagsCreated: commitResult.tagsCreated,
+        duplicatesSkipped: importPlan.duplicatesSkipped,
+        rejectedUrls: importPlan.rejectedUrls,
+        rootTagId: commitResult.rootTagId,
+        workspaceId,
+      });
+      setStep(3);
+    } catch {
+      setResult({
+        status: "error",
+        message: t("import_failedUnexpected"),
+      });
+      setStep(3);
+    } finally {
+      setIsImporting(false);
+    }
   }, [canImport, importFromPlan, importPlan, t, workspaceId]);
+
+  const handleRevealImported = React.useCallback(() => {
+    if (!result || result.status !== "success" || !result.rootTagId || !result.workspaceId) {
+      return;
+    }
+    const state = useWorkspaceStore.getState();
+    const targetWorkspace = state.workspaces.find((w) => w.id === result.workspaceId);
+    const rootExists = state.tags.some((t) => t.id === result.rootTagId);
+    if (!isActiveWorkspace(targetWorkspace) || !rootExists) {
+      return;
+    }
+
+    state.setActiveWorkspaceId(result.workspaceId);
+    if (navigate) {
+      navigate("/");
+    }
+    const bmStore = useBookmarksStore.getState();
+    bmStore.setSelectedCollection("all");
+    bmStore.setFilterType("all");
+    bmStore.setSearchQuery("");
+    bmStore.setSelectedTags([result.rootTagId]);
+    useSelectionStore.getState().clear();
+    onOpenChange(false);
+  }, [navigate, onOpenChange, result]);
 
   const handleRetry = React.useCallback(() => {
     setResult(null);
@@ -765,16 +857,38 @@ export function ImportDialog({ open, onOpenChange }: Props) {
               />
             </Field>
 
+            <Field orientation="horizontal">
+              <div className="space-y-1">
+                <FieldLabel htmlFor="preserve-folders">{t("import_preserveFolders")}</FieldLabel>
+                <FieldDescription>
+                  {t("import_preserveFoldersDesc")}
+                </FieldDescription>
+              </div>
+              <Switch
+                id="preserve-folders"
+                checked={preserveFolders}
+                onCheckedChange={setPreserveFolders}
+              />
+            </Field>
+
             <div className="space-y-3 rounded-lg border bg-muted/20 p-4">
               <div className="text-sm font-medium">{t("import_summary")}</div>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <SummaryStat label={t("import_statCollections")} value={importPlan.collections.length} />
                 <SummaryStat label={t("import_statBookmarks")} value={importPlan.bookmarks.length} />
-                {source === "toby" && (
-                  <SummaryStat label={t("import_statTags")} value={importPlan.tags.length} />
-                )}
+                <SummaryStat label={t("import_statTags")} value={importPlan.tags.length} />
                 <SummaryStat label={t("import_statDuplicates")} value={importPlan.duplicatesSkipped} />
               </div>
+              {preserveFolders && importPlan.provenance?.mode === "root-only" && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">
+                  {t("import_modeRootOnlyDesc")}
+                </p>
+              )}
+              {preserveFolders && importPlan.provenance?.mode === "none" && (
+                <p className="text-xs text-muted-foreground">
+                  {t("import_modeNoneDesc")}
+                </p>
+              )}
               {importPlan.rejectedUrls.length > 0 && (
                 <p className="text-xs text-muted-foreground">
                   {t("import_rejectedUrlsDesc", [importPlan.rejectedUrls.length.toString()])}
@@ -822,6 +936,12 @@ export function ImportDialog({ open, onOpenChange }: Props) {
                   <SummaryStat label={t("import_statDuplicates")} value={result.duplicatesSkipped} />
                 </div>
 
+                {result.rootTagId && (
+                  <p className="text-xs text-muted-foreground">
+                    {t("import_rootDeletionHint")}
+                  </p>
+                )}
+
                 {result.rejectedUrls.length > 0 && (
                   <div className="space-y-2">
                     <div className="text-sm font-medium">{t("import_rejectedUrls")}</div>
@@ -838,9 +958,22 @@ export function ImportDialog({ open, onOpenChange }: Props) {
                 )}
 
                 <DialogFooter>
-                  <Button type="button" size="sm" onClick={() => onOpenChange(false)}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)}>
                     {t("import_close")}
                   </Button>
+                  {result.rootTagId && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={
+                        !workspaces.some((w) => w.id === result.workspaceId && isActiveWorkspace(w)) ||
+                        !tags.some((t) => t.id === result.rootTagId)
+                      }
+                      onClick={handleRevealImported}
+                    >
+                      {t("import_showImported")}
+                    </Button>
+                  )}
                 </DialogFooter>
               </>
             ) : (

@@ -62,9 +62,13 @@ function createMemoryStorage(): StateStorage {
  */
 export async function installAppModules(replacer: ModuleReplacer): Promise<AppModules> {
   // Store initialization must never cache the inert DOM request in the shared IDB module.
+  const freshIdb = await importFresh<typeof import("@/lib/idb")>("lib/idb.ts");
   await replacer.replace(
     "@/lib/idb",
-    await importFresh<typeof import("@/lib/idb")>("lib/idb.ts"),
+    {
+      ...freshIdb,
+      idbBulkWrite: async () => {},
+    },
   );
   const reactDomClient = await importFresh<typeof import("react-dom/client")>("node_modules/react-dom/client.js");
   await replacer.replace("react-dom/client", reactDomClient);

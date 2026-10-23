@@ -1048,6 +1048,46 @@
   "import_blockedBookmarkQuota": {
     "message": "此次导入将超出您的书签数量上限。"
   },
+  "import_blockedTagQuota": {
+    "message": "已达到标签数量上限。请升级套餐或删除未使用的标签后再导入。"
+  },
+  "import_preserveFolders": {
+    "message": "将文件夹层级保留为标签"
+  },
+  "import_preserveFoldersDesc": {
+    "message": "创建嵌套标签以匹配书签文件夹和导入来源。"
+  },
+  "import_modeRootOnlyDesc": {
+    "message": "标签配额有限。书签将仅附加根导入标签。"
+  },
+  "import_modeNoneDesc": {
+    "message": "标签配额已耗尽。导入的书签将不附加标签。"
+  },
+  "import_rootTagChrome": {
+    "message": "Chrome 导入 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_rootTagToby": {
+    "message": "Toby 导入 $1",
+    "placeholders": {
+      "1": {
+        "content": "$1"
+      }
+    }
+  },
+  "import_untitled": {
+    "message": "未命名"
+  },
+  "import_rootDeletionHint": {
+    "message": "如需移除导入的层级，可在侧边栏中删除或重命名根标签。"
+  },
+  "import_showImported": {
+    "message": "查看导入的书签"
+  },
   "import_btnImport": {
     "message": "开始导入"
   },

@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import type { Workspace, Collection, Tag } from "@/lib/types";
-import type { ImportPlan } from "@/lib/import-types";
+import type { Workspace, Collection, Tag, Bookmark } from "@/lib/types";
+import type { ImportCommitResult, ImportPlan } from "@/lib/import-types";
+import { normalizeTagName } from "@/lib/tag-name";
 import { buildTagTree, resolveTagPath } from "@/lib/tag-tree";
 import { planTagEdit, planTagDeletion, planTagMerge, type TagActionResult, type TagMutationPlan } from "@/lib/tag-mutations";
 import { changePersistedTags, commitTagMutation, invalidateTagMutations, serializeTagMutation, tagMutationSession, TagMutationStaleError } from "@/lib/tag-persistence";
@@ -132,8 +133,8 @@ function toServerTag(t: Tag): SyncEntity {
   };
 }
 
-function isActiveWorkspace(workspace: Workspace): boolean {
-  return workspace.deletedAt === undefined;
+function isActiveWorkspace(workspace: Workspace | undefined): boolean {
+  return workspace !== undefined && workspace.deletedAt === undefined;
 }
 
 function compareWorkspacePosition(a: Workspace, b: Workspace): number {
@@ -255,7 +256,7 @@ interface WorkspaceState {
   deleteUnusedTags: () => Promise<TagActionResult>;
   restoreRejectedTagParent: (id: string, attempted: SyncEntity, authoritative: Tag | undefined, isSessionCurrent?: () => boolean) => Promise<void>;
   settleRejectedTagDeletion: (id: string, attempted: SyncEntity, isSessionCurrent?: () => boolean) => Promise<void>;
-  importFromPlan: (plan: ImportPlan) => boolean;
+  importFromPlan: (plan: ImportPlan) => Promise<ImportCommitResult>;
 
   // Computed
   getActiveWorkspaces: () => Workspace[];
@@ -1143,56 +1144,131 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
     });
   },
 
-  importFromPlan: (plan) => {
-    const planStore = usePlanStore.getState();
-    planStore.ensureFresh();
+  importFromPlan: async (plan) => {
+    const targetWorkspaceId = plan.collections[0]?.workspaceId;
+    if (targetWorkspaceId) {
+      const targetWorkspace = get().workspaces.find((w) => w.id === targetWorkspaceId);
+      if (!isActiveWorkspace(targetWorkspace)) {
+        return { ok: false, error: "target_unavailable" };
+      }
+    }
 
-    const bookmarkCount = useBookmarksStore.getState().bookmarks.size;
-    // Backend counts collections where is_deleted < 2, so active, archived,
-    // and trashed entries all count. Only permanentlyDeleteCollection sends
-    // is_deleted:2 and removes the entry from the local array, so
-    // collections.length mirrors the server count.
-    const activeCollectionCount = get().collections.length;
+    const planStore = usePlanStore.getState();
+    await planStore.ensureFresh();
+
+    const bmStore = useBookmarksStore.getState();
+    try {
+      await Promise.all([bmStore.loadArchivedBookmarks(), bmStore.loadTrashedBookmarks()]);
+    } catch {
+      return { ok: false, error: "storage" };
+    }
+    const currentBookmarkCount = bmStore.bookmarks.size + bmStore.archivedBookmarks.length + bmStore.trashedBookmarks.length;
 
     if (
       plan.bookmarks.length > 0 &&
-      !planStore.checkQuota("bookmark", bookmarkCount + plan.bookmarks.length - 1)
+      !planStore.checkQuota("bookmark", currentBookmarkCount + plan.bookmarks.length - 1)
     ) {
       planStore.showQuotaAlert("bookmark");
-      return false;
+      return { ok: false, error: "quota" };
     }
 
+    const activeCollectionCount = get().collections.length;
     if (
       plan.collections.length > 0 &&
       !planStore.checkQuota("collection", activeCollectionCount + plan.collections.length - 1)
     ) {
       planStore.showQuotaAlert("collection");
-      return false;
+      return { ok: false, error: "quota" };
+    }
+
+    const currentTags = get().tags;
+
+    if (plan.provenance) {
+      const limits = planStore.limits;
+      const availableNow =
+        limits?.max_tags === undefined || limits.max_tags === -1
+          ? -1
+          : Math.max(0, limits.max_tags - currentTags.length);
+
+      let currentMode: "full" | "root-only" | "none";
+      if (availableNow === -1 || plan.provenance.requestedTagCount <= availableNow) {
+        currentMode = "full";
+      } else if (availableNow >= 1) {
+        currentMode = "root-only";
+      } else {
+        currentMode = "none";
+      }
+
+      if (currentMode !== plan.provenance.mode) {
+        return { ok: false, error: "stale_plan" };
+      }
+    }
+
+    const newTagsToCreate = plan.tags.filter((t) => !currentTags.some((existing) => existing.id === t.id));
+    if (
+      newTagsToCreate.length > 0 &&
+      !planStore.checkQuota("tag", currentTags.length + newTagsToCreate.length - 1)
+    ) {
+      planStore.showQuotaAlert("tag");
+      return { ok: false, error: "quota" };
+    }
+
+    for (const tag of plan.tags) {
+      const colliding = currentTags.some(
+        (existing) =>
+          existing.parentId === tag.parentId &&
+          existing.id !== tag.id &&
+          normalizeTagName(existing.name) === normalizeTagName(tag.name),
+      );
+      if (colliding) {
+        return { ok: false, error: "stale_plan" };
+      }
     }
 
     const newTags: Tag[] = plan.tags.map((t) => ({ ...t, seq: 0 as const }));
+    const newCollections: Collection[] = plan.collections.map((c) => ({ ...c, seq: 0 as const }));
+    const newBookmarks: Bookmark[] = plan.bookmarks.map((b) => ({ ...b, seq: 0 as const }));
+
+    const ops: BulkWriteOp[] = [
+      ...newTags.map((tag) => ({ type: "put" as const, store: "tags" as const, value: tag })),
+      ...newCollections.map((col) => ({ type: "put" as const, store: "collections" as const, value: col })),
+      ...newBookmarks.map((bm) => ({ type: "put" as const, store: "bookmarks" as const, value: bm })),
+    ];
+
+    try {
+      await idbBulkWrite(ops);
+    } catch {
+      return { ok: false, error: "storage" };
+    }
+
     if (newTags.length > 0) {
       set((s) => ({ tags: [...s.tags, ...newTags] }));
-      for (const tag of newTags) { idbPut("tags", tag); }
-      syncEngine?.enqueue({ tags: newTags.map(toServerTag) });
       planStore.incrementUsage("tag", newTags.length);
     }
 
-    const newCollections: Collection[] = plan.collections.map((c) => ({ ...c, seq: 0 as const }));
     if (newCollections.length > 0) {
       set((s) => ({ collections: [...s.collections, ...newCollections] }));
-      for (const collection of newCollections) { idbPut("collections", collection); }
-      syncEngine?.enqueue({ collections: newCollections.map((c) => toServerCollection(c)) });
       planStore.incrementUsage("collection", newCollections.length);
     }
 
-    const newBookmarks = plan.bookmarks.map((b) => ({ ...b, seq: 0 as const }));
     if (newBookmarks.length > 0) {
       useBookmarksStore.getState()._bulkAddBookmarks(newBookmarks);
       planStore.incrementUsage("bookmark", newBookmarks.length);
     }
 
-    return true;
+    syncEngine?.enqueue({
+      ...(newTags.length > 0 ? { tags: newTags.map(toServerTag) } : {}),
+      ...(newCollections.length > 0 ? { collections: newCollections.map((c) => toServerCollection(c)) } : {}),
+      ...(newBookmarks.length > 0 ? { bookmarks: newBookmarks.map((b) => bookmarkSync.toServerBookmark(b)) } : {}),
+    });
+
+    return {
+      ok: true,
+      collectionsCreated: newCollections.length,
+      bookmarksImported: newBookmarks.length,
+      tagsCreated: newTags.length,
+      rootTagId: plan.provenance?.rootTagId,
+    };
   },
 
   sweepUnsynced: async () => {
