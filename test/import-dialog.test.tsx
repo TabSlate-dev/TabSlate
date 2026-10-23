@@ -449,4 +449,163 @@ describe("ImportDialog component", () => {
     // Check quota for 1 new tag -> false
     expect(usePlanStore.getState().checkQuota("tag", 2 + 1 - 1)).toBe(false);
   });
+
+  test("preview step counts archived/trashed bookmarks and archived/retained collections in quota checks, and Try Again returns to step 2", async () => {
+    // 1 active bookmark + 1 archived + 1 trashed = 3 total bookmarks; max_bookmarks = 3 -> importing 1 more should block in Step 2 preview
+    app.useBookmarksStore.setState({
+      bookmarks: new Map([
+        [
+          "bm-active",
+          {
+            id: "bm-active",
+            collectionId: "col-default",
+            title: "Active",
+            url: "https://active.example.com",
+            description: "",
+            favicon: "",
+            tags: [],
+            createdAt: "2026-10-21T00:00:00.000Z",
+            isFavorite: false,
+            seq: 1,
+          },
+        ],
+      ]),
+      archivedBookmarks: [
+        {
+          id: "bm-archived",
+          collectionId: "col-default",
+          title: "Archived",
+          url: "https://archived.example.com",
+          description: "",
+          favicon: "",
+          tags: [],
+          createdAt: "2026-10-21T00:00:00.000Z",
+          isFavorite: false,
+          seq: 1,
+        },
+      ],
+      trashedBookmarks: [
+        {
+          id: "bm-trashed",
+          collectionId: "col-default",
+          title: "Trashed",
+          url: "https://trashed.example.com",
+          description: "",
+          favicon: "",
+          tags: [],
+          createdAt: "2026-10-21T00:00:00.000Z",
+          isFavorite: false,
+          seq: 1,
+        },
+      ],
+    });
+    usePlanStore.setState({
+      limits: {
+        max_bookmarks: 3,
+        max_collections: -1,
+        max_tags: -1,
+        max_workspaces: -1,
+        max_saved_groups: -1,
+        trash_grace_days: 30,
+      },
+    });
+
+    const view = render(
+      app,
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(ImportDialog, {
+          open: true,
+          onOpenChange: () => {},
+        }),
+      ),
+    );
+
+    click(getByText("Chrome Bookmarks"));
+    const fileInput = getBySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File([VALID_CHROME_HTML], "bookmarks.html", { type: "text/html" });
+    Object.defineProperty(fileInput, "files", { value: [file], configurable: true });
+    await act(async () => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    click(getByText("import_next"));
+
+    // Should be blocked by bookmark quota in Step 2 preview because archived + trashed are included
+    expect(queryByText("import_blockedBookmarkQuota")).not.toBeNull();
+    expect(getByText("import_btnImport").closest("button")?.disabled).toBe(true);
+
+    // Now relax bookmark quota, but add an archived collection and set max_collections = 2 (1 active + 1 archived = 2)
+    act(() => {
+      app.useWorkspaceStore.setState({
+        collections: [
+          defaultCollection,
+          {
+            id: "col-archived",
+            workspaceId: "ws-1",
+            name: "Archived Col",
+            icon: "",
+            position: 1,
+            seq: 2,
+            archivedAt: Date.now(),
+          },
+        ],
+      });
+      usePlanStore.setState({
+        limits: {
+          max_bookmarks: 10,
+          max_collections: 2,
+          max_tags: -1,
+          max_workspaces: -1,
+          max_saved_groups: -1,
+          trash_grace_days: 30,
+        },
+      });
+    });
+
+    expect(queryByText("import_blockedCollectionQuota")).not.toBeNull();
+
+    // Now allow collection quota in preview, then constrain tag quota right before importFromPlan commits so it fails and shows Try Again
+    act(() => {
+      usePlanStore.setState({
+        limits: {
+          max_bookmarks: 10,
+          max_collections: 10,
+          max_tags: -1,
+          max_workspaces: -1,
+          max_saved_groups: -1,
+          trash_grace_days: 30,
+        },
+      });
+    });
+
+    // Mutate workspace tags behind the scenes so commit returns stale_plan (colliding root tag)
+    const rootName = `import_rootTagChrome[${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}-${String(new Date().getDate()).padStart(2, "0")}]`;
+    const origImportFromPlan = app.useWorkspaceStore.getState().importFromPlan;
+    act(() => {
+      app.useWorkspaceStore.setState({
+        importFromPlan: async () => ({ ok: false, error: "stale_plan" }),
+      });
+    });
+
+    await act(async () => {
+      click(getByText("import_btnImport"));
+    });
+
+    expect(getByText("import_failedQuotaChanged")).toBeDefined();
+    click(getByText("import_tryAgain"));
+
+    // Should return to Step 2 (configuration step with #preserve-folders), not Step 1
+    expect(getBySelector("#preserve-folders")).toBeDefined();
+
+    act(() => {
+      app.useWorkspaceStore.setState({ importFromPlan: origImportFromPlan });
+    });
+    expect(rootName.length).toBeGreaterThan(0);
+    view.unmount();
+  });
 });

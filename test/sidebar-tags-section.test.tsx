@@ -79,6 +79,38 @@ describe("SidebarTagsSection", () => {
     expect(chip("design").querySelector("[data-tag-count]")?.textContent).toBe("0");
   });
 
+  test("rolls up descendant bookmark counts onto ancestor rows without double-counting bookmarks tagged with both", () => {
+    act(() => {
+      app.useWorkspaceStore.setState({
+        tags: [
+          makeTag("frontend", "Frontend"),
+          makeTag("react", "React", { parentId: "frontend" }),
+          makeTag("hooks", "Hooks", { parentId: "react" }),
+        ],
+      });
+      const nestedBookmarks = [
+        // Tagged only with grandchild "hooks" in active workspace
+        makeBookmark("nb1", { collectionId: "reading", tags: ["hooks"] }),
+        // Tagged with both parent "frontend" and child "react" in active workspace (counts once on frontend)
+        makeBookmark("nb2", { collectionId: "reading", tags: ["frontend", "react"] }),
+        // Tagged with "hooks" in another workspace (excluded from active workspace count)
+        makeBookmark("nb3", { collectionId: "projects", tags: ["hooks"] }),
+      ];
+      app.useBookmarksStore.setState({
+        bookmarks: bookmarkMap(nestedBookmarks),
+        countsByCollection: countsByCollection(nestedBookmarks),
+      });
+    });
+
+    // Expand Frontend and React to inspect all 3 levels
+    click(getBySelector('[aria-label="tagTree_expandTag[Frontend]"]'));
+    click(getBySelector('[aria-label="tagTree_expandTag[React]"]'));
+
+    expect(chip("frontend").querySelector("[data-tag-count]")?.textContent).toBe("2");
+    expect(chip("react").querySelector("[data-tag-count]")?.textContent).toBe("2");
+    expect(chip("hooks").querySelector("[data-tag-count]")?.textContent).toBe("1");
+  });
+
   test("clicking a tag toggles it in the bookmark filter", () => {
     click(chip("go"));
     expect(app.useBookmarksStore.getState().selectedTags).toEqual(["go"]);

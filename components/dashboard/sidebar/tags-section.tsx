@@ -16,7 +16,8 @@ import { getActiveWorkspaceCollectionIds } from "@/lib/workspace-visibility";
 import { useTranslation } from "@/hooks/use-translation";
 import { useTagTree } from "@/hooks/use-tag-tree";
 import { useTagTreeExpansion } from "@/hooks/use-tag-tree-expansion";
-import { tagAncestors } from "@/lib/tag-tree";
+import { countTagUsage } from "@/lib/tag-counts";
+import { tagAncestors, type TagTree } from "@/lib/tag-tree";
 import { tagTargetError } from "@/lib/tag-mutations";
 import type { Bookmark, Tag } from "@/lib/types";
 import { TagTreeRow } from "./tag-tree-row";
@@ -38,21 +39,19 @@ function countBookmarksWithTag(bookmarks: Map<string, Bookmark>, tagId: string):
   return count;
 }
 
-/** Bookmarks in the active workspace (its collections plus uncategorized) per tag. */
+/** Bookmarks in the active workspace (its collections plus uncategorized) per tag, rolling up descendants. */
 function countTagsInWorkspace(
+  tree: TagTree,
   bookmarks: Map<string, Bookmark>,
   workspaceCollectionIds: ReadonlySet<string>,
 ): Map<string, number> {
-  const counts = new Map<string, number>();
+  const visibleBookmarks: Bookmark[] = [];
   for (const bookmark of bookmarks.values()) {
-    if (bookmark.collectionId !== "" && !workspaceCollectionIds.has(bookmark.collectionId)) {
-      continue;
-    }
-    for (const tagId of bookmark.tags) {
-      counts.set(tagId, (counts.get(tagId) ?? 0) + 1);
+    if (bookmark.collectionId === "" || workspaceCollectionIds.has(bookmark.collectionId)) {
+      visibleBookmarks.push(bookmark);
     }
   }
-  return counts;
+  return countTagUsage(tree, visibleBookmarks);
 }
 
 export function SidebarTagsSection() {
@@ -100,8 +99,8 @@ export function SidebarTagsSection() {
     [activeWorkspaceId, workspaces, collections],
   );
   const tagCounts = React.useMemo(
-    () => countTagsInWorkspace(bookmarks, workspaceCollectionIds),
-    [bookmarks, workspaceCollectionIds],
+    () => countTagsInWorkspace(tree, bookmarks, workspaceCollectionIds),
+    [tree, bookmarks, workspaceCollectionIds],
   );
 
   const trimmedQuery = query.trim();

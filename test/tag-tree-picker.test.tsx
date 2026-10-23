@@ -136,6 +136,41 @@ describe("TagTreePicker", () => {
     view.unmount();
   });
 
+  test("clamps activeIndex when collapsing a branch shrinks visibleRows", () => {
+    const tags = [makeTag("prog", "Programming"), makeTag("go", "Go", "prog")];
+    const tree = buildTagTree(tags, "en");
+    const changes: (string | undefined)[] = [];
+
+    const view = render(
+      app,
+      createElement(TagTreePicker, {
+        tree,
+        value: undefined,
+        onChange: (val) => changes.push(val),
+        disabledReason: () => undefined,
+        includeTopLevel: true,
+        label: "Target tag",
+      }),
+    );
+
+    // Expand Programming so visibleRows = [__root__, prog, go] (length 3)
+    click(getBySelector('[aria-label="tagTree_expandTag[Programming]"]'));
+    const searchInput = getBySelector<HTMLInputElement>('input[aria-label="tagTreePicker_search"]');
+
+    // Move activeIndex to the last row (index 2 = "go")
+    pressKey(searchInput, "ArrowDown");
+    pressKey(searchInput, "ArrowDown");
+
+    // Collapse Programming so visibleRows shrinks to [__root__, prog] (length 2)
+    click(getBySelector('[aria-label="tagTree_collapseTag[Programming]"]'));
+
+    // Pressing Enter now should activate the clamped last visible row ("prog"), not out-of-bounds
+    pressKey(searchInput, "Enter");
+    expect(changes).toEqual(["prog"]);
+
+    view.unmount();
+  });
+
   test("defines all new tag hierarchy messages in both en and zh_CN with matching placeholders", () => {
     const keys = [
       "tagMenu_newChild",

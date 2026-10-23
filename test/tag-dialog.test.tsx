@@ -93,6 +93,25 @@ describe("TagDialog", () => {
     dialog.view.unmount();
   });
 
+  test("edit mode rejects changed name containing slash or exceeding 50 code points with invalid error instead of duplicate error", async () => {
+    const dialog = renderDialog(design, []);
+    try {
+      typeInto(dialog.input, "Design/System");
+      await submitForm(dialog.form);
+
+      expect(getByText("tagAction_errorInvalid")).toBeTruthy();
+      expect(dialog.submitted).toEqual([]);
+
+      typeInto(dialog.input, "a".repeat(51));
+      await submitForm(dialog.form);
+
+      expect(getByText("tagAction_errorInvalid")).toBeTruthy();
+      expect(dialog.submitted).toEqual([]);
+    } finally {
+      dialog.view.unmount();
+    }
+  });
+
   test("creating path under parent passes name and parentId to onSubmit", async () => {
     const dialog = renderDialog(undefined, [], "prog");
     typeInto(dialog.input, "后端/Go");

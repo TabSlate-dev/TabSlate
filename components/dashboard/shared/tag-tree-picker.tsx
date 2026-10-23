@@ -153,16 +153,21 @@ export function TagTreePicker({
     return rows;
   }, [tree, includeTopLevel, matchingOrAncestorIds, effectiveExpandedIds, t, trimmedQuery]);
 
+  const clampedActiveIndex =
+    visibleRows.length === 0 ? 0 : Math.min(activeIndex, visibleRows.length - 1);
+
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((prev) => (prev + 1 < visibleRows.length ? prev + 1 : prev));
+      setActiveIndex(() =>
+        clampedActiveIndex + 1 < visibleRows.length ? clampedActiveIndex + 1 : clampedActiveIndex,
+      );
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((prev) => (prev > 0 ? prev - 1 : 0));
+      setActiveIndex(() => (clampedActiveIndex > 0 ? clampedActiveIndex - 1 : 0));
     } else if (event.key === "Enter") {
       event.preventDefault();
-      const targetRow = visibleRows[activeIndex];
+      const targetRow = visibleRows[clampedActiveIndex];
       if (targetRow) {
         const reason = disabledReason(targetRow.id);
         if (!reason) {
@@ -213,8 +218,9 @@ export function TagTreePicker({
             const reason = disabledReason(row.id);
             const isDisabled = Boolean(reason);
             const isSelected = row.id === undefined ? value === undefined : value === row.id;
-            const isExpanded = row.id ? effectiveExpandedIds.has(row.id) : false;
-            const isActive = index === activeIndex;
+            const rowId = row.id;
+            const isExpanded = rowId !== undefined ? effectiveExpandedIds.has(rowId) : false;
+            const isActive = index === clampedActiveIndex;
 
             return (
               <div
@@ -227,14 +233,14 @@ export function TagTreePicker({
                 )}
                 style={{ paddingLeft: `${row.depth * 14 + 4}px` }}
               >
-                {row.hasChildren && row.id ? (
+                {row.hasChildren && rowId !== undefined ? (
                   <button
                     type="button"
                     aria-label={t(isExpanded ? "tagTree_collapseTag" : "tagTree_expandTag", [row.name])}
                     aria-expanded={isExpanded}
                     onClick={(event) => {
                       event.stopPropagation();
-                      toggleExpand(row.id as string);
+                      toggleExpand(rowId);
                     }}
                     className="size-4 shrink-0 flex items-center justify-center text-muted-foreground hover:text-foreground rounded hover:bg-muted"
                   >

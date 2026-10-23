@@ -119,6 +119,15 @@ export function TagDialog({
           setError(t("tagDialog_errorEmpty"));
           return;
         }
+        if (segments.some((segment) => tagNameError(segment, []) !== null)) {
+          setError(t("tagAction_errorInvalid"));
+          return;
+        }
+        const parentDepth = parentId !== undefined ? tagAncestors(tree, parentId).length + 1 : 0;
+        if (parentDepth + segments.length > 5) {
+          setError(t("tagAction_targetDepth"));
+          return;
+        }
       } else {
         const siblingIds = tree.childrenByParent.get(parentId) ?? [];
         const siblingNames = siblingIds
@@ -126,7 +135,15 @@ export function TagDialog({
           .map((id) => tree.tagsById.get(id)?.name ?? "");
         const problem = tagNameError(name, takenNames ?? siblingNames);
         if (problem) {
-          setError(t(problem === "empty" ? "tagDialog_errorEmpty" : "tagDialog_errorDuplicate"));
+          setError(
+            t(
+              problem === "empty"
+                ? "tagDialog_errorEmpty"
+                : problem === "duplicate"
+                  ? "tagDialog_errorDuplicate"
+                  : "tagAction_errorInvalid",
+            ),
+          );
           return;
         }
       }

@@ -185,6 +185,10 @@ export function ImportDialog({ open, onOpenChange }: Props) {
   const tags = useWorkspaceStore((state) => state.tags);
   const importFromPlan = useWorkspaceStore((state) => state.importFromPlan);
   const rawBookmarks = useBookmarksStore((state) => state.bookmarks);
+  const archivedBookmarks = useBookmarksStore((state) => state.archivedBookmarks);
+  const trashedBookmarks = useBookmarksStore((state) => state.trashedBookmarks);
+  const loadArchivedBookmarks = useBookmarksStore((state) => state.loadArchivedBookmarks);
+  const loadTrashedBookmarks = useBookmarksStore((state) => state.loadTrashedBookmarks);
   const bookmarks = React.useMemo(() => bookmarksAsArray(rawBookmarks), [rawBookmarks]);
   const checkQuota = usePlanStore((state) => state.checkQuota);
   const limits = usePlanStore((state) => state.limits);
@@ -277,8 +281,15 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     if (!wasOpenRef.current) {
       wasOpenRef.current = true;
       setWorkspaceId(activeWorkspaceId ?? "");
+      const bmState = useBookmarksStore.getState();
+      if (!bmState._archivedLoaded) {
+        void loadArchivedBookmarks();
+      }
+      if (!bmState._trashedLoaded) {
+        void loadTrashedBookmarks();
+      }
     }
-  }, [activeWorkspaceId, open, resetState]);
+  }, [activeWorkspaceId, loadArchivedBookmarks, loadTrashedBookmarks, open, resetState]);
 
   const startPosition = React.useMemo(() => {
     const wsCollections = activeCollections.filter((c) => c.workspaceId === workspaceId);
@@ -358,21 +369,28 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     [importPlan.bookmarks.length],
   );
 
+  const totalBookmarkCount = bookmarks.length + archivedBookmarks.length + trashedBookmarks.length;
+
   const bookmarkQuotaOk = React.useMemo(() => {
     if (importPlan.bookmarks.length === 0) {
       return true;
     }
 
-    return checkQuota("bookmark", bookmarks.length + importPlan.bookmarks.length - 1);
-  }, [bookmarks.length, checkQuota, importPlan.bookmarks.length]);
+    return checkQuota("bookmark", totalBookmarkCount + importPlan.bookmarks.length - 1);
+  }, [checkQuota, importPlan.bookmarks.length, limits, totalBookmarkCount]);
+
+  const retainedCollectionCount = React.useMemo(
+    () => collections.filter((collection) => !collection.deletedAt).length,
+    [collections],
+  );
 
   const collectionQuotaOk = React.useMemo(() => {
     if (importPlan.collections.length === 0) {
       return true;
     }
 
-    return checkQuota("collection", activeCollections.length + importPlan.collections.length - 1);
-  }, [activeCollections.length, checkQuota, importPlan.collections.length]);
+    return checkQuota("collection", retainedCollectionCount + importPlan.collections.length - 1);
+  }, [checkQuota, importPlan.collections.length, limits, retainedCollectionCount]);
 
   const tagQuotaOk = React.useMemo(() => {
     if (importPlan.tags.length === 0) {
@@ -380,7 +398,7 @@ export function ImportDialog({ open, onOpenChange }: Props) {
     }
 
     return checkQuota("tag", tags.length + importPlan.tags.length - 1);
-  }, [checkQuota, importPlan.tags.length, tags.length]);
+  }, [checkQuota, importPlan.tags.length, limits, tags.length]);
 
   const importBlockedMessage = React.useMemo(() => {
     if (!workspaceId) {
@@ -651,8 +669,8 @@ export function ImportDialog({ open, onOpenChange }: Props) {
 
   const handleRetry = React.useCallback(() => {
     setResult(null);
-    setStep(1);
-  }, []);
+    setStep(validation?.valid && rawContent.length > 0 ? 2 : 1);
+  }, [rawContent.length, validation?.valid]);
 
   const selectedSourceLabel = source ? SOURCE_LABEL[source] : "";
   const selectedSourceHint = source ? t(source === "toby" ? "import_tobyHint" : "import_chromeHint") : "";
