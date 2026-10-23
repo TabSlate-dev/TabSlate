@@ -178,4 +178,29 @@ describe("parseChromeHTML & buildChromeImportPlan", () => {
     expect(plan.provenance).toBeUndefined();
     expect(plan.bookmarks.every(b => b.tags.length === 0)).toBe(true);
   });
+
+  test("empty folder name yields supplied localized untitledLabel", () => {
+    const htmlWithEmpty = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<DL><p>
+  <DT><H3>书签栏</H3>
+  <DL><p>
+    <DT><H3>   </H3>
+    <DL><p>
+      <DT><A HREF="https://empty-folder.example.com">BM</A>
+    </DL><p>
+  </DL><p>
+</DL><p>`;
+    const collections = parseChromeHTML(htmlWithEmpty);
+    const tagOptions: ImportTagOptions = {
+      enabled: true,
+      rootName: "Chrome import 2026-10-21",
+      existingTags: [],
+      availableTags: -1,
+      untitledLabel: "未命名",
+    };
+
+    const plan = buildChromeImportPlan(collections, "ws-1", new Set(), false, 0, tagOptions);
+
+    expect(plan.tags.some(t => t.name === "未命名")).toBe(true);
+  });
 });

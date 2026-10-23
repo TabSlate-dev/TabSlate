@@ -202,6 +202,7 @@ export function buildTobyImportPlan(
   }
 
   const createdMandatoryTagIds = new Map<string, string>();
+  const untitledLabel = tagOptions?.untitledLabel ?? "Untitled";
   const collections: Omit<Collection, "seq">[] = [];
   const bookmarks: Omit<Bookmark, "seq">[] = [];
   const tags: Omit<Tag, "seq">[] = [];
@@ -221,21 +222,26 @@ export function buildTobyImportPlan(
     const seenLabels = new Set<string>();
     for (const label of list.labels ?? []) {
       const trimmed = label.trim();
-      if (trimmed.length === 0) {
+      const literalKey = normalizeTagName(trimmed);
+
+      // Check existing literal top-level tags first (including legacy /)
+      const existingTagId = trimmed.length > 0 ? reusableTopLevelTags.get(literalKey) : undefined;
+      if (existingTagId) {
+        if (!seenLabels.has(existingTagId)) {
+          seenLabels.add(existingTagId);
+          tagIds.push(existingTagId);
+        }
         continue;
       }
-      const normalizedLabel = normalizeTagName(trimmed);
+
+      // Normalize missing label
+      const base = normalizeImportSegment(trimmed, untitledLabel);
+      const normalizedLabel = normalizeTagName(base);
       if (seenLabels.has(normalizedLabel)) {
         continue;
       }
 
       seenLabels.add(normalizedLabel);
-
-      const existingTagId = reusableTopLevelTags.get(normalizedLabel);
-      if (existingTagId) {
-        tagIds.push(existingTagId);
-        continue;
-      }
 
       const alreadyCreatedTagId = createdMandatoryTagIds.get(normalizedLabel);
       if (alreadyCreatedTagId) {
@@ -243,7 +249,6 @@ export function buildTobyImportPlan(
         continue;
       }
 
-      const base = normalizeImportSegment(trimmed, "Untitled");
       let candidate = truncateWithSuffix(base);
       let suffix = 2;
       while (allUsedTopLevelNames.has(normalizeTagName(candidate))) {
@@ -266,7 +271,7 @@ export function buildTobyImportPlan(
     collections.push({
       id: collectionId,
       workspaceId,
-      name: truncate(list.title ?? "Untitled", MAX_TITLE_LENGTH),
+      name: truncate(list.title || untitledLabel, MAX_TITLE_LENGTH),
       icon: "",
       position,
     });

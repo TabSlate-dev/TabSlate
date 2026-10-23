@@ -86,8 +86,18 @@ beforeEach(() => {
   });
 });
 
+const VALID_CHROME_HTML = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<TITLE>Bookmarks</TITLE>
+<H1>Bookmarks</H1>
+<DL><p>
+  <DT><H3>书签栏</H3>
+  <DL><p>
+    <DT><A HREF="https://example.com/test">Test Bookmark</A>
+  </DL><p>
+</DL><p>`;
+
 describe("ImportDialog component", () => {
-  test("preserve folders switch is enabled by default in configuration step", () => {
+  test("preserve folders switch is enabled by default in configuration step", async () => {
     let open = true;
     const view = render(
       app,
@@ -101,18 +111,43 @@ describe("ImportDialog component", () => {
       ),
     );
 
-    // Initial step is source selection
-    const chromeButton = getByText("Chrome Bookmarks");
-    expect(chromeButton).toBeDefined();
+    // Step 0: click Chrome Bookmarks card
+    click(getByText("Chrome Bookmarks"));
+
+    // Step 1: upload file
+    const fileInput = getBySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File([VALID_CHROME_HTML], "bookmarks.html", { type: "text/html" });
+    Object.defineProperty(fileInput, "files", { value: [file], configurable: true });
+    await act(async () => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    // Wait for file validation
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // Step 1: click Next button to reach Step 2 (configuration)
+    click(getByText("import_next"));
+
+    // Step 2: assert preserve folders switch is present and checked by default
+    const switchButton = getBySelector<HTMLButtonElement>("#preserve-folders");
+    expect(switchButton).toBeDefined();
+    expect(switchButton.getAttribute("data-state")).toBe("checked");
+
+    // Toggle off: data-state becomes unchecked
+    click(switchButton);
+    expect(switchButton.getAttribute("data-state")).toBe("unchecked");
+
+    // Toggle back on
+    click(switchButton);
+    expect(switchButton.getAttribute("data-state")).toBe("checked");
 
     view.unmount();
   });
 
   test("revealing imported bookmarks switches workspace, clears filters and selects committed root", async () => {
-    const rootTagId = "root-tag-123";
-    const committedWorkspaceId = "ws-1";
-
-    // Set initial state with some existing filters
+    let open = true;
+    // Set initial state with existing filters and selection
     app.useBookmarksStore.setState({
       selectedCollection: "col-default",
       selectedTags: ["old-tag"],
@@ -122,23 +157,64 @@ describe("ImportDialog component", () => {
     useSelectionStore.getState().toggle("some-bm");
     expect(useSelectionStore.getState().selectedIds.size).toBe(1);
 
-    // Verify stores can execute the exact reveal contract
-    act(() => {
-      app.useWorkspaceStore.getState().setActiveWorkspaceId(committedWorkspaceId);
-      const bmStore = app.useBookmarksStore.getState();
-      bmStore.setSelectedCollection("all");
-      bmStore.setFilterType("all");
-      bmStore.setSearchQuery("");
-      bmStore.setSelectedTags([rootTagId]);
-      useSelectionStore.getState().clear();
+    const view = render(
+      app,
+      createElement(
+        MemoryRouter,
+        null,
+        createElement(ImportDialog, {
+          open,
+          onOpenChange: (next) => { open = next; },
+        }),
+      ),
+    );
+
+    // Step 0: Click Chrome Bookmarks
+    click(getByText("Chrome Bookmarks"));
+
+    // Step 1: Upload file
+    const fileInput = getBySelector<HTMLInputElement>('input[type="file"]');
+    const file = new File([VALID_CHROME_HTML], "bookmarks.html", { type: "text/html" });
+    Object.defineProperty(fileInput, "files", { value: [file], configurable: true });
+    await act(async () => {
+      fileInput.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
     });
 
-    expect(app.useWorkspaceStore.getState().activeWorkspaceId).toBe(committedWorkspaceId);
+    // Step 1 -> Step 2
+    click(getByText("import_next"));
+
+    // Step 2: Click Import button
+    click(getByText("import_btnImport"));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    // Step 3: Click "Show imported bookmarks" button
+    const revealButton = getByText("import_showImported");
+    expect(revealButton).toBeDefined();
+    click(revealButton);
+
+    // Assert active workspace switched to ws-1
+    expect(app.useWorkspaceStore.getState().activeWorkspaceId).toBe("ws-1");
+    // Assert library view and collection "all"
     expect(app.useBookmarksStore.getState().selectedCollection).toBe("all");
     expect(app.useBookmarksStore.getState().filterType).toBe("all");
     expect(app.useBookmarksStore.getState().searchQuery).toBe("");
-    expect(app.useBookmarksStore.getState().selectedTags).toEqual([rootTagId]);
+    // Assert selected tags contains only the committed root
+    const selectedTags = app.useBookmarksStore.getState().selectedTags;
+    expect(selectedTags).toHaveLength(1);
+    const rootTag = app.useWorkspaceStore.getState().tags.find(t => t.id === selectedTags[0]);
+    expect(rootTag).toBeDefined();
+    expect(rootTag?.parentId).toBeUndefined();
+    // Assert selection cleared
     expect(useSelectionStore.getState().selectedIds.size).toBe(0);
+    // Assert dialog closed
+    expect(open).toBe(false);
+
+    view.unmount();
   });
 
   test("timezone date formatting uses local calendar date", () => {
@@ -280,7 +356,7 @@ describe("ImportDialog component", () => {
     }
   });
 
-  test("reused Toby tag deleted before commit results in stale_plan", async () => {
+  test("sibling collision with existing tag results in stale_plan", async () => {
     // Sibling collision with a newly created tag in workspace store
     app.useWorkspaceStore.setState({
       tags: [{ id: "t-conflict", name: "Root", color: "blue", parentId: undefined, seq: 1 }],
@@ -299,6 +375,56 @@ describe("ImportDialog component", () => {
     if (!result.ok) {
       expect(result.error).toBe("stale_plan");
     }
+  });
+
+  test("reused Toby tag deleted before commit results in stale_plan", async () => {
+    const reusedTag: Tag = {
+      id: "reused-label-id",
+      name: "reading",
+      parentId: undefined,
+      color: "blue",
+      seq: 1,
+    };
+
+    // Plan references the reused tag on a bookmark, but does not recreate it in plan.tags
+    const plan: ImportPlan = {
+      collections: [{ id: "c-toby", workspaceId: "ws-1", name: "List", icon: "", position: 1 }],
+      bookmarks: [{
+        id: "b-toby",
+        collectionId: "c-toby",
+        title: "Toby Card",
+        url: "https://example.com/toby",
+        description: "",
+        favicon: "",
+        tags: [reusedTag.id],
+        createdAt: "2026-10-21T00:00:00.000Z",
+        isFavorite: false,
+      }],
+      tags: [],
+      duplicatesSkipped: 0,
+      rejectedUrls: [],
+    };
+
+    // Before commit, the reused tag is deleted (has a tombstone deletedAt, or is absent from active tags)
+    app.useWorkspaceStore.setState({
+      tags: [{ ...reusedTag, deletedAt: Date.now() }],
+    });
+
+    const initialTagsCount = app.useWorkspaceStore.getState().tags.length;
+    const initialCollectionsCount = app.useWorkspaceStore.getState().collections.length;
+    const initialBookmarksCount = app.useBookmarksStore.getState().bookmarks.size;
+
+    const result = await app.useWorkspaceStore.getState().importFromPlan(plan);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBe("stale_plan");
+    }
+
+    // Nothing written or mutated
+    expect(app.useWorkspaceStore.getState().tags.length).toBe(initialTagsCount);
+    expect(app.useWorkspaceStore.getState().collections.length).toBe(initialCollectionsCount);
+    expect(app.useBookmarksStore.getState().bookmarks.size).toBe(initialBookmarksCount);
   });
 
   test("tag quota exhaustion blocks import in preflight check", () => {

@@ -307,8 +307,9 @@ export function ImportDialog({ open, onOpenChange }: Props) {
       rootName,
       existingTags: tags,
       availableTags,
+      untitledLabel: t("import_untitled"),
     }),
-    [availableTags, preserveFolders, rootName, tags],
+    [availableTags, preserveFolders, rootName, tags, t],
   );
 
   const importPlan = React.useMemo(() => {

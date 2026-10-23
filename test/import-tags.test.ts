@@ -147,6 +147,23 @@ describe("addImportTags", () => {
     expect(tag).toBeDefined();
   });
 
+  test("empty segment with custom untitledLabel produces that label", () => {
+    const basePlan = createBasePlan({ bookmarkCount: 1 });
+    const pathsByBookmarkId = new Map<string, readonly string[]>([["b-1", ["   "]]]);
+    const options: ImportTagOptions = {
+      enabled: true,
+      rootName: "Chrome import 2026-10-21",
+      existingTags: [],
+      availableTags: -1,
+      untitledLabel: "未命名",
+    };
+
+    const plan = addImportTags(basePlan, "chrome", pathsByBookmarkId, options);
+
+    const tag = plan.tags.find(t => t.name === "未命名");
+    expect(tag).toBeDefined();
+  });
+
   test("limits newly created segments to 50 Unicode code points with suffix space", () => {
     const longName1 = "A".repeat(60);
     const longName2 = "A".repeat(50) + "B";

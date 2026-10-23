@@ -1225,6 +1225,26 @@ export const useWorkspaceStore = create<WorkspaceState>()((set, get) => ({
       }
     }
 
+    // Recheck reused label IDs: any tag ID referenced by plan.bookmarks must exist in
+    // plan.tags or in current active tags (excluding tombstones).
+    const validTagIds = new Set<string>();
+    for (const tag of plan.tags) {
+      validTagIds.add(tag.id);
+    }
+    for (const tag of currentTags) {
+      if (tag.deletedAt === undefined) {
+        validTagIds.add(tag.id);
+      }
+    }
+
+    for (const bookmark of plan.bookmarks) {
+      for (const tagId of bookmark.tags) {
+        if (!validTagIds.has(tagId)) {
+          return { ok: false, error: "stale_plan" };
+        }
+      }
+    }
+
     const newTags: Tag[] = plan.tags.map((t) => ({ ...t, seq: 0 as const }));
     const newCollections: Collection[] = plan.collections.map((c) => ({ ...c, seq: 0 as const }));
     const newBookmarks: Bookmark[] = plan.bookmarks.map((b) => ({ ...b, seq: 0 as const }));

@@ -169,4 +169,28 @@ describe("buildTobyImportPlan", () => {
     const bm = plan.bookmarks[0];
     expect(bm.tags).toHaveLength(2);
   });
+
+  test("empty label yields supplied localized untitledLabel", () => {
+    const tobyWithEmpty: TobyImport = {
+      version: 3,
+      lists: [
+        {
+          title: "List",
+          cards: [{ title: "Task", url: "https://example.com/task" }],
+          labels: ["   "],
+        },
+      ],
+    };
+    const tagOptions: ImportTagOptions = {
+      enabled: true,
+      rootName: "Toby import 2026-10-21",
+      existingTags: emptyTags,
+      availableTags: -1,
+      untitledLabel: "未命名",
+    };
+
+    const plan = buildTobyImportPlan(tobyWithEmpty, "ws-1", new Set(), emptyTags, false, 0, tagOptions);
+
+    expect(plan.tags.some(t => t.name === "未命名")).toBe(true);
+  });
 });

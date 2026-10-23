@@ -45,7 +45,8 @@ export function addImportTags(
   }
 
   // 1. Allocate unique root against existing top-level tags and any current plan top-level tags
-  const rootBase = normalizeImportSegment(options.rootName, "Untitled");
+  const untitledLabel = options.untitledLabel ?? "Untitled";
+  const rootBase = normalizeImportSegment(options.rootName, untitledLabel);
   const existingTopLevelNames = new Set(
     options.existingTags
       .filter((t) => t.parentId === undefined)
@@ -85,7 +86,7 @@ export function addImportTags(
     let desiredSegments: string[];
     if (source === "chrome") {
       const col = collectionById.get(bm.collectionId);
-      const colName = col?.name ?? "Untitled";
+      const colName = col?.name ?? untitledLabel;
       const folders = pathsByBookmarkId.get(bm.id) ?? [];
       // Chrome tag levels: root + allocated collection name + at most 3 lower folders (max depth 5)
       desiredSegments = [colName, ...folders.slice(0, 3)];
@@ -98,7 +99,7 @@ export function addImportTags(
       const originalKey = normalizeTagName(segment);
       let childNode = currentNode.children.get(originalKey);
       if (!childNode) {
-        const base = normalizeImportSegment(segment, "Untitled");
+        const base = normalizeImportSegment(segment, untitledLabel);
         let allocatedName = truncateWithSuffix(base);
         let suffix = 2;
         while (currentNode.usedNames.has(normalizeTagName(allocatedName))) {

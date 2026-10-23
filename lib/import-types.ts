@@ -11,6 +11,7 @@ export interface ImportTagOptions {
   rootName: string;
   existingTags: readonly Tag[];
   availableTags: number; // -1 means unlimited
+  untitledLabel?: string;
 }
 
 export interface ImportPlan {
